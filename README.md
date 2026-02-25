@@ -2,6 +2,10 @@
 
 Before using this project, read the [Disclaimer](#disclaimer).
 
+## Dev Env Setup
+
+Set up your local development environment using [docs/install-python-and-frontend.md](docs/install-python-and-frontend.md).
+
 ## Goals
 
 1. Review the market's price action, levels, and behaviors with LLMs.
@@ -39,14 +43,20 @@ I like to break up code into different categories: **Primitives, Components, Ser
 
 ### Primitives
 
-Primitives are small discrete functions that are 20 lines or less.
-They're focused on a specific task and can be easily unit tested.
-I like to keep "state" out of these functions.
-These are mechanical operators.
+Primitives are small discrete, functions focused on a a specific task,
+
+- 20 lines or less (ideal goal)
+- exist as instance methods or stateless functions
+- are focused on a specific task
+- can be easily tested in isolation (eg, unit tests, but not integration tests)
+- mechanical operators
 
 Examples:
 
-- function to calc the opening range breakout
+- calc the opening range breakout
+- helper function for a pandas df
+
+## Interfaces/Abstract Classes
 
 ### Components
 
