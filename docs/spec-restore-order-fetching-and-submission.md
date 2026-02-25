@@ -21,6 +21,25 @@ Restore safe, production-usable order fetching and order submission in small, me
 
 ## Merge Plan
 
+## Implementation Status (as of February 25, 2026)
+
+- PR 1: implemented in code (`src/services/order_queue.py`, shared job constants).
+- PR 2: implemented in code (`POST /api/v1/orders`, `POST /api/v1/orders/{order_id}/cancel`, idempotent create retries).
+- PR 3: implemented in code in this branch:
+  - restored `scripts/work_order_queue.py`
+  - restored `worker:orders` task in `Taskfile.yaml`
+  - startup reconciliation runs before claim loop
+  - deterministic `orderRef=ngtrader-order-{id}` is set on submit and used on restart reconciliation
+  - queued orders are claimed atomically as `submitting` before broker submit
+- PR 6 (partial, incremental verification): read-only UX refresh completed in this branch:
+  - `/orders` table now renders fetched order flow with clearer lifecycle/status/fill/broker-id visibility
+  - submit/cancel action controls are still deferred to full PR 6 scope
+- Additional results validated in this phase:
+  - position ingestion path is confirmed working end-to-end ("pull down positions" succeeds)
+  - contract qualification helpers now support both singular and batch entry points:
+    - `_qualify_contract(ib, spec) -> Contract`
+    - `_qualify_contracts(ib, specs) -> list[Contract]`
+
 ### PR 1: Domain Primitives
 
 - Reintroduce execution-related service modules:

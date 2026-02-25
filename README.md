@@ -46,15 +46,16 @@ I like to break up code into different categories: **Primitives, Components, Ser
 Primitives are small discrete, functions focused on a a specific task,
 
 - 20 lines or less (ideal goal)
+- 4 or less input arguments
 - exist as instance methods or stateless functions
 - are focused on a specific task
 - can be easily tested in isolation (eg, unit tests, but not integration tests)
-- mechanical operators
+- behave as mechanical operators
 
 Examples:
 
 - calc the opening range breakout
-- helper function for a pandas df
+- df helper function
 
 ## Interfaces/Abstract Classes
 
