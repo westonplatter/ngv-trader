@@ -1,4 +1,4 @@
-# Next Gen Trader
+# Next Gen Trader Pro
 
 Before using this project, read the [Disclaimer](#disclaimer).
 
