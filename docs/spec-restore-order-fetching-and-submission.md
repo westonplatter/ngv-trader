@@ -47,6 +47,11 @@ Restore safe, production-usable order fetching and order submission in small, me
   - `scripts/work_order_queue.py` now auto-enqueues `order.fetch_sync` after processing orders
   - added manual enqueue endpoint `POST /api/v1/orders/sync`
   - added Tradebot tool `enqueue_order_fetch_sync_job` so chat can trigger broker order sync
+- PR 5: implemented in code in this branch:
+  - restored Tradebot tools `preview_order` and `submit_order`
+  - updated Tradebot system prompt to support execution workflows
+  - added shared order mutation service (`src/services/order_mutations.py`) so Tradebot and API use the same create/idempotency/event lifecycle
+  - added limit order support in worker submit path (`LMT` uses IB `LimitOrder`, `MKT` uses `MarketOrder`)
 
 ### PR 1: Domain Primitives
 

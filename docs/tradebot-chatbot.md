@@ -5,7 +5,7 @@
 `/api/v1/tradebot/chat` is the operator chat control surface.
 
 It runs as an LLM conversation workflow with LangGraph and explicit function tools.
-Order execution is disabled.
+Order execution is enabled through controlled tools.
 
 ## Architecture
 
@@ -31,6 +31,8 @@ Read tools:
 
 Action tools:
 
+- `preview_order`
+- `submit_order`
 - `enqueue_positions_sync_job`
 - `enqueue_contracts_sync_job`
 - `create_watch_list`
@@ -39,9 +41,8 @@ Action tools:
 
 ## Safety Constraints
 
-- Tradebot has no execution-capable tool (`submit_order`, `preview_order`, `check_pretrade_job` were removed).
-- If asked to place/queue/cancel orders, the assistant responds with a read-only alternative.
-- Orders API is read-only (`GET` endpoints only).
+- Tradebot can validate (`preview_order`) and queue (`submit_order`) orders.
+- Tradebot does not have an order-cancel tool; use Orders API/UI cancel path.
 - Side-effect jobs are limited to `worker:jobs` handlers.
 - If an action tool fails, the tool call returns an explicit error payload back to the model.
 
@@ -58,7 +59,7 @@ Action tools:
 
 - `TradebotChat` main chat panel
 - `JobsTable` side panel (job timing + actions)
-- `OrdersSideTable` side panel (read-only order timing + status/fill)
+- `OrdersSideTable` side panel (order timing + status/fill)
 - Header worker lights from `/api/v1/workers/status`
 
 ## Key Files

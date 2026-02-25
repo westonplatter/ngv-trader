@@ -17,7 +17,7 @@ import time
 from typing import Any
 
 from dotenv import load_dotenv
-from ib_async import IB, Contract, MarketOrder, Trade
+from ib_async import IB, Contract, LimitOrder, MarketOrder, Trade
 from sqlalchemy import inspect, select, update
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
@@ -359,7 +359,12 @@ def process_order(
             masked = mask_ibkr_account(tws_account)
             raise RuntimeError(f"Account {masked} is not managed by this IBKR session")
 
-        ib_order = MarketOrder(order.side, order.quantity)
+        if order.order_type == "LMT":
+            if order.limit_price is None:
+                raise RuntimeError(f"Order {order.id} has order_type=LMT but no limit_price.")
+            ib_order = LimitOrder(order.side, order.quantity, order.limit_price)
+        else:
+            ib_order = MarketOrder(order.side, order.quantity)
         ib_order.account = tws_account
         ib_order.tif = order.tif
         ib_order.orderRef = make_order_ref(order.id)

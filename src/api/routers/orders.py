@@ -1,7 +1,7 @@
 """Orders API router."""
 
 import re
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from pydantic import BaseModel, Field
@@ -11,30 +11,17 @@ from sqlalchemy.orm import Session
 from src.api.deps import get_db
 from src.models import Account, ContractRef, Order, OrderEvent
 from src.services.jobs import JOB_TYPE_ORDER_FETCH_SYNC, enqueue_job
+from src.services.order_mutations import OrderCreateInput, create_queued_order
 from src.services.order_queue import (
     ORDER_STATUS_CANCELLED,
-    ORDER_STATUS_PARTIALLY_FILLED,
     ORDER_STATUS_QUEUED,
-    ORDER_STATUS_RECONCILE_REQUIRED,
-    ORDER_STATUS_SUBMITTED,
-    ORDER_STATUS_SUBMITTING,
     ORDER_TERMINAL_STATUSES,
-    append_order_event,
-    now_utc,
     transition_order_status,
 )
 from src.utils.contract_display import contract_display_name
 
 router = APIRouter()
 DB_SESSION_DEPENDENCY = Depends(get_db)
-IDEMPOTENT_CREATE_WINDOW_SECONDS = 30
-IDEMPOTENT_CREATE_STATUSES = {
-    ORDER_STATUS_QUEUED,
-    ORDER_STATUS_SUBMITTING,
-    ORDER_STATUS_SUBMITTED,
-    ORDER_STATUS_PARTIALLY_FILLED,
-    ORDER_STATUS_RECONCILE_REQUIRED,
-}
 
 
 class OrderCreateRequest(BaseModel):
@@ -46,6 +33,7 @@ class OrderCreateRequest(BaseModel):
     exchange: str = "NYMEX"
     currency: str = "USD"
     order_type: str = "MKT"
+    limit_price: float | None = Field(default=None, gt=0)
     tif: str = "DAY"
     source: str = Field(default="manual", min_length=1)
     request_text: str | None = None
@@ -231,37 +219,6 @@ def to_order_event_response(event: OrderEvent) -> OrderEventResponse:
     )
 
 
-def _find_idempotent_create_match(db: Session, body: OrderCreateRequest) -> tuple[Order, Account | None] | None:
-    now = now_utc()
-    min_created_at = now - timedelta(seconds=IDEMPOTENT_CREATE_WINDOW_SECONDS)
-    stmt = (
-        select(Order, Account)
-        .outerjoin(Account, Order.account_id == Account.id)
-        .where(
-            Order.account_id == body.account_id,
-            Order.symbol == body.symbol.upper(),
-            Order.sec_type == body.sec_type.upper(),
-            Order.exchange == body.exchange.upper(),
-            Order.currency == body.currency.upper(),
-            Order.side == body.side.upper(),
-            Order.quantity == body.quantity,
-            Order.order_type == body.order_type.upper(),
-            Order.tif == body.tif.upper(),
-            Order.source == body.source,
-            Order.request_text == body.request_text,
-            Order.status.in_(IDEMPOTENT_CREATE_STATUSES),
-            Order.created_at >= min_created_at,
-        )
-        .order_by(Order.created_at.desc())
-        .limit(1)
-    )
-    row = db.execute(stmt).one_or_none()
-    if row is None:
-        return None
-    order, account = row
-    return order, account
-
-
 @router.get("/orders", response_model=list[OrderResponse])
 def list_orders(db: Session = DB_SESSION_DEPENDENCY) -> list[OrderResponse]:
     stmt = (
@@ -295,50 +252,33 @@ def create_order(
     response: Response,
     db: Session = DB_SESSION_DEPENDENCY,
 ) -> OrderResponse:
-    account = db.get(Account, body.account_id)
-    if account is None:
-        raise HTTPException(status_code=400, detail="Invalid account_id")
+    try:
+        outcome = create_queued_order(
+            db,
+            OrderCreateInput(
+                account_id=body.account_id,
+                symbol=body.symbol,
+                side=body.side,
+                quantity=body.quantity,
+                sec_type=body.sec_type,
+                exchange=body.exchange,
+                currency=body.currency,
+                order_type=body.order_type,
+                limit_price=body.limit_price,
+                tif=body.tif,
+                source=body.source,
+                request_text=body.request_text,
+            ),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    existing = _find_idempotent_create_match(db, body)
-    if existing is not None:
+    if not outcome.created:
         response.status_code = status.HTTP_200_OK
-        order, matched_account = existing
-        return to_order_response(order, matched_account)
 
-    created_at = now_utc()
-    order = Order(
-        account_id=body.account_id,
-        symbol=body.symbol.upper(),
-        sec_type=body.sec_type.upper(),
-        exchange=body.exchange.upper(),
-        currency=body.currency.upper(),
-        side=body.side.upper(),
-        quantity=body.quantity,
-        order_type=body.order_type.upper(),
-        limit_price=None,
-        tif=body.tif.upper(),
-        status=ORDER_STATUS_QUEUED,
-        source=body.source,
-        request_text=body.request_text,
-        created_at=created_at,
-        updated_at=created_at,
-    )
-    db.add(order)
-    db.flush()
-
-    append_order_event(
-        session=db,
-        order_id=order.id,
-        event_type="order_created",
-        message="Order queued for worker execution.",
-        status=order.status,
-        filled_quantity=order.filled_quantity,
-        avg_fill_price=order.avg_fill_price,
-        ib_order_id=order.ib_order_id,
-    )
     db.commit()
-    db.refresh(order)
-    return to_order_response(order, account)
+    db.refresh(outcome.order)
+    return to_order_response(outcome.order, outcome.account)
 
 
 @router.post("/orders/sync", response_model=OrderSyncResponse, status_code=status.HTTP_202_ACCEPTED)

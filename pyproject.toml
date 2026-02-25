@@ -28,4 +28,26 @@ packages = ["src"]
 default-groups = []
 
 [dependency-groups]
-dev = ["typer>=0.24.1", "ipdb>=0.13.13"]
+dev = ["typer>=0.24.1", "ipdb>=0.13.13", "ruff>=0.15.2"]
+
+# -- Ruff: complexity guardrails ----------------------------------------------
+[tool.ruff.lint]
+select = [
+  "C901",    # McCabe cyclomatic complexity
+  "PLR0911", # too-many-return-statements
+  "PLR0912", # too-many-branches
+  "PLR0913", # too-many-arguments
+  "PLR0915", # too-many-statements
+]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 10
+
+[tool.ruff.lint.pylint]
+max-args = 6
+max-statements = 50
+max-branches = 8
+max-returns = 5
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["PLR0915", "PLR0913"]
