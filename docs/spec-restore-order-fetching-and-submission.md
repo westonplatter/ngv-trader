@@ -25,7 +25,6 @@ Restore safe, production-usable order fetching and order submission in small, me
 
 - Reintroduce execution-related service modules:
   - `src/services/order_queue.py`
-  - `src/services/pretrade_checks.py`
 - Re-add job type constants and shared primitives needed by later PRs.
 - Keep runtime execution paths disabled in this PR.
 
@@ -53,10 +52,11 @@ Acceptance:
 - Re-enable `worker:orders` task in `Taskfile.yaml`.
 - Implement queued-to-terminal execution lifecycle.
 - Add startup reconciliation pass before claiming new work.
+- Keep execution path free of pre-trade gate dependencies.
 
 Acceptance:
 
-- Orders move through expected statuses.
+- Orders move through expected statuses without pre-trade checks in the execution path.
 - Restarting worker does not produce duplicate broker submissions.
 
 ### PR 4: Broker Order Fetching/Sync
@@ -74,7 +74,6 @@ Acceptance:
 
 - Restore tool specs and handlers for:
   - `preview_order`
-  - `check_pretrade_job`
   - `submit_order`
 - Update prompt text to allow execution workflows again.
 

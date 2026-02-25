@@ -16,6 +16,9 @@ JOB_STATUS_FAILED = "failed"
 
 JOB_TYPE_POSITIONS_SYNC = "positions.sync"
 JOB_TYPE_CONTRACTS_SYNC = "contracts.sync"
+JOB_TYPE_ORDER_SUBMIT = "order.submit"
+JOB_TYPE_ORDER_FETCH_SYNC = "order.fetch_sync"
+JOB_TYPE_ORDER_CANCEL = "order.cancel"
 JOB_TYPE_WATCHLIST_ADD_INSTRUMENT = "watchlist.add_instrument"
 JOB_TYPE_WATCHLIST_QUOTES_REFRESH = "watchlist.quotes_refresh"
 
