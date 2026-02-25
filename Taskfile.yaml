@@ -1,0 +1,48 @@
+version: "3"
+
+vars:
+  ENV: '{{.ENV | default "dev"}}'
+
+dotenv: [".env.{{.ENV}}"]
+
+tasks:
+  list:
+    desc: List all available tasks
+    aliases: [l]
+    cmd: task --list-all
+
+  api:
+    desc: Start the FastAPI backend (port 8000)
+    cmd: op run --env-file=.env.{{.ENV}} -- uv run uvicorn src.api.main:app --reload --port 8000
+
+  frontend:
+    desc: Start the Vite dev server (port 5173)
+    dir: frontend
+    cmd: npm run dev
+
+  worker:jobs:
+    desc: Start generic job worker (dispatches by job_type)
+    cmd: op run --env-file=.env.{{.ENV}} -- uv run python scripts/work_jobs.py --env {{.ENV}}
+
+  frontend:install:
+    desc: Install frontend dependencies
+    dir: frontend
+    cmd: npm install
+
+  migrate:
+    desc: Run alembic migrations to head
+    cmd: uv run alembic upgrade head
+
+  migrate:down:
+    desc: Downgrade one alembic migration
+    cmd: uv run alembic downgrade -1
+
+  migrate:new:
+    desc: Create a new alembic migration (usage -- task migrate:new -- "description")
+    cmd: uv run alembic revision --autogenerate -m "{{.CLI_ARGS}}"
+
+  dev:
+    desc: Start backend and frontend in parallel
+    deps:
+      - api
+      - frontend
