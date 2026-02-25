@@ -54,6 +54,7 @@ def contract_display_name(
     symbol: str | None,
     sec_type: str | None,
     *,
+    local_symbol: str | None = None,
     right: str | None = None,
     strike: float | None = None,
     contract_expiry: str | None = None,
@@ -79,8 +80,14 @@ def contract_display_name(
     stype = (sec_type or "").strip().upper()
     exch = (exchange or "").strip().upper() if include_exchange else ""
     tc = (trading_class or "").strip().upper()
+    local = (local_symbol or "").strip()
 
     exch_suffix = f" @{exch}" if exch else ""
+
+    if stype == "BAG":
+        if local:
+            return f"{local}{exch_suffix}"
+        return f"{sym}{exch_suffix}"
 
     if stype in {"STK", "IND"}:
         return f"{sym}{exch_suffix}"

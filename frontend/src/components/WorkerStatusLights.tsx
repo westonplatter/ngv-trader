@@ -11,7 +11,7 @@ interface WorkerStatus {
   details: string | null;
 }
 
-const KNOWN_WORKERS = ["jobs"] as const;
+const KNOWN_WORKERS = ["jobs", "orders"] as const;
 
 const LIGHT_CLASS: Record<LightColor, string> = {
   green: "bg-green-500",
@@ -87,7 +87,10 @@ export default function WorkerStatusLights() {
             <span
               className={`inline-block h-2.5 w-2.5 rounded-full ${LIGHT_CLASS[row.light]}`}
             />
-            <span>Worker Jobs</span>
+            <span className="capitalize">Worker {workerType}</span>
+            <span className="rounded bg-gray-100 px-1.5 py-0.5 font-medium text-gray-700">
+              {row.status}
+            </span>
           </div>
         );
       })}

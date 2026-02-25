@@ -6,17 +6,29 @@ interface Order {
   account_alias: string | null;
   symbol: string;
   sec_type: string;
+  exchange: string;
+  currency: string;
   side: string;
   quantity: number;
+  order_type: string;
+  limit_price: number | null;
+  tif: string;
   status: string;
   contract_month: string | null;
+  contract_expiry: string | null;
+  option_right: string | null;
+  option_strike: string | null;
+  contract_display_name: string;
   local_symbol: string | null;
   ib_order_id: number | null;
+  ib_perm_id: number | null;
   filled_quantity: number;
   avg_fill_price: number | null;
   created_at: string;
   updated_at: string;
 }
+
+type OrderFilter = "all" | "working" | "closed";
 
 const STATUS_CLASS: Record<string, string> = {
   queued: "bg-amber-100 text-amber-800",
@@ -29,21 +41,83 @@ const STATUS_CLASS: Record<string, string> = {
   rejected: "bg-rose-100 text-rose-800",
   failed: "bg-red-100 text-red-800",
 };
+const WORKING_STATUSES = new Set([
+  "queued",
+  "submitting",
+  "submitted",
+  "partially_filled",
+  "reconcile_required",
+]);
+const TERMINAL_STATUSES = new Set([
+  "filled",
+  "cancelled",
+  "rejected",
+  "failed",
+]);
 
-function formatTime(value: string): string {
+function formatExpiry(value: string | null | undefined): string {
+  if (!value) return "—";
+  if (value.length === 8 && !value.includes("-")) {
+    return `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}`;
+  }
+  return value;
+}
+
+function formatDate(value: string): string {
   const parsed = Date.parse(value);
   if (Number.isNaN(parsed)) return "—";
-  return new Date(parsed).toLocaleString();
+  return new Date(parsed).toLocaleDateString();
 }
 
 export default function OrdersTable() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [lastUpdated, setLastUpdated] = useState<number | null>(null);
+  const [syncing, setSyncing] = useState(false);
+  const [syncMessage, setSyncMessage] = useState<string | null>(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
+  const [filter, setFilter] = useState<OrderFilter>("all");
 
-  const orderedRows = useMemo(() => {
-    const sorted = [...orders].sort((a, b) => {
+  const loadOrders = () => {
+    fetch("http://localhost:8000/api/v1/orders")
+      .then((res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.json();
+      })
+      .then((data: Order[]) => {
+        setOrders(data);
+        setError(null);
+      })
+      .catch((err: Error) => {
+        setError(err.message);
+      })
+      .finally(() => {
+        setLoading(false);
+      });
+  };
+
+  const filteredOrders = useMemo(() => {
+    if (filter === "working") {
+      return orders.filter((order) => WORKING_STATUSES.has(order.status));
+    }
+    if (filter === "closed") {
+      return orders.filter((order) => TERMINAL_STATUSES.has(order.status));
+    }
+    return orders;
+  }, [filter, orders]);
+
+  const workingCount = useMemo(
+    () => orders.filter((order) => WORKING_STATUSES.has(order.status)).length,
+    [orders],
+  );
+
+  const terminalCount = useMemo(
+    () => orders.filter((order) => TERMINAL_STATUSES.has(order.status)).length,
+    [orders],
+  );
+
+  const sortedOrders = useMemo(() => {
+    return [...filteredOrders].sort((a, b) => {
       const aMs = Date.parse(a.created_at);
       const bMs = Date.parse(b.created_at);
       if (Number.isNaN(aMs) && Number.isNaN(bMs)) return b.id - a.id;
@@ -51,37 +125,7 @@ export default function OrdersTable() {
       if (Number.isNaN(bMs)) return -1;
       return bMs - aMs;
     });
-
-    const rows: Array<
-      | { kind: "group"; key: string; label: string }
-      | { kind: "order"; order: Order }
-    > = [];
-    let currentGroupKey = "";
-    for (const order of sorted) {
-      const createdDate = new Date(order.created_at);
-      const groupKey = Number.isNaN(createdDate.getTime())
-        ? "Unknown date"
-        : `${createdDate.getFullYear()}-${String(createdDate.getMonth() + 1).padStart(2, "0")}-${String(createdDate.getDate()).padStart(2, "0")}`;
-      if (groupKey !== currentGroupKey) {
-        currentGroupKey = groupKey;
-        rows.push({
-          kind: "group",
-          key: groupKey,
-          label:
-            groupKey === "Unknown date"
-              ? "Unknown date"
-              : createdDate.toLocaleDateString(undefined, {
-                  weekday: "short",
-                  month: "short",
-                  day: "numeric",
-                  year: "numeric",
-                }),
-        });
-      }
-      rows.push({ kind: "order", order });
-    }
-    return rows;
-  }, [orders]);
+  }, [filteredOrders]);
 
   useEffect(() => {
     let active = true;
@@ -96,7 +140,6 @@ export default function OrdersTable() {
           if (!active) return;
           setOrders(data);
           setError(null);
-          setLastUpdated(Date.now());
         })
         .catch((err: Error) => {
           if (!active) return;
@@ -115,32 +158,119 @@ export default function OrdersTable() {
     };
   }, []);
 
-  if (loading) return <p className="text-gray-500">Loading orders...</p>;
-  if (error) return <p className="text-red-600">Error: {error}</p>;
-  if (orders.length === 0)
-    return <p className="text-gray-500">No orders found.</p>;
+  const kickOffOrderSync = async () => {
+    setSyncing(true);
+    setSyncMessage(null);
+    setSyncError(null);
+    try {
+      const res = await fetch("http://localhost:8000/api/v1/orders/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          source: "manual-ui",
+          request_text: "Manual order fetch/sync from Orders page.",
+          max_attempts: 3,
+        }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data: { job_id: number; status: string } = await res.json();
+      setSyncMessage(`Queued order sync job #${data.job_id} (${data.status}).`);
+      window.setTimeout(() => loadOrders(), 1000);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unknown sync error";
+      setSyncError(message);
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold text-gray-900">Orders</h2>
-        <span className="text-xs text-gray-500">
-          Auto-refresh 3s
-          {lastUpdated
-            ? ` · Last update ${new Date(lastUpdated).toLocaleTimeString()}`
-            : ""}
-        </span>
+        <div>
+          <h2 className="text-lg font-semibold text-gray-900">Orders</h2>
+          <p className="text-xs text-gray-500">
+            Working {workingCount} · Terminal {terminalCount}
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => {
+              void kickOffOrderSync();
+            }}
+            disabled={syncing}
+            className="rounded border border-blue-300 px-3 py-1 text-sm text-blue-700 hover:bg-blue-50 disabled:opacity-50"
+          >
+            {syncing ? "Queueing..." : "Pull Broker Orders"}
+          </button>
+        </div>
       </div>
+
+      <div className="flex items-center gap-2">
+        {(["all", "working", "closed"] as const).map((nextFilter) => (
+          <button
+            key={nextFilter}
+            onClick={() => setFilter(nextFilter)}
+            className={`rounded px-2.5 py-1 text-xs font-medium uppercase tracking-wide ${
+              filter === nextFilter
+                ? "bg-gray-900 text-white"
+                : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+            }`}
+          >
+            {nextFilter}
+          </button>
+        ))}
+      </div>
+
+      {loading && <p className="text-gray-500">Loading orders...</p>}
+      {error && <p className="text-red-600">Error: {error}</p>}
+      {syncMessage && <p className="text-sm text-green-700">{syncMessage}</p>}
+      {syncError && (
+        <p className="text-sm text-red-600">Sync error: {syncError}</p>
+      )}
 
       <div className="overflow-x-auto rounded border border-gray-200 bg-white">
         <table className="min-w-full border-collapse text-sm">
           <thead>
             <tr className="bg-gray-100 text-left">
               <th className="px-3 py-2 font-semibold text-gray-700 whitespace-nowrap">
-                Order
+                Date
+              </th>
+              <th className="px-3 py-2 font-semibold text-gray-700 whitespace-nowrap">
+                Order ID
+              </th>
+              <th className="px-3 py-2 font-semibold text-gray-700 whitespace-nowrap">
+                Perm ID
+              </th>
+              <th className="px-3 py-2 font-semibold text-gray-700 whitespace-nowrap">
+                Account
+              </th>
+              <th className="px-3 py-2 font-semibold text-gray-700 whitespace-nowrap">
+                Action
+              </th>
+              <th className="px-3 py-2 font-semibold text-gray-700 whitespace-nowrap">
+                Quantity
+              </th>
+              <th className="px-3 py-2 font-semibold text-gray-700 whitespace-nowrap">
+                Order Type
+              </th>
+              <th className="px-3 py-2 font-semibold text-gray-700 whitespace-nowrap">
+                TIF
+              </th>
+              <th className="px-3 py-2 font-semibold text-gray-700 whitespace-nowrap">
+                Limit Price
               </th>
               <th className="px-3 py-2 font-semibold text-gray-700 whitespace-nowrap">
                 Contract
+              </th>
+              <th className="px-3 py-2 font-semibold text-gray-700 whitespace-nowrap">
+                Call/Put
+              </th>
+              <th className="px-3 py-2 font-semibold text-gray-700 whitespace-nowrap">
+                Strike
+              </th>
+              <th className="px-3 py-2 font-semibold text-gray-700 whitespace-nowrap">
+                Expiry
               </th>
               <th className="px-3 py-2 font-semibold text-gray-700 whitespace-nowrap">
                 Status
@@ -148,82 +278,83 @@ export default function OrdersTable() {
               <th className="px-3 py-2 font-semibold text-gray-700 whitespace-nowrap">
                 Fills
               </th>
-              <th className="px-3 py-2 font-semibold text-gray-700 whitespace-nowrap">
-                Broker IDs
-              </th>
-              <th className="px-3 py-2 font-semibold text-gray-700 whitespace-nowrap">
-                Lifecycle
-              </th>
             </tr>
           </thead>
           <tbody>
-            {orderedRows.map((row) =>
-              row.kind === "group" ? (
-                <tr key={`group-${row.key}`} className="bg-gray-50">
-                  <td
-                    className="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-gray-600"
-                    colSpan={6}
-                  >
-                    {row.label}
-                  </td>
-                </tr>
-              ) : (
-                <tr
-                  key={row.order.id}
-                  className="border-b border-gray-200 hover:bg-gray-50"
+            {!loading && sortedOrders.length === 0 && (
+              <tr>
+                <td
+                  colSpan={15}
+                  className="px-3 py-6 text-center text-gray-500"
                 >
-                  <td className="px-3 py-2 whitespace-nowrap text-gray-800">
-                    <div className="font-medium">#{row.order.id}</div>
-                    <div className="text-xs text-gray-500">
-                      {row.order.account_alias ??
-                        `Account ${row.order.account_id}`}
-                    </div>
-                    <div className="text-xs text-gray-500">
-                      {row.order.side} {row.order.quantity} {row.order.symbol}
-                    </div>
-                  </td>
-                  <td className="px-3 py-2 whitespace-nowrap text-gray-700">
-                    <div>{row.order.sec_type}</div>
-                    <div className="text-xs text-gray-500">
-                      {row.order.local_symbol ??
-                        row.order.contract_month ??
-                        "—"}
-                    </div>
-                  </td>
-                  <td className="px-3 py-2 whitespace-nowrap">
-                    <span
-                      className={`rounded px-2 py-0.5 text-xs font-medium ${STATUS_CLASS[row.order.status] ?? "bg-gray-100 text-gray-800"}`}
-                    >
-                      {row.order.status}
-                    </span>
-                  </td>
-                  <td className="px-3 py-2 whitespace-nowrap text-gray-700">
-                    <div>
-                      {row.order.filled_quantity} / {row.order.quantity}
-                    </div>
-                    <div className="text-xs text-gray-500">
-                      Avg {row.order.avg_fill_price ?? "—"}
-                    </div>
-                  </td>
-                  <td className="px-3 py-2 whitespace-nowrap text-gray-700">
-                    <div className="text-xs">
-                      order {row.order.ib_order_id ?? "—"}
-                    </div>
-                    <div className="text-xs">
-                      perm {row.order.ib_perm_id ?? "—"}
-                    </div>
-                  </td>
-                  <td className="px-3 py-2 whitespace-nowrap text-gray-700">
-                    <div className="text-xs">
-                      Created {formatTime(row.order.created_at)}
-                    </div>
-                    <div className="text-xs">
-                      Updated {formatTime(row.order.updated_at)}
-                    </div>
-                  </td>
-                </tr>
-              ),
+                  {filter === "working"
+                    ? "No working orders right now."
+                    : filter === "closed"
+                      ? "No closed orders right now."
+                      : "No orders found."}
+                </td>
+              </tr>
             )}
+            {sortedOrders.map((order) => (
+              <tr
+                key={order.id}
+                className={`border-b border-gray-200 hover:bg-gray-50 ${
+                  WORKING_STATUSES.has(order.status) ? "bg-blue-50/40" : ""
+                }`}
+              >
+                <td className="px-3 py-2 whitespace-nowrap text-gray-700">
+                  {formatDate(order.created_at)}
+                </td>
+                <td className="px-3 py-2 whitespace-nowrap text-gray-800">
+                  {order.ib_order_id ?? "—"}
+                </td>
+                <td className="px-3 py-2 whitespace-nowrap text-gray-800">
+                  {order.ib_perm_id ?? "—"}
+                </td>
+                <td className="px-3 py-2 whitespace-nowrap text-gray-700">
+                  {order.account_alias ?? `Account ${order.account_id}`}
+                </td>
+                <td className="px-3 py-2 whitespace-nowrap text-gray-700">
+                  {order.side}
+                </td>
+                <td className="px-3 py-2 whitespace-nowrap text-gray-700">
+                  {order.quantity}
+                </td>
+                <td className="px-3 py-2 whitespace-nowrap text-gray-700">
+                  <div>{order.order_type}</div>
+                </td>
+                <td className="px-3 py-2 whitespace-nowrap text-gray-700">
+                  {order.tif}
+                </td>
+                <td className="px-3 py-2 whitespace-nowrap text-gray-700">
+                  {order.limit_price ?? "—"}
+                </td>
+                <td className="px-3 py-2 whitespace-nowrap text-gray-700">
+                  <div>{order.contract_display_name}</div>
+                </td>
+                <td className="px-3 py-2 whitespace-nowrap text-gray-700">
+                  {order.option_right ?? "—"}
+                </td>
+                <td className="px-3 py-2 whitespace-nowrap text-gray-700">
+                  {order.option_strike ?? "—"}
+                </td>
+                <td className="px-3 py-2 whitespace-nowrap text-gray-700">
+                  {formatExpiry(order.contract_expiry)}
+                </td>
+                <td className="px-3 py-2 whitespace-nowrap">
+                  <span
+                    className={`rounded px-2 py-0.5 text-xs font-medium ${STATUS_CLASS[order.status] ?? "bg-gray-100 text-gray-800"}`}
+                  >
+                    {order.status}
+                  </span>
+                </td>
+                <td className="px-3 py-2 whitespace-nowrap text-gray-700">
+                  <div>
+                    {order.filled_quantity} / {order.quantity}
+                  </div>
+                </td>
+              </tr>
+            ))}
           </tbody>
         </table>
       </div>

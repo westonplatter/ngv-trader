@@ -29,7 +29,11 @@ from src.services.cl_contracts import (
     contract_days_to_expiry,
     select_front_month_contract,
 )
-from src.services.jobs import JOB_TYPE_POSITIONS_SYNC, enqueue_job_if_idle
+from src.services.jobs import (
+    JOB_TYPE_ORDER_FETCH_SYNC,
+    JOB_TYPE_POSITIONS_SYNC,
+    enqueue_job_if_idle,
+)
 from src.services.order_queue import (
     ORDER_STATUS_FAILED,
     ORDER_STATUS_PARTIALLY_FILLED,
@@ -635,6 +639,13 @@ def run_worker(args: argparse.Namespace) -> int:
                     processed += 1
 
                 if processed > 0:
+                    enqueue_job_if_idle(
+                        session=session,
+                        job_type=JOB_TYPE_ORDER_FETCH_SYNC,
+                        payload={},
+                        source="worker:orders",
+                        request_text="Auto order fetch/sync after order processing",
+                    )
                     enqueue_job_if_idle(
                         session=session,
                         job_type=JOB_TYPE_POSITIONS_SYNC,

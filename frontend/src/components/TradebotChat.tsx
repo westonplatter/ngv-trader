@@ -68,14 +68,11 @@ export default function TradebotChat() {
   const { messages, sendMessage, status, error, stop } = useChat({ transport });
   const [input, setInput] = useState("");
 
-  const submit = async (text: string) => {
+  const submit = (text: string) => {
     const trimmed = text.trim();
     if (!trimmed) return;
-    try {
-      await sendMessage({ text: trimmed });
-    } finally {
-      setInput("");
-    }
+    setInput("");
+    sendMessage({ text: trimmed });
   };
 
   return (

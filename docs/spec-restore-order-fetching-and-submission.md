@@ -34,11 +34,19 @@ Restore safe, production-usable order fetching and order submission in small, me
 - PR 6 (partial, incremental verification): read-only UX refresh completed in this branch:
   - `/orders` table now renders fetched order flow with clearer lifecycle/status/fill/broker-id visibility
   - submit/cancel action controls are still deferred to full PR 6 scope
+  - `/orders` now includes a manual "Pull Broker Orders" action that enqueues `order.fetch_sync`
+  - `/orders` includes all/working/terminal filters to make active working orders easier to monitor
 - Additional results validated in this phase:
   - position ingestion path is confirmed working end-to-end ("pull down positions" succeeds)
   - contract qualification helpers now support both singular and batch entry points:
     - `_qualify_contract(ib, spec) -> Contract`
     - `_qualify_contracts(ib, specs) -> list[Contract]`
+- PR 4: implemented in code in this branch:
+  - added `src/services/order_sync.py` to fetch open/recent broker orders and reconcile into `orders` + `order_events`
+  - added `order.fetch_sync` handler in `scripts/work_jobs.py`
+  - `scripts/work_order_queue.py` now auto-enqueues `order.fetch_sync` after processing orders
+  - added manual enqueue endpoint `POST /api/v1/orders/sync`
+  - added Tradebot tool `enqueue_order_fetch_sync_job` so chat can trigger broker order sync
 
 ### PR 1: Domain Primitives
 

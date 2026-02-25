@@ -32,6 +32,7 @@ from src.services.cl_contracts import (
 from src.services.contract_lookup import find_contracts
 from src.services.jobs import (
     JOB_TYPE_CONTRACTS_SYNC,
+    JOB_TYPE_ORDER_FETCH_SYNC,
     JOB_TYPE_POSITIONS_SYNC,
     JOB_TYPE_WATCHLIST_ADD_INSTRUMENT,
     enqueue_job,
@@ -44,7 +45,7 @@ _SYSTEM_PROMPT = (
     "Use tools for factual data access and side effects. "
     "Never fabricate DB data, job IDs, order IDs, fills, or statuses. "
     "When a user asks for current state, call read tools first. "
-    "You can enqueue positions sync jobs and contracts sync jobs. "
+    "You can enqueue positions sync jobs, contracts sync jobs, and order fetch/sync jobs. "
     "For informational queries about contracts (front month, available months, contract details), use lookup_contract. "
     "Order execution is disabled in this system. "
     "If asked to place, queue, submit, or cancel an order, explain that execution is disabled "
@@ -151,6 +152,26 @@ _TOOL_SPECS: list[dict[str, Any]] = [
         "function": {
             "name": "enqueue_positions_sync_job",
             "description": "Enqueue a positions.sync job for worker:jobs to process.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "request_text": {"type": "string"},
+                    "max_attempts": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 10,
+                        "default": 3,
+                    },
+                },
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "enqueue_order_fetch_sync_job",
+            "description": "Enqueue an order.fetch_sync job for worker:jobs to pull broker orders into the database.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -546,6 +567,9 @@ def _tool_list_orders(session: Session, _: str, args: dict[str, Any]) -> dict[st
             "side": order.side,
             "quantity": order.quantity,
             "status": order.status,
+            "order_type": order.order_type,
+            "limit_price": order.limit_price,
+            "tif": order.tif,
             "filled_quantity": order.filled_quantity,
             "avg_fill_price": order.avg_fill_price,
             "contract_month": order.contract_month,
@@ -586,6 +610,26 @@ def _tool_enqueue_positions_sync_job(session: Session, latest_user_text: str, ar
     job = enqueue_job(
         session=session,
         job_type=JOB_TYPE_POSITIONS_SYNC,
+        payload={},
+        source=_TOOL_SOURCE,
+        request_text=request_text,
+        max_attempts=max_attempts,
+    )
+    session.commit()
+    return {
+        "job_id": job.id,
+        "job_type": job.job_type,
+        "status": job.status,
+        "max_attempts": job.max_attempts,
+    }
+
+
+def _tool_enqueue_order_fetch_sync_job(session: Session, latest_user_text: str, args: dict[str, Any]) -> dict[str, Any]:
+    max_attempts = _coerce_int_arg(args, "max_attempts", 3, 1, 10)
+    request_text = _coerce_optional_str_arg(args, "request_text") or latest_user_text
+    job = enqueue_job(
+        session=session,
+        job_type=JOB_TYPE_ORDER_FETCH_SYNC,
         payload={},
         source=_TOOL_SOURCE,
         request_text=request_text,
@@ -924,6 +968,7 @@ _TOOL_HANDLERS = {
     "list_jobs": _tool_list_jobs,
     "list_orders": _tool_list_orders,
     "enqueue_positions_sync_job": _tool_enqueue_positions_sync_job,
+    "enqueue_order_fetch_sync_job": _tool_enqueue_order_fetch_sync_job,
     "enqueue_contracts_sync_job": _tool_enqueue_contracts_sync_job,
     "lookup_contract": _tool_lookup_contract,
     "list_watch_lists": _tool_list_watch_lists,
