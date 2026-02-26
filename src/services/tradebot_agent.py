@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import json
 import os
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from typing import Any, Sequence, TypedDict
 from urllib import error, parse, request
 
@@ -39,7 +39,6 @@ from src.services.jobs import (
 )
 from src.services.order_mutations import (
     OrderCreateInput,
-    create_queued_order,
     normalize_order_create_input,
 )
 from src.utils.env_vars import get_int_env, get_str_env
@@ -52,7 +51,7 @@ _SYSTEM_PROMPT = (
     "When a user asks for current state, call read tools first. "
     "You can enqueue positions sync jobs, contracts sync jobs, and order fetch/sync jobs. "
     "For informational queries about contracts (front month, available months, contract details), use lookup_contract. "
-    "You can preview and submit orders via preview_order and submit_order. "
+    "You can preview orders via preview_order. "
     "There is no cancel tool in chat; advise using the Orders API/UI cancel action when needed. "
     "You can also manage watch lists: create watch lists, add instruments to them, list them, and remove instruments. "
     "When adding instruments to a watch list, use add_watch_list_instrument which enqueues a job to fetch "
@@ -156,35 +155,6 @@ _TOOL_SPECS: list[dict[str, Any]] = [
         "function": {
             "name": "preview_order",
             "description": "Validate and normalize an order request without writing to the database.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "account_id": {"type": "integer"},
-                    "account": {
-                        "type": "string",
-                        "description": "Account alias or account number when account_id is not provided.",
-                    },
-                    "symbol": {"type": "string"},
-                    "side": {"type": "string", "enum": ["BUY", "SELL", "buy", "sell"]},
-                    "quantity": {"type": "integer", "minimum": 1},
-                    "sec_type": {"type": "string", "default": "FUT"},
-                    "exchange": {"type": "string"},
-                    "currency": {"type": "string", "default": "USD"},
-                    "order_type": {"type": "string", "default": "MKT"},
-                    "limit_price": {"type": "number", "exclusiveMinimum": 0},
-                    "tif": {"type": "string", "default": "DAY"},
-                    "request_text": {"type": "string"},
-                },
-                "required": ["symbol", "side", "quantity"],
-                "additionalProperties": False,
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "submit_order",
-            "description": "Create or idempotently return a queued order for worker submission.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -783,39 +753,6 @@ def _tool_preview_order(session: Session, latest_user_text: str, args: dict[str,
     }
 
 
-def _tool_submit_order(session: Session, latest_user_text: str, args: dict[str, Any]) -> dict[str, Any]:
-    account, order_input = _build_order_input_from_tool_args(
-        session,
-        args,
-        latest_user_text=latest_user_text,
-    )
-    submitted_input = replace(order_input, source="tradebot")
-    outcome = create_queued_order(session, submitted_input)
-    session.commit()
-    return {
-        "created": outcome.created,
-        "order": {
-            "id": outcome.order.id,
-            "status": outcome.order.status,
-            "account_id": outcome.order.account_id,
-            "symbol": outcome.order.symbol,
-            "side": outcome.order.side,
-            "quantity": outcome.order.quantity,
-            "order_type": outcome.order.order_type,
-            "limit_price": outcome.order.limit_price,
-            "tif": outcome.order.tif,
-            "ib_order_id": outcome.order.ib_order_id,
-            "ib_perm_id": outcome.order.ib_perm_id,
-            "created_at": _iso(outcome.order.created_at),
-        },
-        "account": {
-            "id": account.id,
-            "alias": account.alias,
-            "masked_account": mask_ibkr_account(account.account),
-        },
-    }
-
-
 def _tool_enqueue_positions_sync_job(session: Session, latest_user_text: str, args: dict[str, Any]) -> dict[str, Any]:
     max_attempts = _coerce_int_arg(args, "max_attempts", 3, 1, 10)
     request_text = _coerce_optional_str_arg(args, "request_text") or latest_user_text
@@ -888,10 +825,11 @@ _FUTURES_EXCHANGE_MAP: dict[str, str] = {
 def _resolve_exchange(symbol: str, sec_type: str) -> str:
     """Resolve exchange for a symbol. Returns exchange or raises if unknown futures symbol."""
     if sec_type in ("FUT", "FOP"):
-        exchange = _FUTURES_EXCHANGE_MAP.get(symbol)
+        normalized_symbol = symbol[1:] if symbol.startswith("/") else symbol
+        exchange = _FUTURES_EXCHANGE_MAP.get(normalized_symbol)
         if exchange is None:
             known = ", ".join(sorted(_FUTURES_EXCHANGE_MAP.keys()))
-            raise ValueError(f"Unknown exchange for futures symbol '{symbol}'. " f"Known symbols: {known}. " f"Please tell me which exchange this trades on.")
+            raise ValueError(f"Unknown exchange for futures symbol '{symbol}'. " f"Known symbols: {known}. " "Please tell me which exchange this trades on.")
         return exchange
     if sec_type == "OPT":
         return "SMART"
@@ -1180,7 +1118,6 @@ _TOOL_HANDLERS = {
     "list_jobs": _tool_list_jobs,
     "list_orders": _tool_list_orders,
     "preview_order": _tool_preview_order,
-    "submit_order": _tool_submit_order,
     "enqueue_positions_sync_job": _tool_enqueue_positions_sync_job,
     "enqueue_order_fetch_sync_job": _tool_enqueue_order_fetch_sync_job,
     "enqueue_contracts_sync_job": _tool_enqueue_contracts_sync_job,

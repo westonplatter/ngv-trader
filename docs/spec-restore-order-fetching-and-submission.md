@@ -21,7 +21,7 @@ Restore safe, production-usable order fetching and order submission in small, me
 
 ## Merge Plan
 
-## Implementation Status (as of February 25, 2026)
+## Implementation Status (as of February 26, 2026)
 
 - PR 1: implemented in code (`src/services/order_queue.py`, shared job constants).
 - PR 2: implemented in code (`POST /api/v1/orders`, `POST /api/v1/orders/{order_id}/cancel`, idempotent create retries).
@@ -31,11 +31,12 @@ Restore safe, production-usable order fetching and order submission in small, me
   - startup reconciliation runs before claim loop
   - deterministic `orderRef=ngtrader-order-{id}` is set on submit and used on restart reconciliation
   - queued orders are claimed atomically as `submitting` before broker submit
-- PR 6 (partial, incremental verification): read-only UX refresh completed in this branch:
-  - `/orders` table now renders fetched order flow with clearer lifecycle/status/fill/broker-id visibility
-  - submit/cancel action controls are still deferred to full PR 6 scope
-  - `/orders` now includes a manual "Pull Broker Orders" action that enqueues `order.fetch_sync`
-  - `/orders` includes all/working/terminal filters to make active working orders easier to monitor
+- PR 6: implemented in code in this branch:
+  - restored submit UI in `/orders` (`POST /api/v1/orders`) with account/symbol/side/qty/type/tif inputs
+  - restored cancel controls in `/orders` for queued orders (`POST /api/v1/orders/{order_id}/cancel`)
+  - added in-flight guards for submit/cancel to prevent rapid double-click duplicate requests
+  - `/orders` refreshes after submit/cancel and continues periodic polling
+  - read-only flow improvements remain in place (manual pull sync button + working/terminal filters)
 - Additional results validated in this phase:
   - position ingestion path is confirmed working end-to-end ("pull down positions" succeeds)
   - contract qualification helpers now support both singular and batch entry points:
@@ -52,6 +53,11 @@ Restore safe, production-usable order fetching and order submission in small, me
   - updated Tradebot system prompt to support execution workflows
   - added shared order mutation service (`src/services/order_mutations.py`) so Tradebot and API use the same create/idempotency/event lifecycle
   - added limit order support in worker submit path (`LMT` uses IB `LimitOrder`, `MKT` uses `MarketOrder`)
+- PR 7: implemented — docs and ops alignment:
+  - updated README.md with order execution workflow section
+  - updated `docs/tradebot-workers.md` with `worker:orders` and `order.fetch_sync` handler
+  - updated `docs/tradebot-chatbot.md` with `enqueue_order_fetch_sync_job` tool
+  - updated `docs/_index.md` spec description to reflect all PRs complete
 
 ### PR 1: Domain Primitives
 

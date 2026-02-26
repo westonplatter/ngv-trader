@@ -5,6 +5,7 @@
 Workers run as separate processes and consume DB queues.
 
 - `worker:jobs` handles generic background jobs (`jobs` table).
+- `worker:orders` polls queued orders and submits them to TWS/Gateway.
 
 ## Construction
 
@@ -17,7 +18,20 @@ Workers run as separate processes and consume DB queues.
   - `contracts.sync` -> `src/services/contract_sync.py`
   - `watchlist.add_instrument` -> `src/services/watchlist_instrument_sync.py`
   - `watchlist.quotes_refresh` -> `src/services/watchlist_quotes.py`
+  - `order.fetch_sync` -> `src/services/order_sync.py`
 - Claims queued jobs, runs handler, writes `result`/`status`, retries until `max_attempts`.
+
+### Orders Worker
+
+- Entrypoint: `scripts/work_order_queue.py`
+- Queue primitive: `src/services/order_queue.py`
+- Shared mutation service: `src/services/order_mutations.py`
+- Polls `orders` table for queued orders and submits them to TWS/Gateway.
+- Supports `MKT` (market) and `LMT` (limit) order types.
+- Sets deterministic `orderRef=ngtrader-order-{id}` on each submission for deduplication.
+- Runs startup reconciliation before claiming new work to prevent duplicate broker submissions after restart.
+- After processing orders, auto-enqueues `order.fetch_sync` and `positions.sync` jobs.
+- Status lifecycle: `queued` -> `submitting` -> `submitted` -> `partially_filled`/`filled`/`rejected`/`failed`.
 
 ## Heartbeats and Health
 
@@ -37,17 +51,22 @@ Workers run as separate processes and consume DB queues.
 
 ```bash
 ENV=dev task worker:jobs
+ENV=dev task worker:orders
 ```
 
-The command runs under `op run --env-file=.env.<env>` to resolve `op://` references.
+The commands run under `op run --env-file=.env.<env>` to resolve `op://` references.
 
 ## Key Files
 
 - `scripts/work_jobs.py`
+- `scripts/work_order_queue.py`
 - `src/services/jobs.py` (includes `JOB_TYPE_WATCHLIST_QUOTES_REFRESH`)
 - `src/services/position_sync.py`
 - `src/services/contract_sync.py`
 - `src/services/watchlist_instrument_sync.py`
 - `src/services/watchlist_quotes.py`
+- `src/services/order_queue.py`
+- `src/services/order_sync.py`
+- `src/services/order_mutations.py`
 - `src/services/worker_heartbeat.py`
 - `src/api/routers/workers.py`

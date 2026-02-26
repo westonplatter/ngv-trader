@@ -28,6 +28,7 @@ from src.services.cl_contracts import (
     DEFAULT_CL_MIN_DAYS_TO_EXPIRY,
     contract_days_to_expiry,
     select_front_month_contract,
+    select_front_month_future_contract,
 )
 from src.services.jobs import (
     JOB_TYPE_ORDER_FETCH_SYNC,
@@ -156,12 +157,17 @@ def get_cl_min_days_to_expiry() -> int:
 
 
 def get_or_qualify_contract(ib: IB, order: Order) -> Contract:
-    cl_min_days_to_expiry = get_cl_min_days_to_expiry() if order.symbol == "CL" else None
+    raw_symbol = (order.symbol or "").strip().upper()
+    use_front_month_alias = order.sec_type == "FUT" and raw_symbol.startswith("/")
+    symbol = raw_symbol[1:] if use_front_month_alias else raw_symbol
+    if not symbol:
+        raise RuntimeError(f"Order {order.id} has an invalid symbol '{order.symbol}'.")
+    cl_min_days_to_expiry = get_cl_min_days_to_expiry() if symbol == "CL" else None
 
     if order.con_id:
         contract_kwargs: dict[str, Any] = {
             "conId": order.con_id,
-            "symbol": order.symbol,
+            "symbol": symbol,
             "secType": order.sec_type,
             "exchange": order.exchange,
             "currency": order.currency,
@@ -180,20 +186,30 @@ def get_or_qualify_contract(ib: IB, order: Order) -> Contract:
             if days_to_expiry is not None and days_to_expiry >= cl_min_days_to_expiry:
                 return qualified_contract
 
-    if order.symbol == "CL":
+    if use_front_month_alias:
+        min_days_to_expiry = cl_min_days_to_expiry if cl_min_days_to_expiry is not None else 0
+        return select_front_month_future_contract(
+            ib,
+            symbol=symbol,
+            exchange=order.exchange,
+            currency=order.currency,
+            min_days_to_expiry=min_days_to_expiry,
+        )
+
+    if symbol == "CL":
         if cl_min_days_to_expiry is None:
             raise RuntimeError("CL expiry safety window is not configured.")
         return select_front_month_contract(ib, min_days_to_expiry=cl_min_days_to_expiry)
 
     fallback = Contract(
-        symbol=order.symbol,
+        symbol=symbol,
         secType=order.sec_type,
         exchange=order.exchange,
         currency=order.currency,
     )
     qualified = ib.qualifyContracts(fallback)
     if len(qualified) != 1:
-        raise RuntimeError(f"Could not qualify contract for order {order.id}")
+        raise RuntimeError(f"Could not qualify contract for order {order.id}. " f"If this is a futures front-month intent, submit symbol as '/{symbol}'.")
     return qualified[0]
 
 

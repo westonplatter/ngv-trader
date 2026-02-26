@@ -90,13 +90,24 @@ def format_contract_month(contract: Contract) -> str | None:
     return None
 
 
-def select_front_month_contract(ib: IB, min_days_to_expiry: int = DEFAULT_CL_MIN_DAYS_TO_EXPIRY) -> Contract:
+def select_front_month_future_contract(
+    ib: IB,
+    *,
+    symbol: str,
+    exchange: str,
+    currency: str = "USD",
+    min_days_to_expiry: int = 0,
+) -> Contract:
     if min_days_to_expiry < 0:
         raise ValueError("min_days_to_expiry must be >= 0")
 
-    contract_details = ib.reqContractDetails(Future("CL", exchange="NYMEX", currency="USD"))
+    normalized_symbol = symbol.strip().upper()
+    if not normalized_symbol:
+        raise ValueError("symbol must be a non-empty string")
+
+    contract_details = ib.reqContractDetails(Future(normalized_symbol, exchange=exchange, currency=currency))
     if not contract_details:
-        raise RuntimeError("No CL futures contract details returned from IBKR")
+        raise RuntimeError(f"No {normalized_symbol} futures contract details returned from IBKR")
 
     candidates: list[tuple[dt.date, Contract]] = []
     non_expired: list[tuple[dt.date, Contract]] = []
@@ -118,12 +129,12 @@ def select_front_month_contract(ib: IB, min_days_to_expiry: int = DEFAULT_CL_MIN
             nearest_expiry, nearest_contract = min(non_expired, key=lambda item: item[0])
             nearest_days = contract_days_to_expiry(nearest_contract)
             raise RuntimeError(
-                "No CL futures contracts found outside the near-expiry safety window "
+                f"No {normalized_symbol} futures contracts found outside the near-expiry safety window "
                 f"(min_days_to_expiry={min_days_to_expiry}). "
                 f"Nearest non-expired contract: {nearest_contract.localSymbol or nearest_contract.symbol} "
                 f"expiring {nearest_expiry.isoformat()} ({nearest_days} days)."
             )
-        raise RuntimeError("No non-expired CL futures contracts found")
+        raise RuntimeError(f"No non-expired {normalized_symbol} futures contracts found")
 
     candidates.sort(key=lambda item: item[0])
     front_month_contract = candidates[0][1]
@@ -131,6 +142,16 @@ def select_front_month_contract(ib: IB, min_days_to_expiry: int = DEFAULT_CL_MIN
     if len(qualified_contracts) != 1:
         raise RuntimeError(f"Expected exactly one qualified front-month contract, got {len(qualified_contracts)}")
     return qualified_contracts[0]
+
+
+def select_front_month_contract(ib: IB, min_days_to_expiry: int = DEFAULT_CL_MIN_DAYS_TO_EXPIRY) -> Contract:
+    return select_front_month_future_contract(
+        ib,
+        symbol="CL",
+        exchange="NYMEX",
+        currency="USD",
+        min_days_to_expiry=min_days_to_expiry,
+    )
 
 
 def format_contract_month_from_expiry(contract_expiry: str | None) -> str | None:

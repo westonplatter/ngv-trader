@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { useChat } from "@ai-sdk/react";
 import { TextStreamChatTransport, type UIMessage } from "ai";
 import JobsTable from "./JobsTable";
+import OrdersSideTable from "./OrdersSideTable";
 
 const QUICK_PROMPTS = [
   "Show me current positions",
@@ -158,7 +159,14 @@ export default function TradebotChat() {
             <p className="mt-1 text-xs text-red-600">Error: {error.message}</p>
           )}
         </div>
-        <JobsTable />
+        <div className="min-w-0 min-h-0 lg:h-full flex flex-col gap-4">
+          <div className="min-h-0 flex-1">
+            <OrdersSideTable />
+          </div>
+          <div className="min-h-0 flex-1">
+            <JobsTable />
+          </div>
+        </div>
       </div>
     </div>
   );

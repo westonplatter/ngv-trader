@@ -1,9 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 
+const API_BASE_URL = "http://localhost:8000/api/v1";
+
 interface Order {
   id: number;
   account_id: number;
   account_alias: string | null;
+  con_id: number | null;
   symbol: string;
   sec_type: string;
   exchange: string;
@@ -69,6 +72,10 @@ function formatDate(value: string): string {
   return new Date(parsed).toLocaleDateString();
 }
 
+function getDisplayedSymbol(order: Order): string {
+  return (order.symbol || "").trim().toUpperCase();
+}
+
 export default function OrdersTable() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
@@ -77,9 +84,15 @@ export default function OrdersTable() {
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
   const [syncError, setSyncError] = useState<string | null>(null);
   const [filter, setFilter] = useState<OrderFilter>("all");
+  const [cancelMessage, setCancelMessage] = useState<string | null>(null);
+  const [cancelError, setCancelError] = useState<string | null>(null);
+  const [cancelingOrderIds, setCancelingOrderIds] = useState<Set<number>>(
+    new Set(),
+  );
+  const [symbolRegexFilter, setSymbolRegexFilter] = useState("");
 
   const loadOrders = () => {
-    fetch("http://localhost:8000/api/v1/orders")
+    fetch(`${API_BASE_URL}/orders`)
       .then((res) => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         return res.json();
@@ -96,15 +109,32 @@ export default function OrdersTable() {
       });
   };
 
+  const symbolFilter = useMemo(() => {
+    const raw = symbolRegexFilter.trim();
+    if (!raw)
+      return { regex: null as RegExp | null, error: null as string | null };
+    try {
+      return { regex: new RegExp(raw, "i"), error: null as string | null };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Invalid regex";
+      return { regex: null as RegExp | null, error: message };
+    }
+  }, [symbolRegexFilter]);
+
   const filteredOrders = useMemo(() => {
+    let next = orders;
     if (filter === "working") {
-      return orders.filter((order) => WORKING_STATUSES.has(order.status));
+      next = next.filter((order) => WORKING_STATUSES.has(order.status));
+    } else if (filter === "closed") {
+      next = next.filter((order) => TERMINAL_STATUSES.has(order.status));
     }
-    if (filter === "closed") {
-      return orders.filter((order) => TERMINAL_STATUSES.has(order.status));
+    if (symbolFilter.regex) {
+      next = next.filter((order) =>
+        symbolFilter.regex!.test(getDisplayedSymbol(order)),
+      );
     }
-    return orders;
-  }, [filter, orders]);
+    return next;
+  }, [filter, orders, symbolFilter]);
 
   const workingCount = useMemo(
     () => orders.filter((order) => WORKING_STATUSES.has(order.status)).length,
@@ -131,7 +161,7 @@ export default function OrdersTable() {
     let active = true;
 
     const load = () => {
-      fetch("http://localhost:8000/api/v1/orders")
+      fetch(`${API_BASE_URL}/orders`)
         .then((res) => {
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
           return res.json();
@@ -163,7 +193,7 @@ export default function OrdersTable() {
     setSyncMessage(null);
     setSyncError(null);
     try {
-      const res = await fetch("http://localhost:8000/api/v1/orders/sync", {
+      const res = await fetch(`${API_BASE_URL}/orders/sync`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -181,6 +211,44 @@ export default function OrdersTable() {
       setSyncError(message);
     } finally {
       setSyncing(false);
+    }
+  };
+
+  const cancelQueuedOrder = async (orderId: number) => {
+    if (cancelingOrderIds.has(orderId)) return;
+    setCancelMessage(null);
+    setCancelError(null);
+    setCancelingOrderIds((prev) => {
+      const next = new Set(prev);
+      next.add(orderId);
+      return next;
+    });
+    try {
+      const res = await fetch(`${API_BASE_URL}/orders/${orderId}/cancel`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          source: "manual-ui",
+          request_text: "Cancelled from Orders UI",
+        }),
+      });
+      if (!res.ok) {
+        const body = await res.text();
+        throw new Error(body || `HTTP ${res.status}`);
+      }
+      const data: Order = await res.json();
+      setCancelMessage(`Order #${data.id} is now '${data.status}'.`);
+      loadOrders();
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Unknown cancel error";
+      setCancelError(message);
+    } finally {
+      setCancelingOrderIds((prev) => {
+        const next = new Set(prev);
+        next.delete(orderId);
+        return next;
+      });
     }
   };
 
@@ -224,9 +292,20 @@ export default function OrdersTable() {
 
       {loading && <p className="text-gray-500">Loading orders...</p>}
       {error && <p className="text-red-600">Error: {error}</p>}
+      {cancelMessage && (
+        <p className="text-sm text-green-700">{cancelMessage}</p>
+      )}
+      {cancelError && (
+        <p className="text-sm text-red-600">Cancel error: {cancelError}</p>
+      )}
       {syncMessage && <p className="text-sm text-green-700">{syncMessage}</p>}
       {syncError && (
         <p className="text-sm text-red-600">Sync error: {syncError}</p>
+      )}
+      {symbolFilter.error && (
+        <p className="text-sm text-red-600">
+          Symbol regex error: {symbolFilter.error}
+        </p>
       )}
 
       <div className="overflow-x-auto rounded border border-gray-200 bg-white">
@@ -238,6 +317,20 @@ export default function OrdersTable() {
               </th>
               <th className="px-3 py-2 font-semibold text-gray-700 whitespace-nowrap">
                 Order ID
+              </th>
+              <th className="px-3 py-2 font-semibold text-gray-700 whitespace-nowrap">
+                Con ID
+              </th>
+              <th className="px-3 py-2 font-semibold text-gray-700 whitespace-nowrap align-top">
+                <div className="space-y-1">
+                  <input
+                    value={symbolRegexFilter}
+                    onChange={(e) => setSymbolRegexFilter(e.target.value)}
+                    placeholder="Regex filter"
+                    className="w-28 rounded border border-gray-300 px-2 py-0.5 text-xs font-normal text-gray-700"
+                  />
+                  <div>Symbol</div>
+                </div>
               </th>
               <th className="px-3 py-2 font-semibold text-gray-700 whitespace-nowrap">
                 Perm ID
@@ -278,13 +371,16 @@ export default function OrdersTable() {
               <th className="px-3 py-2 font-semibold text-gray-700 whitespace-nowrap">
                 Fills
               </th>
+              <th className="px-3 py-2 font-semibold text-gray-700 whitespace-nowrap">
+                Controls
+              </th>
             </tr>
           </thead>
           <tbody>
             {!loading && sortedOrders.length === 0 && (
               <tr>
                 <td
-                  colSpan={15}
+                  colSpan={18}
                   className="px-3 py-6 text-center text-gray-500"
                 >
                   {filter === "working"
@@ -309,9 +405,15 @@ export default function OrdersTable() {
                   {order.ib_order_id ?? "—"}
                 </td>
                 <td className="px-3 py-2 whitespace-nowrap text-gray-800">
+                  {order.con_id ?? "—"}
+                </td>
+                <td className="px-3 py-2 whitespace-nowrap text-gray-800">
+                  {getDisplayedSymbol(order) || "—"}
+                </td>
+                <td className="px-3 py-2 whitespace-nowrap text-gray-800">
                   {order.ib_perm_id ?? "—"}
                 </td>
-                <td className="px-3 py-2 whitespace-nowrap text-gray-700">
+                <td className="px-3 py-2 whitespace-nowrap text-gray-800">
                   {order.account_alias ?? `Account ${order.account_id}`}
                 </td>
                 <td className="px-3 py-2 whitespace-nowrap text-gray-700">
@@ -352,6 +454,23 @@ export default function OrdersTable() {
                   <div>
                     {order.filled_quantity} / {order.quantity}
                   </div>
+                </td>
+                <td className="px-3 py-2 whitespace-nowrap">
+                  {order.status === "queued" ? (
+                    <button
+                      onClick={() => {
+                        void cancelQueuedOrder(order.id);
+                      }}
+                      disabled={cancelingOrderIds.has(order.id)}
+                      className="rounded border border-red-300 px-2 py-0.5 text-xs text-red-700 hover:bg-red-50 disabled:opacity-50"
+                    >
+                      {cancelingOrderIds.has(order.id)
+                        ? "Cancelling..."
+                        : "Cancel"}
+                    </button>
+                  ) : (
+                    <span className="text-xs text-gray-400">—</span>
+                  )}
                 </td>
               </tr>
             ))}

@@ -58,6 +58,11 @@ def normalize_order_create_input(raw: OrderCreateInput) -> OrderCreateInput:
 
     if not symbol:
         raise ValueError("'symbol' must be a non-empty string.")
+    if symbol.startswith("/"):
+        if sec_type != "FUT":
+            raise ValueError("Slash-prefixed symbols are only supported for FUT orders.")
+        if len(symbol) == 1 or not symbol[1:].strip():
+            raise ValueError("Slash-prefixed symbols must include a root symbol, e.g. '/MCL'.")
     if side not in {"BUY", "SELL"}:
         raise ValueError("'side' must be BUY or SELL.")
     if raw.quantity < 1:

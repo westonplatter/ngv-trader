@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 
 interface Position {
   id: number;
   account_alias: string;
+  contract_display_name: string;
   con_id: number;
   symbol: string | null;
   sec_type: string | null;
@@ -12,6 +13,8 @@ interface Position {
   local_symbol: string | null;
   trading_class: string | null;
   last_trade_date: string | null;
+  option_expiry_date: string | null;
+  dte: number | null;
   strike: number | null;
   right: string | null;
   multiplier: string | null;
@@ -30,20 +33,35 @@ function formatExpiry(value: string | null | undefined): string {
 }
 
 const COLUMNS: { key: keyof Position; label: string }[] = [
-  { key: "account_alias", label: "Account" },
   { key: "con_id", label: "Con ID" },
   { key: "symbol", label: "Symbol" },
   { key: "sec_type", label: "Sec Type" },
   { key: "currency", label: "Currency" },
+  { key: "contract_display_name", label: "Contract" },
   { key: "local_symbol", label: "Local Symbol" },
   { key: "trading_class", label: "Trading Class" },
   { key: "last_trade_date", label: "Last Trade Date" },
+  { key: "option_expiry_date", label: "Expiry" },
+  { key: "dte", label: "DTE" },
   { key: "strike", label: "Strike" },
   { key: "right", label: "Call/Put" },
   { key: "multiplier", label: "Multiplier" },
   { key: "position", label: "Position" },
   { key: "avg_cost", label: "Avg Cost" },
 ];
+
+function regexMatch(
+  value: string | null | undefined,
+  pattern: string,
+): boolean {
+  if (!pattern) return true;
+  const str = value ?? "";
+  try {
+    return new RegExp(pattern, "i").test(str);
+  } catch {
+    return str.toLowerCase().includes(pattern.toLowerCase());
+  }
+}
 
 export default function PositionsTable() {
   const [positions, setPositions] = useState<Position[]>([]);
@@ -52,6 +70,57 @@ export default function PositionsTable() {
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
   const [syncError, setSyncError] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
+  const [collapsedAccounts, setCollapsedAccounts] = useState<Set<string>>(
+    new Set(),
+  );
+  const [symbolFilter, setSymbolFilter] = useState("");
+  const [secTypeFilter, setSecTypeFilter] = useState("");
+  const [dteMinFilter, setDteMinFilter] = useState("");
+  const [dteMaxFilter, setDteMaxFilter] = useState("");
+
+  const dteMin = useMemo(() => {
+    if (!dteMinFilter.trim()) return null;
+    const parsed = Number(dteMinFilter);
+    return Number.isFinite(parsed) ? parsed : null;
+  }, [dteMinFilter]);
+
+  const dteMax = useMemo(() => {
+    if (!dteMaxFilter.trim()) return null;
+    const parsed = Number(dteMaxFilter);
+    return Number.isFinite(parsed) ? parsed : null;
+  }, [dteMaxFilter]);
+
+  const groupedPositions = useMemo(() => {
+    const filtered = positions.filter((p) => {
+      const dteMatches =
+        dteMin === null && dteMax === null
+          ? true
+          : p.dte !== null &&
+            (dteMin === null || p.dte >= dteMin) &&
+            (dteMax === null || p.dte <= dteMax);
+      return (
+        regexMatch(p.symbol, symbolFilter) &&
+        regexMatch(p.sec_type, secTypeFilter) &&
+        dteMatches
+      );
+    });
+    const groups = new Map<string, Position[]>();
+    for (const pos of filtered) {
+      const key = pos.account_alias;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key)!.push(pos);
+    }
+    return groups;
+  }, [positions, symbolFilter, secTypeFilter, dteMin, dteMax]);
+
+  const toggleAccount = (alias: string) => {
+    setCollapsedAccounts((prev) => {
+      const next = new Set(prev);
+      if (next.has(alias)) next.delete(alias);
+      else next.add(alias);
+      return next;
+    });
+  };
 
   const loadPositions = () => {
     fetch("http://localhost:8000/api/v1/positions")
@@ -123,6 +192,16 @@ export default function PositionsTable() {
         <p className="text-sm text-red-600">Sync error: {syncError}</p>
       )}
 
+      <div className="flex gap-4">
+        <input
+          type="text"
+          placeholder="Sec Type (regex)"
+          value={secTypeFilter}
+          onChange={(e) => setSecTypeFilter(e.target.value)}
+          className="rounded border border-gray-300 px-3 py-1 text-sm"
+        />
+      </div>
+
       <div className="overflow-x-auto">
         <table className="min-w-full border-collapse text-sm">
           <thead>
@@ -136,22 +215,85 @@ export default function PositionsTable() {
                 </th>
               ))}
             </tr>
+            <tr className="bg-gray-50 text-left">
+              {COLUMNS.map((col) => (
+                <th
+                  key={`filter-${col.key}`}
+                  className="px-3 py-1 font-normal text-gray-700 whitespace-nowrap"
+                >
+                  {col.key === "symbol" ? (
+                    <input
+                      type="text"
+                      placeholder="Regex filter"
+                      value={symbolFilter}
+                      onChange={(e) => setSymbolFilter(e.target.value)}
+                      className="w-28 rounded border border-gray-300 px-2 py-0.5 text-xs text-gray-700"
+                    />
+                  ) : col.key === "dte" ? (
+                    <div className="flex gap-1">
+                      <input
+                        type="number"
+                        placeholder="min"
+                        value={dteMinFilter}
+                        onChange={(e) => setDteMinFilter(e.target.value)}
+                        className="w-14 rounded border border-gray-300 px-1.5 py-0.5 text-xs text-gray-700"
+                      />
+                      <input
+                        type="number"
+                        placeholder="max"
+                        value={dteMaxFilter}
+                        onChange={(e) => setDteMaxFilter(e.target.value)}
+                        className="w-14 rounded border border-gray-300 px-1.5 py-0.5 text-xs text-gray-700"
+                      />
+                    </div>
+                  ) : null}
+                </th>
+              ))}
+            </tr>
           </thead>
           <tbody>
-            {positions.map((pos) => (
-              <tr
-                key={pos.id}
-                className="border-b border-gray-200 hover:bg-gray-50"
-              >
-                {COLUMNS.map((col) => (
-                  <td key={col.key} className="px-3 py-2 whitespace-nowrap">
-                    {col.key === "last_trade_date"
-                      ? formatExpiry(pos[col.key] as string | null)
-                      : (pos[col.key] ?? "—")}
-                  </td>
-                ))}
-              </tr>
-            ))}
+            {[...groupedPositions.entries()].map(([account, rows]) => {
+              const collapsed = collapsedAccounts.has(account);
+              return (
+                <Fragment key={account}>
+                  <tr
+                    className="bg-gray-100 cursor-pointer select-none"
+                    onClick={() => toggleAccount(account)}
+                  >
+                    <td
+                      colSpan={COLUMNS.length}
+                      className="px-3 py-2 font-semibold text-gray-800"
+                    >
+                      <span className="mr-2">{collapsed ? "▸" : "▾"}</span>
+                      {account}
+                      <span className="ml-2 text-xs font-normal text-gray-500">
+                        ({rows.length} position{rows.length !== 1 ? "s" : ""})
+                      </span>
+                    </td>
+                  </tr>
+                  {!collapsed &&
+                    rows.map((pos) => (
+                      <tr
+                        key={pos.id}
+                        className="border-b border-gray-200 hover:bg-gray-50"
+                      >
+                        {COLUMNS.map((col) => (
+                          <td
+                            key={col.key}
+                            className="px-3 py-2 whitespace-nowrap"
+                          >
+                            {col.key === "last_trade_date"
+                              ? formatExpiry(pos[col.key] as string | null)
+                              : col.key === "strike" && pos.sec_type === "FUT"
+                                ? "—"
+                                : (pos[col.key] ?? "—")}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                </Fragment>
+              );
+            })}
           </tbody>
         </table>
       </div>

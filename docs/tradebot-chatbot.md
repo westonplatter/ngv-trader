@@ -35,6 +35,7 @@ Action tools:
 - `submit_order`
 - `enqueue_positions_sync_job`
 - `enqueue_contracts_sync_job`
+- `enqueue_order_fetch_sync_job`
 - `create_watch_list`
 - `add_watch_list_instrument`
 - `remove_watch_list_instrument`
