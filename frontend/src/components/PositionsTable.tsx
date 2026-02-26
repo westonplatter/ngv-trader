@@ -23,6 +23,14 @@ interface Position {
   fetched_at: string;
 }
 
+type SortDirection = "none" | "desc" | "asc";
+type SortColumn =
+  | "symbol"
+  | "local_symbol"
+  | "trading_class"
+  | "option_expiry_date"
+  | "dte";
+
 function formatExpiry(value: string | null | undefined): string {
   if (!value) return "\u2014";
   // YYYYMMDD → YYYY-MM-DD
@@ -89,9 +97,8 @@ export default function PositionsTable() {
   const [secTypeFilter, setSecTypeFilter] = useState("");
   const [dteMinFilter, setDteMinFilter] = useState("");
   const [dteMaxFilter, setDteMaxFilter] = useState("");
-  const [dteSortDirection, setDteSortDirection] = useState<
-    "none" | "desc" | "asc"
-  >("none");
+  const [sortColumn, setSortColumn] = useState<SortColumn | null>(null);
+  const [sortDirection, setSortDirection] = useState<SortDirection>("none");
 
   const dteMin = useMemo(() => {
     if (!dteMinFilter.trim()) return null;
@@ -121,8 +128,47 @@ export default function PositionsTable() {
       );
     });
 
-    const dteSortValue = (p: Position): number =>
-      p.dte === null ? Number.NEGATIVE_INFINITY : p.dte;
+    const expirySortValue = (p: Position): number | null => {
+      const raw = (p.option_expiry_date ?? p.last_trade_date ?? "").trim();
+      if (!raw) return null;
+      const digits = raw.includes("-") ? raw.replaceAll("-", "") : raw;
+      return /^\d{8}$/.test(digits) ? Number(digits) : null;
+    };
+
+    const sortValueFor = (
+      p: Position,
+      column: SortColumn,
+    ): string | number | null => {
+      if (column === "symbol") return p.symbol ? p.symbol.toUpperCase() : null;
+      if (column === "local_symbol")
+        return p.local_symbol ? p.local_symbol.toUpperCase() : null;
+      if (column === "trading_class")
+        return p.trading_class ? p.trading_class.toUpperCase() : null;
+      if (column === "option_expiry_date") return expirySortValue(p);
+      return p.dte;
+    };
+
+    const compareValues = (
+      left: string | number | null,
+      right: string | number | null,
+      direction: SortDirection,
+    ): number => {
+      const leftNull = left === null;
+      const rightNull = right === null;
+      if (leftNull && rightNull) return 0;
+      if (leftNull) return 1;
+      if (rightNull) return -1;
+
+      let cmp = 0;
+      if (typeof left === "number" && typeof right === "number") {
+        cmp = left - right;
+      } else {
+        cmp = String(left).localeCompare(String(right), undefined, {
+          sensitivity: "base",
+        });
+      }
+      return direction === "desc" ? -cmp : cmp;
+    };
 
     const groups = new Map<string, Position[]>();
     for (const pos of filtered) {
@@ -132,29 +178,35 @@ export default function PositionsTable() {
     }
 
     for (const rows of groups.values()) {
-      if (dteSortDirection !== "none") {
+      if (sortColumn !== null && sortDirection !== "none") {
         rows.sort((a, b) => {
-          const dteDiff =
-            dteSortDirection === "desc"
-              ? dteSortValue(b) - dteSortValue(a)
-              : dteSortValue(a) - dteSortValue(b);
-          if (dteDiff !== 0) return dteDiff;
+          const sortDiff = compareValues(
+            sortValueFor(a, sortColumn),
+            sortValueFor(b, sortColumn),
+            sortDirection,
+          );
+          if (sortDiff !== 0) return sortDiff;
           return a.con_id - b.con_id;
         });
       }
     }
 
-    if (dteSortDirection === "none") {
+    if (sortColumn === null || sortDirection === "none") {
       return groups;
     }
 
     return new Map(
       [...groups.entries()].sort(([, rowsA], [, rowsB]) => {
-        const topA =
-          rowsA.length > 0 ? dteSortValue(rowsA[0]) : Number.NEGATIVE_INFINITY;
-        const topB =
-          rowsB.length > 0 ? dteSortValue(rowsB[0]) : Number.NEGATIVE_INFINITY;
-        return dteSortDirection === "desc" ? topB - topA : topA - topB;
+        const topA = rowsA.length > 0 ? rowsA[0] : null;
+        const topB = rowsB.length > 0 ? rowsB[0] : null;
+        if (!topA && !topB) return 0;
+        if (!topA) return 1;
+        if (!topB) return -1;
+        return compareValues(
+          sortValueFor(topA, sortColumn),
+          sortValueFor(topB, sortColumn),
+          sortDirection,
+        );
       }),
     );
   }, [
@@ -164,7 +216,8 @@ export default function PositionsTable() {
     secTypeFilter,
     dteMin,
     dteMax,
-    dteSortDirection,
+    sortColumn,
+    sortDirection,
   ]);
 
   const toggleAccount = (alias: string) => {
@@ -226,19 +279,58 @@ export default function PositionsTable() {
   if (positions.length === 0)
     return <p className="text-gray-500">No positions found.</p>;
 
+  const clearFilters = () => {
+    setSymbolFilter("");
+    setLocalSymbolFilter("");
+    setSecTypeFilter("");
+    setDteMinFilter("");
+    setDteMaxFilter("");
+  };
+
+  const sortIndicatorFor = (column: SortColumn): string => {
+    if (sortColumn !== column || sortDirection === "none") return ">";
+    if (sortDirection === "asc") return "^";
+    return "v";
+  };
+
+  const toggleSort = (column: SortColumn) => {
+    if (sortColumn !== column) {
+      setSortColumn(column);
+      setSortDirection("none");
+      return;
+    }
+    setSortDirection((prev) => {
+      if (prev === "none") return "asc";
+      if (prev === "asc") return "desc";
+      setSortColumn(null);
+      return "none";
+    });
+  };
+
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold text-gray-900">Positions</h2>
-        <button
-          onClick={() => {
-            void kickOffPositionSync();
-          }}
-          disabled={syncing}
-          className="rounded border border-blue-300 px-3 py-1 text-sm text-blue-700 hover:bg-blue-50 disabled:opacity-50"
-        >
-          {syncing ? "Queueing..." : "Kick Off Position Sync"}
-        </button>
+        <div className="flex items-center gap-2">
+          <h2 className="text-lg font-semibold text-gray-900">Positions</h2>
+          <button
+            type="button"
+            onClick={clearFilters}
+            className="rounded border border-gray-300 px-3 py-1 text-sm text-gray-700 hover:bg-gray-50"
+          >
+            Clear Filters
+          </button>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => {
+              void kickOffPositionSync();
+            }}
+            disabled={syncing}
+            className="rounded border border-blue-300 px-3 py-1 text-sm text-blue-700 hover:bg-blue-50 disabled:opacity-50"
+          >
+            {syncing ? "Queueing..." : "Kick Off Position Sync"}
+          </button>
+        </div>
       </div>
 
       {syncMessage && <p className="text-sm text-green-700">{syncMessage}</p>}
@@ -255,25 +347,19 @@ export default function PositionsTable() {
                   key={col.key}
                   className="px-3 py-2 font-semibold text-gray-700 whitespace-nowrap"
                 >
-                  {col.key === "dte" ? (
+                  {col.key === "symbol" ||
+                  col.key === "local_symbol" ||
+                  col.key === "trading_class" ||
+                  col.key === "option_expiry_date" ||
+                  col.key === "dte" ? (
                     <button
                       type="button"
-                      onClick={() => {
-                        setDteSortDirection((prev) => {
-                          if (prev === "none") return "desc";
-                          if (prev === "desc") return "asc";
-                          return "none";
-                        });
-                      }}
+                      onClick={() => toggleSort(col.key as SortColumn)}
                       className="inline-flex items-center gap-1 text-gray-700 hover:text-gray-900"
-                      title="Cycle DTE sort: None, Desc, Asc"
+                      title={`Cycle ${col.label} sort`}
                     >
-                      {col.label}:{" "}
-                      {dteSortDirection === "none"
-                        ? "None"
-                        : dteSortDirection === "desc"
-                          ? "Desc"
-                          : "Asc"}
+                      <span>{sortIndicatorFor(col.key as SortColumn)}</span>
+                      <span>{col.label}</span>
                     </button>
                   ) : (
                     col.label
@@ -288,31 +374,67 @@ export default function PositionsTable() {
                   className="px-3 py-1 font-normal text-gray-700 whitespace-nowrap"
                 >
                   {col.key === "symbol" ? (
-                    <input
-                      type="text"
-                      placeholder="Regex filter"
-                      value={symbolFilter}
-                      onChange={(e) => setSymbolFilter(e.target.value)}
-                      className="w-28 rounded border border-gray-300 px-2 py-0.5 text-xs text-gray-700"
-                    />
+                    <div className="flex items-center gap-1">
+                      <input
+                        type="text"
+                        placeholder="Regex filter"
+                        value={symbolFilter}
+                        onChange={(e) => setSymbolFilter(e.target.value)}
+                        className="w-28 rounded border border-gray-300 px-2 py-0.5 text-xs text-gray-700"
+                      />
+                      {symbolFilter ? (
+                        <button
+                          type="button"
+                          onClick={() => setSymbolFilter("")}
+                          className="rounded border border-gray-300 px-1 text-xs text-gray-600 hover:bg-gray-100"
+                          title="Clear symbol filter"
+                        >
+                          x
+                        </button>
+                      ) : null}
+                    </div>
                   ) : col.key === "local_symbol" ? (
-                    <input
-                      type="text"
-                      placeholder="Regex filter"
-                      value={localSymbolFilter}
-                      onChange={(e) => setLocalSymbolFilter(e.target.value)}
-                      className="w-28 rounded border border-gray-300 px-2 py-0.5 text-xs text-gray-700"
-                    />
+                    <div className="flex items-center gap-1">
+                      <input
+                        type="text"
+                        placeholder="Regex filter"
+                        value={localSymbolFilter}
+                        onChange={(e) => setLocalSymbolFilter(e.target.value)}
+                        className="w-28 rounded border border-gray-300 px-2 py-0.5 text-xs text-gray-700"
+                      />
+                      {localSymbolFilter ? (
+                        <button
+                          type="button"
+                          onClick={() => setLocalSymbolFilter("")}
+                          className="rounded border border-gray-300 px-1 text-xs text-gray-600 hover:bg-gray-100"
+                          title="Clear local symbol filter"
+                        >
+                          x
+                        </button>
+                      ) : null}
+                    </div>
                   ) : col.key === "sec_type" ? (
-                    <input
-                      type="text"
-                      placeholder="Regex filter"
-                      value={secTypeFilter}
-                      onChange={(e) => setSecTypeFilter(e.target.value)}
-                      className="w-28 rounded border border-gray-300 px-2 py-0.5 text-xs text-gray-700"
-                    />
+                    <div className="flex items-center gap-1">
+                      <input
+                        type="text"
+                        placeholder="Regex filter"
+                        value={secTypeFilter}
+                        onChange={(e) => setSecTypeFilter(e.target.value)}
+                        className="w-28 rounded border border-gray-300 px-2 py-0.5 text-xs text-gray-700"
+                      />
+                      {secTypeFilter ? (
+                        <button
+                          type="button"
+                          onClick={() => setSecTypeFilter("")}
+                          className="rounded border border-gray-300 px-1 text-xs text-gray-600 hover:bg-gray-100"
+                          title="Clear sec type filter"
+                        >
+                          x
+                        </button>
+                      ) : null}
+                    </div>
                   ) : col.key === "dte" ? (
-                    <div className="flex gap-1">
+                    <div className="flex items-center gap-1">
                       <input
                         type="number"
                         placeholder="min"
@@ -327,6 +449,19 @@ export default function PositionsTable() {
                         onChange={(e) => setDteMaxFilter(e.target.value)}
                         className="w-14 rounded border border-gray-300 px-1.5 py-0.5 text-xs text-gray-700"
                       />
+                      {dteMinFilter || dteMaxFilter ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDteMinFilter("");
+                            setDteMaxFilter("");
+                          }}
+                          className="rounded border border-gray-300 px-1 text-xs text-gray-600 hover:bg-gray-100"
+                          title="Clear DTE filters"
+                        >
+                          x
+                        </button>
+                      ) : null}
                     </div>
                   ) : null}
                 </th>
