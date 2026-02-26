@@ -91,7 +91,7 @@ def _collect_recent_trades(ib: IB, *, client_id: int) -> list[Trade]:
     if client_id == 0:
         try:
             ib.reqAutoOpenOrders(True)
-        except Exception:
+        except Exception:  # nosec B110 - best-effort; TWS may reject depending on client permissions
             pass
 
     # Pull open orders from this client scope.
