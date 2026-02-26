@@ -67,13 +67,12 @@ def _parse_raw_expiry_date(raw_value: str | None) -> date | None:
 
 def _derive_option_expiry_and_dte(position: Position) -> tuple[str | None, int | None]:
     sec_type = (position.sec_type or "").strip().upper()
-    if sec_type not in {"OPT", "FOP"}:
-        return None, None
-
     expiry = _parse_raw_expiry_date(position.last_trade_date)
     if expiry is None:
         return None, None
-    return expiry.isoformat(), (expiry - date.today()).days
+
+    option_expiry_date = expiry.isoformat() if sec_type in {"OPT", "FOP"} else None
+    return option_expiry_date, (expiry - date.today()).days
 
 
 @router.get("/positions", response_model=list[PositionResponse])

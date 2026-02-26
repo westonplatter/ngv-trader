@@ -32,6 +32,17 @@ function formatExpiry(value: string | null | undefined): string {
   return value;
 }
 
+function expiryForPosition(pos: Position): string {
+  const secType = (pos.sec_type ?? "").toUpperCase();
+  if (secType === "OPT" || secType === "FOP") {
+    return formatExpiry(pos.option_expiry_date ?? pos.last_trade_date);
+  }
+  if (secType === "FUT") {
+    return formatExpiry(pos.last_trade_date);
+  }
+  return formatExpiry(pos.option_expiry_date ?? pos.last_trade_date);
+}
+
 const COLUMNS: { key: keyof Position; label: string }[] = [
   { key: "con_id", label: "Con ID" },
   { key: "symbol", label: "Symbol" },
@@ -74,9 +85,13 @@ export default function PositionsTable() {
     new Set(),
   );
   const [symbolFilter, setSymbolFilter] = useState("");
+  const [localSymbolFilter, setLocalSymbolFilter] = useState("");
   const [secTypeFilter, setSecTypeFilter] = useState("");
   const [dteMinFilter, setDteMinFilter] = useState("");
   const [dteMaxFilter, setDteMaxFilter] = useState("");
+  const [dteSortDirection, setDteSortDirection] = useState<
+    "none" | "desc" | "asc"
+  >("none");
 
   const dteMin = useMemo(() => {
     if (!dteMinFilter.trim()) return null;
@@ -100,18 +115,57 @@ export default function PositionsTable() {
             (dteMax === null || p.dte <= dteMax);
       return (
         regexMatch(p.symbol, symbolFilter) &&
+        regexMatch(p.local_symbol, localSymbolFilter) &&
         regexMatch(p.sec_type, secTypeFilter) &&
         dteMatches
       );
     });
+
+    const dteSortValue = (p: Position): number =>
+      p.dte === null ? Number.NEGATIVE_INFINITY : p.dte;
+
     const groups = new Map<string, Position[]>();
     for (const pos of filtered) {
       const key = pos.account_alias;
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key)!.push(pos);
     }
-    return groups;
-  }, [positions, symbolFilter, secTypeFilter, dteMin, dteMax]);
+
+    for (const rows of groups.values()) {
+      if (dteSortDirection !== "none") {
+        rows.sort((a, b) => {
+          const dteDiff =
+            dteSortDirection === "desc"
+              ? dteSortValue(b) - dteSortValue(a)
+              : dteSortValue(a) - dteSortValue(b);
+          if (dteDiff !== 0) return dteDiff;
+          return a.con_id - b.con_id;
+        });
+      }
+    }
+
+    if (dteSortDirection === "none") {
+      return groups;
+    }
+
+    return new Map(
+      [...groups.entries()].sort(([, rowsA], [, rowsB]) => {
+        const topA =
+          rowsA.length > 0 ? dteSortValue(rowsA[0]) : Number.NEGATIVE_INFINITY;
+        const topB =
+          rowsB.length > 0 ? dteSortValue(rowsB[0]) : Number.NEGATIVE_INFINITY;
+        return dteSortDirection === "desc" ? topB - topA : topA - topB;
+      }),
+    );
+  }, [
+    positions,
+    symbolFilter,
+    localSymbolFilter,
+    secTypeFilter,
+    dteMin,
+    dteMax,
+    dteSortDirection,
+  ]);
 
   const toggleAccount = (alias: string) => {
     setCollapsedAccounts((prev) => {
@@ -192,16 +246,6 @@ export default function PositionsTable() {
         <p className="text-sm text-red-600">Sync error: {syncError}</p>
       )}
 
-      <div className="flex gap-4">
-        <input
-          type="text"
-          placeholder="Sec Type (regex)"
-          value={secTypeFilter}
-          onChange={(e) => setSecTypeFilter(e.target.value)}
-          className="rounded border border-gray-300 px-3 py-1 text-sm"
-        />
-      </div>
-
       <div className="overflow-x-auto">
         <table className="min-w-full border-collapse text-sm">
           <thead>
@@ -211,7 +255,29 @@ export default function PositionsTable() {
                   key={col.key}
                   className="px-3 py-2 font-semibold text-gray-700 whitespace-nowrap"
                 >
-                  {col.label}
+                  {col.key === "dte" ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDteSortDirection((prev) => {
+                          if (prev === "none") return "desc";
+                          if (prev === "desc") return "asc";
+                          return "none";
+                        });
+                      }}
+                      className="inline-flex items-center gap-1 text-gray-700 hover:text-gray-900"
+                      title="Cycle DTE sort: None, Desc, Asc"
+                    >
+                      {col.label}:{" "}
+                      {dteSortDirection === "none"
+                        ? "None"
+                        : dteSortDirection === "desc"
+                          ? "Desc"
+                          : "Asc"}
+                    </button>
+                  ) : (
+                    col.label
+                  )}
                 </th>
               ))}
             </tr>
@@ -227,6 +293,22 @@ export default function PositionsTable() {
                       placeholder="Regex filter"
                       value={symbolFilter}
                       onChange={(e) => setSymbolFilter(e.target.value)}
+                      className="w-28 rounded border border-gray-300 px-2 py-0.5 text-xs text-gray-700"
+                    />
+                  ) : col.key === "local_symbol" ? (
+                    <input
+                      type="text"
+                      placeholder="Regex filter"
+                      value={localSymbolFilter}
+                      onChange={(e) => setLocalSymbolFilter(e.target.value)}
+                      className="w-28 rounded border border-gray-300 px-2 py-0.5 text-xs text-gray-700"
+                    />
+                  ) : col.key === "sec_type" ? (
+                    <input
+                      type="text"
+                      placeholder="Regex filter"
+                      value={secTypeFilter}
+                      onChange={(e) => setSecTypeFilter(e.target.value)}
                       className="w-28 rounded border border-gray-300 px-2 py-0.5 text-xs text-gray-700"
                     />
                   ) : col.key === "dte" ? (
@@ -284,9 +366,11 @@ export default function PositionsTable() {
                           >
                             {col.key === "last_trade_date"
                               ? formatExpiry(pos[col.key] as string | null)
-                              : col.key === "strike" && pos.sec_type === "FUT"
-                                ? "—"
-                                : (pos[col.key] ?? "—")}
+                              : col.key === "option_expiry_date"
+                                ? expiryForPosition(pos)
+                                : col.key === "strike" && pos.sec_type === "FUT"
+                                  ? "—"
+                                  : (pos[col.key] ?? "—")}
                           </td>
                         ))}
                       </tr>
