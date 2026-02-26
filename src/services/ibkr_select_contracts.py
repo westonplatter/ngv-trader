@@ -90,11 +90,18 @@ def _dedupe_by_con_id(contracts: Iterable[Contract]) -> list[Contract]:
     return result
 
 
-def _qualify_contracts(ib: IB, spec: Contract) -> Contract:
-    # ib.qualifyContracts mutates the provided Contract in place; return that same
-    # single qualified Contract for downstream use.
-    ib.qualifyContracts(spec)
-    return spec
+def _qualify_contract(ib: IB, spec: Contract) -> Contract:
+    qualified_contracts = ib.qualifyContracts(spec)
+    if len(qualified_contracts) != 1:
+        raise RuntimeError("Expected exactly one qualified contract for " f"{_describe_contract(spec)}, got {len(qualified_contracts)}.")
+    return qualified_contracts[0]
+
+
+def _qualify_contracts(ib: IB, specs: list[Contract]) -> list[Contract]:
+    qualified_contracts = ib.qualifyContracts(*specs)
+    if len(qualified_contracts) != len(specs):
+        raise RuntimeError("Expected one qualified result per contract spec " f"(requested={len(specs)}, qualified={len(qualified_contracts)}).")
+    return qualified_contracts
 
 
 def _request_contracts(ib: IB, spec: Contract) -> list[Contract]:
@@ -328,7 +335,7 @@ class FutureOptionContractSelector(ContractSelector):
 
     def select(self, ib: IB, request: ContractSelectionRequest) -> tuple[Contract, int]:
         spec = self._build_fop_spec(ib, request)
-        _qualify_contracts(ib, spec)
+        spec = _qualify_contract(ib, spec)
         if spec.conId is None:
             raise RuntimeError(f"No FOP contract found for {_build_lookup_context(request)}.")
         return spec, 1

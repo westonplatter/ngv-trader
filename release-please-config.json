@@ -6,8 +6,8 @@
   "packages": {
     ".": {
       "release-type": "python",
-      "package-name": "ngtrader",
-      "component": "ngtrader",
+      "package-name": "ngtrader-pro",
+      "component": "ngtrader-pro",
       "extra-files": ["pyproject.toml"]
     }
   },

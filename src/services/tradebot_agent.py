@@ -1,5 +1,5 @@
 # BOUNDARY: This module must NEVER import ib_async or make direct broker connections.
-# All IB interactions happen through worker:jobs. Order execution is disabled.
+# All IB interactions happen through API/DB mutations and worker processes.
 
 """LLM-backed tradebot agent with LangGraph tool workflows."""
 
@@ -12,7 +12,7 @@ from typing import Any, Sequence, TypedDict
 from urllib import error, parse, request
 
 from langgraph.graph import END, START, StateGraph
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from src.models import (
@@ -32,9 +32,14 @@ from src.services.cl_contracts import (
 from src.services.contract_lookup import find_contracts
 from src.services.jobs import (
     JOB_TYPE_CONTRACTS_SYNC,
+    JOB_TYPE_ORDER_FETCH_SYNC,
     JOB_TYPE_POSITIONS_SYNC,
     JOB_TYPE_WATCHLIST_ADD_INSTRUMENT,
     enqueue_job,
+)
+from src.services.order_mutations import (
+    OrderCreateInput,
+    normalize_order_create_input,
 )
 from src.utils.env_vars import get_int_env, get_str_env
 from src.utils.ibkr_account import mask_ibkr_account
@@ -44,11 +49,10 @@ _SYSTEM_PROMPT = (
     "Use tools for factual data access and side effects. "
     "Never fabricate DB data, job IDs, order IDs, fills, or statuses. "
     "When a user asks for current state, call read tools first. "
-    "You can enqueue positions sync jobs and contracts sync jobs. "
+    "You can enqueue positions sync jobs, contracts sync jobs, and order fetch/sync jobs. "
     "For informational queries about contracts (front month, available months, contract details), use lookup_contract. "
-    "Order execution is disabled in this system. "
-    "If asked to place, queue, submit, or cancel an order, explain that execution is disabled "
-    "and offer read-only alternatives like listing orders/positions or looking up contracts. "
+    "You can preview orders via preview_order. "
+    "There is no cancel tool in chat; advise using the Orders API/UI cancel action when needed. "
     "You can also manage watch lists: create watch lists, add instruments to them, list them, and remove instruments. "
     "When adding instruments to a watch list, use add_watch_list_instrument which enqueues a job to fetch "
     "the contract directly from IBKR. Then use check_watchlist_job to poll for the result. "
@@ -149,8 +153,57 @@ _TOOL_SPECS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "preview_order",
+            "description": "Validate and normalize an order request without writing to the database.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "account_id": {"type": "integer"},
+                    "account": {
+                        "type": "string",
+                        "description": "Account alias or account number when account_id is not provided.",
+                    },
+                    "symbol": {"type": "string"},
+                    "side": {"type": "string", "enum": ["BUY", "SELL", "buy", "sell"]},
+                    "quantity": {"type": "integer", "minimum": 1},
+                    "sec_type": {"type": "string", "default": "FUT"},
+                    "exchange": {"type": "string"},
+                    "currency": {"type": "string", "default": "USD"},
+                    "order_type": {"type": "string", "default": "MKT"},
+                    "limit_price": {"type": "number", "exclusiveMinimum": 0},
+                    "tif": {"type": "string", "default": "DAY"},
+                    "request_text": {"type": "string"},
+                },
+                "required": ["symbol", "side", "quantity"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "enqueue_positions_sync_job",
             "description": "Enqueue a positions.sync job for worker:jobs to process.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "request_text": {"type": "string"},
+                    "max_attempts": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 10,
+                        "default": 3,
+                    },
+                },
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "enqueue_order_fetch_sync_job",
+            "description": "Enqueue an order.fetch_sync job for worker:jobs to pull broker orders into the database.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -546,6 +599,9 @@ def _tool_list_orders(session: Session, _: str, args: dict[str, Any]) -> dict[st
             "side": order.side,
             "quantity": order.quantity,
             "status": order.status,
+            "order_type": order.order_type,
+            "limit_price": order.limit_price,
+            "tif": order.tif,
             "filled_quantity": order.filled_quantity,
             "avg_fill_price": order.avg_fill_price,
             "contract_month": order.contract_month,
@@ -580,12 +636,149 @@ def _tool_list_orders(session: Session, _: str, args: dict[str, Any]) -> dict[st
     return {"orders": orders, "count": len(orders)}
 
 
+def _resolve_order_tool_account(session: Session, args: dict[str, Any]) -> Account:
+    account_id_raw = args.get("account_id")
+    account_label = _coerce_optional_str_arg(args, "account")
+
+    if account_id_raw is not None:
+        if not isinstance(account_id_raw, int):
+            raise ValueError("'account_id' must be an integer when provided.")
+        account = session.get(Account, account_id_raw)
+        if account is None:
+            raise ValueError(f"Account id {account_id_raw} not found.")
+        return account
+
+    if account_label is None:
+        raise ValueError("Provide 'account_id' or 'account' (alias/account number).")
+
+    lowered = account_label.lower()
+    stmt = select(Account).where(
+        or_(
+            func.lower(Account.alias) == lowered,
+            func.lower(Account.account) == lowered,
+        )
+    )
+    account = session.execute(stmt).scalars().first()
+    if account is None:
+        raise ValueError(f"Account '{account_label}' not found.")
+    return account
+
+
+def _build_order_input_from_tool_args(
+    session: Session,
+    args: dict[str, Any],
+    *,
+    latest_user_text: str,
+) -> tuple[Account, OrderCreateInput]:
+    account = _resolve_order_tool_account(session, args)
+
+    symbol_raw = args.get("symbol")
+    if not isinstance(symbol_raw, str):
+        raise ValueError("'symbol' must be a string.")
+
+    side_raw = args.get("side")
+    if not isinstance(side_raw, str):
+        raise ValueError("'side' must be a string.")
+
+    quantity_raw = args.get("quantity")
+    if not isinstance(quantity_raw, int):
+        raise ValueError("'quantity' must be an integer.")
+
+    sec_type = _coerce_optional_str_arg(args, "sec_type") or "FUT"
+    exchange = _coerce_optional_str_arg(args, "exchange")
+    if exchange is None:
+        exchange = _resolve_exchange(symbol_raw.strip().upper(), sec_type.strip().upper())
+    currency = _coerce_optional_str_arg(args, "currency") or "USD"
+    order_type = _coerce_optional_str_arg(args, "order_type") or "MKT"
+    tif = _coerce_optional_str_arg(args, "tif") or "DAY"
+    request_text = _coerce_optional_str_arg(args, "request_text") or latest_user_text
+
+    limit_price_raw = args.get("limit_price")
+    limit_price: float | None = None
+    if limit_price_raw is not None:
+        if not isinstance(limit_price_raw, (int, float)):
+            raise ValueError("'limit_price' must be a number.")
+        limit_price = float(limit_price_raw)
+
+    normalized = normalize_order_create_input(
+        OrderCreateInput(
+            account_id=account.id,
+            symbol=symbol_raw,
+            side=side_raw,
+            quantity=quantity_raw,
+            sec_type=sec_type,
+            exchange=exchange,
+            currency=currency,
+            order_type=order_type,
+            limit_price=limit_price,
+            tif=tif,
+            source=_TOOL_SOURCE,
+            request_text=request_text,
+        )
+    )
+    return account, normalized
+
+
+def _order_summary_payload(order_input: OrderCreateInput) -> dict[str, Any]:
+    return {
+        "account_id": order_input.account_id,
+        "symbol": order_input.symbol,
+        "side": order_input.side,
+        "quantity": order_input.quantity,
+        "sec_type": order_input.sec_type,
+        "exchange": order_input.exchange,
+        "currency": order_input.currency,
+        "order_type": order_input.order_type,
+        "limit_price": order_input.limit_price,
+        "tif": order_input.tif,
+        "source": order_input.source,
+        "request_text": order_input.request_text,
+    }
+
+
+def _tool_preview_order(session: Session, latest_user_text: str, args: dict[str, Any]) -> dict[str, Any]:
+    account, order_input = _build_order_input_from_tool_args(
+        session,
+        args,
+        latest_user_text=latest_user_text,
+    )
+    return {
+        "preview": _order_summary_payload(order_input),
+        "account": {
+            "id": account.id,
+            "alias": account.alias,
+            "masked_account": mask_ibkr_account(account.account),
+        },
+        "message": "Preview only. No order was queued.",
+    }
+
+
 def _tool_enqueue_positions_sync_job(session: Session, latest_user_text: str, args: dict[str, Any]) -> dict[str, Any]:
     max_attempts = _coerce_int_arg(args, "max_attempts", 3, 1, 10)
     request_text = _coerce_optional_str_arg(args, "request_text") or latest_user_text
     job = enqueue_job(
         session=session,
         job_type=JOB_TYPE_POSITIONS_SYNC,
+        payload={},
+        source=_TOOL_SOURCE,
+        request_text=request_text,
+        max_attempts=max_attempts,
+    )
+    session.commit()
+    return {
+        "job_id": job.id,
+        "job_type": job.job_type,
+        "status": job.status,
+        "max_attempts": job.max_attempts,
+    }
+
+
+def _tool_enqueue_order_fetch_sync_job(session: Session, latest_user_text: str, args: dict[str, Any]) -> dict[str, Any]:
+    max_attempts = _coerce_int_arg(args, "max_attempts", 3, 1, 10)
+    request_text = _coerce_optional_str_arg(args, "request_text") or latest_user_text
+    job = enqueue_job(
+        session=session,
+        job_type=JOB_TYPE_ORDER_FETCH_SYNC,
         payload={},
         source=_TOOL_SOURCE,
         request_text=request_text,
@@ -632,10 +825,11 @@ _FUTURES_EXCHANGE_MAP: dict[str, str] = {
 def _resolve_exchange(symbol: str, sec_type: str) -> str:
     """Resolve exchange for a symbol. Returns exchange or raises if unknown futures symbol."""
     if sec_type in ("FUT", "FOP"):
-        exchange = _FUTURES_EXCHANGE_MAP.get(symbol)
+        normalized_symbol = symbol[1:] if symbol.startswith("/") else symbol
+        exchange = _FUTURES_EXCHANGE_MAP.get(normalized_symbol)
         if exchange is None:
             known = ", ".join(sorted(_FUTURES_EXCHANGE_MAP.keys()))
-            raise ValueError(f"Unknown exchange for futures symbol '{symbol}'. " f"Known symbols: {known}. " f"Please tell me which exchange this trades on.")
+            raise ValueError(f"Unknown exchange for futures symbol '{symbol}'. " f"Known symbols: {known}. " "Please tell me which exchange this trades on.")
         return exchange
     if sec_type == "OPT":
         return "SMART"
@@ -923,7 +1117,9 @@ _TOOL_HANDLERS = {
     "list_positions": _tool_list_positions,
     "list_jobs": _tool_list_jobs,
     "list_orders": _tool_list_orders,
+    "preview_order": _tool_preview_order,
     "enqueue_positions_sync_job": _tool_enqueue_positions_sync_job,
+    "enqueue_order_fetch_sync_job": _tool_enqueue_order_fetch_sync_job,
     "enqueue_contracts_sync_job": _tool_enqueue_contracts_sync_job,
     "lookup_contract": _tool_lookup_contract,
     "list_watch_lists": _tool_list_watch_lists,

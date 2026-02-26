@@ -1,6 +1,10 @@
-# Next Gen Trader
+# Next Gen Trader Pro
 
 Before using this project, read the [Disclaimer](#disclaimer).
+
+## Dev Env Setup
+
+Set up your local development environment using [docs/install-python-and-frontend.md](docs/install-python-and-frontend.md).
 
 ## Goals
 
@@ -11,10 +15,24 @@ Before using this project, read the [Disclaimer](#disclaimer).
 ## Ideal Workflow
 
 1. Start the IBKR TWS or IBKR API Gateway
-2. Boot up the Worker, pull current positions, store them in the DB
+2. Boot up the Workers, pull current positions, store them in the DB
 3. Boot up the API + UI, view the current portfolio
 4. Compare current positions and risk levels to strategies + groupings
 5. Plan portfolio adjustments to get to desired levels
+6. Submit orders via the Orders UI or Tradebot chat
+
+## Order Execution
+
+Orders can be submitted through two paths — both use the same idempotent create and DB lifecycle.
+
+- **Orders API / UI** — `POST /api/v1/orders` creates a queued order; the UI provides submit and cancel controls.
+- **Tradebot chat** — `preview_order` validates inputs, `submit_order` queues the order.
+
+The `worker:orders` process polls for queued orders and submits them to TWS/Gateway. It runs startup reconciliation to prevent duplicate broker submissions after restart. After processing, it auto-enqueues broker order sync and positions sync.
+
+Broker order sync (`order.fetch_sync`) is handled by `worker:jobs` and reconciles open/recent broker orders back into the local DB.
+
+See [docs/tradebot-workers.md](docs/tradebot-workers.md) for worker details and [docs/spec-restore-order-fetching-and-submission.md](docs/spec-restore-order-fetching-and-submission.md) for the full implementation spec.
 
 ## Brokers
 
@@ -39,14 +57,21 @@ I like to break up code into different categories: **Primitives, Components, Ser
 
 ### Primitives
 
-Primitives are small discrete functions that are 20 lines or less.
-They're focused on a specific task and can be easily unit tested.
-I like to keep "state" out of these functions.
-These are mechanical operators.
+Primitives are small discrete, functions focused on a a specific task,
+
+- 20 lines or less (ideal goal)
+- 4 or less input arguments
+- exist as instance methods or stateless functions
+- are focused on a specific task
+- can be easily tested in isolation (eg, unit tests, but not integration tests)
+- behave as mechanical operators
 
 Examples:
 
-- function to calc the opening range breakout
+- calc the opening range breakout
+- df helper function
+
+## Interfaces/Abstract Classes
 
 ### Components
 

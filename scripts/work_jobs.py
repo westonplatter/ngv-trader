@@ -25,6 +25,7 @@ from src.db import get_engine
 from src.models import Job
 from src.services.jobs import (
     JOB_TYPE_CONTRACTS_SYNC,
+    JOB_TYPE_ORDER_FETCH_SYNC,
     JOB_TYPE_POSITIONS_SYNC,
     JOB_TYPE_WATCHLIST_ADD_INSTRUMENT,
     JOB_TYPE_WATCHLIST_QUOTES_REFRESH,
@@ -273,10 +274,54 @@ def handle_watchlist_quotes_refresh(job: Job, engine: Engine) -> dict:
     )
 
 
+def handle_order_fetch_sync(job: Job, engine: Engine) -> dict:
+    from src.services.order_sync import sync_orders_once
+
+    payload = job.payload or {}
+    host = str(payload.get("host") or "127.0.0.1")
+    port_raw = payload.get("port")
+    client_id_raw = payload.get("client_id")
+    connect_timeout_raw = payload.get("connect_timeout_seconds")
+
+    if isinstance(port_raw, int):
+        port = port_raw
+    else:
+        port = get_int_env("BROKER_TWS_PORT")
+    if port is None:
+        raise RuntimeError("BROKER_TWS_PORT is not set and no port was provided in job payload.")
+
+    if isinstance(client_id_raw, int):
+        client_id = client_id_raw
+    else:
+        # IB order auto-bind (reqAutoOpenOrders) requires default API client 0.
+        client_id = 0
+
+    if isinstance(connect_timeout_raw, (int, float)):
+        connect_timeout_seconds = float(connect_timeout_raw)
+    else:
+        connect_timeout_seconds = 20.0
+
+    result = sync_orders_once(
+        engine=engine,
+        host=host,
+        port=port,
+        client_id=client_id,
+        connect_timeout_seconds=connect_timeout_seconds,
+    )
+    return {
+        **result,
+        "host": host,
+        "port": port,
+        "client_id": client_id,
+        "connect_timeout_seconds": connect_timeout_seconds,
+    }
+
+
 def get_handler(job_type: str) -> Callable[[Job, Engine], dict] | None:
     handlers: dict[str, Callable[[Job, Engine], dict]] = {
         JOB_TYPE_POSITIONS_SYNC: handle_positions_sync,
         JOB_TYPE_CONTRACTS_SYNC: handle_contracts_sync,
+        JOB_TYPE_ORDER_FETCH_SYNC: handle_order_fetch_sync,
         JOB_TYPE_WATCHLIST_ADD_INSTRUMENT: handle_watchlist_add_instrument,
         JOB_TYPE_WATCHLIST_QUOTES_REFRESH: handle_watchlist_quotes_refresh,
     }

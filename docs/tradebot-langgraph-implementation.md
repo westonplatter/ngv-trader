@@ -3,14 +3,14 @@
 ## Summary
 
 Tradebot chat uses an LLM-driven LangGraph workflow with explicit function tools.
-As of February 23, 2026, order execution tools were removed.
+As of February 25, 2026, order execution tools were restored for the pro workflow.
 
 Tradebot now:
 
 - uses conversation history (not only last message)
 - uses tool calls for DB reads and operational actions
-- enqueues non-execution jobs through `worker:jobs`
-- keeps order-related access read-only
+- can preview and submit orders through explicit tools
+- enqueues sync/watchlist jobs through `worker:jobs`
 
 ## What Was Built
 
@@ -59,6 +59,8 @@ Runtime constraints:
 | `list_positions`               | Returns current positions from the database.                | Read-only DB query. Optional `limit` constrained to 1-200.                                |
 | `list_jobs`                    | Returns recent job queue records.                           | Read-only DB query. `limit` constrained to 1-200.                                         |
 | `list_orders`                  | Returns recent orders and optional recent events per order. | Read-only DB query. `limit` constrained to 1-200; `events_per_order` constrained to 1-20. |
+| `preview_order`                | Validates and normalizes an order request.                  | No DB writes; validates account/routing/shape before submit.                              |
+| `submit_order`                 | Queues an order for worker execution.                       | Uses shared API-equivalent create/idempotency/event lifecycle.                            |
 | `lookup_contract`              | Returns contract info from DB cache.                        | Read-only DB query; no broker side effects.                                               |
 | `enqueue_positions_sync_job`   | Enqueues a `positions.sync` job for `worker:jobs`.          | Writes to `jobs` queue only. `max_attempts` constrained to 1-10.                          |
 | `enqueue_contracts_sync_job`   | Enqueues a `contracts.sync` job for `worker:jobs`.          | Writes to `jobs` queue only; symbol/sec_type validated before enqueue.                    |
@@ -70,16 +72,17 @@ Runtime constraints:
 
 ## Safety and Side Effects
 
-- Execution-capable tools (`preview_order`, `check_pretrade_job`, `submit_order`) are removed.
-- The system prompt explicitly tells the model that order execution is disabled.
-- Job tools enqueue non-execution jobs (`positions.sync`, `contracts.sync`, `watchlist.add_instrument`).
+- Execution-capable tools are limited to `preview_order` and `submit_order`.
+- `submit_order` creates queued orders; broker submission still occurs only in worker execution paths.
+- Job tools enqueue sync/watchlist jobs (`positions.sync`, `contracts.sync`, `watchlist.add_instrument`).
 - Tool failures are returned to the LLM as structured tool error payloads.
 - DB session rolls back on tool exceptions.
 
 ## Operational Notes
 
 - IBKR connectivity is still required for sync jobs handled by `worker:jobs`.
-- `orders` and `order_events` tables remain for historical read-only visibility.
+- IBKR connectivity is also required for `worker:orders` submission execution.
+- `orders` and `order_events` are used for active execution lifecycle and history.
 - Existing jobs/orders UI side panels still read the same API surfaces.
 
 ## Validation

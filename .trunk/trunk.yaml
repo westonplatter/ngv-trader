@@ -22,9 +22,9 @@ lint:
           run: black --line-length 160 ${target}
   enabled:
     - actionlint@1.7.11
-    - bandit@1.9.3
+    - bandit@1.9.4
     - black@26.1.0
-    - checkov@3.2.504
+    - checkov@3.2.506
     - git-diff-check
     - isort@8.0.0
     - markdownlint@0.47.0

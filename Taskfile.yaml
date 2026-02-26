@@ -1,7 +1,7 @@
 version: "3"
 
 vars:
-  ENV: '{{.ENV | default "dev"}}'
+  ENV: '{{.ENV | default "prod"}}'
 
 dotenv: [".env.{{.ENV}}"]
 
@@ -23,6 +23,10 @@ tasks:
   worker:jobs:
     desc: Start generic job worker (dispatches by job_type)
     cmd: op run --env-file=.env.{{.ENV}} -- uv run python scripts/work_jobs.py --env {{.ENV}}
+
+  worker:orders:
+    desc: Start order execution worker
+    cmd: op run --env-file=.env.{{.ENV}} -- uv run python scripts/work_order_queue.py --env {{.ENV}}
 
   frontend:install:
     desc: Install frontend dependencies

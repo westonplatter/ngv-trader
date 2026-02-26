@@ -2,7 +2,7 @@
 
 # NextGenTrader
 
-This is a agentic project enabling one person to operate as an quick and nimble trading desk.
+Agentic software enabling one person to operate as an quick and nimble quantative futures, vol. and options trade desk.
 
 ## Docs Index Rule
 
@@ -12,6 +12,12 @@ If any `docs/*.md` file is added, modified, renamed, or deleted (excluding `docs
 
 - **Project Docs** — runbooks, how-tos, and reference material.
 - **Specs** — architecture specs and design proposals (files prefixed `spec-`).
+
+When writing documentation or summaries, default to high-level overviews that point to detailed resources rather than verbose step-by-step instructions. Avoid hardcoding filenames in docs when the user wants lightweight guidance.
+
+## Task Delegation
+
+Do NOT make changes beyond what was explicitly requested. Do not proactively remove, move, or restructure columns, fields, or UI elements unless specifically asked. When in doubt, do less.
 
 ## Code Validation
 

@@ -120,6 +120,7 @@ class Order(Base):
     side: Mapped[str] = mapped_column(String, nullable=False)
     quantity: Mapped[int] = mapped_column(Integer, nullable=False)
     order_type: Mapped[str] = mapped_column(String, nullable=False, default="MKT")
+    limit_price: Mapped[float | None] = mapped_column(Float, nullable=True)
     tif: Mapped[str] = mapped_column(String, nullable=False, default="DAY")
     status: Mapped[str] = mapped_column(String, nullable=False, default="queued")
     source: Mapped[str] = mapped_column(String, nullable=False, default="tradebot")
