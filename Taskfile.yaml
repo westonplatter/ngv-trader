@@ -28,6 +28,11 @@ tasks:
     desc: Start order execution worker
     cmd: op run --env-file=.env.{{.ENV}} -- uv run python scripts/work_order_queue.py --env {{.ENV}}
 
+  gateway:
+    desc: Start IBKR Client Portal Gateway (port 8888)
+    dir: clientportal.beta.gw
+    cmd: bin/run.sh root/conf.yaml
+
   frontend:install:
     desc: Install frontend dependencies
     dir: frontend

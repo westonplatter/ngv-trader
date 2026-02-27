@@ -7,13 +7,14 @@ from sqlalchemy import (
     Boolean,
     DateTime,
     Float,
+    ForeignKey,
     Index,
     Integer,
     String,
     Text,
     UniqueConstraint,
 )
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
 class Base(DeclarativeBase):
@@ -275,3 +276,72 @@ class WorkerHeartbeat(Base):
         nullable=False,
         default=lambda: datetime.now(timezone.utc),
     )
+
+
+class ComboPosition(Base):
+    __tablename__ = "combo_positions"
+    __table_args__ = (
+        UniqueConstraint("account_id", "source", "combo_key", name="uq_combo_positions_account_source_key"),
+        Index("ix_combo_positions_account_fetched", "account_id", "fetched_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    account_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    source: Mapped[str] = mapped_column(String, nullable=False, default="cpapi")
+    combo_key: Mapped[str] = mapped_column(String, nullable=False)
+    name: Mapped[str | None] = mapped_column(String, nullable=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    position: Mapped[float | None] = mapped_column(Float, nullable=True)
+    avg_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    market_value: Mapped[float | None] = mapped_column(Float, nullable=True)
+    unrealized_pnl: Mapped[float | None] = mapped_column(Float, nullable=True)
+    realized_pnl: Mapped[float | None] = mapped_column(Float, nullable=True)
+    raw: Mapped[dict] = mapped_column(JSON, nullable=False)
+    fetched_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+
+    legs: Mapped[list["ComboPositionLeg"]] = relationship(back_populates="combo_position", cascade="all, delete-orphan")
+
+
+class ComboPositionLeg(Base):
+    __tablename__ = "combo_position_legs"
+    __table_args__ = (
+        UniqueConstraint("combo_position_id", "con_id", name="uq_combo_leg_position_conid"),
+        Index("ix_combo_position_legs_con_id", "con_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    combo_position_id: Mapped[int] = mapped_column(Integer, ForeignKey("combo_positions.id", ondelete="CASCADE"), nullable=False)
+    con_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    ratio: Mapped[float | None] = mapped_column(Float, nullable=True)
+    position: Mapped[float | None] = mapped_column(Float, nullable=True)
+    avg_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    market_value: Mapped[float | None] = mapped_column(Float, nullable=True)
+    unrealized_pnl: Mapped[float | None] = mapped_column(Float, nullable=True)
+    realized_pnl: Mapped[float | None] = mapped_column(Float, nullable=True)
+    raw: Mapped[dict] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+
+    combo_position: Mapped["ComboPosition"] = relationship(back_populates="legs")

@@ -8,6 +8,7 @@ import {
 import AccountsTable from "./components/AccountsTable";
 import OrdersTable from "./components/OrdersTable";
 import PositionsTable from "./components/PositionsTable";
+import SpreadsTable from "./components/SpreadsTable";
 import TradebotChat from "./components/TradebotChat";
 import WatchListsPage from "./components/WatchListsPage";
 import WorkerStatusLights from "./components/WorkerStatusLights";
@@ -15,6 +16,7 @@ import WorkerStatusLights from "./components/WorkerStatusLights";
 const NAV_ITEMS = [
   { label: "Accounts", path: "/accounts" },
   { label: "Positions", path: "/positions" },
+  { label: "Spreads", path: "/spreads" },
   { label: "Orders", path: "/orders" },
   { label: "Watch Lists", path: "/watchlists" },
   { label: "Tradebot", path: "/tradebot" },
@@ -56,6 +58,7 @@ function App() {
         <Routes>
           <Route path="/" element={<Navigate to="/tradebot" replace />} />
           <Route path="/positions" element={<PositionsTable />} />
+          <Route path="/spreads" element={<SpreadsTable />} />
           <Route path="/accounts" element={<AccountsTable />} />
           <Route path="/orders" element={<OrdersTable />} />
           <Route path="/watchlists" element={<WatchListsPage />} />

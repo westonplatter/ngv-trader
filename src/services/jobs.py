@@ -21,6 +21,7 @@ JOB_TYPE_ORDER_FETCH_SYNC = "order.fetch_sync"
 JOB_TYPE_ORDER_CANCEL = "order.cancel"
 JOB_TYPE_WATCHLIST_ADD_INSTRUMENT = "watchlist.add_instrument"
 JOB_TYPE_WATCHLIST_QUOTES_REFRESH = "watchlist.quotes_refresh"
+JOB_TYPE_COMBO_POSITIONS_SYNC = "combo_positions.sync"
 
 
 def now_utc() -> datetime:

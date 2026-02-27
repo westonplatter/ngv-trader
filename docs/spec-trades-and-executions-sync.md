@@ -10,6 +10,8 @@ Add broker trade ingestion with fill-level fidelity, idempotency, and correction
 - New IBKR sync service and job type for trades/executions.
 - Read API endpoints for operator visibility.
 - Worker wiring and post-order sync triggers.
+- Spread inference: link trades into spreads using execution timestamps,
+  order IDs, or operator tags. Populate existing `combo_positions` tables.
 
 ## Non-goals
 
@@ -191,7 +193,8 @@ Single Alembic revision:
 4. API router for read access.
 5. Optional Tradebot tools.
 6. Optional frontend trades table.
-7. Operational validation with repeated sync runs.
+7. Spread inference service (link trades into `combo_positions`).
+8. Operational validation with repeated sync runs.
 
 ## Acceptance Criteria
 
@@ -202,6 +205,56 @@ Single Alembic revision:
 - `ib_perm_id > 0` rows are unique by `(account_id, ib_perm_id)`.
 - `ib_perm_id = 0` rows resolve via `order_ref` or composite fallback.
 - Post-order flow can refresh both positions and trades via jobs.
+
+## Spread Inference from Executions
+
+### Context
+
+IBKR does not provide native spread linkage for positions legged in individually.
+`ib.positions()` only returns `secType=BAG` for orders submitted as combos.
+The Client Portal API combo endpoint has the same limitation and adds significant
+operational overhead (separate Java gateway, browser login, daily re-auth).
+See `docs/spec-client-portal-combo-spreads.md` for full findings.
+
+Spread membership must be inferred from execution data after trade sync.
+
+### Inference strategy
+
+After trades and executions are synced, link trades into spreads by matching:
+
+1. **Same account** — both legs belong to the same `account_id`.
+2. **Same symbol** — e.g., both are `CL` futures.
+3. **Opposite sides** — one BUY and one SELL (calendar spread structure).
+4. **Different expiries** — legs have different contract months/expiry dates.
+5. **Temporal proximity** — executions occurred within a configurable window
+   (e.g., same `ib_order_id` group, or `executed_at` within N seconds).
+6. **Or: explicit operator tag** — if ngtrader submitted both legs, the `order_ref`
+   can include a shared spread identifier at submission time (e.g., `ngtrader-spread-{id}`).
+
+### Resolution priority
+
+1. **order_ref tag** — strongest signal. If both trades share a spread tag in
+   `order_ref`, link them unconditionally.
+2. **Same ib_order_id** — if IBKR assigned the same order ID to both legs
+   (combo/BAG submission), link them.
+3. **Timestamp + symbol + opposite side** — weakest signal. Match trades
+   with the same symbol, opposite sides, different expiries, and executions
+   within a configurable time window (default: 60 seconds).
+
+### Output
+
+Matched trade pairs populate the existing `combo_positions` and `combo_position_legs`
+tables with `source="inferred"` or `source="tagged"`. These tables, API endpoints,
+and the Spreads UI are already built and ready.
+
+### Acceptance criteria (spread inference)
+
+- Two CL trades executed as a calendar spread appear as one spread with two legs.
+- Operator-tagged spreads (via `order_ref`) are always linked correctly.
+- Timestamp-inferred spreads use a configurable window and do not false-match
+  trades separated by more than the window.
+- Re-running inference is idempotent.
+- Unmatched legs remain visible in the Spreads UI "Unmatched Legs" tab.
 
 ## Risks and Mitigations
 

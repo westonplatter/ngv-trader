@@ -1,201 +1,155 @@
-# Spec: Client Portal Combo Spreads
+# Spec: Combo Spreads
 
 ## Purpose
 
-Show CL calendar/time spreads using IBKR-native spread linkage instead of inferring leg pairs.
+Show CL calendar/time spreads as linked spread objects instead of independent legs.
 
 ## Problem
 
-- Current position sync uses `ib.positions()` and stores one row per leg.
+- Position sync uses `ib.positions()` and stores one row per leg.
 - For a spread like short `CL Sep 2026` + long `CL Dec 2026`, ngtrader sees two independent legs.
 - Operators need an explicit "these legs belong to one spread" view.
 
-## Scope
+## What We Tried
 
-- Add Client Portal API (CPAPI) integration for combo positions.
-- Sync CPAPI combo positions into Postgres with idempotent upserts.
-- Expose read API for spread-level and leg-level views.
-- Add UI view optimized for CL calendar spreads.
-- Preserve current TWS position sync; do not remove it.
+### Approach 1: CPAPI combo positions (abandoned)
 
-## Non-goals
+Original plan was to use the IBKR Client Portal Gateway API
+(`GET /portfolio/{accountId}/combo/positions`) to get native spread linkage.
 
-- Replacing TWS socket APIs for order placement.
-- Auto-detecting spreads for all manually legged positions.
-- Full multi-asset spread analytics.
+**Why we abandoned it:**
 
-## External Facts
+- The Client Portal Gateway is a separate Java service that must run alongside TWS.
+  Another process to manage, monitor, and keep alive.
+- Gateway requires interactive browser login + 2FA, with daily session re-auth.
+  High operator friction for an individual account setup.
+- The downloaded gateway (April 2023 build) returned `Bad Request` errors
+  from IBKR's Akamai CDN on all API calls after successful browser login.
+  The beta gateway had the same issue. Likely a version/compatibility problem.
+- Port 5000 conflicts with macOS AirPlay Receiver (ControlCenter).
+  Required port changes across all configs.
+- Even if the gateway worked, the CPAPI combo endpoint only returns positions
+  **acquired as combinations** (BAG orders). It would not help for positions
+  legged in individually.
 
-- CPAPI provides `GET /portfolio/{accountId}/combo/positions`.
-- Endpoint is intended for positions acquired as combinations.
-- TWS socket `reqPositions` path remains leg-based.
-- Flex reports can provide complex-position summaries for batch/audit use.
+### Approach 2: TWS BAG detection (no data)
 
-## Recommendation
+Rewrote the sync to detect `secType == "BAG"` positions from `ib.positions()`.
 
-Use a dual-source model:
+**What we learned:**
 
-- Source A (existing): TWS `ib.positions()` for fast leg snapshots.
-- Source B (new): CPAPI combo positions for native spread linkage.
+- `ib.positions()` returns `secType` values: `FUT`, `STK`, `OPT`, `FOP`.
+  **No BAG positions were returned** despite having active spreads.
+- TWS only reports BAG positions when the spread was submitted as a combo/BAG order.
+  Spreads legged in individually (which is the common case for CL calendar spreads)
+  appear as separate FUT positions with no linkage.
+- `contract.comboLegs` is always empty for non-BAG positions.
 
-The UI should show CPAPI-linked spreads first, then unmatched legs separately.
+### Approach 3: Infer spreads from execution data (next step)
 
-## Setup (Individual Account, Local Gateway)
+Since neither IBKR source provides native linkage for individually legged spreads,
+we need to infer spread membership from execution/order data.
 
-1. Install Java and IBKR Client Portal Gateway (`clientportal.gw`).
-2. Run gateway locally (`bin/run.sh root/conf.yaml`).
-3. Log in via browser at `https://localhost:<port>` with IBKR + 2FA.
-4. Keep session alive with periodic `POST /tickle`.
-5. Check auth via `POST /iserver/auth/status`.
-6. Re-auth after daily session boundary when required.
+**Plan:**
 
-## Proposed Env Vars
+- Import execution data (trades/fills) into ngtrader.
+- Match legs that were executed as part of the same spread based on:
+  - Same symbol (e.g., CL)
+  - Opposite sides (BUY + SELL)
+  - Different expiries (calendar spread structure)
+  - Close execution timestamps (submitted together or within a window)
+  - Or: explicit operator tagging at order submission time
+- Populate the existing `combo_positions` + `combo_position_legs` tables
+  with `source="inferred"` or `source="tagged"`.
 
-- `IBKR_CP_BASE_URL` (default `https://localhost:5000/v1/api`)
-- `IBKR_CP_TIMEOUT_SECONDS` (default `15`)
-- `IBKR_CP_TICKLE_INTERVAL_SECONDS` (default `60`)
-- `IBKR_CP_VERIFY_TLS` (default `false` for local gateway)
-- `IBKR_CP_ENABLED` (default `false`)
+## What's Built (ready to use)
 
-## Data Model
+### Data Model
 
-Add two tables.
+Two tables, migrated and live:
 
-### `combo_positions`
+**`combo_positions`** — one row per spread
 
-- `id` (pk)
-- `account_id` (int, not null)
-- `source` (text, not null, default `cpapi`)
-- `combo_key` (text, not null)  
-  Deterministic key from account + normalized leg `conid:ratio` set.
-- `name` (text, nullable)
-- `description` (text, nullable)
-- `position` (float, nullable)
-- `avg_price` (float, nullable)
-- `market_value` (float, nullable)
-- `unrealized_pnl` (float, nullable)
-- `realized_pnl` (float, nullable)
-- `raw` (jsonb, not null)
-- `fetched_at` (timestamptz, not null)
-- `created_at`, `updated_at` (timestamptz, not null)
+- `id`, `account_id`, `source`, `combo_key` (deterministic from legs)
+- `name`, `description`, `position`, `avg_price`
+- `market_value`, `unrealized_pnl`, `realized_pnl`
+- `raw` (jsonb), `fetched_at`, `created_at`, `updated_at`
+- Unique: `(account_id, source, combo_key)`
 
-Constraints/indexes:
+**`combo_position_legs`** — one row per leg in a spread
 
-- Unique `(account_id, source, combo_key)`
-- Index `(account_id, fetched_at desc)`
+- `id`, `combo_position_id` (FK cascade to parent), `con_id`, `ratio`
+- `position`, `avg_price`, `market_value`, `unrealized_pnl`, `realized_pnl`
+- `raw` (jsonb), `created_at`, `updated_at`
+- Unique: `(combo_position_id, con_id)`
 
-### `combo_position_legs`
+### Service
 
-- `id` (pk)
-- `combo_position_id` (int, not null)
-- `con_id` (int, not null)
-- `ratio` (float, nullable)
-- `position` (float, nullable)
-- `avg_price` (float, nullable)
-- `market_value` (float, nullable)
-- `unrealized_pnl` (float, nullable)
-- `realized_pnl` (float, nullable)
-- `raw` (jsonb, not null)
-- `created_at`, `updated_at` (timestamptz, not null)
+`src/services/combo_position_sync.py` — currently wired to detect BAG positions
+from TWS. Will be updated to support execution-based inference.
 
-Constraints/indexes:
+### Worker
 
-- Unique `(combo_position_id, con_id)`
-- Index `(con_id)`
+Job type `combo_positions.sync` registered in `scripts/work_jobs.py`.
+Uses TWS connection params (host, port, client_id).
 
-## Service Plan
+### API
 
-Add `src/services/combo_position_sync.py`.
+Router: `src/api/routers/spreads.py`
 
-Core behavior:
+| Method | Path                             | Description                                                            |
+| ------ | -------------------------------- | ---------------------------------------------------------------------- |
+| `GET`  | `/api/v1/spreads`                | List combos with nested legs. Filters: `account_id`, `symbol`, `limit` |
+| `GET`  | `/api/v1/spreads/{spread_id}`    | Single spread detail                                                   |
+| `GET`  | `/api/v1/spreads/unmatched-legs` | Positions not in any combo. Filter: `symbol` (default `CL`)            |
+| `POST` | `/api/v1/spreads/sync`           | Enqueue a `combo_positions.sync` job                                   |
 
-- `check_combo_tables_ready(engine)` for migration guard.
-- `sync_combo_positions_once(engine, base_url, timeout_seconds, verify_tls)`:
-  - ensure CPAPI session is authenticated.
-  - call `/portfolio/accounts`.
-  - for each account call `/portfolio/{accountId}/combo/positions?nocache=true`.
-  - upsert `combo_positions` + `combo_position_legs`.
-  - mark stale rows for account snapshot (replace semantics per account).
-  - return sync metrics.
+### Frontend
 
-Implementation note:
+`frontend/src/components/SpreadsTable.tsx` at `/spreads` route.
 
-- Persist full payload in `raw` to protect against schema drift.
-- Map only stable fields initially; add fields after observing live payloads.
+- Two tabs: "Native Combos" and "Unmatched CL Legs" with counts.
+- Expandable rows showing leg-level detail.
+- Sync button to enqueue combo sync job.
 
-## Jobs/Worker Plan
+### Taskfile
 
-- Add job type `combo_positions.sync`.
-- In `scripts/work_jobs.py`, map `combo_positions.sync` to `sync_combo_positions_once`.
-- Optional: enqueue `combo_positions.sync` after `positions.sync`.
-- Expose manual enqueue endpoint/tool for operator control.
+`task gateway` command exists but is not needed with the TWS-only approach.
 
-## API Plan
+## Key Lessons for Next Time
 
-Add router `src/api/routers/spreads.py`.
+1. **CPAPI is not worth the operational cost for individual accounts.**
+   The gateway is a separate Java process requiring browser login, 2FA,
+   daily re-auth, and periodic tickle keep-alive. Too much friction.
 
-- `GET /api/v1/spreads`
-  - filters: `account_id`, `symbol` (default `CL`), `limit`.
-  - returns spread objects with nested legs.
-- `GET /api/v1/spreads/{spread_id}`
-- `GET /api/v1/spreads/unmatched-legs`
-  - CL legs that are not part of any CPAPI combo snapshot.
+2. **TWS `ib.positions()` never returns BAG for individually legged spreads.**
+   Only positions submitted as a BAG/combo order get `secType=BAG` and `comboLegs`.
+   Most CL calendar spreads are legged in individually.
 
-## UI Plan
+3. **Spread inference must come from execution data, not position data.**
+   Positions are stateless snapshots. Executions carry the context of
+   what was traded together.
 
-Add a `Spreads` view (new route) or a second tab in `Positions`.
+4. **macOS port 5000 is taken by AirPlay Receiver (ControlCenter).**
+   If the gateway is ever needed again, use port 8888.
 
-Primary table columns:
+5. **The combo tables use a FK with cascade delete** (`combo_position_legs.combo_position_id`
+   → `combo_positions.id`). This is the first FK in the codebase. Monitor for any
+   friction and remove if needed.
 
-- Account
-- Spread name/description
-- Net position
-- Legs (e.g., `-1 CLU6 / +1 CLZ6`)
-- Avg price
-- Unrealized PnL
-- Last synced at
+6. **`httpx` was added as a dependency** for the original CPAPI client.
+   It's no longer used by the combo sync but remains available.
 
-Interaction:
+## Acceptance Criteria (updated)
 
-- Expand row to show leg-level metrics.
-- Badge: `Native Combo` vs `Unmatched Legs`.
-
-## Operational Constraints
-
-- CPAPI session requires interactive login and periodic re-auth.
-- Gateway must run on same machine as browser login for individual accounts.
-- When session is invalid, API should return clear actionable errors (`Re-auth required`).
-
-## Rollout
-
-1. Add migration + ORM models.
-2. Implement CPAPI client + sync service.
-3. Add `combo_positions.sync` worker wiring.
-4. Add read API endpoints.
-5. Add frontend `Spreads` UI.
-6. Add operator runbook for gateway login/reauth.
-
-## Acceptance Criteria
-
-- Spread opened as combo in IBKR appears in ngtrader as one spread with linked legs.
+- Spreads inferred from execution data appear as linked combos with legs.
 - Re-running sync is idempotent (no duplicate combos/legs).
-- Unauthenticated CPAPI session produces explicit, operator-actionable error.
 - `/positions` still works unchanged for leg-level monitoring.
-- CL spread screen shows both native combos and unmatched CL legs.
-
-## Risks and Mitigations
-
-- Session churn and re-auth friction.
-  - Mitigation: surface session status + lightweight runbook.
-- Not all manual legged positions appear as combos.
-  - Mitigation: unmatched-legs view remains available.
-- CPAPI payload shape drift.
-  - Mitigation: keep `raw` payload and conservative field mapping.
+- Spreads UI shows both linked combos and unmatched legs.
 
 ## References
 
-- IBKR CPAPI v1: `https://ibkrcampus.com/campus/ibkr-api-page/cpapi-v1/`
-- IBKR Web API changelog: `https://ibkrcampus.com/campus/ibkr-api-page/web-api-changelog/`
-- TWS complex positions guide: `https://ibkrguides.com/tws/usersguidebook/realtimeactivitymonitoring/complexpositions.htm`
 - TWS API positions docs: `https://interactivebrokers.github.io/tws-api/positions.html`
+- TWS complex positions guide: `https://ibkrguides.com/tws/usersguidebook/realtimeactivitymonitoring/complexpositions.htm`
+- IBKR CPAPI v1: `https://ibkrcampus.com/campus/ibkr-api-page/cpapi-v1/`
 - Flex complex positions report: `https://www.ibkrguides.com/reportingreference/reportguide/complexpositions_fq.htm`

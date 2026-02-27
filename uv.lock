@@ -632,6 +632,7 @@ source = { editable = "." }
 dependencies = [
     { name = "alembic" },
     { name = "fastapi" },
+    { name = "httpx" },
     { name = "ib-async" },
     { name = "langgraph" },
     { name = "pandera", extra = ["pandas"] },
@@ -652,6 +653,7 @@ dev = [
 requires-dist = [
     { name = "alembic", specifier = ">=1.14" },
     { name = "fastapi", specifier = ">=0.115" },
+    { name = "httpx", specifier = ">=0.28" },
     { name = "ib-async", specifier = ">=2.1.0" },
     { name = "langgraph", specifier = ">=0.2.76" },
     { name = "pandera", extras = ["pandas"], specifier = ">=0.20" },
