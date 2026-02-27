@@ -81,3 +81,7 @@ They're often classes and keep track of "state", but I can still test 90% of wha
 ### Services
 
 Services are the harness for creating long-running processes that are healthy and operate well.
+
+## Names
+
+quantxos.com

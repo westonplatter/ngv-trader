@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
+import { usePrivacy } from "../contexts/PrivacyContext";
+import { PRIVACY_MASK } from "../utils/privacy";
 
 const API_BASE_URL = "http://localhost:8000/api/v1";
 
@@ -76,6 +78,7 @@ function formatPrice(value: number | null | undefined): string {
 }
 
 export default function TradesTable() {
+  const { privacyMode } = usePrivacy();
   const [trades, setTrades] = useState<Trade[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -401,7 +404,7 @@ export default function TradesTable() {
                     {trade.side ?? "—"}
                   </td>
                   <td className="px-3 py-2 whitespace-nowrap text-gray-700">
-                    {trade.total_quantity}
+                    {privacyMode ? PRIVACY_MASK : trade.total_quantity}
                   </td>
                   <td className="px-3 py-2 whitespace-nowrap text-gray-700">
                     {formatPrice(trade.avg_price)}
@@ -417,7 +420,7 @@ export default function TradesTable() {
                     </span>
                   </td>
                   <td className="px-3 py-2 whitespace-nowrap text-gray-600 text-xs">
-                    {trade.ib_perm_id ?? "—"}
+                    {privacyMode ? PRIVACY_MASK : (trade.ib_perm_id ?? "—")}
                   </td>
                   <td className="px-3 py-2 whitespace-nowrap text-gray-600 text-xs truncate max-w-[160px]">
                     {trade.order_ref ?? "—"}
@@ -488,7 +491,7 @@ export default function TradesTable() {
                                     {ex.side ?? "—"}
                                   </td>
                                   <td className="px-2 py-1 whitespace-nowrap text-gray-700">
-                                    {ex.quantity}
+                                    {privacyMode ? PRIVACY_MASK : ex.quantity}
                                   </td>
                                   <td className="px-2 py-1 whitespace-nowrap text-gray-700">
                                     {formatPrice(ex.price)}
@@ -500,7 +503,7 @@ export default function TradesTable() {
                                     {ex.exchange ?? "—"}
                                   </td>
                                   <td className="px-2 py-1 whitespace-nowrap text-gray-500 font-mono truncate max-w-[200px]">
-                                    {ex.ib_exec_id}
+                                    {privacyMode ? PRIVACY_MASK : ex.ib_exec_id}
                                   </td>
                                   <td className="px-2 py-1 whitespace-nowrap text-gray-600">
                                     .{String(ex.exec_revision).padStart(2, "0")}
