@@ -1,4 +1,6 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
+import { usePrivacy } from "../contexts/PrivacyContext";
+import { PRIVACY_MASK } from "../utils/privacy";
 
 interface Position {
   id: number;
@@ -83,6 +85,7 @@ function regexMatch(
 }
 
 export default function PositionsTable() {
+  const { privacyMode } = usePrivacy();
   const [positions, setPositions] = useState<Position[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -499,13 +502,16 @@ export default function PositionsTable() {
                             key={col.key}
                             className="px-3 py-2 whitespace-nowrap"
                           >
-                            {col.key === "last_trade_date"
-                              ? formatExpiry(pos[col.key] as string | null)
-                              : col.key === "option_expiry_date"
-                                ? expiryForPosition(pos)
-                                : col.key === "strike" && pos.sec_type === "FUT"
-                                  ? "—"
-                                  : (pos[col.key] ?? "—")}
+                            {col.key === "position" && privacyMode
+                              ? PRIVACY_MASK
+                              : col.key === "last_trade_date"
+                                ? formatExpiry(pos[col.key] as string | null)
+                                : col.key === "option_expiry_date"
+                                  ? expiryForPosition(pos)
+                                  : col.key === "strike" &&
+                                      pos.sec_type === "FUT"
+                                    ? "—"
+                                    : (pos[col.key] ?? "—")}
                           </td>
                         ))}
                       </tr>

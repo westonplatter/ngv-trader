@@ -335,6 +335,24 @@ class TradeExecution(Base):
     )
 
 
+class UserPreference(Base):
+    __tablename__ = "user_preferences"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    key: Mapped[str] = mapped_column(String, unique=True, nullable=False)
+    value: Mapped[dict] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+
+
 class WorkerHeartbeat(Base):
     __tablename__ = "worker_heartbeats"
     __table_args__ = (UniqueConstraint("worker_type", name="uq_worker_heartbeats_worker_type"),)

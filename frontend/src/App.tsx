@@ -12,6 +12,7 @@ import TradebotChat from "./components/TradebotChat";
 import TradesTable from "./components/TradesTable";
 import WatchListsPage from "./components/WatchListsPage";
 import WorkerStatusLights from "./components/WorkerStatusLights";
+import { PrivacyProvider, usePrivacy } from "./contexts/PrivacyContext";
 
 const NAV_ITEMS = [
   { label: "Accounts", path: "/accounts" },
@@ -21,6 +22,28 @@ const NAV_ITEMS = [
   { label: "Watch Lists", path: "/watchlists" },
   { label: "Tradebot", path: "/tradebot" },
 ] as const;
+
+function PrivacyToggle() {
+  const { privacyMode, togglePrivacy } = usePrivacy();
+  return (
+    <button
+      onClick={togglePrivacy}
+      className={`ml-auto flex items-center gap-1.5 rounded px-2.5 py-1 text-xs font-medium transition-colors ${
+        privacyMode
+          ? "bg-gray-900 text-white"
+          : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+      }`}
+      title={
+        privacyMode
+          ? "Privacy mode ON — quantities hidden"
+          : "Privacy mode OFF — quantities visible"
+      }
+    >
+      <span>{privacyMode ? "🙈" : "👁"}</span>
+      <span>Privacy</span>
+    </button>
+  );
+}
 
 function App() {
   const location = useLocation();
@@ -53,6 +76,7 @@ function App() {
           </NavLink>
         ))}
         <WorkerStatusLights />
+        <PrivacyToggle />
       </nav>
       <div className={contentClass}>
         <Routes>
@@ -70,4 +94,10 @@ function App() {
   );
 }
 
-export default App;
+export default function AppWithProviders() {
+  return (
+    <PrivacyProvider>
+      <App />
+    </PrivacyProvider>
+  );
+}

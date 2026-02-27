@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
+import { usePrivacy } from "../contexts/PrivacyContext";
+import { PRIVACY_MASK } from "../utils/privacy";
 
 const API_BASE_URL = "http://localhost:8000/api/v1";
 
@@ -77,6 +79,7 @@ function getDisplayedSymbol(order: Order): string {
 }
 
 export default function OrdersTable() {
+  const { privacyMode } = usePrivacy();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -411,7 +414,7 @@ export default function OrdersTable() {
                   {getDisplayedSymbol(order) || "—"}
                 </td>
                 <td className="px-3 py-2 whitespace-nowrap text-gray-800">
-                  {order.ib_perm_id ?? "—"}
+                  {privacyMode ? PRIVACY_MASK : (order.ib_perm_id ?? "—")}
                 </td>
                 <td className="px-3 py-2 whitespace-nowrap text-gray-800">
                   {order.account_alias ?? `Account ${order.account_id}`}
@@ -420,7 +423,7 @@ export default function OrdersTable() {
                   {order.side}
                 </td>
                 <td className="px-3 py-2 whitespace-nowrap text-gray-700">
-                  {order.quantity}
+                  {privacyMode ? PRIVACY_MASK : order.quantity}
                 </td>
                 <td className="px-3 py-2 whitespace-nowrap text-gray-700">
                   <div>{order.order_type}</div>
@@ -452,7 +455,9 @@ export default function OrdersTable() {
                 </td>
                 <td className="px-3 py-2 whitespace-nowrap text-gray-700">
                   <div>
-                    {order.filled_quantity} / {order.quantity}
+                    {privacyMode
+                      ? PRIVACY_MASK
+                      : `${order.filled_quantity} / ${order.quantity}`}
                   </div>
                 </td>
                 <td className="px-3 py-2 whitespace-nowrap">

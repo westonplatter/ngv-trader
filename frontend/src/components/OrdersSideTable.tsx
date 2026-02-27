@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import { usePrivacy } from "../contexts/PrivacyContext";
+import { PRIVACY_MASK } from "../utils/privacy";
 
 interface OrderRow {
   id: number;
@@ -76,6 +78,7 @@ function computeTotalMs(order: OrderRow, nowMs: number): number {
 }
 
 export default function OrdersSideTable() {
+  const { privacyMode } = usePrivacy();
   const [orders, setOrders] = useState<OrderRow[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [nowMs, setNowMs] = useState<number>(() => Date.now());
@@ -148,7 +151,8 @@ export default function OrdersSideTable() {
                   {order.id}
                 </td>
                 <td className="px-2 py-1 text-gray-700">
-                  {order.side} {order.quantity} {order.symbol}
+                  {order.side} {privacyMode ? PRIVACY_MASK : order.quantity}{" "}
+                  {order.symbol}
                   {order.contract_month ? ` ${order.contract_month}` : ""}
                 </td>
                 <td className="px-2 py-1">
