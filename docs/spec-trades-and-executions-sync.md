@@ -36,7 +36,6 @@ Recommended columns:
 - `ib_perm_id` (int, nullable)
 - `order_ref` (text, nullable)
 - `ib_order_id` (int, nullable)
-- `client_id` (int, nullable)
 - `symbol`, `sec_type`, `side`, `exchange`, `currency` (nullable text as needed)
 - `status` (text, not null; e.g. `partial`, `filled`, `cancelled`, `unknown`)
 - `total_quantity` (float, not null, default `0`)
@@ -56,15 +55,14 @@ Indexes/constraints:
 Recommended columns:
 
 - `id` (pk)
-- `trade_id` (int, not null)
+- `trade_id` (int, not null, FK → `trades.id`)
 - `account_id` (int, not null; denormalized for conflict/index performance)
 - `ib_exec_id` (text, not null)
-- `exec_id_base` (text, not null; `ib_exec_id` without correction suffix)
-- `exec_revision` (int, not null, default `0`)
+- `exec_id_base` (text, not null; `ib_exec_id` up to and including the last `.`)
+- `exec_revision` (int, not null, default `1`)
 - `ib_perm_id` (int, nullable)
 - `ib_order_id` (int, nullable)
 - `order_ref` (text, nullable)
-- `client_id` (int, nullable)
 - `executed_at` (timestamptz, not null)
 - `quantity`, `price` (float, not null)
 - `side` (text, nullable)
@@ -77,7 +75,7 @@ Recommended columns:
 
 Indexes/constraints:
 
-- Unique `(account_id, ib_exec_id)`.
+- Unique `(ib_exec_id)`.
 - Index on `(account_id, exec_id_base, exec_revision desc)`.
 - Index on `(trade_id, executed_at)`.
 
@@ -85,13 +83,18 @@ Indexes/constraints:
 
 ### Primary execution identity
 
-- Use unique `(account_id, ib_exec_id)` for ingestion idempotency.
+- Use unique `(ib_exec_id)` for ingestion idempotency.
 
 ### Correction handling
 
+IBKR corrections arrive as new `execDetails` callbacks where the `execId` differs
+only in the digits after the final period (e.g. `.01` → `.02`).
+Ref: [Execution class](https://interactivebrokers.github.io/tws-api/classIBApi_1_1Execution.html),
+[Executions & Commissions](https://interactivebrokers.github.io/tws-api/executions_commissions.html).
+
 - Parse `ib_exec_id` into:
-  - `exec_id_base` (stable part)
-  - `exec_revision` (suffix revision, default `0`)
+  - `exec_id_base` (everything up to and including the last `.`)
+  - `exec_revision` (integer after the last `.`)
 - For all rows with same `(account_id, exec_id_base)`:
   - mark highest revision as `is_canonical = true`
   - mark lower revisions as `is_canonical = false`
@@ -104,7 +107,7 @@ Parent resolution order per incoming execution:
 1. If `ib_perm_id > 0`: match/create by `(account_id, ib_perm_id)`.
 2. Else if `order_ref` exists: match/create by `(account_id, order_ref)`.
 3. Else fallback to stronger composite:
-   - `(account_id, client_id, ib_order_id, symbol, side, trade_date)`
+   - `(account_id, ib_order_id, symbol, side, trade_date)`
    - where `trade_date` is execution date in UTC (not a coarse time bucket).
 
 ## Sync Service Plan
@@ -183,6 +186,46 @@ Single Alembic revision:
 3. Add indexes/constraints (including partial unique indexes).
 4. No destructive changes to existing `orders`, `order_events`, `positions`.
 
+## Spread Inference from Executions
+
+### Context
+
+IBKR does not provide native spread linkage for positions legged in individually.
+Spread membership must be inferred from execution data after trade sync.
+See `docs/spec-client-portal-combo-spreads.md` for full findings on why
+CPAPI and TWS BAG detection don't work for individually legged spreads.
+
+### Approach
+
+Keep it simple: group executions that share the same originating order, then
+let the operator confirm or dismiss the suggested spread in the UI.
+
+1. **Auto-suggest**: after trade sync, find groups of canonical `trade_executions`
+   that share the same `ib_order_id` (combo/BAG submission) or the same
+   `order_ref` spread tag (e.g. `ngtrader-spread-{id}`). These are
+   candidate spreads.
+2. **Operator confirms**: suggested spreads appear in the Spreads UI with a
+   `status="suggested"` state. The operator reviews and clicks confirm or dismiss.
+3. **On confirm**: the spread is written to `combo_positions` + `combo_position_legs`
+   with `source="inferred"` and `status="confirmed"`.
+4. **On dismiss**: the suggestion is marked `status="dismissed"` and hidden
+   from the default view.
+
+### No automatic linking
+
+Timestamp-proximity matching (e.g. "two CL trades within 60 seconds") is
+intentionally excluded. False matches are worse than requiring a manual confirm.
+Only executions with an explicit shared identifier (`ib_order_id` or `order_ref`)
+are suggested.
+
+### Acceptance criteria (spread inference)
+
+- Executions sharing an `ib_order_id` or `order_ref` tag appear as a suggested spread.
+- Operator can confirm or dismiss a suggested spread from the UI.
+- Confirmed spreads populate `combo_positions` + `combo_position_legs`.
+- Dismissed suggestions do not reappear on subsequent syncs.
+- Re-running inference is idempotent.
+
 ## Rollout Sequence
 
 1. Migration + ORM models.
@@ -191,7 +234,8 @@ Single Alembic revision:
 4. API router for read access.
 5. Optional Tradebot tools.
 6. Optional frontend trades table.
-7. Operational validation with repeated sync runs.
+7. Spread inference: suggest spreads from shared order IDs, operator confirms in UI.
+8. Operational validation with repeated sync runs.
 
 ## Acceptance Criteria
 
@@ -202,12 +246,13 @@ Single Alembic revision:
 - `ib_perm_id > 0` rows are unique by `(account_id, ib_perm_id)`.
 - `ib_perm_id = 0` rows resolve via `order_ref` or composite fallback.
 - Post-order flow can refresh both positions and trades via jobs.
+- Suggested spreads require operator confirmation before becoming linked combos.
 
 ## Risks and Mitigations
 
 - IB execution windows vary by TWS/Gateway config.
   - Mitigation: configurable `lookback_days`, default conservative backfill.
 - Missing `order_ref` on older/manual orders.
-  - Mitigation: composite fallback including `client_id`.
+  - Mitigation: composite fallback using `(account_id, ib_order_id, symbol, side, trade_date)`.
 - Correction suffix format variance.
-  - Mitigation: parser with safe default (`revision=0`) + raw capture for audit.
+  - Mitigation: parser with safe default (`revision=1`) + raw capture for audit.
