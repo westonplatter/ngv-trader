@@ -2,6 +2,12 @@
 
 Agentic software enabling one person to operate as an quick and nimble quantative futures, vol. and options trade desk.
 
+## Before Implementing
+
+Before starting any implementation task, read `docs/_index.md` and look up any
+specs or docs whose tags match the area you're working in. Read the relevant
+docs before writing code.
+
 ## Docs Index Rule
 
 If any `docs/*.md` file is added, modified, renamed, or deleted (excluding `docs/_index.md`), update `docs/_index.md` in the same change.
