@@ -47,7 +47,10 @@ Recommended columns:
 Indexes/constraints:
 
 - Partial unique index on `(account_id, ib_perm_id)` where `ib_perm_id > 0`.
-- Optional unique index on `(account_id, order_ref)` where `order_ref is not null`.
+- Non-unique index on `(account_id, order_ref)` where `order_ref is not null`.
+  `order_ref` is NOT unique — IBKR tools like SpreadTrader reuse the same ref
+  across many unrelated trades. Only `ngtrader-*` prefixed refs are treated as
+  unique identifiers for trade parent matching.
 - Non-unique index on `(account_id, last_executed_at desc)`.
 
 ### `trade_executions`

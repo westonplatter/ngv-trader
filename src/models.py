@@ -7,6 +7,7 @@ from sqlalchemy import (
     Boolean,
     DateTime,
     Float,
+    ForeignKey,
     Index,
     Integer,
     String,
@@ -251,6 +252,83 @@ class WatchListInstrument(Base):
     close_price: Mapped[float | None] = mapped_column(Float, nullable=True)
     quote_as_of: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+
+
+class Trade(Base):
+    __tablename__ = "trades"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    account_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    ib_perm_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    order_ref: Mapped[str | None] = mapped_column(Text, nullable=True)
+    ib_order_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    symbol: Mapped[str | None] = mapped_column(String, nullable=True)
+    sec_type: Mapped[str | None] = mapped_column(String, nullable=True)
+    side: Mapped[str | None] = mapped_column(String, nullable=True)
+    exchange: Mapped[str | None] = mapped_column(String, nullable=True)
+    currency: Mapped[str | None] = mapped_column(String, nullable=True)
+    status: Mapped[str] = mapped_column(String, nullable=False, default="unknown")
+    total_quantity: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    avg_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    first_executed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_executed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    fetched_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+
+
+class TradeExecution(Base):
+    __tablename__ = "trade_executions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    trade_id: Mapped[int] = mapped_column(Integer, ForeignKey("trades.id"), nullable=False)
+    account_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    ib_exec_id: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    exec_id_base: Mapped[str] = mapped_column(Text, nullable=False)
+    exec_revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    ib_perm_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    ib_order_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    order_ref: Mapped[str | None] = mapped_column(Text, nullable=True)
+    sec_type: Mapped[str | None] = mapped_column(Text, nullable=True)
+    con_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    exec_role: Mapped[str] = mapped_column(Text, nullable=False, default="standalone")
+    executed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    quantity: Mapped[float] = mapped_column(Float, nullable=False)
+    price: Mapped[float] = mapped_column(Float, nullable=False)
+    side: Mapped[str | None] = mapped_column(Text, nullable=True)
+    exchange: Mapped[str | None] = mapped_column(Text, nullable=True)
+    currency: Mapped[str | None] = mapped_column(Text, nullable=True)
+    liquidity: Mapped[str | None] = mapped_column(Text, nullable=True)
+    commission: Mapped[float | None] = mapped_column(Float, nullable=True)
+    is_canonical: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    raw: Mapped[dict] = mapped_column(JSON, nullable=False)
+    fetched_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
         default=lambda: datetime.now(timezone.utc),

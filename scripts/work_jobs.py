@@ -27,6 +27,7 @@ from src.services.jobs import (
     JOB_TYPE_CONTRACTS_SYNC,
     JOB_TYPE_ORDER_FETCH_SYNC,
     JOB_TYPE_POSITIONS_SYNC,
+    JOB_TYPE_TRADES_SYNC,
     JOB_TYPE_WATCHLIST_ADD_INSTRUMENT,
     JOB_TYPE_WATCHLIST_QUOTES_REFRESH,
     claim_next_job,
@@ -317,6 +318,56 @@ def handle_order_fetch_sync(job: Job, engine: Engine) -> dict:
     }
 
 
+def handle_trades_sync(job: Job, engine: Engine) -> dict:
+    from src.services.trade_sync import sync_trades_once
+
+    payload = job.payload or {}
+    host = str(payload.get("host") or "127.0.0.1")
+    port_raw = payload.get("port")
+    client_id_raw = payload.get("client_id")
+    connect_timeout_raw = payload.get("connect_timeout_seconds")
+    lookback_days_raw = payload.get("lookback_days")
+
+    if isinstance(port_raw, int):
+        port = port_raw
+    else:
+        port = get_int_env("BROKER_TWS_PORT")
+    if port is None:
+        raise RuntimeError("BROKER_TWS_PORT is not set and no port was provided in job payload.")
+
+    if isinstance(client_id_raw, int):
+        client_id = client_id_raw
+    else:
+        client_id = 33
+
+    if isinstance(connect_timeout_raw, (int, float)):
+        connect_timeout_seconds = float(connect_timeout_raw)
+    else:
+        connect_timeout_seconds = 20.0
+
+    if isinstance(lookback_days_raw, int):
+        lookback_days = lookback_days_raw
+    else:
+        lookback_days = 7
+
+    result = sync_trades_once(
+        engine=engine,
+        host=host,
+        port=port,
+        client_id=client_id,
+        connect_timeout_seconds=connect_timeout_seconds,
+        lookback_days=lookback_days,
+    )
+    return {
+        **result,
+        "host": host,
+        "port": port,
+        "client_id": client_id,
+        "connect_timeout_seconds": connect_timeout_seconds,
+        "lookback_days": lookback_days,
+    }
+
+
 def get_handler(job_type: str) -> Callable[[Job, Engine], dict] | None:
     handlers: dict[str, Callable[[Job, Engine], dict]] = {
         JOB_TYPE_POSITIONS_SYNC: handle_positions_sync,
@@ -324,6 +375,7 @@ def get_handler(job_type: str) -> Callable[[Job, Engine], dict] | None:
         JOB_TYPE_ORDER_FETCH_SYNC: handle_order_fetch_sync,
         JOB_TYPE_WATCHLIST_ADD_INSTRUMENT: handle_watchlist_add_instrument,
         JOB_TYPE_WATCHLIST_QUOTES_REFRESH: handle_watchlist_quotes_refresh,
+        JOB_TYPE_TRADES_SYNC: handle_trades_sync,
     }
     return handlers.get(job_type)
 
