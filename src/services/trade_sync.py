@@ -12,7 +12,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from ib_async import IB, ExecutionFilter
-from sqlalchemy import Engine, and_, func, inspect, select, update
+from sqlalchemy import Engine, inspect, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 

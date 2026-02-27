@@ -30,7 +30,7 @@ to use them. No new columns on `trades` — combo detection uses the existing
 
 Store the execution's contract `secType` and `conId` on each row.
 
-```
+```sql
 trade_executions.sec_type  (text, nullable)
 trade_executions.con_id    (integer, nullable)
 ```
@@ -51,7 +51,7 @@ available in the fill object — just not persisted today.
 
 Explicit role tag computed during ingestion.
 
-```
+```sql
 trade_executions.exec_role  (text, not null, default 'standalone')
 ```
 

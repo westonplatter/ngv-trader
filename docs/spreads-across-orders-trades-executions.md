@@ -46,7 +46,7 @@ algebraic combination of these leg prices.
 All fills from one combo execution share the same base prefix, with the
 sub-component after the second-to-last dot distinguishing combo vs legs:
 
-```
+```text
 000100c2.699f7eb6.01.01   combo summary (secType=BAG)
 000100c2.699f7eb6.02.01   leg 1
 000100c2.699f7eb6.03.01   leg 2
