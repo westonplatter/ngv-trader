@@ -1,28 +1,99 @@
-BSD 3-Clause License
+ngtrader-pro Commercial License
 
-Copyright (c) 2026, Weston Platter
+Copyright (c) 2026, Weston Platter. All rights reserved.
 
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions are met:
+COMMERCIAL SOFTWARE LICENSE AGREEMENT
 
-1. Redistributions of source code must retain the above copyright notice, this
-   list of conditions and the following disclaimer.
+This Commercial Software License Agreement ("Agreement") is entered into
+between Weston Platter ("Licensor") and the individual or entity using this
+software ("Licensee").
 
-2. Redistributions in binary form must reproduce the above copyright notice,
-   this list of conditions and the following disclaimer in the documentation
-   and/or other materials provided with the distribution.
+1. GRANT OF LICENSE
 
-3. Neither the name of the copyright holder nor the names of its
-   contributors may be used to endorse or promote products derived from
-   this software without specific prior written permission.
+   Subject to the terms and conditions of this Agreement, Licensor hereby
+   grants Licensee a limited, non-exclusive, non-transferable, revocable
+   license to use, copy, and modify the software known as ngtrader-pro
+   ("Software") solely for personal, non-commercial use, provided that
+   Licensee's total assets under management ("AUM") do not exceed One Million
+   United States Dollars (USD $1,000,000).
 
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
-FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
-DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
-SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
-CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
-OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+2. RESTRICTIONS
+
+   a. Licensee shall NOT use the Software if Licensee's total AUM exceeds
+      USD $1,000,000. Licensees with AUM exceeding this threshold must
+      contact Licensor to obtain a separate commercial license.
+
+   b. Licensee shall NOT sublicense, sell, resell, transfer, assign,
+      distribute, or otherwise make the Software available to any third
+      party.
+
+   c. Licensee shall NOT use the Software for the benefit of any third
+      party or operate the Software as a service for others.
+
+   d. Licensee shall NOT remove or alter any proprietary notices, labels,
+      or marks on the Software.
+
+3. DEFINITION OF AUM
+
+   "Assets Under Management" (AUM) refers to the total market value of all
+   financial assets and investments that the Licensee manages, controls, or
+   directs, whether held in personal accounts, trusts, or any other
+   investment vehicles. This includes, but is not limited to, equities,
+   fixed income, derivatives, cash, and cash equivalents.
+
+4. INTELLECTUAL PROPERTY
+
+   The Software and all copies thereof are proprietary to and the property
+   of Licensor. Licensor retains all right, title, and interest in and to
+   the Software, including all intellectual property rights therein. This
+   Agreement does not convey to Licensee any rights of ownership in or
+   related to the Software.
+
+5. NO WARRANTY
+
+   THE SOFTWARE IS PROVIDED "AS IS" WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+   FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT. IN NO EVENT SHALL
+   THE LICENSOR BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY,
+   WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM, OUT
+   OF, OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+   THE SOFTWARE.
+
+6. LIMITATION OF LIABILITY
+
+   IN NO EVENT SHALL LICENSOR BE LIABLE FOR ANY INDIRECT, INCIDENTAL,
+   SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED
+   TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+   PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+   LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+   NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+   SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+7. TERMINATION
+
+   This Agreement is effective until terminated. Licensor may terminate this
+   Agreement immediately if Licensee breaches any term of this Agreement,
+   including but not limited to exceeding the AUM threshold. Upon
+   termination, Licensee must cease all use of the Software and destroy all
+   copies in Licensee's possession.
+
+8. COMMERCIAL LICENSING
+
+   For use beyond the scope of this license, including but not limited to
+   AUM exceeding USD $1,000,000, institutional use, or redistribution,
+   please contact Licensor at: weston@westonplatter.co
+
+9. GOVERNING LAW
+
+   This Agreement shall be governed by and construed in accordance with the
+   laws of the United States, without regard to its conflict of laws
+   provisions.
+
+10. ENTIRE AGREEMENT
+
+    This Agreement constitutes the entire agreement between the parties with
+    respect to the use of the Software and supersedes all prior or
+    contemporaneous understandings regarding such subject matter.
+
+By using the Software, Licensee acknowledges that they have read this
+Agreement, understand it, and agree to be bound by its terms and conditions.
