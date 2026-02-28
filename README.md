@@ -2,9 +2,11 @@
 
 Before using this project, read the [Disclaimer](#disclaimer).
 
-## Dev Env Setup
+## Getting Started
 
-Set up your local development environment using [docs/install-python-and-frontend.md](docs/install-python-and-frontend.md).
+New to the project? Follow the [Getting Started guide](docs/getting-started.md) for a full walkthrough covering prerequisites, database setup, IBKR configuration, and running the app.
+
+For a quick install reference, see [docs/install-python-and-frontend.md](docs/install-python-and-frontend.md).
 
 ## Goals
 
