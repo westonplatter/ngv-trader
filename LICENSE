@@ -1,28 +1,216 @@
-BSD 3-Clause License
+# Proprietary Software License Agreement
 
-Copyright (c) 2026, Weston Platter
+**Effective Date:** March 1, 2026
+**Licensor:** Weston Platter
+**Software:** Next Gen Trader Pro ("ngtrader")
 
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions are met:
+---
 
-1. Redistributions of source code must retain the above copyright notice, this
-   list of conditions and the following disclaimer.
+## 1. Grant of License
 
-2. Redistributions in binary form must reproduce the above copyright notice,
-   this list of conditions and the following disclaimer in the documentation
-   and/or other materials provided with the distribution.
+Subject to the terms of this Agreement, Licensor grants you a limited,
+non-exclusive, non-transferable, non-sublicensable, revocable license to:
 
-3. Neither the name of the copyright holder nor the names of its
-   contributors may be used to endorse or promote products derived from
-   this software without specific prior written permission.
+- Access the private GitHub repository containing the Software;
+- Download and use the Software;
+- Run and modify the Software solely for your own internal personal use.
 
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
-FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
-DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
-SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
-CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
-OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+All rights not expressly granted are reserved by Licensor.
+
+---
+
+## 2. License Types
+
+### 2.1 Personal Use License (Free Tier)
+
+You may use the Software without payment provided that:
+
+- You are an individual;
+- You are managing less than USD $1,000,000 in aggregate trading capital or
+  assets under management ("AUM");
+- You are not using the Software for commercial purposes;
+- You are not providing services to third parties using the Software.
+
+If you exceed the AUM threshold or engage in commercial use, you must obtain
+a Commercial License.
+
+You are solely responsible for determining whether you qualify for the
+Personal Use License. Licensor reserves the right to request reasonable
+verification of AUM or commercial use status at any time.
+
+Licensor may modify or discontinue the free Personal Use License upon
+30 days written notice.
+
+---
+
+### 2.2 Commercial License
+
+A paid Commercial License is required if:
+
+- You use the Software in connection with any business, fund, advisory
+  service, or revenue-generating activity;
+- You manage or control $1,000,000 USD or more in AUM;
+- You provide trading, consulting, or advisory services to third parties
+  using the Software;
+- You integrate the Software into a commercial product or service;
+- You otherwise use the Software for commercial purposes.
+
+Commercial License terms, pricing, and payment structure will be defined
+separately by Licensor. Contact: westonplatter@gmail.com
+
+---
+
+## 3. Restrictions
+
+You may NOT:
+
+1. Redistribute the Software in any form, including source code or compiled
+   form;
+2. Publish the Software in any public repository;
+3. Share repository access with third parties;
+4. Sell, sublicense, lease, rent, or transfer the Software;
+5. Offer the Software as a hosted or SaaS service;
+6. Remove or alter copyright, license, or proprietary notices;
+7. Use the Software in violation of any applicable laws or regulations.
+
+---
+
+## 4. Ownership
+
+The Software, including all source code, algorithms, logic, structure,
+design, and documentation, is and remains the exclusive property of
+Licensor.
+
+This Agreement does not grant you ownership of any intellectual property
+rights.
+
+---
+
+## 5. Modifications
+
+You may modify the Software solely for your own internal use. You may not
+distribute modified versions.
+
+Licensor retains ownership of the original Software. You retain ownership
+of your original modifications, subject to the terms of this Agreement.
+
+---
+
+## 6. No Investment Advice
+
+THE SOFTWARE IS PROVIDED FOR EDUCATIONAL AND INFORMATIONAL PURPOSES ONLY.
+
+The Software:
+
+- Does not constitute investment advice;
+- Does not constitute financial, legal, or tax advice;
+- Does not create a fiduciary relationship;
+- Does not act as a broker, dealer, or registered investment advisor.
+
+You are solely responsible for all trading decisions and outcomes.
+
+---
+
+## 7. Assumption of Risk
+
+Trading and investing involve substantial risk, including the risk of
+complete loss of capital.
+
+You acknowledge and agree:
+
+- You use the Software entirely at your own risk;
+- Licensor is not responsible for any financial losses;
+- Market conditions, execution errors, data errors, or software bugs may
+  result in losses.
+
+---
+
+## 8. Disclaimer of Warranties
+
+THE SOFTWARE IS PROVIDED "AS IS" AND "AS AVAILABLE."
+
+Licensor makes no warranties, express or implied, including:
+
+- Merchantability
+- Fitness for a particular purpose
+- Non-infringement
+- Accuracy or reliability
+
+Licensor does not guarantee uninterrupted or error-free operation.
+
+---
+
+## 9. Limitation of Liability
+
+To the maximum extent permitted by law:
+
+**Personal Use License (Free Tier).** Licensor shall not be liable for any
+damages of any kind arising from your use of the Software, including but
+not limited to direct, indirect, incidental, consequential, or special
+damages, loss of profits, loss of capital, trading losses, or business
+interruption. Your use of the Software under the free Personal Use License
+is entirely at your own risk.
+
+**Commercial License.** Licensor shall not be liable for any indirect,
+incidental, consequential, or special damages, loss of profits, loss of
+capital, trading losses, or business interruption. Licensor's total
+aggregate liability for direct damages shall not exceed the total amount
+paid by you to Licensor in the twelve (12) months preceding the claim.
+
+---
+
+## 10. Indemnification
+
+You agree to indemnify and hold harmless Licensor from any claims, damages,
+liabilities, or expenses arising from:
+
+- Your use of the Software;
+- Your trading activities;
+- Your violation of this Agreement.
+
+---
+
+## 11. Termination
+
+Upon the first breach of any provision of this Agreement, Licensor will
+provide written notice. You will have 30 days from receipt of notice to
+cure the breach. If the breach is not cured within 30 days, this License
+terminates immediately.
+
+Licensor may terminate this License immediately and without a cure period
+for violations of Section 3 (Restrictions), including unauthorized
+redistribution or publication of the Software.
+
+Upon termination, you must:
+
+- Cease using the Software;
+- Delete all copies of the Software in your possession.
+
+User-generated data — including trade logs, configuration files, and
+database records created by your use of the Software — remains your
+property and is not subject to deletion requirements.
+
+Licensor may revoke repository access at any time.
+
+Sections 4, 6, 7, 8, 9, 10, and this Section 11 survive termination.
+
+---
+
+## 12. Governing Law
+
+This Agreement shall be governed by the laws of the State of Colorado,
+without regard to conflict of law principles.
+
+Any disputes shall be resolved in the courts located in the State of
+Colorado.
+
+---
+
+## 13. Entire Agreement
+
+This Agreement constitutes the entire agreement between the parties
+regarding the Software and supersedes any prior agreements.
+
+---
+
+(c) 2026 Weston Platter. All Rights Reserved.
