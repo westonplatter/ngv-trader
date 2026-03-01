@@ -8,8 +8,8 @@ ngtrader-pro has four main components that work together:
 
 ```text
 ┌─────────────────┐     ┌──────────────────┐     ┌──────────────┐
-│  React Frontend │────▶│  FastAPI Backend  │────▶│  PostgreSQL  │
-│  (Vite, :5173)  │     │  (Uvicorn, :8000) │     │  (:5432)     │
+│  React Frontend │────▶│  FastAPI Backend │────▶│  PostgreSQL  │
+│  (Vite, :5173)  │     │  (Uvicorn, :8000)│     │  (:5432)     │
 └─────────────────┘     └──────────────────┘     └──────────────┘
                                                        ▲
                                                        │
@@ -24,33 +24,21 @@ ngtrader-pro has four main components that work together:
 | ---------------------- | -------------------------------------------------------------------------------------------- |
 | **Frontend**           | React/TypeScript UI for viewing positions, orders, trades, watchlists, and the Tradebot chat |
 | **Backend**            | FastAPI REST API serving data from Postgres and proxying LLM chat                            |
-| **Workers**            | Background processes that sync data with IBKR and execute orders                             |
+| **Workers**            | Background processes that sync data (positions, contracts, quotes) with IBKR                 |
 | **PostgreSQL**         | Stores accounts, positions, orders, trades, contracts, watchlists, and jobs                  |
-| **IBKR TWS / Gateway** | Interactive Brokers connection for live market data and order execution                      |
-
-## Minimum Viable Setup
-
-You don't need every component running to explore the application. Here's what each tier gives you:
-
-| Tier                    | Components                               | What works                                                                        |
-| ----------------------- | ---------------------------------------- | --------------------------------------------------------------------------------- |
-| **Explore the UI**      | PostgreSQL + API + Frontend              | Browse all pages, see the empty-state UI, create orders (queued but not executed) |
-| **View your portfolio** | Above + IBKR TWS + initial data download | See real accounts, positions, and orders from your brokerage                      |
-| **Full experience**     | Above + Workers + LLM API key            | Live sync, order execution, watchlist quotes, Tradebot chat                       |
-
-Start with **Tier 1** to verify your setup works, then add components as needed.
+| **IBKR TWS / Gateway** | Interactive Brokers connection for live market data                                          |
 
 ## Prerequisites
 
 Install these before proceeding:
 
-| Tool                   | Version             | Install                                                                             |
-| ---------------------- | ------------------- | ----------------------------------------------------------------------------------- |
-| `uv`                   | latest              | `curl -LsSf https://astral.sh/uv/install.sh \| sh`                                  |
-| Node.js + npm          | 20+                 | [nodejs.org](https://nodejs.org/)                                                   |
-| PostgreSQL             | 14+                 | [postgresql.org](https://www.postgresql.org/download/) or `brew install postgresql` |
-| Task                   | latest              | [taskfile.dev](https://taskfile.dev/docs/installation)                              |
-| IBKR TWS or IB Gateway | optional for Tier 1 | [interactivebrokers.com](https://www.interactivebrokers.com/en/trading/tws.php)     |
+| Tool                   | Version  | Install                                                                             |
+| ---------------------- | -------- | ----------------------------------------------------------------------------------- | --- |
+| `uv`                   | latest   | `curl -LsSf https://astral.sh/uv/install.sh                                         | sh` |
+| Node.js + npm          | 20+      | [nodejs.org](https://nodejs.org/)                                                   |
+| PostgreSQL             | 14+      | [postgresql.org](https://www.postgresql.org/download/) or `brew install postgresql` |
+| Task                   | latest   | [taskfile.dev](https://taskfile.dev/docs/installation)                              |
+| IBKR TWS or IB Gateway | optional | [interactivebrokers.com](https://www.interactivebrokers.com/en/trading/tws.php)     |
 
 ## 1. Clone and Install Dependencies
 
@@ -97,7 +85,7 @@ DB_NAME=ngtrader_dev
 DB_USER=postgres
 DB_PASSWORD=your_password
 
-# IBKR TWS/Gateway API port (optional for Tier 1)
+# IBKR TWS/Gateway API port (optional)
 # TWS default: 7497 (paper) or 7496 (live)
 # Gateway default: 4002 (paper) or 4001 (live)
 BROKER_TWS_PORT=7497
@@ -162,17 +150,15 @@ Run the environment validator to confirm everything is wired up correctly:
 task validate
 ```
 
-This checks your `.env.dev` file, PostgreSQL connectivity, migration status, and TWS connectivity. To skip the TWS check (e.g., for Tier 1 setup without IBKR):
+This checks your `.env.dev` file, PostgreSQL connectivity, migration status, and TWS connectivity. To skip the TWS check if you don't have IBKR running:
 
 ```bash
 task validate -- --no-tws
 ```
 
-At this point you have a working **Tier 1** setup. You can skip to [step 6](#6-start-the-application) to start the app and explore the UI without IBKR.
+## 5. Set Up IBKR TWS or IB Gateway (optional)
 
-## 5. Set Up IBKR TWS or IB Gateway (optional for Tier 1)
-
-ngtrader-pro connects to Interactive Brokers through TWS (Trader Workstation) or IB Gateway. You need one of them running locally for live data and order execution.
+ngtrader-pro connects to Interactive Brokers through TWS (Trader Workstation) or IB Gateway. You need one of them running locally for live data sync.
 
 ### Configure TWS / Gateway for API access
 
@@ -180,8 +166,7 @@ ngtrader-pro connects to Interactive Brokers through TWS (Trader Workstation) or
 2. Go to **Edit > Global Configuration > API > Settings**
 3. Enable **"Enable ActiveX and Socket Clients"**
 4. Set the **Socket port** (default 7497 for paper trading)
-5. Uncheck **"Read-Only API"** if you want order execution
-6. Add `127.0.0.1` to **Trusted IPs**
+5. Add `127.0.0.1` to **Trusted IPs**
 
 ### Test the connection
 
@@ -239,20 +224,14 @@ curl http://localhost:8000/api/v1/health
 
 Returns `{"status": "ok", "database": "connected"}` when everything is working.
 
-### Start workers (optional — needed for live sync and order execution)
+### Start workers (optional — needed for live sync)
 
-Workers are background processes that sync data with IBKR and execute orders. Run each in its own terminal:
+Workers are background processes that sync data with IBKR. Run in its own terminal:
 
 **Terminal 3 — Jobs worker** (position sync, contract sync, watchlist quotes):
 
 ```bash
 task worker:jobs
-```
-
-**Terminal 4 — Order execution worker** (submits queued orders to TWS):
-
-```bash
-task worker:orders
 ```
 
 Workers require TWS/Gateway to be running. The UI header shows worker health lights (green/yellow/red) based on heartbeat freshness.
@@ -263,14 +242,14 @@ See [tradebot-workers.md](tradebot-workers.md) for worker architecture details.
 
 ### Pages
 
-| Page            | URL           | What it does                                                          |
-| --------------- | ------------- | --------------------------------------------------------------------- |
-| **Tradebot**    | `/tradebot`   | AI chat interface — ask about positions, submit orders, trigger syncs |
-| **Accounts**    | `/accounts`   | View IBKR accounts and set display aliases                            |
-| **Positions**   | `/positions`  | View current holdings with filters, trigger position sync             |
-| **Orders**      | `/orders`     | View synced orders and track fill status                              |
-| **Trades**      | `/trades`     | View executed trade history and fill details                          |
-| **Watch Lists** | `/watchlists` | Create watchlists, add instruments, view live quotes                  |
+| Page            | URL           | What it does                                              |
+| --------------- | ------------- | --------------------------------------------------------- |
+| **Tradebot**    | `/tradebot`   | AI chat interface — ask about positions, trigger syncs    |
+| **Accounts**    | `/accounts`   | View IBKR accounts and set display aliases                |
+| **Positions**   | `/positions`  | View current holdings with filters, trigger position sync |
+| **Orders**      | `/orders`     | View synced orders and track fill status                  |
+| **Trades**      | `/trades`     | View executed trade history and fill details              |
+| **Watch Lists** | `/watchlists` | Create watchlists, add instruments, view live quotes      |
 
 ### Common workflows
 
@@ -294,7 +273,7 @@ See [tradebot-workers.md](tradebot-workers.md) for worker architecture details.
 
 The Tradebot is an LLM-powered assistant that can read your portfolio data and take actions. It requires `TRADEBOT_LLM_API_KEY` to be set in your env file.
 
-Available commands include listing accounts/positions/orders, previewing and submitting orders, syncing positions and contracts, and managing watchlists. See [tradebot-chatbot.md](tradebot-chatbot.md) for the full tool list.
+Available commands include listing accounts/positions/orders, syncing positions and contracts, and managing watchlists. See [tradebot-chatbot.md](tradebot-chatbot.md) for the full tool list.
 
 ## Quick Reference: Task Commands
 
@@ -307,8 +286,7 @@ task frontend:install  # npm install for frontend
 task migrate           # Run Alembic migrations to head
 task migrate:down      # Roll back one migration
 task migrate:new -- "description"  # Create a new migration
-task worker:jobs       # Start jobs worker
-task worker:orders     # Start order execution worker
+task worker:jobs       # Start jobs worker (position sync, quotes)
 task validate          # Check env file, Postgres, migrations, TWS
 task validate -- --no-tws     # Skip TWS connectivity check
 ```
@@ -336,4 +314,4 @@ ENV=prod task api
 | [secrets-using-1password.md](secrets-using-1password.md)         | 1Password CLI integration                            |
 | [tradebot-chatbot.md](tradebot-chatbot.md)                       | Tradebot architecture, tools, and safety constraints |
 | [tradebot-workers.md](tradebot-workers.md)                       | Worker processes, heartbeats, and job dispatch       |
-| [\_index.md](_index.md)                                          | Full documentation index                             |
+| [index.md](_index.md)                                            | Full documentation index                             |
