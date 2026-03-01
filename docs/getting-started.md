@@ -165,10 +165,10 @@ Run the environment validator to confirm everything is wired up correctly:
 task validate
 ```
 
-This checks your `.env.dev` file, PostgreSQL connectivity, and migration status. To also test TWS connectivity:
+This checks your `.env.dev` file, PostgreSQL connectivity, migration status, and TWS connectivity. To skip the TWS check (e.g., for Tier 1 setup without IBKR):
 
 ```bash
-task validate -- --check-tws
+task validate -- --no-tws
 ```
 
 At this point you have a working **Tier 1** setup. You can skip to [step 6](#6-start-the-application) to start the app and explore the UI without IBKR.
@@ -317,8 +317,8 @@ task migrate:down      # Roll back one migration
 task migrate:new -- "description"  # Create a new migration
 task worker:jobs       # Start jobs worker
 task worker:orders     # Start order execution worker
-task validate          # Check env file, Postgres, migrations
-task validate -- --check-tws  # Also test TWS connectivity
+task validate          # Check env file, Postgres, migrations, TWS
+task validate -- --no-tws     # Skip TWS connectivity check
 ```
 
 To use 1Password, wrap any task command:

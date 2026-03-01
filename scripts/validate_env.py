@@ -3,9 +3,9 @@ Validate the development environment: env file, Postgres, migrations, and TWS.
 
 Usage:
   uv run python scripts/validate_env.py --env dev
-  uv run python scripts/validate_env.py --env dev --check-tws
+  uv run python scripts/validate_env.py --env dev --no-tws
   task validate
-  task validate -- --check-tws
+  task validate -- --no-tws
 
 With 1Password (wrap externally):
   op run --env-file=.env.dev -- uv run python scripts/validate_env.py --env dev
@@ -16,7 +16,6 @@ import os
 import sys
 
 from dotenv import load_dotenv
-
 
 # -- Utilities ----------------------------------------------------------------
 
@@ -67,12 +66,14 @@ def check_env_file(env_name: str) -> bool:
         if val and not val.startswith("op://"):
             all_ok = result(f"{var} is set", True) and all_ok
         elif val.startswith("op://"):
-            all_ok = result(
-                f"{var} is set",
-                False,
-                f"Contains op:// reference ({val}). "
-                "Wrap with: op run --env-file=.env.dev -- <command>",
-            ) and all_ok
+            all_ok = (
+                result(
+                    f"{var} is set",
+                    False,
+                    f"Contains op:// reference ({val}). " "Wrap with: op run --env-file=.env.dev -- <command>",
+                )
+                and all_ok
+            )
         else:
             all_ok = result(f"{var} is set", False, "Empty or missing") and all_ok
 
@@ -106,11 +107,11 @@ def check_migrations() -> bool:
     banner("3. Alembic migrations")
 
     try:
+        from sqlalchemy import text
+
         from alembic import command
         from alembic.config import Config
         from alembic.script import ScriptDirectory
-        from sqlalchemy import text
-
         from src.db import get_engine
     except ImportError as exc:
         return result("Import alembic", False, str(exc))
@@ -122,9 +123,7 @@ def check_migrations() -> bool:
 
         engine = get_engine()
         with engine.connect() as conn:
-            row = conn.execute(
-                text("SELECT version_num FROM alembic_version")
-            ).fetchone()
+            row = conn.execute(text("SELECT version_num FROM alembic_version")).fetchone()
             current_rev = row[0] if row else None
 
         if current_rev == head_rev:
@@ -180,14 +179,12 @@ def check_tws() -> bool:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Validate the ngtrader development environment"
-    )
+    parser = argparse.ArgumentParser(description="Validate the ngtrader development environment")
     parser.add_argument("--env", choices=["dev", "prod"], default="dev")
     parser.add_argument(
-        "--check-tws",
+        "--no-tws",
         action="store_true",
-        help="Also test TWS/IB Gateway connectivity",
+        help="Skip TWS/IB Gateway connectivity check",
     )
     args = parser.parse_args()
 
@@ -208,14 +205,14 @@ def main() -> None:
         else:
             failed += 1
 
-    if args.check_tws:
+    if args.no_tws:
+        banner("4. TWS / IB Gateway")
+        skip("TWS connectivity", "skipped via --no-tws")
+    else:
         if check_tws():
             passed += 1
         else:
             failed += 1
-    else:
-        banner("4. TWS / IB Gateway")
-        skip("TWS connectivity", "pass --check-tws to enable")
 
     # Summary
     banner("Summary")
