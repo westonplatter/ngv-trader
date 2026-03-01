@@ -47,8 +47,7 @@ Install these before proceeding:
 | Tool                   | Version             | Install                                                                             |
 | ---------------------- | ------------------- | ----------------------------------------------------------------------------------- |
 | `uv`                   | latest              | `curl -LsSf https://astral.sh/uv/install.sh \| sh`                                  |
-| Node.js                | 20+                 | [nodejs.org](https://nodejs.org/)                                                   |
-| npm                    | (bundled with Node) |                                                                                     |
+| Node.js + npm          | 20+                 | [nodejs.org](https://nodejs.org/)                                                   |
 | PostgreSQL             | 14+                 | [postgresql.org](https://www.postgresql.org/download/) or `brew install postgresql` |
 | Task                   | latest              | [taskfile.dev](https://taskfile.dev/docs/installation)                              |
 | IBKR TWS or IB Gateway | optional for Tier 1 | [interactivebrokers.com](https://www.interactivebrokers.com/en/trading/tws.php)     |
@@ -269,7 +268,7 @@ See [tradebot-workers.md](tradebot-workers.md) for worker architecture details.
 | **Tradebot**    | `/tradebot`   | AI chat interface — ask about positions, submit orders, trigger syncs |
 | **Accounts**    | `/accounts`   | View IBKR accounts and set display aliases                            |
 | **Positions**   | `/positions`  | View current holdings with filters, trigger position sync             |
-| **Orders**      | `/orders`     | View/create/cancel orders, track fill status                          |
+| **Orders**      | `/orders`     | View synced orders and track fill status                              |
 | **Trades**      | `/trades`     | View executed trade history and fill details                          |
 | **Watch Lists** | `/watchlists` | Create watchlists, add instruments, view live quotes                  |
 
@@ -279,11 +278,6 @@ See [tradebot-workers.md](tradebot-workers.md) for worker architecture details.
 
 - Click the sync button on the Positions page, or
 - Ask the Tradebot: "sync my positions"
-
-**Submit an order:**
-
-- Use the Orders page to create a new order (POST), or
-- Ask the Tradebot: "buy 1 AAPL at market" — it will preview and confirm before submitting
 
 **View live quotes:**
 
@@ -331,54 +325,6 @@ To target production:
 ```bash
 ENV=prod task api
 ```
-
-## Troubleshooting
-
-### API fails to start: "Cannot connect to PostgreSQL"
-
-The API validates the database connection on startup. If you see this error:
-
-- Make sure PostgreSQL is running (`pg_isready` or `brew services list`)
-- Check `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD` in `.env.dev`
-- Run `task validate` to diagnose which part is failing
-
-### "Database does not exist"
-
-Run the setup script to create it:
-
-```bash
-uv run python scripts/setup_db.py --env dev
-```
-
-### "Timed out connecting to TWS/Gateway"
-
-- Verify TWS or IB Gateway is running
-- Check the API port matches `BROKER_TWS_PORT` in `.env.dev`
-- Confirm "Enable ActiveX and Socket Clients" is checked in TWS settings
-- Make sure `127.0.0.1` is in the Trusted IPs list
-
-### Frontend can't reach the API
-
-- Backend must be running on port 8000 (the default)
-- Check the terminal running `task api` for errors
-- If you need a different port, set `VITE_API_BASE_URL` in `frontend/.env`
-
-### Workers show red status lights
-
-- Workers need TWS/Gateway running to connect to IBKR
-- Restart the worker process and check for connection errors in the terminal output
-- If TWS/Gateway is not available, workers will still run but IBKR-dependent jobs will fail
-
-### 1Password `op://` references not resolving
-
-- Wrap your command: `op run --env-file=.env.dev -- task api`
-- Sign in first: `op signin`
-- Or switch to plain values in `.env.dev` and run commands without the `op run` wrapper
-
-### CORS errors in the browser console
-
-- The API allows requests from `http://localhost:5173` (the Vite default port)
-- If Vite picks a different port (e.g., 5174 because 5173 is in use), restart Vite after freeing port 5173
 
 ## Further Reading
 
