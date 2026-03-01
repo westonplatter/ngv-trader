@@ -36,9 +36,7 @@ async def lifespan(app: FastAPI):
         logger.info("Database connection verified.")
     except Exception as exc:
         logger.error(
-            "Cannot connect to PostgreSQL. Is the database running? "
-            "Check DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD in your .env file. "
-            "Error: %s",
+            "Cannot connect to PostgreSQL. Is the database running? " "Check DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD in your .env file. " "Error: %s",
             exc,
         )
         raise SystemExit(1) from exc

@@ -19,7 +19,7 @@ from dotenv import load_dotenv
 
 # -- Utilities ----------------------------------------------------------------
 
-PASS = "\033[32mPASS\033[0m"
+OK = "\033[32mPASS\033[0m"  # noqa: S105
 FAIL = "\033[31mFAIL\033[0m"
 SKIP = "\033[33mSKIP\033[0m"
 
@@ -31,7 +31,7 @@ def banner(title: str) -> None:
 
 
 def result(label: str, ok: bool, detail: str = "") -> bool:
-    tag = PASS if ok else FAIL
+    tag = OK if ok else FAIL
     suffix = f"  ({detail})" if detail else ""
     print(f"  [{tag}] {label}{suffix}")
     return ok
@@ -109,7 +109,6 @@ def check_migrations() -> bool:
     try:
         from sqlalchemy import text
 
-        from alembic import command
         from alembic.config import Config
         from alembic.script import ScriptDirectory
         from src.db import get_engine

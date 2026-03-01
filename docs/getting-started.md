@@ -6,7 +6,7 @@ A step-by-step guide to set up ngtrader-pro locally and start using it.
 
 ngtrader-pro has four main components that work together:
 
-```
+```text
 ┌─────────────────┐     ┌──────────────────┐     ┌──────────────┐
 │  React Frontend │────▶│  FastAPI Backend  │────▶│  PostgreSQL  │
 │  (Vite, :5173)  │     │  (Uvicorn, :8000) │     │  (:5432)     │
@@ -46,12 +46,11 @@ Install these before proceeding:
 
 | Tool                   | Version             | Install                                                                             |
 | ---------------------- | ------------------- | ----------------------------------------------------------------------------------- |
-| Python                 | 3.12+               | [python.org](https://www.python.org/downloads/)                                     |
 | `uv`                   | latest              | `curl -LsSf https://astral.sh/uv/install.sh \| sh`                                  |
 | Node.js                | 20+                 | [nodejs.org](https://nodejs.org/)                                                   |
 | npm                    | (bundled with Node) |                                                                                     |
 | PostgreSQL             | 14+                 | [postgresql.org](https://www.postgresql.org/download/) or `brew install postgresql` |
-| Task                   | latest              | [taskfile.dev](https://taskfile.dev/installation/)                                  |
+| Task                   | latest              | [taskfile.dev](https://taskfile.dev/docs/installation)                              |
 | 1Password CLI (`op`)   | optional            | [1Password CLI docs](https://developer.1password.com/docs/cli/get-started/install/) |
 | IBKR TWS or IB Gateway | optional for Tier 1 | [interactivebrokers.com](https://www.interactivebrokers.com/en/trading/tws.php)     |
 

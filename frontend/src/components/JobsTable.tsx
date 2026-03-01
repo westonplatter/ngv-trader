@@ -130,12 +130,9 @@ export default function JobsTable() {
 
   const rerunJob = (jobId: number) =>
     withAction(jobId, async () => {
-      const res = await fetch(
-        `${API_BASE_URL}/jobs/${jobId}/rerun`,
-        {
-          method: "POST",
-        },
-      );
+      const res = await fetch(`${API_BASE_URL}/jobs/${jobId}/rerun`, {
+        method: "POST",
+      });
       if (!res.ok) {
         throw new Error(await res.text());
       }
@@ -143,12 +140,9 @@ export default function JobsTable() {
 
   const archiveJob = (jobId: number) =>
     withAction(jobId, async () => {
-      const res = await fetch(
-        `${API_BASE_URL}/jobs/${jobId}/archive`,
-        {
-          method: "POST",
-        },
-      );
+      const res = await fetch(`${API_BASE_URL}/jobs/${jobId}/archive`, {
+        method: "POST",
+      });
       if (!res.ok) {
         throw new Error(await res.text());
       }
