@@ -51,7 +51,6 @@ Install these before proceeding:
 | npm                    | (bundled with Node) |                                                                                     |
 | PostgreSQL             | 14+                 | [postgresql.org](https://www.postgresql.org/download/) or `brew install postgresql` |
 | Task                   | latest              | [taskfile.dev](https://taskfile.dev/docs/installation)                              |
-| 1Password CLI (`op`)   | optional            | [1Password CLI docs](https://developer.1password.com/docs/cli/get-started/install/) |
 | IBKR TWS or IB Gateway | optional for Tier 1 | [interactivebrokers.com](https://www.interactivebrokers.com/en/trading/tws.php)     |
 
 ## 1. Clone and Install Dependencies
