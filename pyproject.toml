@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Review market price action, monitor portfolio strategies, and execute live trades with AI"
 readme = "README.md"
 requires-python = ">=3.12"
-license = { text = "Fair Source 1.0 - Copyright (c) 2026 Weston Platter. All rights reserved." }
+license = { text = "PolyForm-Small-Business-1.0.0" }
 dependencies = [
   "ib-async>=2.1.0",
   "langgraph>=0.2.76",

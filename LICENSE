@@ -1,191 +1,81 @@
-ngtrader-pro Fair Source License, Version 1.0
+# PolyForm Small Business License 1.0.0
 
-Copyright (c) 2026, Weston Platter. All rights reserved.
+<https://polyformproject.org/licenses/small-business/1.0.0>
 
-Licensor:  Weston Platter
-Software:  ngtrader-pro
+Required Notice: Copyright (c) 2026 Weston Platter (weston@westonplatter.co)
 
-TERMS AND CONDITIONS
+## Acceptance
 
-1. Definitions
+In order to get any license under these terms, you must agree to them as both strict obligations and conditions to all your licenses.
 
-   "Licensor" means Weston Platter, the individual offering the Software under
-   these Terms and Conditions.
+## Copyright License
 
-   "Software" means the ngtrader-pro software and all associated source code,
-   documentation, and materials that the Licensor makes available under these
-   Terms and Conditions.
+The licensor grants you a copyright license for the software to do everything you might do with the software that would otherwise infringe the licensor's copyright in it for any permitted purpose. However, you may only distribute the software according to [Distribution License](#distribution-license) and make changes or new works based on the software according to [Changes and New Works License](#changes-and-new-works-license).
 
-   "Licensee" means any individual who has been granted access to the Software
-   by the Licensor.
+## Distribution License
 
-   "AUM" (Assets Under Management) means the total market value of all
-   financial assets and investments that a Licensee manages, controls, or
-   directs, whether held in personal accounts, trusts, or any other investment
-   vehicles. This includes but is not limited to equities, fixed income,
-   derivatives, cash, and cash equivalents.
+The licensor grants you an additional copyright license to distribute copies of the software. Your license to distribute covers distributing the software with changes and new works permitted by [Changes and New Works License](#changes-and-new-works-license).
 
-   "Use Limitation" means the Licensee's total AUM must not exceed One Million
-   United States Dollars (USD $1,000,000).
+## Notices
 
-   "Beta Period" means the period beginning on the date the Licensor first
-   grants the Licensee access to the Software and ending on the date the
-   Licensor publicly announces general availability ("GA") of a paid version
-   of the Software, or terminates the Beta Period in writing, whichever
-   comes first.
+You must ensure that anyone who gets a copy of any part of the software from you also gets a copy of these terms or the URL for them above, as well as copies of any plain-text lines beginning with `Required Notice:` that the licensor provided with the software. For example:
 
-2. License Grant
+> Required Notice: Copyright Yoyodyne, Inc. (http://example.com)
 
-   Subject to the Use Limitation and the other terms of this license, the
-   Licensor grants Licensee a limited, non-exclusive, non-transferable,
-   revocable license to:
+## Changes and New Works License
 
-   a. Use the Software for personal, internal purposes;
-   b. Copy the Software for backup and archival purposes;
-   c. Modify the Software and create derivative works for personal,
-      internal use;
-   d. Use the Software for non-commercial education and research.
+The licensor grants you an additional copyright license to make changes and new works based on the software for any permitted purpose.
 
-   Licensee is NOT required to publish, distribute, or disclose any
-   modifications or derivative works they create.
+## Patent License
 
-3. Beta Program
+The licensor grants you a patent license for the software that covers patent claims the licensor can license, or becomes able to license, that you would infringe by using the software.
 
-   During the Beta Period, the following additional terms apply:
+## Fair Use
 
-   a. ACCESS: The Software is provided to Licensee on an invitation-only
-      basis. Access does not guarantee continued access after the Beta
-      Period ends.
+You may have "fair use" rights for the software under the law. These terms do not limit them.
 
-   b. FEEDBACK: Licensee is encouraged (but not required) to provide
-      feedback, bug reports, and suggestions to the Licensor. Any feedback
-      provided becomes the property of the Licensor and may be used without
-      restriction or compensation.
+## Small Business
 
-   c. NO SLA: The Software is provided without service level agreements,
-      uptime guarantees, or support commitments during the Beta Period.
+Use of the software for the benefit of your company is use for a permitted purpose if your company has fewer than 100 total individuals working as employees and independent contractors, and less than 1,000,000 USD (2019) total revenue in the prior tax year. Adjust this revenue threshold for inflation according to the United States Bureau of Labor Statistics' consumer price index for all urban consumers, U.S. city average, for all items, not seasonally adjusted, with 1982-1984=100 reference base.
 
-   d. GA TRANSITION: When the Beta Period ends, Licensee's continued use of
-      the Software will be subject to the then-current licensing terms. The
-      Licensor will provide at least thirty (30) days written notice before
-      the Beta Period ends.
+## Assets Under Management Limitation
 
-   e. BETA PRICING: Beta Licensees in good standing will receive a
-      preferred rate for the first year of any paid license following GA,
-      the terms of which will be communicated before the Beta Period ends.
+Use of the software by an individual is use for a permitted purpose if the individual's total assets under management (AUM) do not exceed 1,000,000 USD. AUM means the total market value of all financial assets and investments that the individual manages, controls, or directs, whether held in personal accounts, trusts, or any other investment vehicles. Individuals whose AUM exceeds this threshold must contact the licensor to obtain a commercial license.
 
-4. Use Limitation
+## Professional Use
 
-   a. Licensee shall NOT use the Software if Licensee's total AUM exceeds
-      USD $1,000,000. Licensees exceeding this threshold must contact the
-      Licensor to obtain a commercial license.
+Use of the software in a professional or institutional capacity — including but not limited to use by or on behalf of a registered investment adviser, broker-dealer, hedge fund, proprietary trading firm, or any entity managing assets for third parties — requires a separate commercial license from the licensor, regardless of AUM or company size.
 
-   b. Licensee shall NOT sublicense, sell, resell, transfer, assign,
-      distribute, or otherwise make the Software or its source code
-      available to any third party without written consent from the
-      Licensor.
+## Commercial Licensing
 
-   c. Licensee shall NOT make the Software available to others as a
-      commercial product or hosted service, whether or not it competes
-      with the Licensor's offerings.
+To obtain a commercial license for use beyond the scope of this license, contact:
 
-   d. Licensee shall NOT remove or alter any proprietary notices, labels,
-      or marks on the Software.
+Weston Platter — weston@westonplatter.co
 
-5. Modifications and Derivative Works
+## No Other Rights
 
-   a. Licensee may freely modify the Software for personal, internal use.
+These terms do not allow you to sublicense or transfer any of your licenses to anyone else, or prevent the licensor from granting licenses to anyone else. These terms do not imply any other licenses.
 
-   b. Licensee is NOT required to share, publish, or contribute back any
-      modifications or derivative works.
+## Patent Defense
 
-   c. All modifications and derivative works remain subject to the terms
-      of this license, including the Use Limitation.
+If you make any written claim that the software infringes or contributes to infringement of any patent, your patent license for the software granted under these terms ends immediately. If your company makes such a claim, your patent license ends immediately for work on behalf of your company.
 
-   d. The Licensor retains all intellectual property rights in the original
-      Software. Licensee retains rights to their original modifications,
-      but not to the underlying Software.
+## Violations
 
-6. Confidentiality
+The first time you are notified in writing that you have violated any of these terms, or done anything with the software not covered by your licenses, your licenses can nonetheless continue if you come into full compliance with these terms, and take practical steps to correct past violations, within 32 days of receiving notice. Otherwise, all your licenses end immediately.
 
-   The Software, its source code, and any non-public documentation are
-   confidential information of the Licensor. Licensee shall:
+## No Liability
 
-   a. Not disclose the source code or non-public documentation to any
-      third party without prior written consent from the Licensor;
+***As far as the law allows, the software comes as is, without any warranty or condition, and the licensor will not be liable to you for any damages arising out of these terms or the use or nature of the software, under any kind of legal claim.***
 
-   b. Take reasonable measures to protect the confidentiality of the
-      Software, using at least the same degree of care Licensee uses to
-      protect their own confidential information;
+## Definitions
 
-   c. Promptly notify the Licensor of any unauthorized access or disclosure
-      of the Software.
+The **licensor** is Weston Platter, the individual offering these terms, and the **software** is ngtrader-pro, the software the licensor makes available under these terms.
 
-7. Intellectual Property
+**You** refers to the individual or entity agreeing to these terms.
 
-   The Software and all copies thereof are proprietary to and the property
-   of the Licensor. The Licensor retains all right, title, and interest in
-   and to the Software, including all intellectual property rights therein.
-   This license does not convey any rights of ownership in or related to
-   the Software.
+**Your company** is any legal entity, sole proprietorship, or other kind of organization that you work for, plus all organizations that have control over, are under the control of, or are under common control with that organization. **Control** means ownership of substantially all the assets of an entity, or the power to direct its management and policies by vote, contract, or otherwise. Control can be direct or indirect.
 
-8. No Warranty
+**Your licenses** are all the licenses granted to you for the software under these terms.
 
-   THE SOFTWARE IS PROVIDED "AS IS" WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-   FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT. IN NO EVENT SHALL
-   THE LICENSOR BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY, WHETHER
-   IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM, OUT OF, OR IN
-   CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-
-9. Limitation of Liability
-
-   IN NO EVENT SHALL THE LICENSOR BE LIABLE FOR ANY INDIRECT, INCIDENTAL,
-   SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING BUT NOT LIMITED
-   TO PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
-   PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
-   LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
-   NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
-   SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
-   IN NO EVENT SHALL THE LICENSOR'S TOTAL LIABILITY EXCEED THE AMOUNTS PAID
-   BY THE LICENSEE FOR THE SOFTWARE DURING THE TWELVE (12) MONTHS PRECEDING
-   THE CLAIM.
-
-10. Termination
-
-    a. This license is effective until terminated.
-
-    b. The Licensor may terminate this license immediately if the Licensee
-       breaches any term, including exceeding the AUM threshold.
-
-    c. Upon termination, the Licensee must cease all use of the Software
-       and destroy all copies in their possession within fourteen (14) days.
-
-    d. Sections 6 (Confidentiality), 7 (Intellectual Property),
-       8 (No Warranty), 9 (Limitation of Liability), and this Section 10
-       survive termination.
-
-11. Commercial Licensing
-
-    For use beyond the scope of this license, including but not limited to
-    AUM exceeding USD $1,000,000, institutional use, multi-user deployment,
-    or redistribution, please contact:
-
-    Weston Platter
-    weston@westonplatter.co
-
-12. Governing Law
-
-    This license shall be governed by and construed in accordance with the
-    laws of the United States, without regard to its conflict of laws
-    provisions.
-
-13. Entire Agreement
-
-    This license constitutes the entire agreement between the parties with
-    respect to the use of the Software and supersedes all prior or
-    contemporaneous understandings regarding such subject matter.
-
-By using the Software, the Licensee acknowledges that they have read this
-license, understand it, and agree to be bound by its terms and conditions.
+**Use** means anything you do with the software requiring one of your licenses.
