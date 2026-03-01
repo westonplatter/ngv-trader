@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { usePrivacy } from "../contexts/PrivacyContext";
 import { PRIVACY_MASK } from "../utils/privacy";
+import { API_BASE_URL } from "../config";
 
 interface OrderRow {
   id: number;
@@ -87,7 +88,7 @@ export default function OrdersSideTable() {
     let active = true;
 
     const load = () => {
-      fetch("http://localhost:8000/api/v1/orders")
+      fetch(`${API_BASE_URL}/orders`)
         .then((res) => {
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
           return res.json();

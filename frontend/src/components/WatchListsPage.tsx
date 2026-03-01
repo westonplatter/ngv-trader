@@ -16,8 +16,9 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import { API_BASE_URL } from "../config";
 
-const API_BASE = "http://localhost:8000/api/v1";
+const API_BASE = API_BASE_URL;
 
 interface WatchListSummary {
   id: number;

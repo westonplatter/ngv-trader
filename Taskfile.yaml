@@ -1,7 +1,7 @@
 version: "3"
 
 vars:
-  ENV: '{{.ENV | default "prod"}}'
+  ENV: '{{.ENV | default "dev"}}'
 
 dotenv: [".env.{{.ENV}}"]
 
@@ -13,7 +13,7 @@ tasks:
 
   api:
     desc: Start the FastAPI backend (port 8000)
-    cmd: op run --env-file=.env.{{.ENV}} -- uv run uvicorn src.api.main:app --reload --port 8000
+    cmd: uv run uvicorn src.api.main:app --reload --port 8000
 
   frontend:
     desc: Start the Vite dev server (port 5173)
@@ -22,11 +22,11 @@ tasks:
 
   worker:jobs:
     desc: Start generic job worker (dispatches by job_type)
-    cmd: op run --env-file=.env.{{.ENV}} -- uv run python scripts/work_jobs.py --env {{.ENV}}
+    cmd: uv run python scripts/work_jobs.py --env {{.ENV}}
 
   worker:orders:
     desc: Start order execution worker
-    cmd: op run --env-file=.env.{{.ENV}} -- uv run python scripts/work_order_queue.py --env {{.ENV}}
+    cmd: uv run python scripts/work_order_queue.py --env {{.ENV}}
 
   frontend:install:
     desc: Install frontend dependencies
@@ -44,6 +44,10 @@ tasks:
   migrate:new:
     desc: Create a new alembic migration (usage -- task migrate:new -- "description")
     cmd: uv run alembic revision --autogenerate -m "{{.CLI_ARGS}}"
+
+  validate:
+    desc: Check env file, Postgres, migrations, and optionally TWS
+    cmd: uv run python scripts/validate_env.py --env {{.ENV}} {{.CLI_ARGS}}
 
   dev:
     desc: Start backend and frontend in parallel

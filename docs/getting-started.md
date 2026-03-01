@@ -28,6 +28,18 @@ ngtrader-pro has four main components that work together:
 | **PostgreSQL** | Stores accounts, positions, orders, trades, contracts, watchlists, and jobs |
 | **IBKR TWS / Gateway** | Interactive Brokers connection for live market data and order execution |
 
+## Minimum Viable Setup
+
+You don't need every component running to explore the application. Here's what each tier gives you:
+
+| Tier | Components | What works |
+|------|-----------|------------|
+| **Explore the UI** | PostgreSQL + API + Frontend | Browse all pages, see the empty-state UI, create orders (queued but not executed) |
+| **View your portfolio** | Above + IBKR TWS + initial data download | See real accounts, positions, and orders from your brokerage |
+| **Full experience** | Above + Workers + LLM API key | Live sync, order execution, watchlist quotes, Tradebot chat |
+
+Start with **Tier 1** to verify your setup works, then add components as needed.
+
 ## Prerequisites
 
 Install these before proceeding:
@@ -41,7 +53,7 @@ Install these before proceeding:
 | PostgreSQL | 14+ | [postgresql.org](https://www.postgresql.org/download/) or `brew install postgresql` |
 | Task | latest | [taskfile.dev](https://taskfile.dev/installation/) |
 | 1Password CLI (`op`) | optional | [1Password CLI docs](https://developer.1password.com/docs/cli/get-started/install/) |
-| IBKR TWS or IB Gateway | latest | [interactivebrokers.com](https://www.interactivebrokers.com/en/trading/tws.php) |
+| IBKR TWS or IB Gateway | optional for Tier 1 | [interactivebrokers.com](https://www.interactivebrokers.com/en/trading/tws.php) |
 
 ## 1. Clone and Install Dependencies
 
@@ -88,7 +100,7 @@ DB_NAME=ngtrader_dev
 DB_USER=postgres
 DB_PASSWORD=your_password
 
-# IBKR TWS/Gateway API port
+# IBKR TWS/Gateway API port (optional for Tier 1)
 # TWS default: 7497 (paper) or 7496 (live)
 # Gateway default: 4002 (paper) or 4001 (live)
 BROKER_TWS_PORT=7497
@@ -112,21 +124,22 @@ DB_PASSWORD=op://MyVault/ngtrader-db/password
 BROKER_TWS_PORT=op://MyVault/ibkr/tws-port
 ```
 
-When you run commands with `op run --env-file=.env.dev --`, the CLI resolves these references at runtime. See [secrets-using-1password.md](secrets-using-1password.md) for details.
+To resolve `op://` references, wrap any command with `op run`:
 
-If you do **not** use 1Password, use plain values in `.env.dev` and run commands directly with `uv run` (without the `op run` wrapper).
+```bash
+op run --env-file=.env.dev -- task api
+op run --env-file=.env.dev -- uv run python scripts/setup_db.py --env dev
+```
+
+`op run` resolves the references and injects the real values as environment variables before the inner command starts. All `task` commands work with or without the `op run` wrapper — it's your choice.
+
+See [secrets-using-1password.md](secrets-using-1password.md) for details.
+
+If you do **not** use 1Password, just use plain values in `.env.dev` and run commands directly.
 
 ## 3. Set Up PostgreSQL
 
 Make sure PostgreSQL is running, then create the database and run migrations:
-
-**With 1Password:**
-
-```bash
-op run --env-file=.env.dev -- uv run python scripts/setup_db.py --env dev
-```
-
-**Without 1Password:**
 
 ```bash
 uv run python scripts/setup_db.py --env dev
@@ -144,9 +157,25 @@ You can also run migrations independently:
 task migrate
 ```
 
-## 4. Set Up IBKR TWS or IB Gateway
+## 4. Validate Your Setup
 
-ngtrader-pro connects to Interactive Brokers through TWS (Trader Workstation) or IB Gateway. You need one of them running locally.
+Run the environment validator to confirm everything is wired up correctly:
+
+```bash
+task validate
+```
+
+This checks your `.env.dev` file, PostgreSQL connectivity, and migration status. To also test TWS connectivity:
+
+```bash
+task validate -- --check-tws
+```
+
+At this point you have a working **Tier 1** setup. You can skip to [step 6](#6-start-the-application) to start the app and explore the UI without IBKR.
+
+## 5. Set Up IBKR TWS or IB Gateway (optional for Tier 1)
+
+ngtrader-pro connects to Interactive Brokers through TWS (Trader Workstation) or IB Gateway. You need one of them running locally for live data and order execution.
 
 ### Configure TWS / Gateway for API access
 
@@ -160,23 +189,17 @@ ngtrader-pro connects to Interactive Brokers through TWS (Trader Workstation) or
 ### Test the connection
 
 ```bash
-op run --env-file=.env.dev -- uv run python scripts/test_tws_connection.py --env dev
-```
-
-Or without 1Password:
-
-```bash
 uv run python scripts/test_tws_connection.py --env dev
 ```
 
 A successful test prints the server version, managed accounts, and net liquidation value.
 
-## 5. Download Initial Data from IBKR
+### Download Initial Data from IBKR
 
 With TWS/Gateway running, pull your current positions into the database:
 
 ```bash
-op run --env-file=.env.dev -- uv run python scripts/download_positions.py --env dev
+uv run python scripts/download_positions.py --env dev
 ```
 
 This connects to IBKR, fetches all positions across your managed accounts, creates `Account` rows, and upserts positions into the `positions` table.
@@ -193,6 +216,8 @@ You need to start the backend and frontend. In two separate terminals:
 task api
 ```
 
+The API validates the database connection on startup. If PostgreSQL is unreachable, you'll see a clear error message immediately instead of a silent failure.
+
 **Terminal 2 — Frontend dev server (port 5173):**
 
 ```bash
@@ -207,6 +232,16 @@ task dev
 
 Open [http://localhost:5173](http://localhost:5173) in your browser.
 
+### Check API health
+
+With the API running, verify everything is connected:
+
+```bash
+curl http://localhost:8000/api/v1/health
+```
+
+Returns `{"status": "ok", "database": "connected"}` when everything is working.
+
 ### Start workers (optional — needed for live sync and order execution)
 
 Workers are background processes that sync data with IBKR and execute orders. Run each in its own terminal:
@@ -214,13 +249,13 @@ Workers are background processes that sync data with IBKR and execute orders. Ru
 **Terminal 3 — Jobs worker** (position sync, contract sync, watchlist quotes):
 
 ```bash
-ENV=dev task worker:jobs
+task worker:jobs
 ```
 
 **Terminal 4 — Order execution worker** (submits queued orders to TWS):
 
 ```bash
-ENV=dev task worker:orders
+task worker:orders
 ```
 
 Workers require TWS/Gateway to be running. The UI header shows worker health lights (green/yellow/red) based on heartbeat freshness.
@@ -280,11 +315,34 @@ task frontend:install  # npm install for frontend
 task migrate           # Run Alembic migrations to head
 task migrate:down      # Roll back one migration
 task migrate:new -- "description"  # Create a new migration
-ENV=dev task worker:jobs     # Start jobs worker
-ENV=dev task worker:orders   # Start order execution worker
+task worker:jobs       # Start jobs worker
+task worker:orders     # Start order execution worker
+task validate          # Check env file, Postgres, migrations
+task validate -- --check-tws  # Also test TWS connectivity
+```
+
+To use 1Password, wrap any task command:
+
+```bash
+op run --env-file=.env.dev -- task api
+op run --env-file=.env.dev -- task worker:jobs
+```
+
+To target production:
+
+```bash
+ENV=prod task api
 ```
 
 ## Troubleshooting
+
+### API fails to start: "Cannot connect to PostgreSQL"
+
+The API validates the database connection on startup. If you see this error:
+
+- Make sure PostgreSQL is running (`pg_isready` or `brew services list`)
+- Check `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD` in `.env.dev`
+- Run `task validate` to diagnose which part is failing
 
 ### "Database does not exist"
 
@@ -303,8 +361,9 @@ uv run python scripts/setup_db.py --env dev
 
 ### Frontend can't reach the API
 
-- Backend must be running on port 8000 (the frontend expects `http://localhost:8000`)
+- Backend must be running on port 8000 (the default)
 - Check the terminal running `task api` for errors
+- If you need a different port, set `VITE_API_BASE_URL` in `frontend/.env`
 
 ### Workers show red status lights
 
@@ -314,9 +373,14 @@ uv run python scripts/setup_db.py --env dev
 
 ### 1Password `op://` references not resolving
 
-- Make sure you run commands with `op run --env-file=.env.dev --` prefix
+- Wrap your command: `op run --env-file=.env.dev -- task api`
 - Sign in first: `op signin`
-- Or switch to plain values in `.env.dev` and skip the `op run` wrapper
+- Or switch to plain values in `.env.dev` and run commands without the `op run` wrapper
+
+### CORS errors in the browser console
+
+- The API allows requests from `http://localhost:5173` (the Vite default port)
+- If Vite picks a different port (e.g., 5174 because 5173 is in use), restart Vite after freeing port 5173
 
 ## Further Reading
 

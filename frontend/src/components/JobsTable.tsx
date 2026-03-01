@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { API_BASE_URL } from "../config";
 
 interface Job {
   id: number;
@@ -67,7 +68,7 @@ export default function JobsTable() {
     let active = true;
 
     const load = () => {
-      fetch("http://localhost:8000/api/v1/jobs")
+      fetch(`${API_BASE_URL}/jobs`)
         .then((res) => {
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
           return res.json();
@@ -97,7 +98,7 @@ export default function JobsTable() {
   }, []);
 
   const reload = () => {
-    fetch("http://localhost:8000/api/v1/jobs")
+    fetch(`${API_BASE_URL}/jobs`)
       .then((res) => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         return res.json();
@@ -130,7 +131,7 @@ export default function JobsTable() {
   const rerunJob = (jobId: number) =>
     withAction(jobId, async () => {
       const res = await fetch(
-        `http://localhost:8000/api/v1/jobs/${jobId}/rerun`,
+        `${API_BASE_URL}/jobs/${jobId}/rerun`,
         {
           method: "POST",
         },
@@ -143,7 +144,7 @@ export default function JobsTable() {
   const archiveJob = (jobId: number) =>
     withAction(jobId, async () => {
       const res = await fetch(
-        `http://localhost:8000/api/v1/jobs/${jobId}/archive`,
+        `${API_BASE_URL}/jobs/${jobId}/archive`,
         {
           method: "POST",
         },
