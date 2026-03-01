@@ -11,32 +11,32 @@ ngtrader-pro has four main components that work together:
 │  React Frontend │────▶│  FastAPI Backend  │────▶│  PostgreSQL  │
 │  (Vite, :5173)  │     │  (Uvicorn, :8000) │     │  (:5432)     │
 └─────────────────┘     └──────────────────┘     └──────────────┘
-                              │                        ▲
-                              │                        │
-                        ┌─────▼────────┐         ┌─────┴────────┐
-                        │ IBKR TWS /   │         │  Workers     │
-                        │ IB Gateway   │◀────────│  (jobs,      │
+                                                       ▲
+                                                       │
+                        ┌──────────────┐         ┌─────┴────────┐
+                        │ IBKR TWS /   │◀────────│  Workers     │
+                        │ IB Gateway   │         │  (jobs,      │
                         │ (:7497)      │         │   orders)    │
                         └──────────────┘         └──────────────┘
 ```
 
-| Component | Purpose |
-|-----------|---------|
-| **Frontend** | React/TypeScript UI for viewing positions, orders, trades, watchlists, and the Tradebot chat |
-| **Backend** | FastAPI REST API serving data from Postgres and proxying LLM chat |
-| **Workers** | Background processes that sync data with IBKR and execute orders |
-| **PostgreSQL** | Stores accounts, positions, orders, trades, contracts, watchlists, and jobs |
-| **IBKR TWS / Gateway** | Interactive Brokers connection for live market data and order execution |
+| Component              | Purpose                                                                                      |
+| ---------------------- | -------------------------------------------------------------------------------------------- |
+| **Frontend**           | React/TypeScript UI for viewing positions, orders, trades, watchlists, and the Tradebot chat |
+| **Backend**            | FastAPI REST API serving data from Postgres and proxying LLM chat                            |
+| **Workers**            | Background processes that sync data with IBKR and execute orders                             |
+| **PostgreSQL**         | Stores accounts, positions, orders, trades, contracts, watchlists, and jobs                  |
+| **IBKR TWS / Gateway** | Interactive Brokers connection for live market data and order execution                      |
 
 ## Minimum Viable Setup
 
 You don't need every component running to explore the application. Here's what each tier gives you:
 
-| Tier | Components | What works |
-|------|-----------|------------|
-| **Explore the UI** | PostgreSQL + API + Frontend | Browse all pages, see the empty-state UI, create orders (queued but not executed) |
-| **View your portfolio** | Above + IBKR TWS + initial data download | See real accounts, positions, and orders from your brokerage |
-| **Full experience** | Above + Workers + LLM API key | Live sync, order execution, watchlist quotes, Tradebot chat |
+| Tier                    | Components                               | What works                                                                        |
+| ----------------------- | ---------------------------------------- | --------------------------------------------------------------------------------- |
+| **Explore the UI**      | PostgreSQL + API + Frontend              | Browse all pages, see the empty-state UI, create orders (queued but not executed) |
+| **View your portfolio** | Above + IBKR TWS + initial data download | See real accounts, positions, and orders from your brokerage                      |
+| **Full experience**     | Above + Workers + LLM API key            | Live sync, order execution, watchlist quotes, Tradebot chat                       |
 
 Start with **Tier 1** to verify your setup works, then add components as needed.
 
@@ -44,16 +44,16 @@ Start with **Tier 1** to verify your setup works, then add components as needed.
 
 Install these before proceeding:
 
-| Tool | Version | Install |
-|------|---------|---------|
-| Python | 3.12+ | [python.org](https://www.python.org/downloads/) |
-| `uv` | latest | `curl -LsSf https://astral.sh/uv/install.sh \| sh` |
-| Node.js | 20+ | [nodejs.org](https://nodejs.org/) |
-| npm | (bundled with Node) | |
-| PostgreSQL | 14+ | [postgresql.org](https://www.postgresql.org/download/) or `brew install postgresql` |
-| Task | latest | [taskfile.dev](https://taskfile.dev/installation/) |
-| 1Password CLI (`op`) | optional | [1Password CLI docs](https://developer.1password.com/docs/cli/get-started/install/) |
-| IBKR TWS or IB Gateway | optional for Tier 1 | [interactivebrokers.com](https://www.interactivebrokers.com/en/trading/tws.php) |
+| Tool                   | Version             | Install                                                                             |
+| ---------------------- | ------------------- | ----------------------------------------------------------------------------------- |
+| Python                 | 3.12+               | [python.org](https://www.python.org/downloads/)                                     |
+| `uv`                   | latest              | `curl -LsSf https://astral.sh/uv/install.sh \| sh`                                  |
+| Node.js                | 20+                 | [nodejs.org](https://nodejs.org/)                                                   |
+| npm                    | (bundled with Node) |                                                                                     |
+| PostgreSQL             | 14+                 | [postgresql.org](https://www.postgresql.org/download/) or `brew install postgresql` |
+| Task                   | latest              | [taskfile.dev](https://taskfile.dev/installation/)                                  |
+| 1Password CLI (`op`)   | optional            | [1Password CLI docs](https://developer.1password.com/docs/cli/get-started/install/) |
+| IBKR TWS or IB Gateway | optional for Tier 1 | [interactivebrokers.com](https://www.interactivebrokers.com/en/trading/tws.php)     |
 
 ## 1. Clone and Install Dependencies
 
@@ -266,14 +266,14 @@ See [tradebot-workers.md](tradebot-workers.md) for worker architecture details.
 
 ### Pages
 
-| Page | URL | What it does |
-|------|-----|-------------|
-| **Tradebot** | `/tradebot` | AI chat interface — ask about positions, submit orders, trigger syncs |
-| **Accounts** | `/accounts` | View IBKR accounts and set display aliases |
-| **Positions** | `/positions` | View current holdings with filters, trigger position sync |
-| **Orders** | `/orders` | View/create/cancel orders, track fill status |
-| **Trades** | `/trades` | View executed trade history and fill details |
-| **Watch Lists** | `/watchlists` | Create watchlists, add instruments, view live quotes |
+| Page            | URL           | What it does                                                          |
+| --------------- | ------------- | --------------------------------------------------------------------- |
+| **Tradebot**    | `/tradebot`   | AI chat interface — ask about positions, submit orders, trigger syncs |
+| **Accounts**    | `/accounts`   | View IBKR accounts and set display aliases                            |
+| **Positions**   | `/positions`  | View current holdings with filters, trigger position sync             |
+| **Orders**      | `/orders`     | View/create/cancel orders, track fill status                          |
+| **Trades**      | `/trades`     | View executed trade history and fill details                          |
+| **Watch Lists** | `/watchlists` | Create watchlists, add instruments, view live quotes                  |
 
 ### Common workflows
 
@@ -384,12 +384,12 @@ uv run python scripts/setup_db.py --env dev
 
 ## Further Reading
 
-| Doc | Topic |
-|-----|-------|
-| [install-python-and-frontend.md](install-python-and-frontend.md) | Concise install and startup commands |
-| [download-positions.md](download-positions.md) | Position sync and account aliases |
-| [contract-ref-setup.md](contract-ref-setup.md) | Contract caching and sync architecture |
-| [secrets-using-1password.md](secrets-using-1password.md) | 1Password CLI integration |
-| [tradebot-chatbot.md](tradebot-chatbot.md) | Tradebot architecture, tools, and safety constraints |
-| [tradebot-workers.md](tradebot-workers.md) | Worker processes, heartbeats, and job dispatch |
-| [_index.md](_index.md) | Full documentation index |
+| Doc                                                              | Topic                                                |
+| ---------------------------------------------------------------- | ---------------------------------------------------- |
+| [install-python-and-frontend.md](install-python-and-frontend.md) | Concise install and startup commands                 |
+| [download-positions.md](download-positions.md)                   | Position sync and account aliases                    |
+| [contract-ref-setup.md](contract-ref-setup.md)                   | Contract caching and sync architecture               |
+| [secrets-using-1password.md](secrets-using-1password.md)         | 1Password CLI integration                            |
+| [tradebot-chatbot.md](tradebot-chatbot.md)                       | Tradebot architecture, tools, and safety constraints |
+| [tradebot-workers.md](tradebot-workers.md)                       | Worker processes, heartbeats, and job dispatch       |
+| [\_index.md](_index.md)                                          | Full documentation index                             |
