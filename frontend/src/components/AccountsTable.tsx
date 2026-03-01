@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { API_BASE_URL } from "../config";
 
 function CopyIcon() {
   return (
@@ -85,7 +86,7 @@ export default function AccountsTable() {
   };
 
   function fetchAccounts() {
-    fetch("http://localhost:8000/api/v1/accounts")
+    fetch(`${API_BASE_URL}/accounts`)
       .then((res) => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         return res.json();
@@ -112,7 +113,7 @@ export default function AccountsTable() {
   function saveAlias(id: number) {
     setSaving(true);
     const alias = editValue.trim() || null;
-    fetch(`http://localhost:8000/api/v1/accounts/${id}`, {
+    fetch(`${API_BASE_URL}/accounts/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ alias }),

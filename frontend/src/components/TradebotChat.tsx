@@ -3,6 +3,7 @@ import { useChat } from "@ai-sdk/react";
 import { TextStreamChatTransport, type UIMessage } from "ai";
 import JobsTable from "./JobsTable";
 import OrdersSideTable from "./OrdersSideTable";
+import { API_BASE_URL } from "../config";
 
 const QUICK_PROMPTS = [
   "Show me current positions",
@@ -31,7 +32,7 @@ export default function TradebotChat() {
   const transport = useMemo(
     () =>
       new TextStreamChatTransport({
-        api: "http://localhost:8000/api/v1/tradebot/chat",
+        api: `${API_BASE_URL}/tradebot/chat`,
         prepareSendMessagesRequest: ({ id, messages, trigger, messageId }) => {
           const outboundMessages = messages
             .map((message) => {

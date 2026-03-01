@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { API_BASE_URL } from "../config";
 
 type LightColor = "green" | "yellow" | "red";
 
@@ -43,7 +44,7 @@ export default function WorkerStatusLights() {
     let active = true;
 
     const load = () => {
-      fetch("http://localhost:8000/api/v1/workers/status")
+      fetch(`${API_BASE_URL}/workers/status`)
         .then((res) => {
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
           return res.json();

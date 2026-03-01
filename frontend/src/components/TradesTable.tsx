@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { usePrivacy } from "../contexts/PrivacyContext";
 import { PRIVACY_MASK } from "../utils/privacy";
-
-const API_BASE_URL = "http://localhost:8000/api/v1";
+import { API_BASE_URL } from "../config";
 
 interface Trade {
   id: number;

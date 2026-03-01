@@ -385,6 +385,7 @@ def process_order(
         ib_order.tif = order.tif
         ib_order.orderRef = make_order_ref(order.id)
 
+        raise RuntimeError("Order execution is not supported at this time.")
         trade = ib.placeOrder(contract, ib_order)
         if order.submitted_at is None:
             order.submitted_at = now_utc()

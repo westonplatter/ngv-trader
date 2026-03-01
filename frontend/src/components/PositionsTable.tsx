@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { usePrivacy } from "../contexts/PrivacyContext";
 import { PRIVACY_MASK } from "../utils/privacy";
+import { API_BASE_URL } from "../config";
 
 interface Position {
   id: number;
@@ -233,7 +234,7 @@ export default function PositionsTable() {
   };
 
   const loadPositions = () => {
-    fetch("http://localhost:8000/api/v1/positions")
+    fetch(`${API_BASE_URL}/positions`)
       .then((res) => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         return res.json();
@@ -252,7 +253,7 @@ export default function PositionsTable() {
     setSyncError(null);
     setSyncMessage(null);
     try {
-      const res = await fetch("http://localhost:8000/api/v1/positions/sync", {
+      const res = await fetch(`${API_BASE_URL}/positions/sync`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

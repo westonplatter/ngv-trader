@@ -252,6 +252,7 @@ def create_order(
     response: Response,
     db: Session = DB_SESSION_DEPENDENCY,
 ) -> OrderResponse:
+    raise HTTPException(status_code=501, detail="Order creation is not supported at this time.")
     try:
         outcome = create_queued_order(
             db,
