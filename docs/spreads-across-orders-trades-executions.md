@@ -52,7 +52,7 @@ sub-component after the second-to-last dot distinguishing combo vs legs:
 000100c2.699f7eb6.03.01   leg 2
 ```
 
-The final `.01` is the correction revision (see spec-trades-and-executions-sync.md).
+The final `.01` is the correction revision (see trades-and-executions-sync.md).
 
 ## Spread Structures
 
@@ -177,17 +177,17 @@ Each execution row carries three spread-related columns:
 
 ### Spread inference for individually-legged trades
 
-See `docs/spec-trades-and-executions-sync.md` (Spread Inference section).
+See `docs/trades-and-executions-sync.md` (Spread Inference section).
 For positions legged in individually (no BAG order), spread membership is
 inferred from shared `ib_order_id` or `ngtrader-spread-*` order refs, then
 confirmed by the operator.
 
 ## Related Docs
 
-- `spec-trades-and-executions-sync.md` — trade/execution sync and spread
+- `trades-and-executions-sync.md` — trade/execution sync and spread
   inference design
 - `spec-first-class-spread-fields.md` — sec_type, con_id, exec_role schema
   and deterministic aggregation spec
 - `spec-bag-order-combo-visibility.md` — BAG order leg persistence and UI
-- `spec-client-portal-combo-spreads.md` — CPAPI combo position sync
+- `client-portal-combo-spreads.md` — CPAPI combo position sync
   (native IBKR spread linkage for positions)
