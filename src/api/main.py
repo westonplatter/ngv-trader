@@ -13,6 +13,7 @@ from src.api.routers import (
     jobs,
     orders,
     positions,
+    trade_groups,
     tradebot,
     trades,
     user_preferences,
@@ -71,6 +72,7 @@ app.include_router(orders.router, prefix="/api/v1")
 app.include_router(jobs.router, prefix="/api/v1")
 app.include_router(tradebot.router, prefix="/api/v1")
 app.include_router(trades.router, prefix="/api/v1")
+app.include_router(trade_groups.router, prefix="/api/v1")
 app.include_router(user_preferences.router, prefix="/api/v1")
 app.include_router(watch_lists.router, prefix="/api/v1")
 app.include_router(workers.router, prefix="/api/v1")
