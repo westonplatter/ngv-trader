@@ -195,7 +195,7 @@ Single Alembic revision:
 
 IBKR does not provide native spread linkage for positions legged in individually.
 Spread membership must be inferred from execution data after trade sync.
-See `docs/spec-client-portal-combo-spreads.md` for full findings on why
+See `docs/client-portal-combo-spreads.md` for full findings on why
 CPAPI and TWS BAG detection don't work for individually legged spreads.
 
 ### Approach
