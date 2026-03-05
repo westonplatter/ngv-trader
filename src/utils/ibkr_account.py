@@ -6,15 +6,17 @@ def mask_ibkr_account(account: str) -> str:
     Mask an account string to avoid exposing the full identifier.
 
     Examples:
-    - DU1234567 -> *******67
-    - U9999999 -> ******99
+    - DU1234567 -> ******567
+    - U9999999 -> *****999
     """
     normalized = account.strip()
     if not normalized:
         return "***"
 
-    if len(normalized) <= 2:
+    visible_digits = 3
+
+    if len(normalized) <= visible_digits:
         return "*" * len(normalized)
 
-    hidden_count = len(normalized) - 2
-    return f"{'*' * hidden_count}{normalized[-2:]}"
+    hidden_count = len(normalized) - visible_digits
+    return f"{'*' * hidden_count}{normalized[-visible_digits:]}"

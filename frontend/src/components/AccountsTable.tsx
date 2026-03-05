@@ -168,8 +168,8 @@ export default function AccountsTable() {
                     className="text-gray-400 hover:text-gray-700"
                     title={
                       revealedAccounts.has(account.id)
-                        ? "Hide last 2 digits"
-                        : "Reveal last 2 digits"
+                        ? "Hide last 3 digits"
+                        : "Reveal last 3 digits"
                     }
                   >
                     <EyeIcon />

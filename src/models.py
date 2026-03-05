@@ -10,9 +10,11 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    Numeric,
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -329,6 +331,168 @@ class TradeExecution(Base):
         default=lambda: datetime.now(timezone.utc),
     )
     updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+
+
+class TradeGroup(Base):
+    __tablename__ = "trade_groups"
+    __table_args__ = (Index("ix_trade_groups_account_created_at", "account_id", "created_at"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    account_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("accounts.id"), nullable=True)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(Text, nullable=False, default="open")
+    opened_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    opened_by: Mapped[str | None] = mapped_column(Text, nullable=True)
+    closed_by: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+
+
+class TradeGroupExecution(Base):
+    __tablename__ = "trade_group_executions"
+    __table_args__ = (
+        UniqueConstraint("trade_execution_id", name="uq_trade_group_executions_trade_execution_id"),
+        Index(
+            "ix_trade_group_executions_group_assigned_at",
+            "trade_group_id",
+            "assigned_at",
+        ),
+    )
+
+    trade_group_id: Mapped[int] = mapped_column(Integer, ForeignKey("trade_groups.id", ondelete="CASCADE"), primary_key=True)
+    trade_execution_id: Mapped[int] = mapped_column(Integer, ForeignKey("trade_executions.id", ondelete="CASCADE"), primary_key=True)
+    source: Mapped[str] = mapped_column(Text, nullable=False)
+    created_by: Mapped[str | None] = mapped_column(Text, nullable=True)
+    confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    assigned_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+
+
+class TradeGroupExecutionEvent(Base):
+    __tablename__ = "trade_group_execution_events"
+    __table_args__ = (
+        Index(
+            "ix_trade_group_execution_events_execution_event_at",
+            "trade_execution_id",
+            "event_at",
+        ),
+        Index(
+            "ix_trade_group_execution_events_to_group_event_at",
+            "to_trade_group_id",
+            "event_at",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    trade_execution_id: Mapped[int] = mapped_column(Integer, ForeignKey("trade_executions.id", ondelete="CASCADE"), nullable=False)
+    from_trade_group_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("trade_groups.id", ondelete="SET NULL"), nullable=True)
+    to_trade_group_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("trade_groups.id", ondelete="SET NULL"), nullable=True)
+    event_type: Mapped[str] = mapped_column(Text, nullable=False)
+    source: Mapped[str] = mapped_column(Text, nullable=False)
+    created_by: Mapped[str | None] = mapped_column(Text, nullable=True)
+    confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    event_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+
+
+class Tag(Base):
+    __tablename__ = "tags"
+    __table_args__ = (
+        UniqueConstraint("tag_type", "normalized_value", name="uq_tags_type_normalized_value"),
+        Index("ix_tags_type_normalized_value", "tag_type", "normalized_value"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    tag_type: Mapped[str] = mapped_column(Text, nullable=False)
+    value: Mapped[str] = mapped_column(Text, nullable=False)
+    normalized_value: Mapped[str] = mapped_column(Text, nullable=False)
+    created_by: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+
+
+class TagLink(Base):
+    __tablename__ = "tag_links"
+    __table_args__ = (
+        UniqueConstraint("entity_type", "entity_id", "tag_id", name="uq_tag_links_entity_tag"),
+        Index("ix_tag_links_entity", "entity_type", "entity_id"),
+        Index("ix_tag_links_tag_entity", "tag_id", "entity_type"),
+        Index(
+            "uq_tag_links_primary_strategy_trade_group",
+            "entity_id",
+            unique=True,
+            postgresql_where=text("entity_type = 'trade_groups' AND tag_type = 'strategy' AND is_primary = true"),
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    entity_type: Mapped[str] = mapped_column(Text, nullable=False)
+    entity_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    tag_id: Mapped[int] = mapped_column(Integer, ForeignKey("tags.id", ondelete="CASCADE"), nullable=False)
+    tag_type: Mapped[str] = mapped_column(Text, nullable=False)
+    is_primary: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    source: Mapped[str] = mapped_column(Text, nullable=False)
+    created_by: Mapped[str] = mapped_column(Text, nullable=False)
+    confidence: Mapped[float | None] = mapped_column(Numeric(4, 3), nullable=True)
+    assigned_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+
+
+class TradeGroupLink(Base):
+    __tablename__ = "trade_group_links"
+    __table_args__ = (
+        UniqueConstraint(
+            "parent_trade_group_id",
+            "child_trade_group_id",
+            "link_type",
+            name="uq_trade_group_links_parent_child_type",
+        ),
+        Index("ix_trade_group_links_parent", "parent_trade_group_id"),
+        Index("ix_trade_group_links_child", "child_trade_group_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    parent_trade_group_id: Mapped[int] = mapped_column(Integer, ForeignKey("trade_groups.id", ondelete="CASCADE"), nullable=False)
+    child_trade_group_id: Mapped[int] = mapped_column(Integer, ForeignKey("trade_groups.id", ondelete="CASCADE"), nullable=False)
+    link_type: Mapped[str] = mapped_column(Text, nullable=False)
+    created_by: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
         default=lambda: datetime.now(timezone.utc),
