@@ -86,9 +86,7 @@ class Account(Base):
 
 class Position(Base):
     __tablename__ = "positions"
-    __table_args__ = (
-        UniqueConstraint("account_id", "con_id", name="uq_account_id_con_id"),
-    )
+    __table_args__ = (UniqueConstraint("account_id", "con_id", name="uq_account_id_con_id"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     account_id: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -189,15 +187,9 @@ class Job(Base):
         nullable=False,
         default=lambda: datetime.now(timezone.utc),
     )
-    started_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    completed_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    archived_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -284,12 +276,8 @@ class Trade(Base):
     status: Mapped[str] = mapped_column(String, nullable=False, default="unknown")
     total_quantity: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     avg_price: Mapped[float | None] = mapped_column(Float, nullable=True)
-    first_executed_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    last_executed_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    first_executed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_executed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     fetched_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
@@ -311,9 +299,7 @@ class TradeExecution(Base):
     __tablename__ = "trade_executions"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    trade_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("trades.id"), nullable=False
-    )
+    trade_id: Mapped[int] = mapped_column(Integer, ForeignKey("trades.id"), nullable=False)
     account_id: Mapped[int] = mapped_column(Integer, nullable=False)
     ib_exec_id: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
     exec_id_base: Mapped[str] = mapped_column(Text, nullable=False)
@@ -324,9 +310,7 @@ class TradeExecution(Base):
     sec_type: Mapped[str | None] = mapped_column(Text, nullable=True)
     con_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     exec_role: Mapped[str] = mapped_column(Text, nullable=False, default="standalone")
-    executed_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False
-    )
+    executed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     quantity: Mapped[float] = mapped_column(Float, nullable=False)
     price: Mapped[float] = mapped_column(Float, nullable=False)
     side: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -355,14 +339,10 @@ class TradeExecution(Base):
 
 class TradeGroup(Base):
     __tablename__ = "trade_groups"
-    __table_args__ = (
-        Index("ix_trade_groups_account_created_at", "account_id", "created_at"),
-    )
+    __table_args__ = (Index("ix_trade_groups_account_created_at", "account_id", "created_at"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    account_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("accounts.id"), nullable=False
-    )
+    account_id: Mapped[int] = mapped_column(Integer, ForeignKey("accounts.id"), nullable=False)
     name: Mapped[str] = mapped_column(Text, nullable=False)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(Text, nullable=False, default="open")
@@ -371,9 +351,7 @@ class TradeGroup(Base):
         nullable=False,
         default=lambda: datetime.now(timezone.utc),
     )
-    closed_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     opened_by: Mapped[str | None] = mapped_column(Text, nullable=True)
     closed_by: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
@@ -391,9 +369,7 @@ class TradeGroup(Base):
 class TradeGroupExecution(Base):
     __tablename__ = "trade_group_executions"
     __table_args__ = (
-        UniqueConstraint(
-            "trade_execution_id", name="uq_trade_group_executions_trade_execution_id"
-        ),
+        UniqueConstraint("trade_execution_id", name="uq_trade_group_executions_trade_execution_id"),
         Index(
             "ix_trade_group_executions_group_assigned_at",
             "trade_group_id",
@@ -401,12 +377,8 @@ class TradeGroupExecution(Base):
         ),
     )
 
-    trade_group_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("trade_groups.id"), primary_key=True
-    )
-    trade_execution_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("trade_executions.id"), nullable=False
-    )
+    trade_group_id: Mapped[int] = mapped_column(Integer, ForeignKey("trade_groups.id"), primary_key=True)
+    trade_execution_id: Mapped[int] = mapped_column(Integer, ForeignKey("trade_executions.id"), nullable=False)
     source: Mapped[str] = mapped_column(Text, nullable=False)
     created_by: Mapped[str | None] = mapped_column(Text, nullable=True)
     confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -433,15 +405,9 @@ class TradeGroupExecutionEvent(Base):
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    trade_execution_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("trade_executions.id"), nullable=False
-    )
-    from_trade_group_id: Mapped[int | None] = mapped_column(
-        Integer, ForeignKey("trade_groups.id"), nullable=True
-    )
-    to_trade_group_id: Mapped[int | None] = mapped_column(
-        Integer, ForeignKey("trade_groups.id"), nullable=True
-    )
+    trade_execution_id: Mapped[int] = mapped_column(Integer, ForeignKey("trade_executions.id"), nullable=False)
+    from_trade_group_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("trade_groups.id"), nullable=True)
+    to_trade_group_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("trade_groups.id"), nullable=True)
     event_type: Mapped[str] = mapped_column(Text, nullable=False)
     source: Mapped[str] = mapped_column(Text, nullable=False)
     created_by: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -457,9 +423,7 @@ class TradeGroupExecutionEvent(Base):
 class Tag(Base):
     __tablename__ = "tags"
     __table_args__ = (
-        UniqueConstraint(
-            "tag_type", "normalized_value", name="uq_tags_type_normalized_value"
-        ),
+        UniqueConstraint("tag_type", "normalized_value", name="uq_tags_type_normalized_value"),
         Index("ix_tags_type_normalized_value", "tag_type", "normalized_value"),
     )
 
@@ -478,18 +442,14 @@ class Tag(Base):
 class TagLink(Base):
     __tablename__ = "tag_links"
     __table_args__ = (
-        UniqueConstraint(
-            "entity_type", "entity_id", "tag_id", name="uq_tag_links_entity_tag"
-        ),
+        UniqueConstraint("entity_type", "entity_id", "tag_id", name="uq_tag_links_entity_tag"),
         Index("ix_tag_links_entity", "entity_type", "entity_id"),
         Index("ix_tag_links_tag_entity", "tag_id", "entity_type"),
         Index(
             "uq_tag_links_primary_strategy_trade_group",
             "entity_id",
             unique=True,
-            postgresql_where=text(
-                "entity_type = 'trade_groups' AND tag_type = 'strategy' AND is_primary = true"
-            ),
+            postgresql_where=text("entity_type = 'trade_groups' AND tag_type = 'strategy' AND is_primary = true"),
         ),
     )
 
@@ -528,12 +488,8 @@ class TradeGroupLink(Base):
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    parent_trade_group_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("trade_groups.id"), nullable=False
-    )
-    child_trade_group_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("trade_groups.id"), nullable=False
-    )
+    parent_trade_group_id: Mapped[int] = mapped_column(Integer, ForeignKey("trade_groups.id"), nullable=False)
+    child_trade_group_id: Mapped[int] = mapped_column(Integer, ForeignKey("trade_groups.id"), nullable=False)
     link_type: Mapped[str] = mapped_column(Text, nullable=False)
     created_by: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
@@ -563,9 +519,7 @@ class UserPreference(Base):
 
 class WorkerHeartbeat(Base):
     __tablename__ = "worker_heartbeats"
-    __table_args__ = (
-        UniqueConstraint("worker_type", name="uq_worker_heartbeats_worker_type"),
-    )
+    __table_args__ = (UniqueConstraint("worker_type", name="uq_worker_heartbeats_worker_type"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     worker_type: Mapped[str] = mapped_column(String, nullable=False)

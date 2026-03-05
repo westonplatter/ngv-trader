@@ -1,4 +1,4 @@
-# Spec: Trade Tagging and Lifecycle Grouping
+# Spec: Trade Strategies and Lifecycle Grouping
 
 ## Decision Authority
 
@@ -169,10 +169,12 @@ These are required for production-safe integrity and reporting performance.
 1. Default user action on new activity: attach to existing Trade Group or create a new one.
 2. Fast tagging with quick-pick chips for common tags.
 3. Suggested tags/groups from recent similar executions, including roll scenarios where a closing execution in one leg is paired with an opening execution in another leg. Suggestions must never auto-assign without user confirmation.
-4. Manual reassignment flow for externally placed trades.
-5. Timeline view per Trade Group: entry, rolls/adjustments, exits.
-6. Visible provenance badge (`manual`, `rule`, `agent`) and easy override.
-7. Show confidence next to provenance for non-manual assignments.
+4. User can CRUD Strategy and Theme catalog items.
+5. User can edit a Trade Group after creation (at minimum `name`, `notes`, `status`, `closed_at`).
+6. Manual reassignment flow for externally placed trades.
+7. Timeline view per Trade Group: entry, rolls/adjustments, exits.
+8. Visible provenance badge (`manual`, `rule`, `agent`) and easy override.
+9. Show confidence next to provenance for non-manual assignments.
 
 ## Reporting Requirements (V1)
 
@@ -206,7 +208,33 @@ All endpoints are under `/api/v1`.
          2. Write corresponding `execution_unassigned` events to `trade_group_execution_events`
          3. Keep `trade_executions` and `trades` unchanged
 
-2. Execution Attribution
+2. Strategies (Catalog CRUD)
+   1. `GET /strategies`
+      1. Query: `q`, `limit`
+      2. Purpose: list/search strategy catalog
+   2. `POST /strategies`
+      1. Body: `value`, `created_by`
+      2. Behavior: creates `tags` row with `tag_type='strategy'`
+   3. `PATCH /strategies/{strategy_id}`
+      1. Body: mutable metadata (`value`)
+      2. Behavior: updates strategy tag value with normalization rules
+   4. `DELETE /strategies/{strategy_id}`
+      1. Behavior: allowed only when no blocking references, or returns validation error
+
+3. Themes (Catalog CRUD)
+   1. `GET /themes`
+      1. Query: `q`, `limit`
+      2. Purpose: list/search theme catalog
+   2. `POST /themes`
+      1. Body: `value`, `created_by`
+      2. Behavior: creates `tags` row with `tag_type='theme'`
+   3. `PATCH /themes/{theme_id}`
+      1. Body: mutable metadata (`value`)
+      2. Behavior: updates theme tag value with normalization rules
+   4. `DELETE /themes/{theme_id}`
+      1. Behavior: allowed only when no blocking references, or returns validation error
+
+4. Execution Attribution
    1. `POST /trade-groups/{trade_group_id}/executions:assign`
       1. Body: `execution_ids[]`, `source`, `created_by`, `confidence`, `reason`
       2. Behavior: idempotent assignment; reject if execution already belongs to another group unless `force_reassign=true`
@@ -219,7 +247,7 @@ All endpoints are under `/api/v1`.
    4. `GET /trade-groups/{trade_group_id}/timeline`
       1. Purpose: ordered lifecycle events (entry, rolls, adjustments, exits, reassignments)
 
-3. Tags and Tag Links
+5. Tags and Tag Links
    1. `GET /tags`
       1. Query: `tag_type`, `q`, `limit`
       2. Purpose: typeahead/select2 UX
@@ -232,12 +260,12 @@ All endpoints are under `/api/v1`.
    4. `DELETE /tag-links/{tag_link_id}`
       1. Purpose: remove incorrect link
 
-4. Reporting
+6. Reporting
    1. `GET /reports/pnl/trade-groups`
       1. Query: `account_id`, `group_by` (`theme`, `strategy`, `trade_group`), `from`, `to`, `include_hedge_adjusted`
       2. Purpose: required V1 desk reporting outputs
 
-5. API Guardrails
+7. API Guardrails
    1. All mutation endpoints persist provenance fields (`source`, `created_by`, `confidence`, `assigned_at`/`created_at`).
    2. Assignment endpoints enforce execution-level single-group ownership.
    3. Order-level identifiers may be accepted as lookup hints, but final writes target execution IDs.
@@ -325,7 +353,9 @@ All endpoints are under `/api/v1`.
    4. If spread-linked executions are split across Trade Groups, mark as reconciliation error and require manual fix before final reporting.
 8. Trade-level grouping actions in UX may exist for speed, but must fan out to execution-level writes.
 9. Trade Group status transitions are operator-controlled in V1 and can move freely between `open`, `closed`, and `archived`.
-10. Deleting a Trade Group must free linked executions for reassignment and preserve audit events.
+10. Trade Groups are editable after creation via `PATCH /trade-groups/{trade_group_id}` for lifecycle metadata updates.
+11. Strategy and Theme catalog items are CRUD-managed in V1 (with validation on referenced deletes).
+12. Deleting a Trade Group must free linked executions for reassignment and preserve audit events.
 
 ## Open Questions (Product-Owner Sign-Off)
 
@@ -335,7 +365,10 @@ All endpoints are under `/api/v1`.
 ## Acceptance Criteria
 
 1. User can create and assign Trade Groups for all executions.
-2. User can tag groups and activity with controlled vocabulary tags.
-3. User can manually attach externally sourced activity to Trade Groups.
-4. System preserves attribution history and source provenance.
-5. Desk can generate V1 PnL views by Theme, Strategy, Trade Group, and hedge-adjusted status.
+2. User can edit an existing Trade Group after creation.
+3. User can CRUD Strategy catalog items.
+4. User can CRUD Theme catalog items.
+5. User can tag groups and activity with controlled vocabulary tags.
+6. User can manually attach externally sourced activity to Trade Groups.
+7. System preserves attribution history and source provenance.
+8. Desk can generate V1 PnL views by Theme, Strategy, Trade Group, and hedge-adjusted status.

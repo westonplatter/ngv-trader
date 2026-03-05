@@ -35,3 +35,11 @@ For /CL, fetch data
 - between strike X and Y (or delta X and Y)
 - for expiries between start_date and end_date
   fetch the 1st order + IV values and store in a futures option price table
+
+## Other Considerations
+
+### Future Options data
+
+For need to see a IV term structure specific to a futures underlying. Applicable on March 4, when I want to open a calendar spread shorting the March 15th calls and long back the April 10th-ish calls (that coincide with the May contract's Op Ex event date when we flip to the next contract).
+
+I need a quick way to see hthe underying contract for an options - and in a human discernable way (lable, not an ID)

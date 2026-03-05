@@ -48,9 +48,7 @@ def upgrade() -> None:
             nullable=False,
             server_default=sa.func.now(),
         ),
-        sa.CheckConstraint(
-            "status IN ('open', 'closed', 'archived')", name="ck_trade_groups_status"
-        ),
+        sa.CheckConstraint("status IN ('open', 'closed', 'archived')", name="ck_trade_groups_status"),
         sa.ForeignKeyConstraint(["account_id"], ["accounts.id"]),
         sa.PrimaryKeyConstraint("id"),
     )
@@ -80,9 +78,7 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["trade_execution_id"], ["trade_executions.id"]),
         sa.ForeignKeyConstraint(["trade_group_id"], ["trade_groups.id"]),
         sa.PrimaryKeyConstraint("trade_group_id", "trade_execution_id"),
-        sa.UniqueConstraint(
-            "trade_execution_id", name="uq_trade_group_executions_trade_execution_id"
-        ),
+        sa.UniqueConstraint("trade_execution_id", name="uq_trade_group_executions_trade_execution_id"),
     )
     op.create_index(
         "ix_trade_group_executions_group_assigned_at",
@@ -149,13 +145,9 @@ def upgrade() -> None:
             name="ck_tags_tag_type",
         ),
         sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint(
-            "tag_type", "normalized_value", name="uq_tags_type_normalized_value"
-        ),
+        sa.UniqueConstraint("tag_type", "normalized_value", name="uq_tags_type_normalized_value"),
     )
-    op.create_index(
-        "ix_tags_type_normalized_value", "tags", ["tag_type", "normalized_value"]
-    )
+    op.create_index("ix_tags_type_normalized_value", "tags", ["tag_type", "normalized_value"])
 
     op.create_table(
         "tag_links",
@@ -164,9 +156,7 @@ def upgrade() -> None:
         sa.Column("entity_id", sa.Integer(), nullable=False),
         sa.Column("tag_id", sa.Integer(), nullable=False),
         sa.Column("tag_type", sa.Text(), nullable=False),
-        sa.Column(
-            "is_primary", sa.Boolean(), nullable=False, server_default=sa.text("false")
-        ),
+        sa.Column("is_primary", sa.Boolean(), nullable=False, server_default=sa.text("false")),
         sa.Column("source", sa.Text(), nullable=False),
         sa.Column("created_by", sa.Text(), nullable=False),
         sa.Column("confidence", sa.Numeric(4, 3), nullable=True),
@@ -186,14 +176,10 @@ def upgrade() -> None:
             "entity_type IN ('orders', 'trades', 'trade_executions', 'trade_groups')",
             name="ck_tag_links_entity_type",
         ),
-        sa.CheckConstraint(
-            "source IN ('manual', 'rule', 'agent')", name="ck_tag_links_source"
-        ),
+        sa.CheckConstraint("source IN ('manual', 'rule', 'agent')", name="ck_tag_links_source"),
         sa.ForeignKeyConstraint(["tag_id"], ["tags.id"]),
         sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint(
-            "entity_type", "entity_id", "tag_id", name="uq_tag_links_entity_tag"
-        ),
+        sa.UniqueConstraint("entity_type", "entity_id", "tag_id", name="uq_tag_links_entity_tag"),
     )
     op.create_index("ix_tag_links_entity", "tag_links", ["entity_type", "entity_id"])
     op.create_index("ix_tag_links_tag_entity", "tag_links", ["tag_id", "entity_type"])
@@ -202,9 +188,7 @@ def upgrade() -> None:
         "tag_links",
         ["entity_id"],
         unique=True,
-        postgresql_where=sa.text(
-            "entity_type = 'trade_groups' AND tag_type = 'strategy' AND is_primary = true"
-        ),
+        postgresql_where=sa.text("entity_type = 'trade_groups' AND tag_type = 'strategy' AND is_primary = true"),
     )
 
     op.create_table(
@@ -238,12 +222,8 @@ def upgrade() -> None:
             name="uq_trade_group_links_parent_child_type",
         ),
     )
-    op.create_index(
-        "ix_trade_group_links_parent", "trade_group_links", ["parent_trade_group_id"]
-    )
-    op.create_index(
-        "ix_trade_group_links_child", "trade_group_links", ["child_trade_group_id"]
-    )
+    op.create_index("ix_trade_group_links_parent", "trade_group_links", ["parent_trade_group_id"])
+    op.create_index("ix_trade_group_links_child", "trade_group_links", ["child_trade_group_id"])
 
 
 def downgrade() -> None:

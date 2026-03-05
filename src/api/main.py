@@ -13,6 +13,8 @@ from src.api.routers import (
     jobs,
     orders,
     positions,
+    reports,
+    tags,
     trade_groups,
     tradebot,
     trades,
@@ -66,13 +68,15 @@ def health():
         return {"status": "error", "database": str(exc)}
 
 
-app.include_router(accounts.router, prefix="/api/v1")
-app.include_router(positions.router, prefix="/api/v1")
-app.include_router(orders.router, prefix="/api/v1")
-app.include_router(jobs.router, prefix="/api/v1")
-app.include_router(tradebot.router, prefix="/api/v1")
-app.include_router(trades.router, prefix="/api/v1")
-app.include_router(trade_groups.router, prefix="/api/v1")
-app.include_router(user_preferences.router, prefix="/api/v1")
-app.include_router(watch_lists.router, prefix="/api/v1")
-app.include_router(workers.router, prefix="/api/v1")
+app.include_router(accounts.router, prefix="/api/v1", tags=["Accounts"])
+app.include_router(positions.router, prefix="/api/v1", tags=["Positions"])
+app.include_router(orders.router, prefix="/api/v1", tags=["Orders"])
+app.include_router(trades.router, prefix="/api/v1", tags=["Trades"])
+app.include_router(trade_groups.router, prefix="/api/v1", tags=["Trade Groups"])
+app.include_router(tags.router, prefix="/api/v1", tags=["Tags"])
+app.include_router(reports.router, prefix="/api/v1", tags=["Reports"])
+app.include_router(watch_lists.router, prefix="/api/v1", tags=["Watch Lists"])
+app.include_router(jobs.router, prefix="/api/v1", tags=["Jobs"])
+app.include_router(workers.router, prefix="/api/v1", tags=["Workers"])
+app.include_router(tradebot.router, prefix="/api/v1", tags=["Tradebot"])
+app.include_router(user_preferences.router, prefix="/api/v1", tags=["User Preferences"])

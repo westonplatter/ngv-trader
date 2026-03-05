@@ -53,7 +53,6 @@ def _format_right(right: str | None) -> str | None:
 def contract_display_name(
     symbol: str | None,
     sec_type: str | None,
-    *,
     local_symbol: str | None = None,
     right: str | None = None,
     strike: float | None = None,
