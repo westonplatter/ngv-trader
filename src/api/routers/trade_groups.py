@@ -144,8 +144,8 @@ def list_trade_groups(  # noqa: PLR0913
     strategy_tag: str | None = Query(default=None),
     theme_tag: str | None = Query(default=None),
     q: str | None = Query(default=None),
-    opened_from: datetime | None = Query(default=None),
-    opened_to: datetime | None = Query(default=None),
+    opened_from: datetime | None = Query(default=None),  # noqa: B008
+    opened_to: datetime | None = Query(default=None),  # noqa: B008
     limit: int = Query(default=100, ge=1, le=1000),
     db: Session = DB_SESSION_DEPENDENCY,
 ):
@@ -379,7 +379,7 @@ def assign_executions(
     if body.source not in ASSIGNMENT_SOURCES:
         raise HTTPException(status_code=400, detail="Invalid source")
 
-    trade_group = _ensure_group(db, trade_group_id)
+    _ensure_group(db, trade_group_id)
     executions = db.execute(select(TradeExecution).where(TradeExecution.id.in_(body.execution_ids))).scalars().all()
     if len(executions) != len(set(body.execution_ids)):
         raise HTTPException(status_code=404, detail="One or more executions not found")

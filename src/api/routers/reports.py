@@ -30,8 +30,8 @@ class ReportResponse(BaseModel):
 def pnl_by_trade_groups(  # noqa: C901, PLR0912
     account_id: int | None = Query(default=None),
     group_by: str = Query(default="trade_group"),
-    from_ts: datetime | None = Query(default=None, alias="from"),
-    to_ts: datetime | None = Query(default=None, alias="to"),
+    from_ts: datetime | None = Query(default=None, alias="from"),  # noqa: B008
+    to_ts: datetime | None = Query(default=None, alias="to"),  # noqa: B008
     include_hedge_adjusted: bool = Query(default=False),
     db: Session = DB_SESSION_DEPENDENCY,
 ):
