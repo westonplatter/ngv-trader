@@ -342,7 +342,7 @@ class TradeGroup(Base):
     __table_args__ = (Index("ix_trade_groups_account_created_at", "account_id", "created_at"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    account_id: Mapped[int] = mapped_column(Integer, ForeignKey("accounts.id"), nullable=False)
+    account_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("accounts.id"), nullable=True)
     name: Mapped[str] = mapped_column(Text, nullable=False)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(Text, nullable=False, default="open")
@@ -377,8 +377,8 @@ class TradeGroupExecution(Base):
         ),
     )
 
-    trade_group_id: Mapped[int] = mapped_column(Integer, ForeignKey("trade_groups.id"), primary_key=True)
-    trade_execution_id: Mapped[int] = mapped_column(Integer, ForeignKey("trade_executions.id"), nullable=False)
+    trade_group_id: Mapped[int] = mapped_column(Integer, ForeignKey("trade_groups.id", ondelete="CASCADE"), primary_key=True)
+    trade_execution_id: Mapped[int] = mapped_column(Integer, ForeignKey("trade_executions.id", ondelete="CASCADE"), primary_key=True)
     source: Mapped[str] = mapped_column(Text, nullable=False)
     created_by: Mapped[str | None] = mapped_column(Text, nullable=True)
     confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -405,9 +405,9 @@ class TradeGroupExecutionEvent(Base):
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    trade_execution_id: Mapped[int] = mapped_column(Integer, ForeignKey("trade_executions.id"), nullable=False)
-    from_trade_group_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("trade_groups.id"), nullable=True)
-    to_trade_group_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("trade_groups.id"), nullable=True)
+    trade_execution_id: Mapped[int] = mapped_column(Integer, ForeignKey("trade_executions.id", ondelete="CASCADE"), nullable=False)
+    from_trade_group_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("trade_groups.id", ondelete="SET NULL"), nullable=True)
+    to_trade_group_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("trade_groups.id", ondelete="SET NULL"), nullable=True)
     event_type: Mapped[str] = mapped_column(Text, nullable=False)
     source: Mapped[str] = mapped_column(Text, nullable=False)
     created_by: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -456,7 +456,7 @@ class TagLink(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     entity_type: Mapped[str] = mapped_column(Text, nullable=False)
     entity_id: Mapped[int] = mapped_column(Integer, nullable=False)
-    tag_id: Mapped[int] = mapped_column(Integer, ForeignKey("tags.id"), nullable=False)
+    tag_id: Mapped[int] = mapped_column(Integer, ForeignKey("tags.id", ondelete="CASCADE"), nullable=False)
     tag_type: Mapped[str] = mapped_column(Text, nullable=False)
     is_primary: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     source: Mapped[str] = mapped_column(Text, nullable=False)
@@ -488,8 +488,8 @@ class TradeGroupLink(Base):
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    parent_trade_group_id: Mapped[int] = mapped_column(Integer, ForeignKey("trade_groups.id"), nullable=False)
-    child_trade_group_id: Mapped[int] = mapped_column(Integer, ForeignKey("trade_groups.id"), nullable=False)
+    parent_trade_group_id: Mapped[int] = mapped_column(Integer, ForeignKey("trade_groups.id", ondelete="CASCADE"), nullable=False)
+    child_trade_group_id: Mapped[int] = mapped_column(Integer, ForeignKey("trade_groups.id", ondelete="CASCADE"), nullable=False)
     link_type: Mapped[str] = mapped_column(Text, nullable=False)
     created_by: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(

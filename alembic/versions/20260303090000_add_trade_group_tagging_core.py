@@ -23,7 +23,7 @@ def upgrade() -> None:
     op.create_table(
         "trade_groups",
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
-        sa.Column("account_id", sa.Integer(), nullable=False),
+        sa.Column("account_id", sa.Integer(), nullable=True),
         sa.Column("name", sa.Text(), nullable=False),
         sa.Column("notes", sa.Text(), nullable=True),
         sa.Column("status", sa.Text(), nullable=False, server_default="open"),
@@ -75,8 +75,8 @@ def upgrade() -> None:
             "source IN ('manual', 'rule', 'agent')",
             name="ck_trade_group_executions_source",
         ),
-        sa.ForeignKeyConstraint(["trade_execution_id"], ["trade_executions.id"]),
-        sa.ForeignKeyConstraint(["trade_group_id"], ["trade_groups.id"]),
+        sa.ForeignKeyConstraint(["trade_execution_id"], ["trade_executions.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["trade_group_id"], ["trade_groups.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("trade_group_id", "trade_execution_id"),
         sa.UniqueConstraint("trade_execution_id", name="uq_trade_group_executions_trade_execution_id"),
     )
@@ -111,9 +111,9 @@ def upgrade() -> None:
             "source IN ('manual', 'rule', 'agent')",
             name="ck_trade_group_execution_events_source",
         ),
-        sa.ForeignKeyConstraint(["from_trade_group_id"], ["trade_groups.id"]),
-        sa.ForeignKeyConstraint(["to_trade_group_id"], ["trade_groups.id"]),
-        sa.ForeignKeyConstraint(["trade_execution_id"], ["trade_executions.id"]),
+        sa.ForeignKeyConstraint(["from_trade_group_id"], ["trade_groups.id"], ondelete="SET NULL"),
+        sa.ForeignKeyConstraint(["to_trade_group_id"], ["trade_groups.id"], ondelete="SET NULL"),
+        sa.ForeignKeyConstraint(["trade_execution_id"], ["trade_executions.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index(
@@ -177,7 +177,7 @@ def upgrade() -> None:
             name="ck_tag_links_entity_type",
         ),
         sa.CheckConstraint("source IN ('manual', 'rule', 'agent')", name="ck_tag_links_source"),
-        sa.ForeignKeyConstraint(["tag_id"], ["tags.id"]),
+        sa.ForeignKeyConstraint(["tag_id"], ["tags.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("entity_type", "entity_id", "tag_id", name="uq_tag_links_entity_tag"),
     )
@@ -212,8 +212,8 @@ def upgrade() -> None:
             "parent_trade_group_id <> child_trade_group_id",
             name="ck_trade_group_links_parent_child_different",
         ),
-        sa.ForeignKeyConstraint(["child_trade_group_id"], ["trade_groups.id"]),
-        sa.ForeignKeyConstraint(["parent_trade_group_id"], ["trade_groups.id"]),
+        sa.ForeignKeyConstraint(["child_trade_group_id"], ["trade_groups.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["parent_trade_group_id"], ["trade_groups.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint(
             "parent_trade_group_id",

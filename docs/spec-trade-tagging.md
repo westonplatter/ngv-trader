@@ -78,7 +78,7 @@ These are required for production-safe integrity and reporting performance.
 1. `trade_groups`
    1. Canonical columns:
       1. `id` (pk)
-      2. `account_id` (fk -> `accounts.id`, not null; ownership/default-filter anchor, not a hard membership boundary)
+      2. `account_id` (fk -> `accounts.id`, nullable; auto-populated from the first assigned execution's account when null; serves as default-filter anchor for reporting, not a membership boundary)
       3. `name` (text, not null)
       4. `notes` (text, nullable)
       5. `status` (text, not null; suggested values: `open`, `closed`, `archived`)
@@ -194,8 +194,8 @@ All endpoints are under `/api/v1`.
       1. Query: `account_id`, `status`, `strategy_tag`, `theme_tag`, `opened_from`, `opened_to`, `limit`
       2. Purpose: desk list view and filtering
    2. `POST /trade-groups`
-      1. Body: `account_id`, `name`, `notes`, optional initial `strategy_tag_id`
-      2. Purpose: create lifecycle container
+      1. Body: `name`, `notes`, optional initial `strategy_tag_id`
+      2. Purpose: create lifecycle container; `account_id` is not provided at creation — it is auto-populated from the first assigned execution's account
    3. `GET /trade-groups/{trade_group_id}`
       1. Purpose: detail view with tags, lifecycle state, and attribution summary
    4. `PATCH /trade-groups/{trade_group_id}`
@@ -334,7 +334,7 @@ All endpoints are under `/api/v1`.
 
 1. Trade Group membership is cross-account in V1.
    1. A Trade Group may contain activity from multiple accounts.
-   2. `trade_groups.account_id` remains required and represents the owning/default account for filtering and reporting defaults.
+   2. `trade_groups.account_id` is nullable and auto-populated from the first assigned execution's account when null. It serves as a default-filter anchor for reporting, not a membership boundary. The user does not set it at creation time.
    3. Themes, strategies, and tags are reusable across accounts.
 2. Theme assignment is optional and multi-valued at the Trade Group level.
 3. A single execution can only be linked to one Trade Group.

@@ -122,7 +122,9 @@ def list_tags(
     if tag_type is not None:
         stmt = stmt.where(Tag.tag_type == tag_type)
     if q:
-        stmt = stmt.where(Tag.normalized_value.like(f"%{_normalize_tag_value(q)}%"))
+        normalized_q = _normalize_tag_value(q)
+        escaped_q = normalized_q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        stmt = stmt.where(Tag.normalized_value.like(f"%{escaped_q}%", escape="\\"))
     rows = db.execute(stmt.order_by(Tag.created_at.desc()).limit(limit)).scalars().all()
     return [TagResponse.model_validate(row) for row in rows]
 

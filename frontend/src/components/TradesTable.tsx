@@ -65,7 +65,7 @@ interface TradeExecution {
 
 interface TradeGroupResult {
   id: number;
-  account_id: number;
+  account_id: number | null;
   name: string;
   status: string;
   primary_strategy_value: string | null;

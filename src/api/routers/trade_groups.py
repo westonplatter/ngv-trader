@@ -41,7 +41,7 @@ class TradeGroupResponse(BaseModel):
     model_config = {"from_attributes": True}
 
     id: int
-    account_id: int
+    account_id: int | None
     name: str
     notes: str | None
     status: str
@@ -60,7 +60,6 @@ class TradeGroupDetailResponse(TradeGroupResponse):
 
 
 class TradeGroupCreateRequest(BaseModel):
-    account_id: int
     name: str
     notes: str | None = None
     strategy_tag_id: int | None = None
@@ -235,7 +234,7 @@ def create_trade_group(body: TradeGroupCreateRequest, db: Session = DB_SESSION_D
 
     opened_at = body.opened_at or _now_utc()
     trade_group = TradeGroup(
-        account_id=body.account_id,
+        account_id=None,
         name=body.name,
         notes=body.notes,
         status="open",
@@ -379,10 +378,15 @@ def assign_executions(
     if body.source not in ASSIGNMENT_SOURCES:
         raise HTTPException(status_code=400, detail="Invalid source")
 
-    _ensure_group(db, trade_group_id)
+    trade_group = _ensure_group(db, trade_group_id)
     executions = db.execute(select(TradeExecution).where(TradeExecution.id.in_(body.execution_ids))).scalars().all()
     if len(executions) != len(set(body.execution_ids)):
         raise HTTPException(status_code=404, detail="One or more executions not found")
+
+    # Auto-populate account_id from the first assigned execution when not yet set.
+    if trade_group.account_id is None and executions:
+        trade_group.account_id = executions[0].account_id
+        trade_group.updated_at = _now_utc()
 
     for execution in executions:
         existing = db.execute(select(TradeGroupExecution).where(TradeGroupExecution.trade_execution_id == execution.id)).scalar_one_or_none()

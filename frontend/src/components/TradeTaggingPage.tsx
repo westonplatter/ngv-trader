@@ -3,7 +3,7 @@ import { API_BASE_URL } from "../config";
 
 type TradeGroup = {
   id: number;
-  account_id: number;
+  account_id: number | null;
   name: string;
   notes: string | null;
   status: "open" | "closed" | "archived";
@@ -47,13 +47,6 @@ type Tag = {
   created_at: string;
 };
 
-type Account = {
-  id: number;
-  account: string;
-  masked_account: string | null;
-  alias: string | null;
-};
-
 function formatDate(value: string | null): string {
   if (!value) return "-";
   const parsed = Date.parse(value);
@@ -85,7 +78,6 @@ function statusClassName(status: TradeGroup["status"]): string {
 const GROUP_STATUSES: TradeGroup["status"][] = ["open", "closed", "archived"];
 
 export default function TradeTaggingPage() {
-  const [accounts, setAccounts] = useState<Account[]>([]);
   const [strategies, setStrategies] = useState<Tag[]>([]);
   const [selectedStrategyId, setSelectedStrategyId] = useState<number | null>(
     null,
@@ -133,17 +125,6 @@ export default function TradeTaggingPage() {
         return current;
       return data[0].id;
     });
-  }, []);
-
-  const loadAccounts = useCallback(async () => {
-    const response = await fetch(`${API_BASE_URL}/accounts`);
-    if (!response.ok) {
-      throw new Error(
-        await readErrorMessage(response, "Unable to load accounts"),
-      );
-    }
-    const data: Account[] = await response.json();
-    setAccounts(data);
   }, []);
 
   const loadGroups = useCallback(async (strategyValue: string | null) => {
@@ -201,7 +182,7 @@ export default function TradeTaggingPage() {
   useEffect(() => {
     let active = true;
 
-    Promise.all([loadStrategies(), loadAccounts()])
+    loadStrategies()
       .catch((loadError: unknown) => {
         if (!active) return;
         const nextMessage =
@@ -217,7 +198,7 @@ export default function TradeTaggingPage() {
     return () => {
       active = false;
     };
-  }, [loadAccounts, loadStrategies]);
+  }, [loadStrategies]);
 
   useEffect(() => {
     let active = true;
@@ -320,7 +301,6 @@ export default function TradeTaggingPage() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        account_id: 1,
         name: newGroupName.trim(),
         notes: newGroupNotes.trim() || null,
         strategy_tag_id: selectedStrategyId,
