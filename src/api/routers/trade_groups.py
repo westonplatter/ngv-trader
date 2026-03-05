@@ -45,6 +45,7 @@ class TradeGroupResponse(BaseModel):
     name: str
     notes: str | None
     status: str
+    primary_strategy_value: str | None = None
     opened_at: datetime
     closed_at: datetime | None
     opened_by: str | None
@@ -117,18 +118,39 @@ class TimelineResponse(BaseModel):
     events: list[TimelineEventResponse]
 
 
+def _primary_strategy_subquery():
+    """Correlated subquery to get the primary strategy value for a trade group."""
+    return (
+        select(Tag.value)
+        .join(TagLink, TagLink.tag_id == Tag.id)
+        .where(
+            and_(
+                TagLink.entity_type == "trade_groups",
+                TagLink.entity_id == TradeGroup.id,
+                TagLink.tag_type == "strategy",
+                TagLink.is_primary.is_(True),
+            )
+        )
+        .correlate(TradeGroup)
+        .scalar_subquery()
+        .label("primary_strategy_value")
+    )
+
+
 @router.get("/trade-groups", response_model=list[TradeGroupResponse])
 def list_trade_groups(  # noqa: PLR0913
     account_id: int | None = Query(default=None),
     status_filter: str | None = Query(default=None, alias="status"),
     strategy_tag: str | None = Query(default=None),
     theme_tag: str | None = Query(default=None),
+    q: str | None = Query(default=None),
     opened_from: datetime | None = Query(default=None),
     opened_to: datetime | None = Query(default=None),
     limit: int = Query(default=100, ge=1, le=1000),
     db: Session = DB_SESSION_DEPENDENCY,
 ):
-    stmt = select(TradeGroup)
+    strategy_value_col = _primary_strategy_subquery()
+    stmt = select(TradeGroup, strategy_value_col)
     if account_id is not None:
         stmt = stmt.where(TradeGroup.account_id == account_id)
     if status_filter is not None:
@@ -170,8 +192,40 @@ def list_trade_groups(  # noqa: PLR0913
             .exists()
         )
 
-    rows = db.execute(stmt.order_by(TradeGroup.created_at.desc()).limit(limit)).scalars().all()
-    return [TradeGroupResponse.model_validate(row) for row in rows]
+    if q:
+        normalized_q = _normalize_tag_value(q)
+        # Escape LIKE metacharacters so %, _, and \ are treated literally
+        escaped_q = normalized_q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        # Search across group name and primary strategy value
+        strategy_name_exists = (
+            select(Tag.id)
+            .join(TagLink, TagLink.tag_id == Tag.id)
+            .where(
+                and_(
+                    TagLink.entity_type == "trade_groups",
+                    TagLink.entity_id == TradeGroup.id,
+                    TagLink.tag_type == "strategy",
+                    TagLink.is_primary.is_(True),
+                    Tag.normalized_value.like(f"%{escaped_q}%", escape="\\"),
+                )
+            )
+            .correlate(TradeGroup)
+            .exists()
+        )
+        stmt = stmt.where(
+            or_(
+                func.lower(TradeGroup.name).like(f"%{escaped_q}%", escape="\\"),
+                strategy_name_exists,
+            )
+        )
+
+    rows = db.execute(stmt.order_by(TradeGroup.created_at.desc()).limit(limit)).all()
+    results = []
+    for trade_group, strategy_val in rows:
+        resp = TradeGroupResponse.model_validate(trade_group)
+        resp.primary_strategy_value = strategy_val
+        results.append(resp)
+    return results
 
 
 @router.post("/trade-groups", response_model=TradeGroupResponse, status_code=201)
@@ -320,6 +374,8 @@ def assign_executions(
     body: ExecutionAssignRequest,
     db: Session = DB_SESSION_DEPENDENCY,
 ):
+    # Intentional: trade-group membership is cross-account in V1.
+    # Do not require TradeGroup.account_id to match TradeExecution.account_id.
     if body.source not in ASSIGNMENT_SOURCES:
         raise HTTPException(status_code=400, detail="Invalid source")
 

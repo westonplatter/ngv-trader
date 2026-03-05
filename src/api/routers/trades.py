@@ -191,6 +191,7 @@ class TradeResponse(BaseModel):
     account_alias: str | None
     contract_display_name: str | None
     is_assigned: bool = False
+    assigned_trade_group_id: int | None = None
     ib_perm_id: int | None
     order_ref: str | None
     ib_order_id: int | None
@@ -282,6 +283,7 @@ def list_trades(  # noqa: C901, PLR0912
 
     raw_by_trade_id: dict[int, dict] = {}
     contract_ref_by_trade_id: dict[int, ContractRef] = {}
+    assigned_trade_group_id_by_trade_id: dict[int, int] = {}
     if trade_ids:
         execution_rows = db.execute(
             select(TradeExecution.trade_id, TradeExecution.raw, TradeExecution.con_id)
@@ -303,6 +305,26 @@ def list_trades(  # noqa: C901, PLR0912
                 if con_id is not None and con_id in contract_ref_by_con_id:
                     contract_ref_by_trade_id[trade_id] = contract_ref_by_con_id[con_id]
 
+        assignment_rows = db.execute(
+            select(
+                TradeExecution.trade_id,
+                TradeGroupExecution.trade_group_id,
+            )
+            .join(
+                TradeGroupExecution,
+                TradeGroupExecution.trade_execution_id == TradeExecution.id,
+            )
+            .where(TradeExecution.trade_id.in_(trade_ids))
+            .order_by(
+                TradeExecution.trade_id.asc(),
+                TradeGroupExecution.assigned_at.desc(),
+                TradeGroupExecution.trade_execution_id.desc(),
+            )
+        ).all()
+        for trade_id, trade_group_id in assignment_rows:
+            if trade_id not in assigned_trade_group_id_by_trade_id:
+                assigned_trade_group_id_by_trade_id[trade_id] = trade_group_id
+
     results = []
     for trade, acct, is_assigned in rows:
         alias = None
@@ -319,6 +341,9 @@ def list_trades(  # noqa: C901, PLR0912
                 )
                 or _trade_contract_display_name(trade, raw_by_trade_id.get(trade.id)),
                 is_assigned=bool(is_assigned),
+                assigned_trade_group_id=assigned_trade_group_id_by_trade_id.get(
+                    trade.id,
+                ),
                 ib_perm_id=trade.ib_perm_id,
                 order_ref=trade.order_ref,
                 ib_order_id=trade.ib_order_id,
@@ -365,6 +390,16 @@ def get_trade(trade_id: int, db: Session = DB_SESSION_DEPENDENCY):
     contract_ref = None
     if execution_con_id is not None:
         contract_ref = db.execute(select(ContractRef).where(ContractRef.con_id == execution_con_id)).scalar_one_or_none()
+    assigned_trade_group_id = db.execute(
+        select(TradeGroupExecution.trade_group_id)
+        .join(TradeExecution, TradeExecution.id == TradeGroupExecution.trade_execution_id)
+        .where(TradeExecution.trade_id == trade_id)
+        .order_by(
+            TradeGroupExecution.assigned_at.desc(),
+            TradeGroupExecution.trade_execution_id.desc(),
+        )
+        .limit(1)
+    ).scalar_one_or_none()
     alias = None
     if acct:
         alias = acct.alias if acct.alias else acct.account
@@ -374,6 +409,7 @@ def get_trade(trade_id: int, db: Session = DB_SESSION_DEPENDENCY):
         account_alias=alias,
         contract_display_name=_contract_display_from_raw(execution_raw, contract_ref) or _trade_contract_display_name(trade, execution_raw),
         is_assigned=bool(is_assigned),
+        assigned_trade_group_id=assigned_trade_group_id,
         ib_perm_id=trade.ib_perm_id,
         order_ref=trade.order_ref,
         ib_order_id=trade.ib_order_id,

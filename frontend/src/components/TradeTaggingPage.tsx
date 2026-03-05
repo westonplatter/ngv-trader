@@ -9,29 +9,24 @@ type TradeGroup = {
   status: "open" | "closed" | "archived";
   opened_at: string;
   closed_at: string | null;
+  opened_by: string | null;
+  closed_by: string | null;
 };
 
-type Trade = {
-  id: number;
-  account_id: number;
-  account_alias: string | null;
-  contract_display_name: string | null;
-  symbol: string | null;
-  status: string;
-  is_assigned: boolean;
-  last_executed_at: string | null;
+type TradeGroupDetail = TradeGroup & {
+  tags: TagLink[];
+  execution_count: number;
 };
 
-type TradeExecution = {
+type TagLink = {
   id: number;
-  trade_id: number;
-  account_id: number;
-  executed_at: string;
-  quantity: number;
-  price: number;
-  side: string | null;
-  exec_role: string;
-  contract_display: string | null;
+  entity_type: string;
+  entity_id: number;
+  tag_id: number;
+  tag_type: string;
+  is_primary: boolean;
+  source: string;
+  created_by: string;
 };
 
 type TimelineEvent = {
@@ -87,12 +82,7 @@ function statusClassName(status: TradeGroup["status"]): string {
   return "bg-amber-100 text-amber-800";
 }
 
-function accountLabel(account: Account): string {
-  if (account.alias && account.alias.trim()) return account.alias.trim();
-  if (account.masked_account && account.masked_account.trim())
-    return account.masked_account.trim();
-  return account.account;
-}
+const GROUP_STATUSES: TradeGroup["status"][] = ["open", "closed", "archived"];
 
 export default function TradeTaggingPage() {
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -103,21 +93,19 @@ export default function TradeTaggingPage() {
 
   const [groups, setGroups] = useState<TradeGroup[]>([]);
   const [selectedGroupId, setSelectedGroupId] = useState<number | null>(null);
-
-  const [trades, setTrades] = useState<Trade[]>([]);
-  const [selectedTradeId, setSelectedTradeId] = useState<number | null>(null);
-  const [tradeAccountFilter, setTradeAccountFilter] = useState<string>("all");
-  const [tradeAssignmentFilter, setTradeAssignmentFilter] = useState<
-    "all" | "assigned" | "unassigned"
-  >("all");
-  const [tradeSearchQuery, setTradeSearchQuery] = useState("");
-  const [executions, setExecutions] = useState<TradeExecution[]>([]);
+  const [groupDetail, setGroupDetail] = useState<TradeGroupDetail | null>(null);
   const [timeline, setTimeline] = useState<TimelineEvent[]>([]);
 
+  const [showNewStrategy, setShowNewStrategy] = useState(false);
   const [newStrategyValue, setNewStrategyValue] = useState("");
+  const [showNewGroup, setShowNewGroup] = useState(false);
   const [newGroupName, setNewGroupName] = useState("");
   const [newGroupNotes, setNewGroupNotes] = useState("");
-  const [newGroupAccountId, setNewGroupAccountId] = useState("1");
+
+  const [editingGroup, setEditingGroup] = useState(false);
+  const [editName, setEditName] = useState("");
+  const [editNotes, setEditNotes] = useState("");
+  const [editStatus, setEditStatus] = useState<TradeGroup["status"]>("open");
 
   const [loading, setLoading] = useState(true);
   const [loadingGroups, setLoadingGroups] = useState(false);
@@ -129,54 +117,6 @@ export default function TradeTaggingPage() {
       strategies.find((strategy) => strategy.id === selectedStrategyId) ?? null,
     [selectedStrategyId, strategies],
   );
-
-  const selectedGroup = useMemo(
-    () => groups.find((group) => group.id === selectedGroupId) ?? null,
-    [groups, selectedGroupId],
-  );
-
-  const accountLabelById = useMemo(() => {
-    const labels = new Map<number, string>();
-    for (const account of accounts) {
-      labels.set(account.id, accountLabel(account));
-    }
-    return labels;
-  }, [accounts]);
-
-  const filteredTrades = useMemo(() => {
-    const query = tradeSearchQuery.trim().toLowerCase();
-    return trades.filter((trade) => {
-      if (
-        tradeAccountFilter !== "all" &&
-        trade.account_id !== Number(tradeAccountFilter)
-      )
-        return false;
-      if (tradeAssignmentFilter === "assigned" && !trade.is_assigned)
-        return false;
-      if (tradeAssignmentFilter === "unassigned" && trade.is_assigned)
-        return false;
-      if (!query) return true;
-      const contract = (
-        trade.contract_display_name ??
-        trade.symbol ??
-        ""
-      ).toLowerCase();
-      const account = (
-        accountLabelById.get(trade.account_id) ?? ""
-      ).toLowerCase();
-      return (
-        contract.includes(query) ||
-        account.includes(query) ||
-        String(trade.id).includes(query)
-      );
-    });
-  }, [
-    accountLabelById,
-    tradeAccountFilter,
-    tradeAssignmentFilter,
-    tradeSearchQuery,
-    trades,
-  ]);
 
   const loadStrategies = useCallback(async () => {
     const response = await fetch(`${API_BASE_URL}/strategies?limit=200`);
@@ -204,12 +144,6 @@ export default function TradeTaggingPage() {
     }
     const data: Account[] = await response.json();
     setAccounts(data);
-    setNewGroupAccountId((current) => {
-      if (data.length === 0) return "";
-      if (current && data.some((account) => String(account.id) === current))
-        return current;
-      return String(data[0].id);
-    });
   }, []);
 
   const loadGroups = useCallback(async (strategyValue: string | null) => {
@@ -240,15 +174,15 @@ export default function TradeTaggingPage() {
     });
   }, []);
 
-  const loadTrades = useCallback(async () => {
-    const response = await fetch(`${API_BASE_URL}/trades?limit=100`);
+  const loadGroupDetail = useCallback(async (groupId: number) => {
+    const response = await fetch(`${API_BASE_URL}/trade-groups/${groupId}`);
     if (!response.ok) {
       throw new Error(
-        await readErrorMessage(response, "Unable to load trades"),
+        await readErrorMessage(response, "Unable to load group detail"),
       );
     }
-    const data: Trade[] = await response.json();
-    setTrades(data);
+    const data: TradeGroupDetail = await response.json();
+    setGroupDetail(data);
   }, []);
 
   const loadTimeline = useCallback(async (tradeGroupId: number) => {
@@ -264,33 +198,10 @@ export default function TradeTaggingPage() {
     setTimeline(data.events);
   }, []);
 
-  const fetchTradeExecutions = useCallback(
-    async (tradeId: number): Promise<TradeExecution[]> => {
-      const response = await fetch(
-        `${API_BASE_URL}/trades/${tradeId}/executions`,
-      );
-      if (!response.ok) {
-        throw new Error(
-          await readErrorMessage(response, "Unable to load executions"),
-        );
-      }
-      return (await response.json()) as TradeExecution[];
-    },
-    [],
-  );
-
-  const loadExecutions = useCallback(
-    async (tradeId: number) => {
-      const data = await fetchTradeExecutions(tradeId);
-      setExecutions(data);
-    },
-    [fetchTradeExecutions],
-  );
-
   useEffect(() => {
     let active = true;
 
-    Promise.all([loadStrategies(), loadTrades(), loadAccounts()])
+    Promise.all([loadStrategies(), loadAccounts()])
       .catch((loadError: unknown) => {
         if (!active) return;
         const nextMessage =
@@ -306,7 +217,7 @@ export default function TradeTaggingPage() {
     return () => {
       active = false;
     };
-  }, [loadAccounts, loadStrategies, loadTrades]);
+  }, [loadAccounts, loadStrategies]);
 
   useEffect(() => {
     let active = true;
@@ -338,10 +249,19 @@ export default function TradeTaggingPage() {
 
   useEffect(() => {
     if (selectedGroupId == null) {
+      setGroupDetail(null);
       setTimeline([]);
+      setEditingGroup(false);
       return;
     }
 
+    void loadGroupDetail(selectedGroupId).catch((detailError: unknown) => {
+      const nextMessage =
+        detailError instanceof Error
+          ? detailError.message
+          : "Failed to load group detail.";
+      setError(nextMessage);
+    });
     void loadTimeline(selectedGroupId).catch((timelineError: unknown) => {
       const nextMessage =
         timelineError instanceof Error
@@ -349,28 +269,7 @@ export default function TradeTaggingPage() {
           : "Failed to load trade group timeline.";
       setError(nextMessage);
     });
-  }, [loadTimeline, selectedGroupId]);
-
-  useEffect(() => {
-    if (selectedTradeId == null) {
-      setExecutions([]);
-      return;
-    }
-
-    void loadExecutions(selectedTradeId).catch((executionError: unknown) => {
-      const nextMessage =
-        executionError instanceof Error
-          ? executionError.message
-          : "Failed to load executions.";
-      setError(nextMessage);
-    });
-  }, [loadExecutions, selectedTradeId]);
-
-  useEffect(() => {
-    if (selectedTradeId == null) return;
-    if (filteredTrades.some((trade) => trade.id === selectedTradeId)) return;
-    setSelectedTradeId(null);
-  }, [filteredTrades, selectedTradeId]);
+  }, [loadGroupDetail, loadTimeline, selectedGroupId]);
 
   const createStrategy = async () => {
     if (!newStrategyValue.trim()) {
@@ -398,6 +297,7 @@ export default function TradeTaggingPage() {
 
     const createdStrategy: Tag = await response.json();
     setNewStrategyValue("");
+    setShowNewStrategy(false);
     setMessage("Created strategy.");
     await loadStrategies();
     setSelectedStrategyId(createdStrategy.id);
@@ -406,10 +306,6 @@ export default function TradeTaggingPage() {
   const createGroup = async () => {
     if (!selectedStrategyId) {
       setError("Select a strategy before creating a trade group.");
-      return;
-    }
-    if (!newGroupAccountId) {
-      setError("Select an account before creating a trade group.");
       return;
     }
     if (!newGroupName.trim()) {
@@ -424,7 +320,7 @@ export default function TradeTaggingPage() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        account_id: Number(newGroupAccountId),
+        account_id: 1,
         name: newGroupName.trim(),
         notes: newGroupNotes.trim() || null,
         strategy_tag_id: selectedStrategyId,
@@ -442,116 +338,111 @@ export default function TradeTaggingPage() {
     const createdGroup: TradeGroup = await response.json();
     setNewGroupName("");
     setNewGroupNotes("");
+    setShowNewGroup(false);
     setMessage(`Created trade group #${createdGroup.id}.`);
     await loadGroups(selectedStrategy?.value ?? null);
     setSelectedGroupId(createdGroup.id);
   };
 
-  const assignExecutions = async (executionIds: number[]) => {
-    if (!selectedGroupId) {
-      setError("Select a trade group before assigning executions.");
-      return;
-    }
-    if (executionIds.length === 0) {
-      setError("Select a trade with executions before assigning.");
-      return;
-    }
+  const saveGroupEdits = async () => {
+    if (!selectedGroupId) return;
 
     setError(null);
     setMessage(null);
 
+    const body: Record<string, string | null> = {};
+    if (editName.trim() !== (groupDetail?.name ?? "")) {
+      body.name = editName.trim();
+    }
+    if (editNotes !== (groupDetail?.notes ?? "")) {
+      body.notes = editNotes || null;
+    }
+    if (editStatus !== groupDetail?.status) {
+      body.status = editStatus;
+      if (editStatus === "closed") {
+        body.closed_by = "ui-trader";
+        body.closed_at = new Date().toISOString();
+      }
+    }
+
+    if (Object.keys(body).length === 0) {
+      setEditingGroup(false);
+      return;
+    }
+
     const response = await fetch(
-      `${API_BASE_URL}/trade-groups/${selectedGroupId}/executions:assign`,
+      `${API_BASE_URL}/trade-groups/${selectedGroupId}`,
       {
-        method: "POST",
+        method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          execution_ids: executionIds,
-          source: "manual",
-          created_by: "ui-trader",
-          reason: "manual assignment from UI",
-          force_reassign: true,
-        }),
+        body: JSON.stringify(body),
       },
     );
 
     if (!response.ok) {
       throw new Error(
-        await readErrorMessage(response, "Unable to assign execution"),
+        await readErrorMessage(response, "Unable to update trade group"),
       );
     }
 
-    if (executionIds.length === 1) {
-      setMessage(
-        `Execution ${executionIds[0]} assigned to Trade Group ${selectedGroupId}.`,
-      );
-    } else {
-      setMessage(
-        `${executionIds.length} executions assigned to Trade Group ${selectedGroupId}.`,
-      );
-    }
-    await loadTimeline(selectedGroupId);
-    await loadTrades();
+    setMessage("Trade group updated.");
+    setEditingGroup(false);
+    await loadGroups(selectedStrategy?.value ?? null);
+    await loadGroupDetail(selectedGroupId);
   };
 
-  const unassignExecutions = async (executionIds: number[]) => {
-    if (!selectedGroupId) {
-      setError("Select a trade group before unassigning executions.");
+  const startEditing = () => {
+    if (!groupDetail) return;
+    setEditName(groupDetail.name);
+    setEditNotes(groupDetail.notes ?? "");
+    setEditStatus(groupDetail.status);
+    setEditingGroup(true);
+  };
+
+  const deleteGroup = async () => {
+    if (!selectedGroupId) return;
+    if (
+      !window.confirm(
+        `Delete trade group #${selectedGroupId}? This will unassign all executions.`,
+      )
+    )
       return;
-    }
-    if (executionIds.length === 0) {
-      setError("Select a trade with executions before unassigning.");
-      return;
-    }
 
     setError(null);
     setMessage(null);
 
     const response = await fetch(
-      `${API_BASE_URL}/trade-groups/${selectedGroupId}/executions:unassign`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          execution_ids: executionIds,
-          source: "manual",
-          created_by: "ui-trader",
-          reason: "manual unassignment from UI",
-        }),
-      },
+      `${API_BASE_URL}/trade-groups/${selectedGroupId}?source=manual&created_by=ui-trader&reason=deleted+from+tagging+page`,
+      { method: "DELETE" },
     );
 
-    if (!response.ok) {
+    if (!response.ok && response.status !== 204) {
       throw new Error(
-        await readErrorMessage(response, "Unable to unassign executions"),
+        await readErrorMessage(response, "Unable to delete trade group"),
       );
     }
 
-    if (executionIds.length === 1) {
-      setMessage(
-        `Execution ${executionIds[0]} unassigned from Trade Group ${selectedGroupId}.`,
-      );
-    } else {
-      setMessage(
-        `${executionIds.length} executions unassigned from Trade Group ${selectedGroupId}.`,
-      );
-    }
-    await loadTimeline(selectedGroupId);
-    await loadTrades();
+    setMessage(`Deleted trade group #${selectedGroupId}.`);
+    setSelectedGroupId(null);
+    await loadGroups(selectedStrategy?.value ?? null);
   };
 
-  const toggleTradeExecutionsAssignment = async (trade: Trade) => {
-    if (!selectedGroup) {
-      setError("Select a trade group first.");
-      return;
-    }
-    const tradeExecutions = await fetchTradeExecutions(trade.id);
-    const executionIds = tradeExecutions.map((execution) => execution.id);
-    if (trade.is_assigned) {
-      await unassignExecutions(executionIds);
-      return;
-    }
-    await assignExecutions(executionIds);
+  const timelineEventIcon = (eventType: string): string => {
+    if (eventType.includes("entry")) return "IN";
+    if (eventType.includes("exit")) return "OUT";
+    if (eventType.includes("reassigned_in")) return "RE+";
+    if (eventType.includes("reassigned_out")) return "RE-";
+    if (eventType.includes("unassigned")) return "UN";
+    if (eventType.includes("roll")) return "ROLL";
+    return "ADJ";
+  };
+
+  const timelineEventColor = (eventType: string): string => {
+    if (eventType.includes("entry")) return "text-emerald-700 bg-emerald-50";
+    if (eventType.includes("exit")) return "text-red-700 bg-red-50";
+    if (eventType.includes("unassigned")) return "text-amber-700 bg-amber-50";
+    if (eventType.includes("roll")) return "text-purple-700 bg-purple-50";
+    return "text-gray-700 bg-gray-50";
   };
 
   return (
@@ -559,8 +450,14 @@ export default function TradeTaggingPage() {
       <div>
         <h2 className="text-lg font-semibold text-gray-900">Trade Tagging</h2>
         <p className="text-xs text-gray-500">
-          Hierarchical browsing: select a strategy, then a trade group, then
-          assign executions.
+          Manage strategies and trade groups. Assign trades from the{" "}
+          <a
+            href="/trades"
+            className="text-blue-600 underline hover:text-blue-800"
+          >
+            Trades
+          </a>{" "}
+          page.
         </p>
       </div>
 
@@ -568,36 +465,59 @@ export default function TradeTaggingPage() {
       {error && <p className="text-sm text-red-600">{error}</p>}
       {message && <p className="text-sm text-green-700">{message}</p>}
 
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(220px,20%)_minmax(360px,35%)_minmax(420px,45%)]">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(220px,25%)_1fr]">
+        {/* Column 1: Strategies */}
         <section className="rounded border border-gray-200 bg-white p-3">
           <div className="mb-3 flex items-center justify-between">
             <h3 className="text-sm font-semibold">Strategies</h3>
-          </div>
-
-          <div className="mb-3 flex gap-2">
-            <input
-              value={newStrategyValue}
-              onChange={(event) => setNewStrategyValue(event.target.value)}
-              className="w-full rounded border border-gray-300 px-2 py-1 text-sm"
-              placeholder="New strategy"
-            />
             <button
-              onClick={() => {
-                void createStrategy().catch((catalogError: unknown) => {
-                  const nextMessage =
-                    catalogError instanceof Error
-                      ? catalogError.message
-                      : "Failed to create strategy.";
-                  setError(nextMessage);
-                });
-              }}
-              className="whitespace-nowrap rounded border border-blue-300 px-3 py-1 text-sm text-blue-700 hover:bg-blue-50"
+              onClick={() => setShowNewStrategy(!showNewStrategy)}
+              className="rounded border border-gray-300 px-2 py-0.5 text-xs text-gray-600 hover:bg-gray-50"
             >
-              + New Strategy
+              {showNewStrategy ? "Cancel" : "+ New"}
             </button>
           </div>
 
-          <ul className="h-[380px] space-y-1 overflow-y-auto pr-1">
+          {showNewStrategy && (
+            <div className="mb-3 space-y-2 rounded border border-dashed border-gray-300 p-2">
+              <input
+                value={newStrategyValue}
+                onChange={(event) => setNewStrategyValue(event.target.value)}
+                className="w-full rounded border border-gray-300 px-2 py-1 text-sm"
+                placeholder="Strategy name"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    void createStrategy().catch((err: unknown) => {
+                      setError(
+                        err instanceof Error
+                          ? err.message
+                          : "Failed to create strategy.",
+                      );
+                    });
+                  }
+                }}
+              />
+              <button
+                onClick={() => {
+                  void createStrategy().catch((err: unknown) => {
+                    setError(
+                      err instanceof Error
+                        ? err.message
+                        : "Failed to create strategy.",
+                    );
+                  });
+                }}
+                className="w-full rounded border border-blue-300 px-3 py-1 text-sm text-blue-700 hover:bg-blue-50"
+              >
+                Create Strategy
+              </button>
+            </div>
+          )}
+
+          <ul
+            className="space-y-1 overflow-y-auto pr-1"
+            style={{ maxHeight: "calc(100vh - 280px)" }}
+          >
             {strategies.map((strategy) => (
               <li key={strategy.id}>
                 <button
@@ -621,264 +541,319 @@ export default function TradeTaggingPage() {
           </ul>
         </section>
 
+        {/* Column 2: Trade Groups + Detail */}
         <section className="rounded border border-gray-200 bg-white p-3">
-          <div className="mb-2">
-            <h3 className="text-sm font-semibold">Trade Groups</h3>
-          </div>
-
-          <div className="mb-3 grid grid-cols-1 gap-2 md:grid-cols-[160px_1fr_auto]">
-            <div className="rounded border border-gray-300 bg-gray-50 px-2 py-1 text-sm text-gray-700">
-              {selectedStrategy ? selectedStrategy.value : "Select strategy"}
-            </div>
-            <input
-              value={newGroupName}
-              onChange={(event) => setNewGroupName(event.target.value)}
-              className="rounded border border-gray-300 px-2 py-1 text-sm"
-              placeholder="New trade group"
-              disabled={!selectedStrategy}
-            />
+          <div className="mb-2 flex items-center justify-between">
+            <h3 className="text-sm font-semibold">
+              Trade Groups
+              {selectedStrategy && (
+                <span className="ml-1 font-normal text-gray-500">
+                  ({selectedStrategy.value})
+                </span>
+              )}
+            </h3>
             <button
-              onClick={() => {
-                void createGroup().catch((groupError: unknown) => {
-                  const nextMessage =
-                    groupError instanceof Error
-                      ? groupError.message
-                      : "Failed to create trade group.";
-                  setError(nextMessage);
-                });
-              }}
+              onClick={() => setShowNewGroup(!showNewGroup)}
               disabled={!selectedStrategy}
-              className="whitespace-nowrap rounded border border-blue-300 px-3 py-1 text-sm text-blue-700 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50"
+              className="rounded border border-gray-300 px-2 py-0.5 text-xs text-gray-600 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              + New Trade Group
+              {showNewGroup ? "Cancel" : "+ New"}
             </button>
-            <textarea
-              value={newGroupNotes}
-              onChange={(event) => setNewGroupNotes(event.target.value)}
-              className="md:col-span-3 rounded border border-gray-300 px-2 py-1 text-sm"
-              placeholder="Optional notes"
-              rows={2}
-              disabled={!selectedStrategy}
-            />
           </div>
 
-          <ul className="h-[380px] space-y-1 overflow-y-auto pr-1">
-            {loadingGroups && (
-              <li className="text-xs text-gray-500">Loading trade groups...</li>
-            )}
-            {!loadingGroups &&
-              groups.map((group) => (
-                <li key={group.id}>
-                  <button
-                    type="button"
-                    className={`w-full rounded border px-2 py-2 text-left ${
-                      selectedGroupId === group.id
-                        ? "border-blue-300 bg-blue-50"
-                        : "border-gray-200 hover:bg-gray-50"
-                    }`}
-                    onClick={() => setSelectedGroupId(group.id)}
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <p className="text-sm font-medium text-gray-900">
-                        {group.name}
-                      </p>
-                      <span
-                        className={`rounded px-2 py-0.5 text-[11px] font-semibold uppercase ${statusClassName(group.status)}`}
-                      >
-                        {group.status}
-                      </span>
-                    </div>
-                    <p className="mt-1 text-xs text-gray-500">
-                      #{group.id} ·{" "}
-                      {accountLabelById.get(group.account_id) ??
-                        `Account ${group.account_id}`}{" "}
-                      · Opened {formatDate(group.opened_at)}
-                    </p>
-                  </button>
-                </li>
-              ))}
-            {!loadingGroups && groups.length === 0 && (
-              <li className="rounded border border-dashed border-gray-300 px-2 py-3 text-xs text-gray-500">
-                {selectedStrategy
-                  ? "No trade groups for this strategy yet."
-                  : "Select a strategy to view trade groups."}
-              </li>
-            )}
-          </ul>
-        </section>
+          {showNewGroup && selectedStrategy && (
+            <div className="mb-3 space-y-2 rounded border border-dashed border-gray-300 p-2">
+              <div className="flex items-center gap-2">
+                <span className="shrink-0 rounded bg-gray-100 px-2 py-1 text-xs text-gray-600">
+                  {selectedStrategy.value}
+                </span>
+                <input
+                  value={newGroupName}
+                  onChange={(event) => setNewGroupName(event.target.value)}
+                  className="flex-1 rounded border border-gray-300 px-2 py-1 text-sm"
+                  placeholder="Trade group name"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      void createGroup().catch((err: unknown) => {
+                        setError(
+                          err instanceof Error
+                            ? err.message
+                            : "Failed to create trade group.",
+                        );
+                      });
+                    }
+                  }}
+                />
+              </div>
+              <textarea
+                value={newGroupNotes}
+                onChange={(event) => setNewGroupNotes(event.target.value)}
+                className="w-full rounded border border-gray-300 px-2 py-1 text-sm"
+                placeholder="Optional notes"
+                rows={1}
+              />
+              <button
+                onClick={() => {
+                  void createGroup().catch((err: unknown) => {
+                    setError(
+                      err instanceof Error
+                        ? err.message
+                        : "Failed to create trade group.",
+                    );
+                  });
+                }}
+                className="w-full rounded border border-blue-300 px-3 py-1 text-sm text-blue-700 hover:bg-blue-50"
+              >
+                Create Trade Group
+              </button>
+            </div>
+          )}
 
-        <section className="rounded border border-gray-200 bg-white p-3">
-          <h3 className="mb-2 text-sm font-semibold">Trades</h3>
-          <div className="mb-2 grid grid-cols-1 gap-2">
-            <input
-              value={tradeSearchQuery}
-              onChange={(event) => setTradeSearchQuery(event.target.value)}
-              className="w-full rounded border border-gray-300 px-2 py-1 text-sm"
-              placeholder="Filter trades (id, symbol, account)"
-            />
-          </div>
-          <div className="mb-2 grid grid-cols-1 gap-2 md:grid-cols-2">
-            <label className="mb-1 block text-xs text-gray-600">
-              Optional Account Filter
-            </label>
-            <select
-              className="w-full rounded border border-gray-300 px-2 py-1 text-sm"
-              value={tradeAccountFilter}
-              onChange={(event) => setTradeAccountFilter(event.target.value)}
-            >
-              <option value="all">All accounts</option>
-              {accounts.map((account) => (
-                <option key={account.id} value={String(account.id)}>
-                  {accountLabel(account)}
-                </option>
-              ))}
-            </select>
-            <label className="mb-1 block text-xs text-gray-600">
-              Assignment Filter
-            </label>
-            <select
-              className="w-full rounded border border-gray-300 px-2 py-1 text-sm"
-              value={tradeAssignmentFilter}
-              onChange={(event) =>
-                setTradeAssignmentFilter(
-                  event.target.value as "all" | "assigned" | "unassigned",
-                )
-              }
-            >
-              <option value="all">All</option>
-              <option value="assigned">Assigned</option>
-              <option value="unassigned">Unassigned</option>
-            </select>
-          </div>
-
-          <div className="mb-3 max-h-[220px] overflow-auto">
-            <table className="w-full text-left text-sm">
-              <thead>
-                <tr className="border-b border-gray-200 text-xs text-gray-600">
-                  <th className="py-1 pr-2">Trade</th>
-                  <th className="py-1 pr-2">Contract</th>
-                  <th className="py-1 pr-2">Account</th>
-                  <th className="py-1 pr-2">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredTrades.map((trade) => (
-                  <tr
-                    key={trade.id}
-                    className={`cursor-pointer border-b border-gray-100 ${
-                      selectedTradeId === trade.id
-                        ? "bg-blue-50"
-                        : "hover:bg-gray-50"
-                    }`}
-                    onClick={() => setSelectedTradeId(trade.id)}
-                  >
-                    <td className="py-1 pr-2 text-xs">#{trade.id}</td>
-                    <td className="py-1 pr-2">
-                      {trade.contract_display_name ?? trade.symbol ?? "-"}
-                    </td>
-                    <td className="py-1 pr-2 text-xs text-gray-600">
-                      {accountLabelById.get(trade.account_id) ??
-                        `Account ${trade.account_id}`}
-                    </td>
-                    <td className="py-1 pr-2">
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(280px,35%)_1fr]">
+            {/* Group list */}
+            <div>
+              <ul
+                className="space-y-1 overflow-y-auto pr-1"
+                style={{ maxHeight: "calc(100vh - 300px)" }}
+              >
+                {loadingGroups && (
+                  <li className="text-xs text-gray-500">
+                    Loading trade groups...
+                  </li>
+                )}
+                {!loadingGroups &&
+                  groups.map((group) => (
+                    <li key={group.id}>
                       <button
                         type="button"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          void toggleTradeExecutionsAssignment(trade).catch(
-                            (assignError: unknown) => {
-                              const nextMessage =
-                                assignError instanceof Error
-                                  ? assignError.message
-                                  : "Assignment failed.";
-                              setError(nextMessage);
-                            },
-                          );
-                        }}
-                        disabled={!selectedGroup}
-                        className={`rounded border px-2 py-0.5 text-[11px] font-semibold uppercase disabled:cursor-not-allowed disabled:opacity-50 ${
-                          trade.is_assigned
-                            ? "border-amber-300 text-amber-800 hover:bg-amber-50"
-                            : "border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+                        className={`w-full rounded border px-2 py-2 text-left ${
+                          selectedGroupId === group.id
+                            ? "border-blue-300 bg-blue-50"
+                            : "border-gray-200 hover:bg-gray-50"
                         }`}
+                        onClick={() => setSelectedGroupId(group.id)}
                       >
-                        {trade.is_assigned
-                          ? `Unassign from #${selectedGroup?.id ?? "group"}`
-                          : `Assign to #${selectedGroup?.id ?? "group"}`}
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="text-sm font-medium text-gray-900">
+                            {group.name}
+                          </p>
+                          <span
+                            className={`rounded px-2 py-0.5 text-[11px] font-semibold uppercase ${statusClassName(group.status)}`}
+                          >
+                            {group.status}
+                          </span>
+                        </div>
+                        <p className="mt-1 text-xs text-gray-500">
+                          #{group.id} · Opened {formatDate(group.opened_at)}
+                        </p>
                       </button>
-                    </td>
-                  </tr>
-                ))}
-                {filteredTrades.length === 0 && (
-                  <tr>
-                    <td className="py-2 text-xs text-gray-500" colSpan={4}>
-                      No trades match current filters.
-                    </td>
-                  </tr>
+                    </li>
+                  ))}
+                {!loadingGroups && groups.length === 0 && (
+                  <li className="rounded border border-dashed border-gray-300 px-2 py-3 text-xs text-gray-500">
+                    {selectedStrategy
+                      ? "No trade groups for this strategy yet."
+                      : "Select a strategy to view trade groups."}
+                  </li>
                 )}
-              </tbody>
-            </table>
-          </div>
+              </ul>
+            </div>
 
-          <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-600">
-            Executions {selectedTradeId ? `for Trade #${selectedTradeId}` : ""}
-          </h4>
-          <div className="max-h-[210px] overflow-auto">
-            <table className="w-full text-left text-sm">
-              <thead>
-                <tr className="border-b border-gray-200 text-xs text-gray-600">
-                  <th className="py-1 pr-2">Execution</th>
-                  <th className="py-1 pr-2">Contract</th>
-                  <th className="py-1 pr-2">Side</th>
-                  <th className="py-1 pr-2">Qty</th>
-                  <th className="py-1 pr-2">Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {executions.map((execution) => (
-                  <tr key={execution.id} className="border-b border-gray-100">
-                    <td className="py-1 pr-2 text-xs">#{execution.id}</td>
-                    <td className="py-1 pr-2">
-                      {execution.contract_display ?? "-"}
-                    </td>
-                    <td className="py-1 pr-2">{execution.side ?? "-"}</td>
-                    <td className="py-1 pr-2">{execution.quantity}</td>
-                    <td className="py-1 pr-2">
-                      <button
-                        disabled={!selectedGroup}
-                        onClick={() => {
-                          void assignExecutions([execution.id]).catch(
-                            (assignError: unknown) => {
-                              const nextMessage =
-                                assignError instanceof Error
-                                  ? assignError.message
-                                  : "Assignment failed.";
-                              setError(nextMessage);
-                            },
-                          );
-                        }}
-                        className="rounded border border-emerald-300 px-2 py-0.5 text-xs text-emerald-700 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50"
+            {/* Group detail */}
+            <div>
+              {!groupDetail && selectedGroupId == null && (
+                <div className="flex h-full items-center justify-center text-sm text-gray-400">
+                  Select a trade group to view details.
+                </div>
+              )}
+
+              {groupDetail && !editingGroup && (
+                <div className="space-y-4">
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <h4 className="text-base font-semibold text-gray-900">
+                        {groupDetail.name}
+                      </h4>
+                      <p className="text-xs text-gray-500">#{groupDetail.id}</p>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <span
+                        className={`rounded px-2 py-0.5 text-xs font-semibold uppercase ${statusClassName(groupDetail.status)}`}
                       >
-                        Assign to{" "}
-                        {selectedGroup ? `#${selectedGroup.id}` : "group"}
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-                {executions.length === 0 && (
-                  <tr>
-                    <td className="py-2 text-xs text-gray-500" colSpan={5}>
-                      Select a trade to load executions.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
+                        {groupDetail.status}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
+                    <div>
+                      <span className="text-xs text-gray-500">Opened</span>
+                      <p className="text-gray-800">
+                        {formatDate(groupDetail.opened_at)}
+                      </p>
+                    </div>
+                    <div>
+                      <span className="text-xs text-gray-500">Closed</span>
+                      <p className="text-gray-800">
+                        {formatDate(groupDetail.closed_at)}
+                      </p>
+                    </div>
+                    <div>
+                      <span className="text-xs text-gray-500">Executions</span>
+                      <p className="text-gray-800">
+                        {groupDetail.execution_count}
+                      </p>
+                    </div>
+                    <div>
+                      <span className="text-xs text-gray-500">Tags</span>
+                      <p className="text-gray-800">
+                        {groupDetail.tags.length === 0
+                          ? "None"
+                          : groupDetail.tags.map((t) => t.tag_type).join(", ")}
+                      </p>
+                    </div>
+                  </div>
+
+                  {groupDetail.notes && (
+                    <div>
+                      <span className="text-xs text-gray-500">Notes</span>
+                      <p className="mt-0.5 whitespace-pre-wrap text-sm text-gray-700">
+                        {groupDetail.notes}
+                      </p>
+                    </div>
+                  )}
+
+                  <div className="flex gap-2">
+                    <button
+                      onClick={startEditing}
+                      className="rounded border border-gray-300 px-3 py-1 text-xs text-gray-700 hover:bg-gray-50"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => {
+                        void deleteGroup().catch((err: unknown) => {
+                          setError(
+                            err instanceof Error
+                              ? err.message
+                              : "Failed to delete group.",
+                          );
+                        });
+                      }}
+                      className="rounded border border-red-200 px-3 py-1 text-xs text-red-600 hover:bg-red-50"
+                    >
+                      Delete
+                    </button>
+                  </div>
+
+                  {/* Timeline */}
+                  <div>
+                    <h5 className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-600">
+                      Timeline ({timeline.length} events)
+                    </h5>
+                    {timeline.length === 0 && (
+                      <p className="text-xs text-gray-400">
+                        No events recorded yet.
+                      </p>
+                    )}
+                    <div className="max-h-[300px] space-y-1 overflow-y-auto">
+                      {timeline.map((event) => (
+                        <div
+                          key={event.event_id}
+                          className="flex items-start gap-2 rounded px-2 py-1 text-xs"
+                        >
+                          <span
+                            className={`mt-0.5 shrink-0 rounded px-1.5 py-0.5 font-mono text-[10px] font-bold ${timelineEventColor(event.event_type)}`}
+                          >
+                            {timelineEventIcon(event.event_type)}
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-gray-700">{event.summary}</p>
+                            <p className="text-gray-400">
+                              {formatDate(event.occurred_at)}
+                            </p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {groupDetail && editingGroup && (
+                <div className="space-y-3">
+                  <h4 className="text-sm font-semibold text-gray-900">
+                    Edit Trade Group #{groupDetail.id}
+                  </h4>
+                  <div>
+                    <label className="mb-1 block text-xs text-gray-600">
+                      Name
+                    </label>
+                    <input
+                      value={editName}
+                      onChange={(e) => setEditName(e.target.value)}
+                      className="w-full rounded border border-gray-300 px-2 py-1 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs text-gray-600">
+                      Notes
+                    </label>
+                    <textarea
+                      value={editNotes}
+                      onChange={(e) => setEditNotes(e.target.value)}
+                      className="w-full rounded border border-gray-300 px-2 py-1 text-sm"
+                      rows={3}
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs text-gray-600">
+                      Status
+                    </label>
+                    <div className="flex gap-2">
+                      {GROUP_STATUSES.map((s) => (
+                        <button
+                          key={s}
+                          onClick={() => setEditStatus(s)}
+                          className={`rounded border px-3 py-1 text-xs font-semibold uppercase ${
+                            editStatus === s
+                              ? statusClassName(s) + " border-current"
+                              : "border-gray-200 text-gray-500 hover:bg-gray-50"
+                          }`}
+                        >
+                          {s}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => {
+                        void saveGroupEdits().catch((err: unknown) => {
+                          setError(
+                            err instanceof Error
+                              ? err.message
+                              : "Failed to save changes.",
+                          );
+                        });
+                      }}
+                      className="rounded border border-blue-300 px-4 py-1 text-sm text-blue-700 hover:bg-blue-50"
+                    >
+                      Save
+                    </button>
+                    <button
+                      onClick={() => setEditingGroup(false)}
+                      className="rounded border border-gray-300 px-4 py-1 text-sm text-gray-600 hover:bg-gray-50"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </section>
       </div>
-
-      {/* Timeline panel hidden for now. */}
     </div>
   );
 }

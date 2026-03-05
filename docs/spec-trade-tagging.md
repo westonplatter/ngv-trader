@@ -78,7 +78,7 @@ These are required for production-safe integrity and reporting performance.
 1. `trade_groups`
    1. Canonical columns:
       1. `id` (pk)
-      2. `account_id` (fk -> `accounts.id`, not null)
+      2. `account_id` (fk -> `accounts.id`, not null; ownership/default-filter anchor, not a hard membership boundary)
       3. `name` (text, not null)
       4. `notes` (text, nullable)
       5. `status` (text, not null; suggested values: `open`, `closed`, `archived`)
@@ -238,6 +238,7 @@ All endpoints are under `/api/v1`.
    1. `POST /trade-groups/{trade_group_id}/executions:assign`
       1. Body: `execution_ids[]`, `source`, `created_by`, `confidence`, `reason`
       2. Behavior: idempotent assignment; reject if execution already belongs to another group unless `force_reassign=true`
+      3. Cross-account assignments are allowed; assignment does not require `trade_group.account_id == trade_execution.account_id`.
    2. `POST /trade-groups/{trade_group_id}/executions:unassign`
       1. Body: `execution_ids[]`, `source`, `created_by`, `reason`
       2. Behavior: removes assignment with audit trail
@@ -331,9 +332,10 @@ All endpoints are under `/api/v1`.
 
 ## Decisions (Confirmed)
 
-1. Trade Group membership is account-scoped.
-   1. A Trade Group can only contain activity from one account.
-   2. Themes, strategies, and tags are reusable across accounts.
+1. Trade Group membership is cross-account in V1.
+   1. A Trade Group may contain activity from multiple accounts.
+   2. `trade_groups.account_id` remains required and represents the owning/default account for filtering and reporting defaults.
+   3. Themes, strategies, and tags are reusable across accounts.
 2. Theme assignment is optional and multi-valued at the Trade Group level.
 3. A single execution can only be linked to one Trade Group.
 4. For external/manual reconciliation:
