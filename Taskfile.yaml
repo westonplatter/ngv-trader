@@ -3,8 +3,6 @@ version: "3"
 vars:
   ENV: '{{.ENV | default "dev"}}'
 
-dotenv: [".env.{{.ENV}}"]
-
 tasks:
   list:
     desc: List all available tasks
@@ -13,6 +11,8 @@ tasks:
 
   api:
     desc: Start the FastAPI backend (port 8000)
+    env:
+      ENV: "{{.ENV}}"
     cmd: uv run uvicorn src.api.main:app --reload --port 8000
 
   frontend:
@@ -22,11 +22,15 @@ tasks:
 
   worker:jobs:
     desc: Start generic job worker (dispatches by job_type)
-    cmd: uv run python scripts/work_jobs.py --env {{.ENV}}
+    env:
+      ENV: "{{.ENV}}"
+    cmd: uv run python scripts/work_jobs.py
 
   worker:orders:
     desc: Start order execution worker
-    cmd: uv run python scripts/work_order_queue.py --env {{.ENV}}
+    env:
+      ENV: "{{.ENV}}"
+    cmd: uv run python scripts/work_order_queue.py
 
   frontend:install:
     desc: Install frontend dependencies
@@ -35,14 +39,20 @@ tasks:
 
   migrate:
     desc: Run alembic migrations to head
+    env:
+      ENV: "{{.ENV}}"
     cmd: uv run alembic upgrade head
 
   migrate:down:
     desc: Downgrade one alembic migration
+    env:
+      ENV: "{{.ENV}}"
     cmd: uv run alembic downgrade -1
 
   migrate:new:
     desc: Create a new alembic migration (usage -- task migrate:new -- "description")
+    env:
+      ENV: "{{.ENV}}"
     cmd: uv run alembic revision --autogenerate -m "{{.CLI_ARGS}}"
 
   validate:

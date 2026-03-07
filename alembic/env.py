@@ -1,6 +1,11 @@
+import os
 from logging.config import fileConfig
 
+from dotenv import load_dotenv
 from sqlalchemy import engine_from_config, pool
+
+_env_name = os.environ.get("ENV", "dev")
+load_dotenv(f".env.{_env_name}")
 
 from alembic import context
 from src.db import get_database_url

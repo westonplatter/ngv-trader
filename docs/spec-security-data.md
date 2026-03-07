@@ -1,5 +1,22 @@
 # Spec: Security Data tables and endpoints
 
+## Implementation status
+
+- [x] Extract exchange map to `src/data/exchanges.py` (refactor)
+- [x] Add `underlying_con_id` column to `contracts` table (model + migration)
+- [x] `latest_futures` table (model + migration)
+- [x] `ts_futures` table (model + migration)
+- [x] `latest_futures_options` table (model + migration)
+- [x] `ts_futures_options` table (model + migration)
+- [x] `GET /futures/{symbol}/term-structure` endpoint
+- [x] `GET /futures/{symbol}/options` endpoint
+- [x] `GET /futures/{symbol}/vol-surface` endpoint
+- [x] Update `contract_sync.py` to populate `underlying_con_id`
+- [x] Action 1: Extend `contract_sync.py` with IND → FUT → FOP 3-step discovery flow (`sync_futures_chain` + `contracts.chain_sync` job type)
+- [x] Action 2: `market_data.futures_prices` job handler
+- [x] Action 3: `market_data.futures_options` job handler
+- [x] Action 4: `market_data.snapshot` job handler
+
 ## Purpose
 
 Store and serve futures contract metadata and time-series market data (prices, greeks, IV) so the app can display term structures, vol surfaces, and pre-trade snapshots without hitting IBKR in real time.

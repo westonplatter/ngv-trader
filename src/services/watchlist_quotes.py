@@ -118,12 +118,7 @@ def refresh_watch_list_quotes(
                 raise RuntimeError(
                     "Could not connect to TWS/Gateway while refreshing watch list quotes " f"(host={host}, port={port}, client_id={client_id}): {exc}"
                 ) from exc
-
-            ib.reqMarketDataType(3)
-            try:
-                tickers = ib.reqTickers(*contracts)
-            except Exception as exc:
-                raise RuntimeError(f"Failed to request watch list quotes from IBKR: {exc}") from exc
+            tickers = _refresh_quotes_with_ib(ib, contracts)
         finally:
             if ib.isConnected():
                 ib.disconnect()
@@ -155,3 +150,62 @@ def refresh_watch_list_quotes(
             "quotes_updated": updated,
             "as_of": now.isoformat(),
         }
+
+
+def refresh_watch_list_quotes_with_ib(
+    engine: Engine,
+    watch_list_id: int,
+    ib: IB,
+) -> dict[str, int | str]:
+    with Session(engine) as session:
+        instruments = list(
+            session.execute(select(WatchListInstrument).where(WatchListInstrument.watch_list_id == watch_list_id).order_by(WatchListInstrument.created_at))
+            .scalars()
+            .all()
+        )
+
+        if not instruments:
+            return {
+                "watch_list_id": watch_list_id,
+                "instruments_count": 0,
+                "quotes_updated": 0,
+            }
+
+        contracts = [_to_contract(inst) for inst in instruments]
+        tickers = _refresh_quotes_with_ib(ib, contracts)
+
+        by_con_id: dict[int, object] = {}
+        for ticker in tickers:
+            contract = getattr(ticker, "contract", None)
+            con_id = getattr(contract, "conId", None)
+            if isinstance(con_id, int) and con_id > 0:
+                by_con_id[con_id] = ticker
+
+        now = datetime.now(timezone.utc)
+        updated = 0
+        for inst in instruments:
+            ticker = by_con_id.get(inst.con_id)
+            if ticker is None:
+                continue
+
+            inst.bid_price = _safe_price(getattr(ticker, "bid", None))
+            inst.ask_price = _safe_price(getattr(ticker, "ask", None))
+            inst.close_price = _safe_price(getattr(ticker, "close", None))
+            inst.quote_as_of = now
+            updated += 1
+
+        session.commit()
+        return {
+            "watch_list_id": watch_list_id,
+            "instruments_count": len(instruments),
+            "quotes_updated": updated,
+            "as_of": now.isoformat(),
+        }
+
+
+def _refresh_quotes_with_ib(ib: IB, contracts: list[Contract]) -> list[object]:
+    ib.reqMarketDataType(3)
+    try:
+        return list(ib.reqTickers(*contracts))
+    except Exception as exc:
+        raise RuntimeError(f"Failed to request watch list quotes from IBKR: {exc}") from exc

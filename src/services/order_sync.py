@@ -393,26 +393,38 @@ def sync_orders_once(
                 "Timed out connecting to TWS/Gateway while fetching orders "
                 f"(host={host}, port={port}, client_id={client_id}, timeout={connect_timeout_seconds}s)."
             ) from exc
-
-        trades = _collect_recent_trades(ib, client_id=client_id)
-        created_count = 0
-        updated_count = 0
-        with Session(engine) as session:
-            for trade in trades:
-                order = _find_matching_order(session, trade)
-                if order is None:
-                    _create_order_from_trade(session, trade)
-                    created_count += 1
-                    continue
-                if _sync_trade_onto_order(session, order, trade):
-                    updated_count += 1
-            session.commit()
-
-        return {
-            "fetched_trades_count": len(trades),
-            "created_orders_count": created_count,
-            "updated_orders_count": updated_count,
-        }
+        return sync_orders_with_ib(
+            engine=engine,
+            ib=ib,
+            client_id=client_id,
+        )
     finally:
         if ib.isConnected():
             ib.disconnect()
+
+
+def sync_orders_with_ib(
+    engine: Engine,
+    *,
+    ib: IB,
+    client_id: int,
+) -> dict[str, int]:
+    trades = _collect_recent_trades(ib, client_id=client_id)
+    created_count = 0
+    updated_count = 0
+    with Session(engine) as session:
+        for trade in trades:
+            order = _find_matching_order(session, trade)
+            if order is None:
+                _create_order_from_trade(session, trade)
+                created_count += 1
+                continue
+            if _sync_trade_onto_order(session, order, trade):
+                updated_count += 1
+        session.commit()
+
+    return {
+        "fetched_trades_count": len(trades),
+        "created_orders_count": created_count,
+        "updated_orders_count": updated_count,
+    }

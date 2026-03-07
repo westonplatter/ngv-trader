@@ -22,6 +22,10 @@ JOB_TYPE_ORDER_CANCEL = "order.cancel"
 JOB_TYPE_WATCHLIST_ADD_INSTRUMENT = "watchlist.add_instrument"
 JOB_TYPE_WATCHLIST_QUOTES_REFRESH = "watchlist.quotes_refresh"
 JOB_TYPE_TRADES_SYNC = "trades.sync"
+JOB_TYPE_CONTRACTS_CHAIN_SYNC = "contracts.chain_sync"
+JOB_TYPE_MARKET_DATA_FUTURES_PRICES = "market_data.futures_prices"
+JOB_TYPE_MARKET_DATA_FUTURES_OPTIONS = "market_data.futures_options"
+JOB_TYPE_MARKET_DATA_SNAPSHOT = "market_data.snapshot"
 
 
 def now_utc() -> datetime:

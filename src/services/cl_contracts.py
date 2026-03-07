@@ -244,6 +244,23 @@ def normalize_contract_month_input(contract_month: str | None) -> str | None:
             return f"{year:04d}-{month:02d}"
         raise ValueError("contract_month must use a valid month.")
 
+    # Accept full date YYYYMMDD — extract YYYY-MM
+    if len(compact) == 8 and compact.isdigit():
+        year = int(compact[:4])
+        month = int(compact[4:6])
+        if 1 <= month <= 12:
+            return f"{year:04d}-{month:02d}"
+        raise ValueError("contract_month must use a valid month.")
+
+    # Accept YYYY-MM-DD — extract YYYY-MM
+    if len(compact) == 10 and compact[4] == "-" and compact[7] == "-":
+        year_s, month_s, _ = compact.split("-")
+        if year_s.isdigit() and month_s.isdigit():
+            year = int(year_s)
+            month = int(month_s)
+            if 1 <= month <= 12:
+                return f"{year:04d}-{month:02d}"
+
     for fmt in ("%B %Y", "%b %Y"):
         try:
             parsed = dt.datetime.strptime(compact.title(), fmt)

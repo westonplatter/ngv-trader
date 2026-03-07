@@ -1,6 +1,7 @@
 """FastAPI application for ngtrader."""
 
 import logging
+import os
 from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
@@ -10,6 +11,7 @@ from sqlalchemy import text
 
 from src.api.routers import (
     accounts,
+    futures,
     jobs,
     orders,
     positions,
@@ -26,7 +28,8 @@ from src.db import get_engine
 
 logger = logging.getLogger(__name__)
 
-load_dotenv()
+_env_name = os.environ.get("ENV", "dev")
+load_dotenv(f".env.{_env_name}")
 
 
 @asynccontextmanager
@@ -79,4 +82,5 @@ app.include_router(watch_lists.router, prefix="/api/v1", tags=["Watch Lists"])
 app.include_router(jobs.router, prefix="/api/v1", tags=["Jobs"])
 app.include_router(workers.router, prefix="/api/v1", tags=["Workers"])
 app.include_router(tradebot.router, prefix="/api/v1", tags=["Tradebot"])
+app.include_router(futures.router, prefix="/api/v1", tags=["Futures"])
 app.include_router(user_preferences.router, prefix="/api/v1", tags=["User Preferences"])
