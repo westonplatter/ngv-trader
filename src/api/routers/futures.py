@@ -14,7 +14,6 @@ from src.models import (
     LatestFutures,
     LatestFuturesOptions,
     TsFutures,
-    TsFuturesOptions,
 )
 
 router = APIRouter()
@@ -100,7 +99,7 @@ def get_term_structure(
         else:
             # as_of path: use ts_futures history
             # Subquery to get the latest ts row per con_id <= as_of
-            from sqlalchemy import desc, func
+            from sqlalchemy import func
 
             subq = (
                 select(
@@ -195,7 +194,7 @@ def _build_options_query(
         stmt = stmt.where(ContractRef.right == right.upper())
 
     if dte_gte is not None or dte_lte is not None:
-        today_str = date.today().strftime("%Y%m%d")
+        date.today().strftime("%Y%m%d")
         if dte_gte is not None:
             from datetime import timedelta
 
