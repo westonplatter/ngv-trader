@@ -58,6 +58,7 @@ class ContractRef(Base):
     strike: Mapped[float | None] = mapped_column(Float, nullable=True)
     right: Mapped[str | None] = mapped_column(String, nullable=True)
     primary_exchange: Mapped[str | None] = mapped_column(String, nullable=True)
+    underlying_con_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     fetched_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -511,6 +512,110 @@ class UserPreference(Base):
         default=lambda: datetime.now(timezone.utc),
     )
     updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+
+
+class LatestFutures(Base):
+    __tablename__ = "latest_futures"
+
+    con_id: Mapped[int] = mapped_column(Integer, ForeignKey("contracts.con_id"), primary_key=True)
+    bid: Mapped[float | None] = mapped_column(Float, nullable=True)
+    ask: Mapped[float | None] = mapped_column(Float, nullable=True)
+    last: Mapped[float | None] = mapped_column(Float, nullable=True)
+    close: Mapped[float | None] = mapped_column(Float, nullable=True)
+    volume: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    open_interest: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    market_ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    ingested_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+
+
+class TsFutures(Base):
+    __tablename__ = "ts_futures"
+    __table_args__ = (
+        Index("ix_ts_futures_con_id_market_ts", "con_id", "market_ts"),
+        Index("ix_ts_futures_market_ts", "market_ts"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    con_id: Mapped[int] = mapped_column(Integer, ForeignKey("contracts.con_id"), nullable=False)
+    bid: Mapped[float | None] = mapped_column(Float, nullable=True)
+    ask: Mapped[float | None] = mapped_column(Float, nullable=True)
+    last: Mapped[float | None] = mapped_column(Float, nullable=True)
+    close: Mapped[float | None] = mapped_column(Float, nullable=True)
+    volume: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    open_interest: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    market_ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    ingested_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+
+
+class LatestFuturesOptions(Base):
+    __tablename__ = "latest_futures_options"
+
+    con_id: Mapped[int] = mapped_column(Integer, ForeignKey("contracts.con_id"), primary_key=True)
+    bid: Mapped[float | None] = mapped_column(Float, nullable=True)
+    ask: Mapped[float | None] = mapped_column(Float, nullable=True)
+    last: Mapped[float | None] = mapped_column(Float, nullable=True)
+    close: Mapped[float | None] = mapped_column(Float, nullable=True)
+    volume: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    open_interest: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    iv: Mapped[float | None] = mapped_column(Float, nullable=True)
+    delta: Mapped[float | None] = mapped_column(Float, nullable=True)
+    gamma: Mapped[float | None] = mapped_column(Float, nullable=True)
+    theta: Mapped[float | None] = mapped_column(Float, nullable=True)
+    vega: Mapped[float | None] = mapped_column(Float, nullable=True)
+    und_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    market_ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    ingested_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+
+
+class TsFuturesOptions(Base):
+    __tablename__ = "ts_futures_options"
+    __table_args__ = (
+        Index("ix_ts_futures_options_con_id_market_ts", "con_id", "market_ts"),
+        Index("ix_ts_futures_options_market_ts", "market_ts"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    con_id: Mapped[int] = mapped_column(Integer, ForeignKey("contracts.con_id"), nullable=False)
+    bid: Mapped[float | None] = mapped_column(Float, nullable=True)
+    ask: Mapped[float | None] = mapped_column(Float, nullable=True)
+    last: Mapped[float | None] = mapped_column(Float, nullable=True)
+    close: Mapped[float | None] = mapped_column(Float, nullable=True)
+    volume: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    open_interest: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    iv: Mapped[float | None] = mapped_column(Float, nullable=True)
+    delta: Mapped[float | None] = mapped_column(Float, nullable=True)
+    gamma: Mapped[float | None] = mapped_column(Float, nullable=True)
+    theta: Mapped[float | None] = mapped_column(Float, nullable=True)
+    vega: Mapped[float | None] = mapped_column(Float, nullable=True)
+    und_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    market_ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    ingested_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
         default=lambda: datetime.now(timezone.utc),

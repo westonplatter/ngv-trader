@@ -24,7 +24,11 @@ from sqlalchemy.orm import Session
 from src.db import get_engine
 from src.models import Job
 from src.services.jobs import (
+    JOB_TYPE_CONTRACTS_CHAIN_SYNC,
     JOB_TYPE_CONTRACTS_SYNC,
+    JOB_TYPE_MARKET_DATA_FUTURES_OPTIONS,
+    JOB_TYPE_MARKET_DATA_FUTURES_PRICES,
+    JOB_TYPE_MARKET_DATA_SNAPSHOT,
     JOB_TYPE_ORDER_FETCH_SYNC,
     JOB_TYPE_POSITIONS_SYNC,
     JOB_TYPE_TRADES_SYNC,
@@ -50,7 +54,7 @@ def load_env(env_name: str) -> None:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Process queued jobs.")
-    parser.add_argument("--env", choices=["dev", "prod"], default="dev")
+    parser.add_argument("--env", choices=["dev", "prod"], default=None)
     parser.add_argument("--poll-seconds", type=float, default=2.0)
     parser.add_argument("--once", action="store_true", help="Process one queue pass and exit.")
     return parser.parse_args()
@@ -368,14 +372,167 @@ def handle_trades_sync(job: Job, engine: Engine) -> dict:
     }
 
 
+def handle_contracts_chain_sync(job: Job, engine: Engine) -> dict:
+    from src.services.contract_sync import sync_futures_chain
+
+    payload = job.payload or {}
+    host = str(payload.get("host") or "127.0.0.1")
+    port_raw = payload.get("port")
+    client_id_raw = payload.get("client_id")
+
+    if isinstance(port_raw, int):
+        port = port_raw
+    else:
+        port = get_int_env("BROKER_TWS_PORT")
+    if port is None:
+        raise RuntimeError("BROKER_TWS_PORT is not set and no port was provided in job payload.")
+
+    if isinstance(client_id_raw, int):
+        client_id = client_id_raw
+    else:
+        client_id = 32
+
+    symbol = payload.get("symbol", "CL")
+    exchange = payload.get("exchange")
+    if not exchange:
+        from src.data.exchanges import resolve_exchange
+
+        exchange = resolve_exchange(symbol, "FUT")
+    currency = payload.get("currency", "USD")
+    front_n = payload.get("front_n", 6)
+
+    # Optional override for option filter (otherwise uses per-symbol defaults)
+    option_filter = payload.get("option_filter")
+
+    return sync_futures_chain(
+        engine=engine,
+        host=host,
+        port=port,
+        client_id=client_id,
+        symbol=symbol,
+        exchange=exchange,
+        currency=currency,
+        front_n=front_n,
+        option_filter=option_filter,
+    )
+
+
+def handle_market_data_futures_prices(job: Job, engine: Engine) -> dict:
+    from src.services.market_data import fetch_futures_prices
+
+    payload = job.payload or {}
+    host = str(payload.get("host") or "127.0.0.1")
+    port_raw = payload.get("port")
+    client_id_raw = payload.get("client_id")
+
+    if isinstance(port_raw, int):
+        port = port_raw
+    else:
+        port = get_int_env("BROKER_TWS_PORT")
+    if port is None:
+        raise RuntimeError("BROKER_TWS_PORT is not set and no port was provided in job payload.")
+
+    if isinstance(client_id_raw, int):
+        client_id = client_id_raw
+    else:
+        client_id = 35
+
+    symbol = payload.get("symbol", "CL")
+    front_n = payload.get("front_n", 6)
+
+    return fetch_futures_prices(
+        engine=engine,
+        host=host,
+        port=port,
+        client_id=client_id,
+        symbol=symbol,
+        front_n=front_n,
+    )
+
+
+def handle_market_data_futures_options(job: Job, engine: Engine) -> dict:
+    from src.services.market_data import fetch_futures_options
+
+    payload = job.payload or {}
+    host = str(payload.get("host") or "127.0.0.1")
+    port_raw = payload.get("port")
+    client_id_raw = payload.get("client_id")
+
+    if isinstance(port_raw, int):
+        port = port_raw
+    else:
+        port = get_int_env("BROKER_TWS_PORT")
+    if port is None:
+        raise RuntimeError("BROKER_TWS_PORT is not set and no port was provided in job payload.")
+
+    if isinstance(client_id_raw, int):
+        client_id = client_id_raw
+    else:
+        client_id = 36
+
+    symbol = payload.get("symbol", "CL")
+
+    return fetch_futures_options(
+        engine=engine,
+        host=host,
+        port=port,
+        client_id=client_id,
+        symbol=symbol,
+        underlying_con_id=payload.get("underlying_con_id"),
+        strike_gte=payload.get("strike_gte"),
+        strike_lte=payload.get("strike_lte"),
+        dte_lte=payload.get("dte_lte"),
+        right=payload.get("right"),
+        modulus_eq=payload.get("modulus_eq"),
+        front_n=payload.get("front_n", 6),
+    )
+
+
+def handle_market_data_snapshot(job: Job, engine: Engine) -> dict:
+    from src.services.market_data import fetch_snapshot
+
+    payload = job.payload or {}
+    host = str(payload.get("host") or "127.0.0.1")
+    port_raw = payload.get("port")
+    client_id_raw = payload.get("client_id")
+
+    if isinstance(port_raw, int):
+        port = port_raw
+    else:
+        port = get_int_env("BROKER_TWS_PORT")
+    if port is None:
+        raise RuntimeError("BROKER_TWS_PORT is not set and no port was provided in job payload.")
+
+    if isinstance(client_id_raw, int):
+        client_id = client_id_raw
+    else:
+        client_id = 37
+
+    con_ids = payload.get("con_ids", [])
+    if not isinstance(con_ids, list):
+        raise ValueError("market_data.snapshot job requires a list of 'con_ids' in payload.")
+
+    return fetch_snapshot(
+        engine=engine,
+        host=host,
+        port=port,
+        client_id=client_id,
+        con_ids=con_ids,
+    )
+
+
 def get_handler(job_type: str) -> Callable[[Job, Engine], dict] | None:
     handlers: dict[str, Callable[[Job, Engine], dict]] = {
         JOB_TYPE_POSITIONS_SYNC: handle_positions_sync,
         JOB_TYPE_CONTRACTS_SYNC: handle_contracts_sync,
+        JOB_TYPE_CONTRACTS_CHAIN_SYNC: handle_contracts_chain_sync,
         JOB_TYPE_ORDER_FETCH_SYNC: handle_order_fetch_sync,
         JOB_TYPE_WATCHLIST_ADD_INSTRUMENT: handle_watchlist_add_instrument,
         JOB_TYPE_WATCHLIST_QUOTES_REFRESH: handle_watchlist_quotes_refresh,
         JOB_TYPE_TRADES_SYNC: handle_trades_sync,
+        JOB_TYPE_MARKET_DATA_FUTURES_PRICES: handle_market_data_futures_prices,
+        JOB_TYPE_MARKET_DATA_FUTURES_OPTIONS: handle_market_data_futures_options,
+        JOB_TYPE_MARKET_DATA_SNAPSHOT: handle_market_data_snapshot,
     }
     return handlers.get(job_type)
 
@@ -386,7 +543,8 @@ def main() -> int:
         level=logging.INFO,
         format="%(asctime)s %(name)s %(levelname)s %(message)s",
     )
-    load_env(args.env)
+    env_name = args.env or os.environ.get("ENV", "dev")
+    load_env(env_name)
     check_db_ready()
 
     engine = get_engine()

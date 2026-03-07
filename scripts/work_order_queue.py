@@ -70,7 +70,7 @@ def load_env(env_name: str) -> None:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Process queued orders and execute in TWS.")
-    parser.add_argument("--env", choices=["dev", "prod"], default="dev")
+    parser.add_argument("--env", choices=["dev", "prod"], default=None)
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=None)
     parser.add_argument("--client-id", type=int, default=30)
@@ -717,7 +717,8 @@ def main() -> int:
     if args.connect_retry_seconds < 0:
         raise SystemExit("--connect-retry-seconds must be >= 0.")
 
-    load_env(args.env)
+    env_name = args.env or os.environ.get("ENV", "dev")
+    load_env(env_name)
     check_db_ready()
     return run_worker(args)
 

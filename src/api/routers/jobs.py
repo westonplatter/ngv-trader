@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from src.api.deps import get_db
 from src.models import Job
-from src.services.jobs import now_utc
+from src.services.jobs import enqueue_job, now_utc
 
 router = APIRouter()
 DB_SESSION_DEPENDENCY = Depends(get_db)
@@ -74,6 +74,29 @@ def get_job(job_id: int, db: Session = DB_SESSION_DEPENDENCY) -> JobResponse:
     job = db.get(Job, job_id)
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found")
+    return to_job_response(job)
+
+
+class CreateJobRequest(BaseModel):
+    job_type: str
+    payload: dict = {}
+    source: str = "ui"
+
+
+@router.post("/jobs", response_model=JobResponse, status_code=201)
+def create_job(
+    body: CreateJobRequest,
+    db: Session = DB_SESSION_DEPENDENCY,
+) -> JobResponse:
+    job = enqueue_job(
+        session=db,
+        job_type=body.job_type,
+        payload=body.payload,
+        source=body.source,
+        request_text=None,
+    )
+    db.commit()
+    db.refresh(job)
     return to_job_response(job)
 
 
