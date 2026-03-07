@@ -25,7 +25,7 @@ Read tools:
 - `list_positions`
 - `list_jobs`
 - `list_orders`
-- `lookup_contract`
+- `lookup_contract` — checks DB first, falls back to IBKR fetch if not found. Supports `contract_expiry` (YYYY-MM-DD) for specific weekly option expiries.
 - `list_watch_lists`
 - `get_watch_list`
 

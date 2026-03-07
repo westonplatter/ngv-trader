@@ -50,6 +50,10 @@ def _contract_month_matches(contract: Contract, contract_month: str | None) -> b
     if contract_month is None:
         return True
     raw_expiry = (contract.lastTradeDateOrContractMonth or "").strip() or None
+    # If contract_month is a full date (YYYYMMDD), match against exact expiry
+    cleaned = contract_month.replace("-", "")
+    if len(cleaned) == 8 and cleaned.isdigit():
+        return (raw_expiry or "").replace("-", "") == cleaned
     contract_month_value = format_contract_month_from_expiry(raw_expiry)
     return contract_month_value == contract_month
 
@@ -158,6 +162,9 @@ def _expiry_matches_month(expiry: str, contract_month: str | None) -> bool:
     if month_key is None:
         return True
     cleaned = expiry.strip()
+    # If contract_month is a full date (YYYYMMDD), match exactly
+    if len(month_key) == 8 and month_key.isdigit():
+        return cleaned == month_key
     return cleaned.startswith(month_key)
 
 
@@ -518,7 +525,13 @@ def select_contract_for_watchlist(
     strike: float | None = None,
     right: str | None = None,
 ) -> tuple[Contract, int]:
-    normalized_contract_month = normalize_contract_month_input(contract_month)
+    # If contract_month is a full date (YYYYMMDD), keep it as-is for IBKR
+    # (lastTradeDateOrContractMonth accepts both YYYYMM and YYYYMMDD)
+    raw = (contract_month or "").strip().replace("-", "")
+    if len(raw) == 8 and raw.isdigit():
+        normalized_contract_month = raw
+    else:
+        normalized_contract_month = normalize_contract_month_input(contract_month)
     request = ContractSelectionRequest(
         symbol=symbol,
         sec_type=sec_type.upper(),

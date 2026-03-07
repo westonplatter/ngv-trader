@@ -113,6 +113,7 @@ def fetch_futures_prices(
     symbol: str,
     front_n: int = 6,
     connect_timeout_seconds: float = 20.0,
+    ib: IB | None = None,
 ) -> dict:
     symbol = symbol.upper()
 
@@ -136,11 +137,13 @@ def fetch_futures_prices(
         return {"symbol": symbol, "contracts": 0, "rows_inserted": 0}
 
     contracts = [_contract_from_ref(r) for r in refs]
-    ib = _connect(host, port, client_id, connect_timeout_seconds)
+    owns_ib = ib is None
+    if ib is None:
+        ib = _connect(host, port, client_id, connect_timeout_seconds)
     try:
         by_con_id = _fetch_tickers(ib, contracts)
     finally:
-        if ib.isConnected():
+        if owns_ib and ib.isConnected():
             ib.disconnect()
 
     now = _now_utc()
@@ -233,6 +236,7 @@ def fetch_futures_options(
     modulus_eq: float | None = None,
     front_n: int = 6,
     connect_timeout_seconds: float = 20.0,
+    ib: IB | None = None,
 ) -> dict:
     import datetime as dt
 
@@ -284,11 +288,13 @@ def fetch_futures_options(
         return {"symbol": symbol, "contracts": 0, "rows_inserted": 0}
 
     contracts = [_contract_from_ref(r) for r in refs]
-    ib = _connect(host, port, client_id, connect_timeout_seconds)
+    owns_ib = ib is None
+    if ib is None:
+        ib = _connect(host, port, client_id, connect_timeout_seconds)
     try:
         by_con_id = _fetch_tickers(ib, contracts)
     finally:
-        if ib.isConnected():
+        if owns_ib and ib.isConnected():
             ib.disconnect()
 
     now = _now_utc()
@@ -406,6 +412,7 @@ def fetch_snapshot(
     client_id: int,
     con_ids: list[int],
     connect_timeout_seconds: float = 20.0,
+    ib: IB | None = None,
 ) -> dict:
     if not con_ids:
         return {"contracts": 0, "rows_inserted": 0, "results": []}
@@ -417,11 +424,13 @@ def fetch_snapshot(
         return {"contracts": 0, "rows_inserted": 0, "results": []}
 
     contracts = [_contract_from_ref(r) for r in refs]
-    ib = _connect(host, port, client_id, connect_timeout_seconds)
+    owns_ib = ib is None
+    if ib is None:
+        ib = _connect(host, port, client_id, connect_timeout_seconds)
     try:
         by_con_id = _fetch_tickers(ib, contracts)
     finally:
-        if ib.isConnected():
+        if owns_ib and ib.isConnected():
             ib.disconnect()
 
     now = _now_utc()

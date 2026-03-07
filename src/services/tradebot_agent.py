@@ -29,9 +29,10 @@ from src.services.cl_contracts import (
     display_contract_month,
     normalize_contract_month_input,
 )
-from src.services.contract_lookup import find_contracts
+from src.services.contract_lookup import find_contracts_with_fallback
 from src.services.jobs import (
     JOB_TYPE_CONTRACTS_SYNC,
+    JOB_TYPE_MARKET_DATA_SNAPSHOT,
     JOB_TYPE_ORDER_FETCH_SYNC,
     JOB_TYPE_POSITIONS_SYNC,
     JOB_TYPE_WATCHLIST_ADD_INSTRUMENT,
@@ -51,11 +52,14 @@ _SYSTEM_PROMPT = (
     "When a user asks for current state, call read tools first. "
     "You can enqueue positions sync jobs, contracts sync jobs, and order fetch/sync jobs. "
     "For informational queries about contracts (front month, available months, contract details), use lookup_contract. "
+    "lookup_contract checks the database first; if no contracts exist, it automatically fetches from IBKR and stores them. "
+    "For options (FOP/OPT), use contract_expiry (YYYY-MM-DD) to find a specific weekly expiry rather than contract_month. "
+    "When the user says 'next Friday' or a specific date, convert it to contract_expiry format. "
     "You can preview orders via preview_order. "
     "There is no cancel tool in chat; advise using the Orders API/UI cancel action when needed. "
     "You can also manage watch lists: create watch lists, add instruments to them, list them, and remove instruments. "
-    "When adding instruments to a watch list, use add_watch_list_instrument which enqueues a job to fetch "
-    "the contract directly from IBKR. Then use check_watchlist_job to poll for the result. "
+    "add_watch_list_instrument finds the contract in the DB (or fetches from IBKR), adds it to the watch list, "
+    "and enqueues a market data job for latest prices. It returns immediately — no need to poll. "
     "Keep responses concise and operator-focused."
 )
 _MAX_MESSAGES = 16
@@ -257,9 +261,10 @@ _TOOL_SPECS: list[dict[str, Any]] = [
         "function": {
             "name": "lookup_contract",
             "description": (
-                "Read-only lookup of contract details from the database. "
+                "Look up contract details. Checks the database first; if no contracts are found, "
+                "automatically fetches from IBKR and stores them. "
                 "Use this for informational queries like 'what is the front month for CL?' "
-                "or 'what NQ contracts are available?'. This is read-only and has no side effects."
+                "or 'what NQ contracts are available?'."
             ),
             "parameters": {
                 "type": "object",
@@ -275,6 +280,10 @@ _TOOL_SPECS: list[dict[str, Any]] = [
                     "contract_month": {
                         "type": "string",
                         "description": "YYYY-MM or month name like 'March 2026'",
+                    },
+                    "contract_expiry": {
+                        "type": "string",
+                        "description": "Specific expiry date YYYY-MM-DD (e.g. '2026-03-16'). Use this for weekly options instead of contract_month.",
                     },
                     "strike": {
                         "type": "number",
@@ -348,10 +357,9 @@ _TOOL_SPECS: list[dict[str, Any]] = [
         "function": {
             "name": "add_watch_list_instrument",
             "description": (
-                "Add an instrument to a watch list by fetching its contract from IBKR. "
-                "Enqueues a background job that connects to IBKR, fetches the single contract, "
-                "upserts it into contract_refs, and adds it to the watch list. "
-                "Returns a job_id — use check_watchlist_job to poll for the result."
+                "Add an instrument to a watch list. Looks up the contract in the DB first "
+                "(fetches from IBKR if not found), adds it to the watch list, and enqueues "
+                "a market data job to fetch latest prices. Returns immediately with the result."
             ),
             "parameters": {
                 "type": "object",
@@ -372,6 +380,10 @@ _TOOL_SPECS: list[dict[str, Any]] = [
                     "contract_month": {
                         "type": "string",
                         "description": "YYYY-MM or month name like 'April 2026'",
+                    },
+                    "contract_expiry": {
+                        "type": "string",
+                        "description": "Specific expiry date YYYY-MM-DD (e.g. '2026-03-16'). Use this for weekly options instead of contract_month.",
                     },
                     "strike": {
                         "type": "number",
@@ -840,6 +852,7 @@ def _tool_lookup_contract(session: Session, _: str, args: dict[str, Any]) -> dic
 
     requested_contract_month_raw = _coerce_optional_str_arg(args, "contract_month")
     requested_contract_month = normalize_contract_month_input(requested_contract_month_raw)
+    contract_expiry = _coerce_optional_str_arg(args, "contract_expiry")
 
     strike_raw = args.get("strike")
     strike = float(strike_raw) if strike_raw is not None else None
@@ -849,7 +862,7 @@ def _tool_lookup_contract(session: Session, _: str, args: dict[str, Any]) -> dic
 
     min_days_to_expiry = get_int_env("BROKER_CL_MIN_DAYS_TO_EXPIRY", DEFAULT_CL_MIN_DAYS_TO_EXPIRY)
 
-    contracts = find_contracts(
+    contracts = find_contracts_with_fallback(
         session=session,
         symbol=symbol,
         sec_type=sec_type,
@@ -857,9 +870,46 @@ def _tool_lookup_contract(session: Session, _: str, args: dict[str, Any]) -> dic
         min_days_to_expiry=min_days_to_expiry,
         strike=strike,
         right=right,
+        contract_expiry=contract_expiry,
     )
 
-    # Group by month for summary
+    # For FOP/OPT, include individual contracts so the agent can see available expiry dates
+    if sec_type in ("FOP", "OPT"):
+        # Group by expiry for a concise summary
+        by_expiry: dict[str, list[dict[str, Any]]] = {}
+        for c in contracts:
+            expiry = c.get("contract_expiry") or "unknown"
+            by_expiry.setdefault(expiry, []).append(c)
+
+        expiry_summary = []
+        for expiry, group in sorted(by_expiry.items()):
+            expiry_summary.append(
+                {
+                    "contract_expiry": expiry,
+                    "days_to_expiry": group[0]["days_to_expiry"],
+                    "count": len(group),
+                    "contracts": [
+                        {
+                            "con_id": c["con_id"],
+                            "local_symbol": c["local_symbol"],
+                            "strike": c["strike"],
+                            "right": c["right"],
+                            "contract_expiry": c["contract_expiry"],
+                            "days_to_expiry": c["days_to_expiry"],
+                        }
+                        for c in group[:10]  # cap per expiry to avoid huge responses
+                    ],
+                }
+            )
+
+        return {
+            "symbol": symbol,
+            "sec_type": sec_type,
+            "total_contracts": len(contracts),
+            "available_expiries": expiry_summary,
+        }
+
+    # Group by month for FUT summary
     months: dict[str, dict[str, Any]] = {}
     for c in contracts:
         month = c.get("contract_month") or "unknown"
@@ -928,15 +978,20 @@ def _tool_create_watch_list(session: Session, _: str, args: dict[str, Any]) -> d
 
 
 def _tool_get_watch_list(session: Session, _: str, args: dict[str, Any]) -> dict[str, Any]:
+    from src.models import ContractRef
+
     wl_id = args.get("watch_list_id")
     if not isinstance(wl_id, int):
         raise ValueError("'watch_list_id' must be an integer.")
     wl = session.get(WatchList, wl_id)
     if wl is None:
         raise ValueError(f"Watch list #{wl_id} not found.")
-    instruments = (
-        session.execute(select(WatchListInstrument).where(WatchListInstrument.watch_list_id == wl_id).order_by(WatchListInstrument.created_at)).scalars().all()
-    )
+    rows = session.execute(
+        select(WatchListInstrument, ContractRef)
+        .join(ContractRef, ContractRef.con_id == WatchListInstrument.con_id)
+        .where(WatchListInstrument.watch_list_id == wl_id)
+        .order_by(WatchListInstrument.created_at)
+    ).all()
     return {
         "id": wl.id,
         "name": wl.name,
@@ -945,16 +1000,16 @@ def _tool_get_watch_list(session: Session, _: str, args: dict[str, Any]) -> dict
             {
                 "id": inst.id,
                 "con_id": inst.con_id,
-                "symbol": inst.symbol,
-                "sec_type": inst.sec_type,
-                "exchange": inst.exchange,
-                "local_symbol": inst.local_symbol,
-                "contract_month": inst.contract_month,
-                "contract_expiry": inst.contract_expiry,
-                "strike": inst.strike,
-                "right": inst.right,
+                "symbol": contract.symbol,
+                "sec_type": contract.sec_type,
+                "exchange": contract.exchange,
+                "local_symbol": contract.local_symbol,
+                "contract_month": contract.contract_month,
+                "contract_expiry": contract.contract_expiry,
+                "strike": contract.strike,
+                "right": contract.right,
             }
-            for inst in instruments
+            for inst, contract in rows
         ],
     }
 
@@ -981,6 +1036,7 @@ def _tool_add_watch_list_instrument(session: Session, latest_user_text: str, arg
 
     requested_contract_month_raw = _coerce_optional_str_arg(args, "contract_month")
     requested_contract_month = normalize_contract_month_input(requested_contract_month_raw)
+    contract_expiry = _coerce_optional_str_arg(args, "contract_expiry")
 
     strike_raw = args.get("strike")
     strike = float(strike_raw) if strike_raw is not None else None
@@ -988,34 +1044,82 @@ def _tool_add_watch_list_instrument(session: Session, latest_user_text: str, arg
     if right is not None:
         right = right.upper()
 
-    exchange = _resolve_exchange(symbol, sec_type)
-
-    payload: dict[str, Any] = {
-        "watch_list_id": wl_id,
-        "symbol": symbol,
-        "sec_type": sec_type,
-        "exchange": exchange,
-    }
-    if requested_contract_month is not None:
-        payload["contract_month"] = requested_contract_month
-    if strike is not None:
-        payload["strike"] = strike
-    if right is not None:
-        payload["right"] = right
-
-    job = enqueue_job(
+    # 1. Find contract in DB (or fetch from IBKR if not found)
+    contracts = find_contracts_with_fallback(
         session=session,
-        job_type=JOB_TYPE_WATCHLIST_ADD_INSTRUMENT,
-        payload=payload,
-        source=_TOOL_SOURCE,
-        request_text=latest_user_text,
+        symbol=symbol,
+        sec_type=sec_type,
+        contract_month=requested_contract_month,
+        strike=strike,
+        right=right,
+        contract_expiry=contract_expiry,
     )
+
+    if not contracts:
+        raise ValueError(
+            f"No {symbol} {sec_type} contract found"
+            + (f" with expiry={contract_expiry}" if contract_expiry else "")
+            + (f" strike={strike}" if strike is not None else "")
+            + (f" {right}" if right else "")
+            + ". Check contract details or run a contracts sync first."
+        )
+
+    # Pick the first (front) contract
+    contract = contracts[0]
+    con_id = contract["con_id"]
+
+    # 2. Check for duplicate in watch list
+    from sqlalchemy import select as sa_select
+
+    existing = (
+        session.execute(
+            sa_select(WatchListInstrument).where(
+                WatchListInstrument.watch_list_id == wl_id,
+                WatchListInstrument.con_id == con_id,
+            )
+        )
+        .scalars()
+        .first()
+    )
+
+    if existing is not None:
+        instrument_id = existing.id
+        already_existed = True
+    else:
+        inst = WatchListInstrument(
+            watch_list_id=wl_id,
+            con_id=con_id,
+        )
+        session.add(inst)
+        session.flush()
+        instrument_id = inst.id
+        already_existed = False
+
+    # 3. Enqueue a market data snapshot for this specific contract
+    md_job = enqueue_job(
+        session=session,
+        job_type=JOB_TYPE_MARKET_DATA_SNAPSHOT,
+        payload={"con_ids": [con_id]},
+        source=_TOOL_SOURCE,
+        request_text=f"fetch prices for {symbol} {sec_type} con_id={con_id}",
+    )
+
     session.commit()
-    return {
-        "job_id": job.id,
-        "status": job.status,
-        "message": (f"Enqueued job to fetch {symbol} {sec_type} from IBKR and add to watch list #{wl_id}. " "Use check_watchlist_job to poll for the result."),
+
+    result: dict[str, Any] = {
+        "con_id": con_id,
+        "local_symbol": contract.get("local_symbol"),
+        "contract_expiry": contract.get("contract_expiry"),
+        "strike": contract.get("strike"),
+        "right": contract.get("right"),
+        "watch_list_id": wl_id,
+        "instrument_id": instrument_id,
+        "already_existed": already_existed,
+        "message": f"{'Already in' if already_existed else 'Added to'} watch list #{wl_id}: {contract.get('local_symbol') or symbol}",
     }
+    result["price_fetch_job_id"] = md_job.id
+    result["message"] += f". Enqueued price fetch job #{md_job.id}."
+    return result
 
 
 def _tool_check_watchlist_job(session: Session, _: str, args: dict[str, Any]) -> dict[str, Any]:

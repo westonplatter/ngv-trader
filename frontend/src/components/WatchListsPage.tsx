@@ -48,7 +48,14 @@ interface Instrument {
   primary_exchange: string | null;
   bid_price: number | null;
   ask_price: number | null;
+  last_price: number | null;
   close_price: number | null;
+  iv: number | null;
+  delta: number | null;
+  gamma: number | null;
+  theta: number | null;
+  vega: number | null;
+  und_price: number | null;
   quote_as_of: string | null;
   contract_display_name: string;
   created_at: string;
@@ -77,10 +84,17 @@ const INSTRUMENT_COLUMNS: {
   { key: "contract_display_name", label: "Contract" },
   { key: "bid_price", label: "Bid" },
   { key: "ask_price", label: "Ask" },
+  { key: "last_price", label: "Last" },
   { key: "close_price", label: "Close" },
+  { key: "iv", label: "IV" },
+  { key: "delta", label: "Delta" },
+  { key: "theta", label: "Theta" },
+  { key: "und_price", label: "Und Price" },
   { key: "strike", label: "Strike" },
   { key: "contract_expiry", label: "Expiry" },
   { key: "right", label: "Call/Put" },
+  { key: "gamma", label: "Gamma", muted: true },
+  { key: "vega", label: "Vega", muted: true },
   { key: "contract_month", label: "Month", muted: true },
   { key: "local_symbol", label: "Local Symbol", muted: true },
   { key: "sec_type", label: "Type", muted: true },
@@ -555,7 +569,14 @@ export default function WatchListsPage() {
                           >
                             {col.key === "bid_price" ||
                             col.key === "ask_price" ||
-                            col.key === "close_price"
+                            col.key === "last_price" ||
+                            col.key === "close_price" ||
+                            col.key === "iv" ||
+                            col.key === "delta" ||
+                            col.key === "gamma" ||
+                            col.key === "theta" ||
+                            col.key === "vega" ||
+                            col.key === "und_price"
                               ? formatQuotePrice(inst[col.key] as number | null)
                               : col.key === "contract_expiry"
                                 ? formatExpiry(inst[col.key] as string | null)

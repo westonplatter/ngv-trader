@@ -15,8 +15,10 @@ import logging
 import os
 import time
 from collections.abc import Callable
+from dataclasses import dataclass
 
 from dotenv import load_dotenv
+from ib_async import IB
 from sqlalchemy import inspect
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
@@ -38,11 +40,71 @@ from src.services.jobs import (
     complete_job,
     fail_or_retry_job,
 )
-from src.services.position_sync import check_positions_tables_ready, sync_positions_once
+from src.services.position_sync import (
+    check_positions_tables_ready,
+    sync_positions_with_ib,
+)
 from src.services.worker_heartbeat import WORKER_TYPE_JOBS, upsert_worker_heartbeat
 from src.utils.env_vars import get_int_env
 
 logger = logging.getLogger("worker:jobs")
+
+
+@dataclass
+class IBPoolEntry:
+    ib: IB
+    last_used_monotonic: float
+
+
+class IBSessionPool:
+    def __init__(self) -> None:
+        self._entries: dict[tuple[str, int, int], IBPoolEntry] = {}
+
+    def get(self, *, host: str, port: int, client_id: int, connect_timeout_seconds: float) -> IB:
+        key = (host, port, client_id)
+        entry = self._entries.get(key)
+        now = time.monotonic()
+        if entry is not None and entry.ib.isConnected():
+            entry.last_used_monotonic = now
+            return entry.ib
+
+        if entry is not None:
+            if entry.ib.isConnected():
+                entry.ib.disconnect()
+            del self._entries[key]
+
+        ib = IB()
+        try:
+            ib.connect(host, port, clientId=client_id, timeout=connect_timeout_seconds)
+        except TimeoutError as exc:
+            raise RuntimeError(
+                "Timed out connecting to TWS/Gateway " f"(host={host}, port={port}, client_id={client_id}, timeout={connect_timeout_seconds}s)."
+            ) from exc
+        self._entries[key] = IBPoolEntry(ib=ib, last_used_monotonic=now)
+        return ib
+
+    def close_idle(self, *, max_idle_seconds: float) -> int:
+        if max_idle_seconds <= 0:
+            return 0
+        now = time.monotonic()
+        removed = 0
+        for key, entry in list(self._entries.items()):
+            is_stale = (now - entry.last_used_monotonic) >= max_idle_seconds
+            if is_stale or not entry.ib.isConnected():
+                if entry.ib.isConnected():
+                    entry.ib.disconnect()
+                del self._entries[key]
+                removed += 1
+        return removed
+
+    def close_all(self) -> None:
+        for key, entry in list(self._entries.items()):
+            if entry.ib.isConnected():
+                entry.ib.disconnect()
+            del self._entries[key]
+
+    def active_count(self) -> int:
+        return sum(1 for entry in self._entries.values() if entry.ib.isConnected())
 
 
 def load_env(env_name: str) -> None:
@@ -56,6 +118,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Process queued jobs.")
     parser.add_argument("--env", choices=["dev", "prod"], default=None)
     parser.add_argument("--poll-seconds", type=float, default=2.0)
+    parser.add_argument("--ib-idle-seconds", type=float, default=300.0, help="Disconnect pooled IB sessions idle for this many seconds.")
     parser.add_argument("--once", action="store_true", help="Process one queue pass and exit.")
     return parser.parse_args()
 
@@ -69,8 +132,12 @@ def check_db_ready() -> None:
             raise SystemExit(f"Missing '{required}' table. Run: task migrate")
 
 
-def handle_positions_sync(job: Job, engine: Engine) -> dict:
-    payload = job.payload or {}
+def resolve_tws_connection(
+    payload: dict,
+    *,
+    default_client_id: int,
+    connect_timeout_default_seconds: float = 20.0,
+) -> tuple[str, int, int, float]:
     host = str(payload.get("host") or "127.0.0.1")
     port_raw = payload.get("port")
     client_id_raw = payload.get("client_id")
@@ -86,20 +153,21 @@ def handle_positions_sync(job: Job, engine: Engine) -> dict:
     if isinstance(client_id_raw, int):
         client_id = client_id_raw
     else:
-        client_id = 31
+        client_id = default_client_id
 
     if isinstance(connect_timeout_raw, (int, float)):
         connect_timeout_seconds = float(connect_timeout_raw)
     else:
-        connect_timeout_seconds = 20.0
+        connect_timeout_seconds = connect_timeout_default_seconds
 
-    fetched_positions_count = sync_positions_once(
-        engine=engine,
-        host=host,
-        port=port,
-        client_id=client_id,
-        connect_timeout_seconds=connect_timeout_seconds,
-    )
+    return host, port, client_id, connect_timeout_seconds
+
+
+def handle_positions_sync(job: Job, engine: Engine, ib_pool: IBSessionPool) -> dict:
+    payload = job.payload or {}
+    host, port, client_id, connect_timeout_seconds = resolve_tws_connection(payload, default_client_id=31)
+    ib = ib_pool.get(host=host, port=port, client_id=client_id, connect_timeout_seconds=connect_timeout_seconds)
+    fetched_positions_count = sync_positions_with_ib(engine=engine, ib=ib)
     return {
         "fetched_positions_count": fetched_positions_count,
         "host": host,
@@ -109,27 +177,13 @@ def handle_positions_sync(job: Job, engine: Engine) -> dict:
     }
 
 
-def handle_contracts_sync(job: Job, engine: Engine) -> dict:
+def handle_contracts_sync(job: Job, engine: Engine, ib_pool: IBSessionPool) -> dict:
     from ib_async import Contract, Future
 
-    from src.services.contract_sync import sync_contracts
+    from src.services.contract_sync import sync_contracts_with_ib
 
     payload = job.payload or {}
-    host = str(payload.get("host") or "127.0.0.1")
-    port_raw = payload.get("port")
-    client_id_raw = payload.get("client_id")
-
-    if isinstance(port_raw, int):
-        port = port_raw
-    else:
-        port = get_int_env("BROKER_TWS_PORT")
-    if port is None:
-        raise RuntimeError("BROKER_TWS_PORT is not set and no port was provided in job payload.")
-
-    if isinstance(client_id_raw, int):
-        client_id = client_id_raw
-    else:
-        client_id = 32
+    host, port, client_id, connect_timeout_seconds = resolve_tws_connection(payload, default_client_id=32)
 
     # Build contract specs from payload, default to CL futures
     raw_specs = payload.get("specs")
@@ -172,17 +226,16 @@ def handle_contracts_sync(job: Job, engine: Engine) -> dict:
     else:
         specs = [Future("CL", exchange="NYMEX", currency="USD")]
 
-    return sync_contracts(
+    ib = ib_pool.get(host=host, port=port, client_id=client_id, connect_timeout_seconds=connect_timeout_seconds)
+    return sync_contracts_with_ib(
         engine=engine,
-        host=host,
-        port=port,
-        client_id=client_id,
+        ib=ib,
         specs=specs,
     )
 
 
-def handle_watchlist_add_instrument(job: Job, engine: Engine) -> dict:
-    from src.services.watchlist_instrument_sync import fetch_and_add_instrument
+def handle_watchlist_add_instrument(job: Job, engine: Engine, ib_pool: IBSessionPool) -> dict:
+    from src.services.watchlist_instrument_sync import fetch_and_add_instrument_with_ib
 
     payload = job.payload or {}
 
@@ -213,27 +266,11 @@ def handle_watchlist_add_instrument(job: Job, engine: Engine) -> dict:
     if right is not None and not isinstance(right, str):
         raise ValueError("'right' must be a string if provided.")
 
-    host = str(payload.get("host") or "127.0.0.1")
-    port_raw = payload.get("port")
-    client_id_raw = payload.get("client_id")
-
-    if isinstance(port_raw, int):
-        port = port_raw
-    else:
-        port = get_int_env("BROKER_TWS_PORT")
-    if port is None:
-        raise RuntimeError("BROKER_TWS_PORT is not set and no port was provided in job payload.")
-
-    if isinstance(client_id_raw, int):
-        client_id = client_id_raw
-    else:
-        client_id = 34
-
-    return fetch_and_add_instrument(
+    host, port, client_id, connect_timeout_seconds = resolve_tws_connection(payload, default_client_id=34)
+    ib = ib_pool.get(host=host, port=port, client_id=client_id, connect_timeout_seconds=connect_timeout_seconds)
+    return fetch_and_add_instrument_with_ib(
         engine=engine,
-        host=host,
-        port=port,
-        client_id=client_id,
+        ib=ib,
         watch_list_id=watch_list_id,
         symbol=symbol.strip().upper(),
         sec_type=sec_type.strip().upper(),
@@ -244,8 +281,8 @@ def handle_watchlist_add_instrument(job: Job, engine: Engine) -> dict:
     )
 
 
-def handle_watchlist_quotes_refresh(job: Job, engine: Engine) -> dict:
-    from src.services.watchlist_quotes import refresh_watch_list_quotes
+def handle_watchlist_quotes_refresh(job: Job, engine: Engine, ib_pool: IBSessionPool) -> dict:
+    from src.services.watchlist_quotes import refresh_watch_list_quotes_with_ib
 
     payload = job.payload or {}
     watch_list_id = payload.get("watch_list_id")
@@ -255,6 +292,7 @@ def handle_watchlist_quotes_refresh(job: Job, engine: Engine) -> dict:
     host = str(payload.get("host") or "127.0.0.1")
     port_raw = payload.get("port")
     client_id_raw = payload.get("client_id")
+    connect_timeout_raw = payload.get("connect_timeout_seconds")
 
     if isinstance(port_raw, int):
         port = port_raw
@@ -270,48 +308,29 @@ def handle_watchlist_quotes_refresh(job: Job, engine: Engine) -> dict:
     if client_id is None:
         raise RuntimeError("BROKER_TWS_QUOTES_CLIENT_ID is not set and no client_id was provided in job payload.")
 
-    return refresh_watch_list_quotes(
-        engine=engine,
-        watch_list_id=watch_list_id,
-        host=host,
-        port=port,
-        client_id=client_id,
-    )
-
-
-def handle_order_fetch_sync(job: Job, engine: Engine) -> dict:
-    from src.services.order_sync import sync_orders_once
-
-    payload = job.payload or {}
-    host = str(payload.get("host") or "127.0.0.1")
-    port_raw = payload.get("port")
-    client_id_raw = payload.get("client_id")
-    connect_timeout_raw = payload.get("connect_timeout_seconds")
-
-    if isinstance(port_raw, int):
-        port = port_raw
-    else:
-        port = get_int_env("BROKER_TWS_PORT")
-    if port is None:
-        raise RuntimeError("BROKER_TWS_PORT is not set and no port was provided in job payload.")
-
-    if isinstance(client_id_raw, int):
-        client_id = client_id_raw
-    else:
-        # IB order auto-bind (reqAutoOpenOrders) requires default API client 0.
-        client_id = 0
-
     if isinstance(connect_timeout_raw, (int, float)):
         connect_timeout_seconds = float(connect_timeout_raw)
     else:
-        connect_timeout_seconds = 20.0
+        connect_timeout_seconds = 10.0
 
-    result = sync_orders_once(
+    ib = ib_pool.get(host=host, port=port, client_id=client_id, connect_timeout_seconds=connect_timeout_seconds)
+    return refresh_watch_list_quotes_with_ib(
         engine=engine,
-        host=host,
-        port=port,
+        watch_list_id=watch_list_id,
+        ib=ib,
+    )
+
+
+def handle_order_fetch_sync(job: Job, engine: Engine, ib_pool: IBSessionPool) -> dict:
+    from src.services.order_sync import sync_orders_with_ib
+
+    payload = job.payload or {}
+    host, port, client_id, connect_timeout_seconds = resolve_tws_connection(payload, default_client_id=0)
+    ib = ib_pool.get(host=host, port=port, client_id=client_id, connect_timeout_seconds=connect_timeout_seconds)
+    result = sync_orders_with_ib(
+        engine=engine,
+        ib=ib,
         client_id=client_id,
-        connect_timeout_seconds=connect_timeout_seconds,
     )
     return {
         **result,
@@ -322,44 +341,22 @@ def handle_order_fetch_sync(job: Job, engine: Engine) -> dict:
     }
 
 
-def handle_trades_sync(job: Job, engine: Engine) -> dict:
-    from src.services.trade_sync import sync_trades_once
+def handle_trades_sync(job: Job, engine: Engine, ib_pool: IBSessionPool) -> dict:
+    from src.services.trade_sync import sync_trades_with_ib
 
     payload = job.payload or {}
-    host = str(payload.get("host") or "127.0.0.1")
-    port_raw = payload.get("port")
-    client_id_raw = payload.get("client_id")
-    connect_timeout_raw = payload.get("connect_timeout_seconds")
     lookback_days_raw = payload.get("lookback_days")
-
-    if isinstance(port_raw, int):
-        port = port_raw
-    else:
-        port = get_int_env("BROKER_TWS_PORT")
-    if port is None:
-        raise RuntimeError("BROKER_TWS_PORT is not set and no port was provided in job payload.")
-
-    if isinstance(client_id_raw, int):
-        client_id = client_id_raw
-    else:
-        client_id = 33
-
-    if isinstance(connect_timeout_raw, (int, float)):
-        connect_timeout_seconds = float(connect_timeout_raw)
-    else:
-        connect_timeout_seconds = 20.0
+    host, port, client_id, connect_timeout_seconds = resolve_tws_connection(payload, default_client_id=33)
 
     if isinstance(lookback_days_raw, int):
         lookback_days = lookback_days_raw
     else:
         lookback_days = 7
 
-    result = sync_trades_once(
+    ib = ib_pool.get(host=host, port=port, client_id=client_id, connect_timeout_seconds=connect_timeout_seconds)
+    result = sync_trades_with_ib(
         engine=engine,
-        host=host,
-        port=port,
-        client_id=client_id,
-        connect_timeout_seconds=connect_timeout_seconds,
+        ib=ib,
         lookback_days=lookback_days,
     )
     return {
@@ -372,25 +369,11 @@ def handle_trades_sync(job: Job, engine: Engine) -> dict:
     }
 
 
-def handle_contracts_chain_sync(job: Job, engine: Engine) -> dict:
+def handle_contracts_chain_sync(job: Job, engine: Engine, ib_pool: IBSessionPool) -> dict:
     from src.services.contract_sync import sync_futures_chain
 
     payload = job.payload or {}
-    host = str(payload.get("host") or "127.0.0.1")
-    port_raw = payload.get("port")
-    client_id_raw = payload.get("client_id")
-
-    if isinstance(port_raw, int):
-        port = port_raw
-    else:
-        port = get_int_env("BROKER_TWS_PORT")
-    if port is None:
-        raise RuntimeError("BROKER_TWS_PORT is not set and no port was provided in job payload.")
-
-    if isinstance(client_id_raw, int):
-        client_id = client_id_raw
-    else:
-        client_id = 32
+    host, port, client_id, connect_timeout_seconds = resolve_tws_connection(payload, default_client_id=32)
 
     symbol = payload.get("symbol", "CL")
     exchange = payload.get("exchange")
@@ -404,6 +387,7 @@ def handle_contracts_chain_sync(job: Job, engine: Engine) -> dict:
     # Optional override for option filter (otherwise uses per-symbol defaults)
     option_filter = payload.get("option_filter")
 
+    ib = ib_pool.get(host=host, port=port, client_id=client_id, connect_timeout_seconds=connect_timeout_seconds)
     return sync_futures_chain(
         engine=engine,
         host=host,
@@ -414,31 +398,20 @@ def handle_contracts_chain_sync(job: Job, engine: Engine) -> dict:
         currency=currency,
         front_n=front_n,
         option_filter=option_filter,
+        connect_timeout_seconds=connect_timeout_seconds,
+        ib=ib,
     )
 
 
-def handle_market_data_futures_prices(job: Job, engine: Engine) -> dict:
+def handle_market_data_futures_prices(job: Job, engine: Engine, ib_pool: IBSessionPool) -> dict:
     from src.services.market_data import fetch_futures_prices
 
     payload = job.payload or {}
-    host = str(payload.get("host") or "127.0.0.1")
-    port_raw = payload.get("port")
-    client_id_raw = payload.get("client_id")
-
-    if isinstance(port_raw, int):
-        port = port_raw
-    else:
-        port = get_int_env("BROKER_TWS_PORT")
-    if port is None:
-        raise RuntimeError("BROKER_TWS_PORT is not set and no port was provided in job payload.")
-
-    if isinstance(client_id_raw, int):
-        client_id = client_id_raw
-    else:
-        client_id = 35
+    host, port, client_id, connect_timeout_seconds = resolve_tws_connection(payload, default_client_id=35)
 
     symbol = payload.get("symbol", "CL")
     front_n = payload.get("front_n", 6)
+    ib = ib_pool.get(host=host, port=port, client_id=client_id, connect_timeout_seconds=connect_timeout_seconds)
 
     return fetch_futures_prices(
         engine=engine,
@@ -447,30 +420,19 @@ def handle_market_data_futures_prices(job: Job, engine: Engine) -> dict:
         client_id=client_id,
         symbol=symbol,
         front_n=front_n,
+        connect_timeout_seconds=connect_timeout_seconds,
+        ib=ib,
     )
 
 
-def handle_market_data_futures_options(job: Job, engine: Engine) -> dict:
+def handle_market_data_futures_options(job: Job, engine: Engine, ib_pool: IBSessionPool) -> dict:
     from src.services.market_data import fetch_futures_options
 
     payload = job.payload or {}
-    host = str(payload.get("host") or "127.0.0.1")
-    port_raw = payload.get("port")
-    client_id_raw = payload.get("client_id")
-
-    if isinstance(port_raw, int):
-        port = port_raw
-    else:
-        port = get_int_env("BROKER_TWS_PORT")
-    if port is None:
-        raise RuntimeError("BROKER_TWS_PORT is not set and no port was provided in job payload.")
-
-    if isinstance(client_id_raw, int):
-        client_id = client_id_raw
-    else:
-        client_id = 36
+    host, port, client_id, connect_timeout_seconds = resolve_tws_connection(payload, default_client_id=36)
 
     symbol = payload.get("symbol", "CL")
+    ib = ib_pool.get(host=host, port=port, client_id=client_id, connect_timeout_seconds=connect_timeout_seconds)
 
     return fetch_futures_options(
         engine=engine,
@@ -485,32 +447,21 @@ def handle_market_data_futures_options(job: Job, engine: Engine) -> dict:
         right=payload.get("right"),
         modulus_eq=payload.get("modulus_eq"),
         front_n=payload.get("front_n", 6),
+        connect_timeout_seconds=connect_timeout_seconds,
+        ib=ib,
     )
 
 
-def handle_market_data_snapshot(job: Job, engine: Engine) -> dict:
+def handle_market_data_snapshot(job: Job, engine: Engine, ib_pool: IBSessionPool) -> dict:
     from src.services.market_data import fetch_snapshot
 
     payload = job.payload or {}
-    host = str(payload.get("host") or "127.0.0.1")
-    port_raw = payload.get("port")
-    client_id_raw = payload.get("client_id")
-
-    if isinstance(port_raw, int):
-        port = port_raw
-    else:
-        port = get_int_env("BROKER_TWS_PORT")
-    if port is None:
-        raise RuntimeError("BROKER_TWS_PORT is not set and no port was provided in job payload.")
-
-    if isinstance(client_id_raw, int):
-        client_id = client_id_raw
-    else:
-        client_id = 37
+    host, port, client_id, connect_timeout_seconds = resolve_tws_connection(payload, default_client_id=37)
 
     con_ids = payload.get("con_ids", [])
     if not isinstance(con_ids, list):
         raise ValueError("market_data.snapshot job requires a list of 'con_ids' in payload.")
+    ib = ib_pool.get(host=host, port=port, client_id=client_id, connect_timeout_seconds=connect_timeout_seconds)
 
     return fetch_snapshot(
         engine=engine,
@@ -518,11 +469,13 @@ def handle_market_data_snapshot(job: Job, engine: Engine) -> dict:
         port=port,
         client_id=client_id,
         con_ids=con_ids,
+        connect_timeout_seconds=connect_timeout_seconds,
+        ib=ib,
     )
 
 
-def get_handler(job_type: str) -> Callable[[Job, Engine], dict] | None:
-    handlers: dict[str, Callable[[Job, Engine], dict]] = {
+def get_handler(job_type: str) -> Callable[[Job, Engine, IBSessionPool], dict] | None:
+    handlers: dict[str, Callable[[Job, Engine, IBSessionPool], dict]] = {
         JOB_TYPE_POSITIONS_SYNC: handle_positions_sync,
         JOB_TYPE_CONTRACTS_SYNC: handle_contracts_sync,
         JOB_TYPE_CONTRACTS_CHAIN_SYNC: handle_contracts_chain_sync,
@@ -539,6 +492,10 @@ def get_handler(job_type: str) -> Callable[[Job, Engine], dict] | None:
 
 def main() -> int:
     args = parse_args()
+    if args.poll_seconds <= 0:
+        raise SystemExit("--poll-seconds must be > 0.")
+    if args.ib_idle_seconds < 0:
+        raise SystemExit("--ib-idle-seconds must be >= 0.")
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(name)s %(levelname)s %(message)s",
@@ -555,6 +512,7 @@ def main() -> int:
         details="worker boot",
     )
 
+    ib_pool = IBSessionPool()
     try:
         while True:
             processed = 0
@@ -587,7 +545,7 @@ def main() -> int:
 
                     logger.info("job #%d: starting %s", job_id, job.job_type)
                     try:
-                        result = handler(job, engine)
+                        result = handler(job, engine, ib_pool)
                         complete_job(session, job, result)
                         logger.info("job #%d: completed %s", job_id, job.job_type)
                     except Exception as exc:
@@ -599,16 +557,18 @@ def main() -> int:
                 engine,
                 WORKER_TYPE_JOBS,
                 status="running",
-                details=f"processed={processed}",
+                details=f"processed={processed}, ib_sessions={ib_pool.active_count()}",
             )
 
             if args.once:
                 print(f"Processed {processed} job(s).")
                 return 0
 
+            ib_pool.close_idle(max_idle_seconds=args.ib_idle_seconds)
             if processed == 0:
                 time.sleep(args.poll_seconds)
     finally:
+        ib_pool.close_all()
         try:
             upsert_worker_heartbeat(
                 engine,

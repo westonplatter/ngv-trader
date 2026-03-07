@@ -225,35 +225,11 @@ class WatchList(Base):
 
 class WatchListInstrument(Base):
     __tablename__ = "watch_list_instruments"
-    __table_args__ = (
-        UniqueConstraint("watch_list_id", "con_id", name="uq_watch_list_id_con_id"),
-        Index(
-            "ix_watch_list_instruments_lookup",
-            "watch_list_id",
-            "symbol",
-            "sec_type",
-        ),
-    )
+    __table_args__ = (UniqueConstraint("watch_list_id", "con_id", name="uq_watch_list_id_con_id"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    watch_list_id: Mapped[int] = mapped_column(Integer, nullable=False)
-    con_id: Mapped[int] = mapped_column(Integer, nullable=False)
-    symbol: Mapped[str] = mapped_column(String, nullable=False)
-    sec_type: Mapped[str] = mapped_column(String, nullable=False)
-    exchange: Mapped[str] = mapped_column(String, nullable=False)
-    currency: Mapped[str] = mapped_column(String, nullable=False, default="USD")
-    local_symbol: Mapped[str | None] = mapped_column(String, nullable=True)
-    trading_class: Mapped[str | None] = mapped_column(String, nullable=True)
-    contract_month: Mapped[str | None] = mapped_column(String, nullable=True)
-    contract_expiry: Mapped[str | None] = mapped_column(String, nullable=True)
-    multiplier: Mapped[str | None] = mapped_column(String, nullable=True)
-    strike: Mapped[float | None] = mapped_column(Float, nullable=True)
-    right: Mapped[str | None] = mapped_column(String, nullable=True)
-    primary_exchange: Mapped[str | None] = mapped_column(String, nullable=True)
-    bid_price: Mapped[float | None] = mapped_column(Float, nullable=True)
-    ask_price: Mapped[float | None] = mapped_column(Float, nullable=True)
-    close_price: Mapped[float | None] = mapped_column(Float, nullable=True)
-    quote_as_of: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    watch_list_id: Mapped[int] = mapped_column(Integer, ForeignKey("watch_lists.id"), nullable=False)
+    con_id: Mapped[int] = mapped_column(Integer, ForeignKey("contracts.con_id"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

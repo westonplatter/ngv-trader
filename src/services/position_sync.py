@@ -48,71 +48,78 @@ def sync_positions_once(
                 "Timed out connecting to TWS/Gateway while fetching positions "
                 f"(host={host}, port={port}, client_id={client_id}, timeout={connect_timeout_seconds}s)."
             ) from exc
-        positions = ib.positions()
-        position_accounts = {position.account for position in positions if position.account}
-        scope_accounts = position_accounts
-
-        now = datetime.now(timezone.utc)
-        with Session(engine) as session:
-            if not scope_accounts:
-                session.commit()
-                return 0
-
-            account_lookup = get_or_create_accounts(session, scope_accounts)
-            scope_account_ids = {account_lookup[account] for account in scope_accounts}
-
-            # Replace semantics per fetched account scope:
-            # clear prior snapshot rows for these accounts, then insert fresh rows.
-            if scope_account_ids:
-                session.execute(delete(Position).where(Position.account_id.in_(scope_account_ids)))
-
-            for position in positions:
-                contract = position.contract
-                account_id = account_lookup[position.account]
-                stmt = (
-                    insert(Position)
-                    .values(
-                        account_id=account_id,
-                        con_id=contract.conId,
-                        symbol=contract.symbol,
-                        sec_type=contract.secType,
-                        exchange=contract.exchange,
-                        primary_exchange=contract.primaryExchange,
-                        currency=contract.currency,
-                        local_symbol=contract.localSymbol,
-                        trading_class=contract.tradingClass,
-                        last_trade_date=contract.lastTradeDateOrContractMonth,
-                        strike=contract.strike,
-                        right=contract.right,
-                        multiplier=contract.multiplier,
-                        position=position.position,
-                        avg_cost=position.avgCost,
-                        fetched_at=now,
-                    )
-                    .on_conflict_do_update(
-                        constraint="uq_account_id_con_id",
-                        set_={
-                            "symbol": contract.symbol,
-                            "sec_type": contract.secType,
-                            "exchange": contract.exchange,
-                            "primary_exchange": contract.primaryExchange,
-                            "currency": contract.currency,
-                            "local_symbol": contract.localSymbol,
-                            "trading_class": contract.tradingClass,
-                            "last_trade_date": contract.lastTradeDateOrContractMonth,
-                            "strike": contract.strike,
-                            "right": contract.right,
-                            "multiplier": contract.multiplier,
-                            "position": position.position,
-                            "avg_cost": position.avgCost,
-                            "fetched_at": now,
-                        },
-                    )
-                )
-                session.execute(stmt)
-
-            session.commit()
-        return len(positions)
+        return sync_positions_with_ib(engine=engine, ib=ib)
     finally:
         if ib.isConnected():
             ib.disconnect()
+
+
+def sync_positions_with_ib(
+    engine: Engine,
+    ib: IB,
+) -> int:
+    positions = ib.positions()
+    position_accounts = {position.account for position in positions if position.account}
+    scope_accounts = position_accounts
+
+    now = datetime.now(timezone.utc)
+    with Session(engine) as session:
+        if not scope_accounts:
+            session.commit()
+            return 0
+
+        account_lookup = get_or_create_accounts(session, scope_accounts)
+        scope_account_ids = {account_lookup[account] for account in scope_accounts}
+
+        # Replace semantics per fetched account scope:
+        # clear prior snapshot rows for these accounts, then insert fresh rows.
+        if scope_account_ids:
+            session.execute(delete(Position).where(Position.account_id.in_(scope_account_ids)))
+
+        for position in positions:
+            contract = position.contract
+            account_id = account_lookup[position.account]
+            stmt = (
+                insert(Position)
+                .values(
+                    account_id=account_id,
+                    con_id=contract.conId,
+                    symbol=contract.symbol,
+                    sec_type=contract.secType,
+                    exchange=contract.exchange,
+                    primary_exchange=contract.primaryExchange,
+                    currency=contract.currency,
+                    local_symbol=contract.localSymbol,
+                    trading_class=contract.tradingClass,
+                    last_trade_date=contract.lastTradeDateOrContractMonth,
+                    strike=contract.strike,
+                    right=contract.right,
+                    multiplier=contract.multiplier,
+                    position=position.position,
+                    avg_cost=position.avgCost,
+                    fetched_at=now,
+                )
+                .on_conflict_do_update(
+                    constraint="uq_account_id_con_id",
+                    set_={
+                        "symbol": contract.symbol,
+                        "sec_type": contract.secType,
+                        "exchange": contract.exchange,
+                        "primary_exchange": contract.primaryExchange,
+                        "currency": contract.currency,
+                        "local_symbol": contract.localSymbol,
+                        "trading_class": contract.tradingClass,
+                        "last_trade_date": contract.lastTradeDateOrContractMonth,
+                        "strike": contract.strike,
+                        "right": contract.right,
+                        "multiplier": contract.multiplier,
+                        "position": position.position,
+                        "avg_cost": position.avgCost,
+                        "fetched_at": now,
+                    },
+                )
+            )
+            session.execute(stmt)
+
+        session.commit()
+    return len(positions)

@@ -2,19 +2,32 @@
 
 from __future__ import annotations
 
+import logging
+import os
 from typing import Any
 
+from ib_async import Contract
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from src.data.exchanges import resolve_exchange
+from src.db import get_engine
 from src.models import ContractRef
 from src.services.cl_contracts import (
     days_until_contract_expiry,
     display_contract_month,
     infer_contract_month_from_local_symbol,
 )
+from src.utils.env_vars import get_int_env
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_MIN_DAYS_TO_EXPIRY = 7
+
+
+def _normalize_expiry(raw: str) -> str:
+    """Normalize expiry input like '2026-03-16' or '20260316' to 'YYYYMMDD'."""
+    return raw.strip().replace("-", "")
 
 
 def find_contracts(
@@ -26,6 +39,7 @@ def find_contracts(
     min_days_to_expiry: int | None = None,
     strike: float | None = None,
     right: str | None = None,
+    contract_expiry: str | None = None,
 ) -> list[dict[str, Any]]:
     """Query contracts table with flexible filtering. Returns list of contract dicts."""
     stmt = (
@@ -42,7 +56,9 @@ def find_contracts(
         stmt = stmt.where(ContractRef.strike == strike)
     if right is not None:
         stmt = stmt.where(ContractRef.right == right.upper())
-    if contract_month is not None:
+    if contract_expiry is not None:
+        stmt = stmt.where(ContractRef.contract_expiry == _normalize_expiry(contract_expiry))
+    elif contract_month is not None:
         stmt = stmt.where(ContractRef.contract_month == contract_month)
 
     contracts = session.execute(stmt).scalars().all()
@@ -314,3 +330,99 @@ def _select_option(
         f"{symbol} {sec_type}",
     )
     return _build_result(selected, dte, req_month, req_available, avail_months)
+
+
+def _fetch_from_ibkr(
+    symbol: str,
+    sec_type: str,
+    strike: float | None = None,
+    right: str | None = None,
+) -> int:
+    """Fetch contracts from IBKR and upsert into DB. Returns count of synced contracts."""
+    from src.services.contract_sync import sync_contracts
+
+    port = get_int_env("BROKER_TWS_PORT")
+    if port is None:
+        logger.warning("BROKER_TWS_PORT not set, cannot fall back to IBKR lookup")
+        return 0
+
+    host = os.environ.get("BROKER_TWS_HOST", "127.0.0.1")
+    client_id = get_int_env("BROKER_TWS_CLIENT_ID", 10)
+
+    try:
+        exchange = resolve_exchange(symbol, sec_type)
+    except ValueError:
+        exchange = "SMART"
+
+    spec = Contract(
+        symbol=symbol,
+        secType=sec_type,
+        exchange=exchange,
+        currency="USD",
+    )
+    if strike is not None:
+        spec.strike = strike
+    if right is not None:
+        spec.right = right.upper()
+
+    engine = get_engine()
+    try:
+        result = sync_contracts(
+            engine=engine,
+            host=host,
+            port=port,
+            client_id=client_id,
+            specs=[spec],
+        )
+        count = result.get("synced_count", 0)
+        logger.info("IBKR fallback fetched %d contracts for %s %s", count, symbol, sec_type)
+        return count
+    except Exception:
+        logger.exception("IBKR fallback failed for %s %s", symbol, sec_type)
+        return 0
+
+
+def find_contracts_with_fallback(
+    session: Session,
+    symbol: str,
+    sec_type: str,
+    is_active: bool = True,
+    contract_month: str | None = None,
+    min_days_to_expiry: int | None = None,
+    strike: float | None = None,
+    right: str | None = None,
+    contract_expiry: str | None = None,
+) -> list[dict[str, Any]]:
+    """Query DB first; if no results, fetch from IBKR, upsert, and re-query."""
+    results = find_contracts(
+        session=session,
+        symbol=symbol,
+        sec_type=sec_type,
+        is_active=is_active,
+        contract_month=contract_month,
+        min_days_to_expiry=min_days_to_expiry,
+        strike=strike,
+        right=right,
+        contract_expiry=contract_expiry,
+    )
+    if results:
+        return results
+
+    logger.info("No DB contracts for %s %s, trying IBKR fallback", symbol, sec_type)
+    fetched = _fetch_from_ibkr(symbol, sec_type, strike=strike, right=right)
+    if fetched == 0:
+        return []
+
+    # Re-query after upsert (expire session cache to see new rows)
+    session.expire_all()
+    return find_contracts(
+        session=session,
+        symbol=symbol,
+        sec_type=sec_type,
+        is_active=is_active,
+        contract_month=contract_month,
+        min_days_to_expiry=min_days_to_expiry,
+        strike=strike,
+        right=right,
+        contract_expiry=contract_expiry,
+    )
