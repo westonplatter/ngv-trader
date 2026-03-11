@@ -15,6 +15,7 @@ interface Trade {
   account_id: number;
   account_alias: string | null;
   contract_display_name: string | null;
+  lifecycle: string | null;
   ib_perm_id: number | null;
   order_ref: string | null;
   ib_order_id: number | null;
@@ -26,6 +27,7 @@ interface Trade {
   status: string;
   total_quantity: number;
   avg_price: number | null;
+  realized_pnl: number | null;
   first_executed_at: string | null;
   last_executed_at: string | null;
   is_assigned: boolean;
@@ -56,6 +58,7 @@ interface TradeExecution {
   currency: string | null;
   liquidity: string | null;
   commission: number | null;
+  realized_pnl: number | null;
   is_canonical: boolean;
   contract_display: string | null;
   fetched_at: string;
@@ -767,11 +770,17 @@ export default function TradesTable() {
               <th className="w-10 whitespace-nowrap px-2 py-2 font-semibold text-gray-700">
                 Side
               </th>
+              <th className="whitespace-nowrap px-2 py-2 font-semibold text-gray-700">
+                Lifecycle
+              </th>
               <th className="w-10 whitespace-nowrap px-2 py-2 font-semibold text-gray-700">
                 Qty
               </th>
               <th className="whitespace-nowrap px-3 py-2 font-semibold text-gray-700">
                 Avg Price
+              </th>
+              <th className="whitespace-nowrap px-3 py-2 font-semibold text-gray-700">
+                Realized PnL
               </th>
               <th className="whitespace-nowrap px-3 py-2 font-semibold text-gray-700">
                 Account
@@ -794,7 +803,7 @@ export default function TradesTable() {
             {!loading && filteredTrades.length === 0 && (
               <tr>
                 <td
-                  colSpan={12}
+                  colSpan={14}
                   className="px-3 py-6 text-center text-gray-500"
                 >
                   No trades found.
@@ -825,10 +834,18 @@ export default function TradesTable() {
                     {trade.side ?? "-"}
                   </td>
                   <td className="whitespace-nowrap px-2 py-2 text-xs text-gray-700">
+                    {trade.lifecycle ?? "-"}
+                  </td>
+                  <td className="whitespace-nowrap px-2 py-2 text-xs text-gray-700">
                     {privacyMode ? PRIVACY_MASK : trade.total_quantity}
                   </td>
                   <td className="whitespace-nowrap px-3 py-2 text-gray-700">
                     {formatPrice(trade.avg_price)}
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-2 text-gray-700">
+                    {privacyMode
+                      ? PRIVACY_MASK
+                      : formatPrice(trade.realized_pnl)}
                   </td>
                   <td className="whitespace-nowrap px-3 py-2 text-gray-800">
                     {trade.account_alias ?? `Account ${trade.account_id}`}
@@ -865,7 +882,7 @@ export default function TradesTable() {
                 </tr>
                 {expandedTradeId === trade.id && (
                   <tr>
-                    <td colSpan={12} className="p-0">
+                    <td colSpan={14} className="p-0">
                       <div className="border-b border-gray-200 bg-gray-50 px-6 py-3">
                         <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-600">
                           Executions
@@ -892,6 +909,9 @@ export default function TradesTable() {
                                 <th className="px-2 py-1 font-medium">Price</th>
                                 <th className="px-2 py-1 font-medium">
                                   Commission
+                                </th>
+                                <th className="px-2 py-1 font-medium">
+                                  Realized PnL
                                 </th>
                                 <th className="px-2 py-1 font-medium">
                                   Exchange
@@ -937,6 +957,11 @@ export default function TradesTable() {
                                   </td>
                                   <td className="whitespace-nowrap px-2 py-1 text-gray-700">
                                     {formatPrice(execution.commission)}
+                                  </td>
+                                  <td className="whitespace-nowrap px-2 py-1 text-gray-700">
+                                    {privacyMode
+                                      ? PRIVACY_MASK
+                                      : formatPrice(execution.realized_pnl)}
                                   </td>
                                   <td className="whitespace-nowrap px-2 py-1 text-gray-700">
                                     {execution.exchange ?? "-"}
