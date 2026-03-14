@@ -7,9 +7,9 @@ from sqlalchemy import engine_from_config, pool
 _env_name = os.environ.get("ENV", "dev")
 load_dotenv(f".env.{_env_name}")
 
-from alembic import context
-from src.db import get_database_url
-from src.models import Base
+from alembic import context  # noqa: E402
+from src.db import get_database_url  # noqa: E402
+from src.models import Base  # noqa: E402
 
 config = context.config
 

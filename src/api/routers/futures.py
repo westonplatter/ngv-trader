@@ -55,8 +55,8 @@ def _display_name(symbol: str, contract_month: str | None, sec_type: str, **kwar
 @router.get("/futures/{symbol}/term-structure")
 def get_term_structure(
     symbol: str,
-    front_n: int = Query(default=6, ge=1, le=24),
-    as_of: datetime | None = Query(default=None),
+    front_n: int = Query(default=6, ge=1, le=24),  # noqa: B008
+    as_of: datetime | None = Query(default=None),  # noqa: B008
 ):
     engine = get_engine()
     symbol = symbol.upper()
