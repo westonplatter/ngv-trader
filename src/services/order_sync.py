@@ -13,7 +13,8 @@ from sqlalchemy import select
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
-from src.models import Account, Order
+from src.api.routers.orders import to_order_response
+from src.models import Account, ContractRef, Order
 from src.services.order_queue import (
     ORDER_STATUS_CANCELLED,
     ORDER_STATUS_FILLED,
@@ -27,6 +28,7 @@ from src.services.order_queue import (
     now_utc,
     transition_order_status,
 )
+from src.services.ui_events import TOPIC_ORDERS, broadcaster, make_event
 
 DEFAULT_ORDER_SYNC_SOURCE = "broker_sync"
 
@@ -413,15 +415,34 @@ def sync_orders_with_ib(
     created_count = 0
     updated_count = 0
     with Session(engine) as session:
+        created_ids: list[int] = []
+        updated_ids: list[int] = []
         for trade in trades:
             order = _find_matching_order(session, trade)
             if order is None:
-                _create_order_from_trade(session, trade)
+                new_order = _create_order_from_trade(session, trade)
+                created_ids.append(new_order.id)
                 created_count += 1
                 continue
             if _sync_trade_onto_order(session, order, trade):
+                updated_ids.append(order.id)
                 updated_count += 1
         session.commit()
+
+        if created_ids or updated_ids:
+            created_ids_set = set(created_ids)
+            all_ids = created_ids + updated_ids
+            stmt = (
+                select(Order, Account, ContractRef)
+                .outerjoin(Account, Order.account_id == Account.id)
+                .outerjoin(ContractRef, Order.con_id == ContractRef.con_id)
+                .where(Order.id.in_(all_ids))
+            )
+            rows = session.execute(stmt).all()
+            for order, account, contract_ref in rows:
+                resp = to_order_response(order, account, contract_ref)
+                event_type = "order.created" if order.id in created_ids_set else "order.updated"
+                broadcaster.publish(make_event(TOPIC_ORDERS, event_type, resp, entity_id=order.id))
 
     return {
         "fetched_trades_count": len(trades),

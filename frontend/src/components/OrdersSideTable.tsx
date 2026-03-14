@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { usePrivacy } from "../contexts/PrivacyContext";
 import { PRIVACY_MASK } from "../utils/privacy";
 import { API_BASE_URL } from "../config";
+import { useSSE, type ConnectionStatus } from "../lib/events";
 
 interface OrderRow {
   id: number;
@@ -84,33 +85,51 @@ export default function OrdersSideTable() {
   const [error, setError] = useState<string | null>(null);
   const [nowMs, setNowMs] = useState<number>(() => Date.now());
 
-  useEffect(() => {
-    let active = true;
+  // Track previous SSE status so we can detect reconnect transitions.
+  const prevStatusRef = useRef<ConnectionStatus | null>(null);
 
-    const load = () => {
-      fetch(`${API_BASE_URL}/orders`)
-        .then((res) => {
-          if (!res.ok) throw new Error(`HTTP ${res.status}`);
-          return res.json();
-        })
-        .then((rows: OrderRow[]) => {
-          if (!active) return;
-          setOrders(rows.slice(0, 20));
-          setError(null);
-        })
-        .catch((err: Error) => {
-          if (!active) return;
-          setError(err.message);
-        });
-    };
-
-    load();
-    const timer = window.setInterval(load, 2500);
-    return () => {
-      active = false;
-      window.clearInterval(timer);
-    };
+  const loadOrders = useCallback(() => {
+    fetch(`${API_BASE_URL}/orders`)
+      .then((res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.json();
+      })
+      .then((rows: OrderRow[]) => {
+        setOrders(rows.slice(0, 20));
+        setError(null);
+      })
+      .catch((err: Error) => setError(err.message));
   }, []);
+
+  // Initial fetch on mount.
+  useEffect(() => {
+    loadOrders();
+  }, [loadOrders]);
+
+  // Merge an incoming SSE order payload into the orders list.
+  const handleOrderEvent = useCallback((payload: OrderRow) => {
+    setOrders((prev) => {
+      const idx = prev.findIndex((o) => o.id === payload.id);
+      let next: OrderRow[];
+      if (idx >= 0) {
+        next = [...prev];
+        next[idx] = payload;
+      } else {
+        next = [payload, ...prev];
+      }
+      return next.slice(0, 20);
+    });
+  }, []);
+
+  const sseStatus = useSSE<OrderRow>("orders", handleOrderEvent);
+
+  // Re-fetch REST snapshot on reconnect.
+  useEffect(() => {
+    if (prevStatusRef.current === "disconnected" && sseStatus === "connected") {
+      loadOrders();
+    }
+    prevStatusRef.current = sseStatus;
+  }, [sseStatus, loadOrders]);
 
   useEffect(() => {
     const timer = window.setInterval(() => setNowMs(Date.now()), 1000);
@@ -121,7 +140,6 @@ export default function OrdersSideTable() {
     <div className="min-w-0 h-full min-h-0 rounded border border-gray-300 bg-white p-3 flex flex-col">
       <div className="mb-2 flex items-center justify-between">
         <h3 className="text-sm font-semibold text-gray-900">Orders</h3>
-        <span className="text-xs text-gray-500">Auto-refresh 2.5s</span>
       </div>
 
       {error && <p className="mb-2 text-xs text-red-600">Error: {error}</p>}

@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePrivacy } from "../contexts/PrivacyContext";
 import { PRIVACY_MASK } from "../utils/privacy";
 import { API_BASE_URL } from "../config";
+import { useSSE, type ConnectionStatus } from "../lib/events";
 
 interface Order {
   id: number;
@@ -93,7 +94,10 @@ export default function OrdersTable() {
   );
   const [symbolRegexFilter, setSymbolRegexFilter] = useState("");
 
-  const loadOrders = () => {
+  // Track previous SSE status so we can detect reconnect transitions.
+  const prevStatusRef = useRef<ConnectionStatus | null>(null);
+
+  const loadOrders = useCallback(() => {
     fetch(`${API_BASE_URL}/orders`)
       .then((res) => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -109,7 +113,7 @@ export default function OrdersTable() {
       .finally(() => {
         setLoading(false);
       });
-  };
+  }, []);
 
   const symbolFilter = useMemo(() => {
     const raw = symbolRegexFilter.trim();
@@ -159,36 +163,33 @@ export default function OrdersTable() {
     });
   }, [filteredOrders]);
 
+  // Initial fetch on mount.
   useEffect(() => {
-    let active = true;
+    loadOrders();
+  }, [loadOrders]);
 
-    const load = () => {
-      fetch(`${API_BASE_URL}/orders`)
-        .then((res) => {
-          if (!res.ok) throw new Error(`HTTP ${res.status}`);
-          return res.json();
-        })
-        .then((data: Order[]) => {
-          if (!active) return;
-          setOrders(data);
-          setError(null);
-        })
-        .catch((err: Error) => {
-          if (!active) return;
-          setError(err.message);
-        })
-        .finally(() => {
-          if (active) setLoading(false);
-        });
-    };
-
-    load();
-    const timer = window.setInterval(load, 3000);
-    return () => {
-      active = false;
-      window.clearInterval(timer);
-    };
+  // Merge an incoming SSE order payload into the orders list.
+  const handleOrderEvent = useCallback((payload: Order) => {
+    setOrders((prev) => {
+      const idx = prev.findIndex((o) => o.id === payload.id);
+      if (idx >= 0) {
+        const next = [...prev];
+        next[idx] = payload;
+        return next;
+      }
+      return [payload, ...prev];
+    });
   }, []);
+
+  const sseStatus = useSSE<Order>("orders", handleOrderEvent);
+
+  // Re-fetch REST snapshot on reconnect.
+  useEffect(() => {
+    if (prevStatusRef.current === "disconnected" && sseStatus === "connected") {
+      loadOrders();
+    }
+    prevStatusRef.current = sseStatus;
+  }, [sseStatus, loadOrders]);
 
   const kickOffOrderSync = async () => {
     setSyncing(true);

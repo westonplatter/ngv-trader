@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from src.api.deps import get_db
+from src.api.routers.jobs import to_job_response
 from src.models import Account, ContractRef, Order, OrderEvent
 from src.services.jobs import JOB_TYPE_ORDER_FETCH_SYNC, enqueue_job
 from src.services.order_mutations import OrderCreateInput, create_queued_order
@@ -18,6 +19,7 @@ from src.services.order_queue import (
     ORDER_TERMINAL_STATUSES,
     transition_order_status,
 )
+from src.services.ui_events import TOPIC_JOBS, TOPIC_ORDERS, broadcaster, make_event
 from src.utils.contract_display import contract_display_name
 
 router = APIRouter()
@@ -307,6 +309,8 @@ def enqueue_orders_sync(
         max_attempts=body.max_attempts,
     )
     db.commit()
+    db.refresh(job)
+    broadcaster.publish(make_event(TOPIC_JOBS, "job.created", to_job_response(job), entity_id=job.id))
     return OrderSyncResponse(
         job_id=job.id,
         job_type=job.job_type,
@@ -359,4 +363,6 @@ def cancel_order(
     )
     db.commit()
     db.refresh(order)
-    return to_order_response(order, account)
+    resp = to_order_response(order, account)
+    broadcaster.publish(make_event(TOPIC_ORDERS, "order.cancelled", resp, entity_id=order.id))
+    return resp

@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { API_BASE_URL } from "../config";
+import { useSSE, type ConnectionStatus } from "../lib/events";
 
 type LightColor = "green" | "yellow" | "red";
 
@@ -39,41 +40,52 @@ function formatAge(seconds: number | null): string {
 
 export default function WorkerStatusLights() {
   const [statusMap, setStatusMap] = useState<Record<string, WorkerStatus>>({});
+  const prevStatusRef = useRef<ConnectionStatus | null>(null);
 
-  useEffect(() => {
-    let active = true;
-
-    const load = () => {
-      fetch(`${API_BASE_URL}/workers/status`)
-        .then((res) => {
-          if (!res.ok) throw new Error(`HTTP ${res.status}`);
-          return res.json();
-        })
-        .then((rows: WorkerStatus[]) => {
-          if (!active) return;
-          const next: Record<string, WorkerStatus> = {};
-          rows.forEach((row) => {
-            next[row.worker_type] = row;
-          });
-          setStatusMap(next);
-        })
-        .catch(() => {
-          if (!active) return;
-          const next: Record<string, WorkerStatus> = {};
-          KNOWN_WORKERS.forEach((workerType) => {
-            next[workerType] = fallbackStatus(workerType);
-          });
-          setStatusMap(next);
+  const loadStatuses = useCallback(() => {
+    fetch(`${API_BASE_URL}/workers/status`)
+      .then((res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.json();
+      })
+      .then((rows: WorkerStatus[]) => {
+        const next: Record<string, WorkerStatus> = {};
+        rows.forEach((row) => {
+          next[row.worker_type] = row;
         });
-    };
-
-    load();
-    const timer = window.setInterval(load, 4000);
-    return () => {
-      active = false;
-      window.clearInterval(timer);
-    };
+        setStatusMap(next);
+      })
+      .catch(() => {
+        const next: Record<string, WorkerStatus> = {};
+        KNOWN_WORKERS.forEach((workerType) => {
+          next[workerType] = fallbackStatus(workerType);
+        });
+        setStatusMap(next);
+      });
   }, []);
+
+  // Initial fetch on mount.
+  useEffect(() => {
+    loadStatuses();
+  }, [loadStatuses]);
+
+  // Merge SSE worker heartbeat events.
+  const handleWorkerEvent = useCallback((payload: WorkerStatus) => {
+    setStatusMap((prev) => ({
+      ...prev,
+      [payload.worker_type]: payload,
+    }));
+  }, []);
+
+  const sseStatus = useSSE<WorkerStatus>("worker_status", handleWorkerEvent);
+
+  // Re-fetch on reconnect.
+  useEffect(() => {
+    if (prevStatusRef.current === "disconnected" && sseStatus === "connected") {
+      loadStatuses();
+    }
+    prevStatusRef.current = sseStatus;
+  }, [sseStatus, loadStatuses]);
 
   return (
     <div className="ml-auto flex items-center gap-4">

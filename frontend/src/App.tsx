@@ -62,12 +62,7 @@ function App() {
       <nav
         className={`flex items-center gap-6 ${horizontalPaddingClass} py-3 border-b border-gray-200 bg-white`}
       >
-        <span className="font-bold text-lg tracking-tight">
-          ngtrader
-          <span className="ml-2 inline-flex items-center rounded bg-black px-2 py-0.5 text-xs font-extrabold uppercase tracking-wider text-white">
-            Pro
-          </span>
-        </span>
+        <span className="font-bold text-lg tracking-tight">ngv-trader</span>
         {NAV_ITEMS.map((item) => (
           <NavLink
             key={item.path}

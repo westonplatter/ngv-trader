@@ -1,5 +1,5 @@
 [project]
-name = "ngtrader"
+name = "ngv-trader"
 version = "0.1.1"
 description = "Review market price action, monitor portfolio strategies, and execute live trades with AI"
 readme = "README.md"
@@ -13,7 +13,7 @@ dependencies = [
   "alembic>=1.14",
   "psycopg2-binary>=2.9",
   "pandera[pandas]>=0.20",
-  "fastapi>=0.115",
+  "fastapi>=0.135",
   "uvicorn[standard]>=0.34",
 ]
 
