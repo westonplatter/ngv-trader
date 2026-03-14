@@ -57,20 +57,28 @@ logger = logging.getLogger("worker:jobs")
 _API_BASE_URL = os.environ.get("API_BASE_URL", "http://localhost:8000/api/v1")
 
 
+def _notify_api(path: str, payload: dict) -> None:
+    """Fire-and-forget POST to an API notification endpoint."""
+    import json
+    import urllib.request
+
+    url = f"{_API_BASE_URL}{path}"
+    if not url.startswith(("http://", "https://")):
+        return
+    data = json.dumps(payload).encode()
+    req = urllib.request.Request(
+        url,
+        data=data,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    urllib.request.urlopen(req, timeout=2)  # noqa: S310
+
+
 def _notify_job_event(job_id: int, event: str = "job.updated") -> None:
     """Fire-and-forget notification to the API SSE broadcaster."""
     try:
-        import json
-        import urllib.request
-
-        data = json.dumps({"job_id": job_id, "event": event}).encode()
-        req = urllib.request.Request(
-            f"{_API_BASE_URL}/events/notify-job",
-            data=data,
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-        urllib.request.urlopen(req, timeout=2)
+        _notify_api("/events/notify-job", {"job_id": job_id, "event": event})
         logger.debug("SSE notify job #%d (%s) OK", job_id, event)
     except Exception as exc:
         logger.warning("SSE notify job #%d failed: %s", job_id, exc)

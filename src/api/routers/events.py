@@ -13,6 +13,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from src.api.deps import get_db
+
+DB_SESSION_DEPENDENCY = Depends(get_db)
+
 from src.api.routers.jobs import to_job_response
 from src.api.routers.orders import to_order_response
 from src.models import Account, ContractRef, Job, Order, WorkerHeartbeat
@@ -71,7 +74,7 @@ class NotifyOrderRequest(BaseModel):
 @router.post("/events/notify-job", status_code=204)
 def notify_job(
     body: NotifyJobRequest,
-    db: Session = Depends(get_db),
+    db: Session = DB_SESSION_DEPENDENCY,
 ) -> None:
     job = db.get(Job, body.job_id)
     if job is None:
@@ -87,7 +90,7 @@ class NotifyWorkerStatusRequest(BaseModel):
 @router.post("/events/notify-worker-status", status_code=204)
 def notify_worker_status(
     body: NotifyWorkerStatusRequest,
-    db: Session = Depends(get_db),
+    db: Session = DB_SESSION_DEPENDENCY,
 ) -> None:
     row = db.execute(select(WorkerHeartbeat).where(WorkerHeartbeat.worker_type == body.worker_type)).scalar_one_or_none()
     if row is None:
@@ -108,7 +111,7 @@ def notify_worker_status(
 @router.post("/events/notify-order", status_code=204)
 def notify_order(
     body: NotifyOrderRequest,
-    db: Session = Depends(get_db),
+    db: Session = DB_SESSION_DEPENDENCY,
 ) -> None:
     stmt = (
         select(Order, Account, ContractRef)
