@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from src.api.deps import get_db
 from src.models import Job
 from src.services.jobs import enqueue_job, now_utc
+from src.services.ui_events import TOPIC_JOBS, broadcaster, make_event
 
 router = APIRouter()
 DB_SESSION_DEPENDENCY = Depends(get_db)
@@ -97,7 +98,9 @@ def create_job(
     )
     db.commit()
     db.refresh(job)
-    return to_job_response(job)
+    response = to_job_response(job)
+    broadcaster.publish(make_event(TOPIC_JOBS, "job.created", response, entity_id=job.id))
+    return response
 
 
 @router.post("/jobs/{job_id}/archive", response_model=JobResponse)
@@ -111,4 +114,7 @@ def archive_job(job_id: int, db: Session = DB_SESSION_DEPENDENCY) -> JobResponse
         job.updated_at = now
         db.commit()
         db.refresh(job)
+        response = to_job_response(job)
+        broadcaster.publish(make_event(TOPIC_JOBS, "job.archived", response, entity_id=job.id))
+        return response
     return to_job_response(job)

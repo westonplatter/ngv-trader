@@ -49,6 +49,32 @@ from src.utils.env_vars import get_int_env
 
 logger = logging.getLogger("worker:jobs")
 
+# ---------------------------------------------------------------------------
+# SSE notification helper — best-effort POST to the API process so that
+# job state transitions reach SSE subscribers in real time.
+# ---------------------------------------------------------------------------
+
+_API_BASE_URL = os.environ.get("API_BASE_URL", "http://localhost:8000/api/v1")
+
+
+def _notify_job_event(job_id: int, event: str = "job.updated") -> None:
+    """Fire-and-forget notification to the API SSE broadcaster."""
+    try:
+        import json
+        import urllib.request
+
+        data = json.dumps({"job_id": job_id, "event": event}).encode()
+        req = urllib.request.Request(
+            f"{_API_BASE_URL}/events/notify-job",
+            data=data,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        urllib.request.urlopen(req, timeout=2)
+        logger.debug("SSE notify job #%d (%s) OK", job_id, event)
+    except Exception as exc:
+        logger.warning("SSE notify job #%d failed: %s", job_id, exc)
+
 
 @dataclass
 class IBPoolEntry:
@@ -523,6 +549,7 @@ def main() -> int:
                         break
                     job_id = claimed_job.id
                     session.commit()
+                _notify_job_event(job_id, "job.updated")
 
                 processed += 1
                 with Session(engine) as session:
@@ -541,6 +568,7 @@ def main() -> int:
                             retry_delay_seconds=0,
                         )
                         session.commit()
+                        _notify_job_event(job_id, "job.updated")
                         continue
 
                     logger.info("job #%d: starting %s", job_id, job.job_type)
@@ -552,6 +580,7 @@ def main() -> int:
                         fail_or_retry_job(session, job, str(exc))
                         logger.error("job #%d: failed %s — %s", job_id, job.job_type, exc)
                     session.commit()
+                    _notify_job_event(job_id, "job.updated")
 
             upsert_worker_heartbeat(
                 engine,

@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { API_BASE_URL } from "../config";
+import { useSSE, type ConnectionStatus } from "../lib/events";
 
 interface Job {
   id: number;
@@ -152,7 +153,9 @@ export default function MarketDataPage() {
   const [dteLte, setDteLte] = useState<number | null>(null);
   const [modulus, setModulus] = useState<number | null>(null);
 
-  const loadJobs = () => {
+  const prevStatusRef = useRef<ConnectionStatus | null>(null);
+
+  const loadJobs = useCallback(() => {
     fetch(`${API_BASE_URL}/jobs?include_archived=false`)
       .then((res) => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -163,13 +166,40 @@ export default function MarketDataPage() {
         setError(null);
       })
       .catch((err: Error) => setError(err.message));
-  };
+  }, []);
 
+  // Initial fetch on mount.
   useEffect(() => {
     loadJobs();
-    const timer = window.setInterval(loadJobs, 3000);
-    return () => window.clearInterval(timer);
+  }, [loadJobs]);
+
+  // Merge SSE job events (only for market-data job types).
+  const handleJobEvent = useCallback((payload: Job, eventType: string) => {
+    if (!MARKET_DATA_JOB_TYPES.includes(payload.job_type)) return;
+    if (eventType === "job.archived") {
+      setJobs((prev) => prev.filter((j) => j.id !== payload.id));
+      return;
+    }
+    setJobs((prev) => {
+      const idx = prev.findIndex((j) => j.id === payload.id);
+      if (idx >= 0) {
+        const next = [...prev];
+        next[idx] = payload;
+        return next;
+      }
+      return [payload, ...prev];
+    });
   }, []);
+
+  const sseStatus = useSSE<Job>("jobs", handleJobEvent);
+
+  // Re-fetch REST snapshot on reconnect.
+  useEffect(() => {
+    if (prevStatusRef.current === "disconnected" && sseStatus === "connected") {
+      loadJobs();
+    }
+    prevStatusRef.current = sseStatus;
+  }, [sseStatus, loadJobs]);
 
   const enqueueJob = async (
     jobType: string,
@@ -408,7 +438,6 @@ export default function MarketDataPage() {
           <h2 className="text-sm font-semibold text-gray-800">
             Market Data Jobs
           </h2>
-          <span className="text-xs text-gray-500">Auto-refresh 3s</span>
         </div>
         <div className="overflow-auto">
           <table className="min-w-full border-collapse text-xs">

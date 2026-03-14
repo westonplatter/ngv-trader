@@ -13,7 +13,7 @@ dependencies = [
   "alembic>=1.14",
   "psycopg2-binary>=2.9",
   "pandera[pandas]>=0.20",
-  "fastapi>=0.115",
+  "fastapi>=0.135",
   "uvicorn[standard]>=0.34",
 ]
 
