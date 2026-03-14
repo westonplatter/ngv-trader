@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from src.api.deps import get_db
-from src.api.routers.jobs import JobResponse, to_job_response
+from src.api.routers.jobs import to_job_response
 from src.models import Account, ContractRef, Order, OrderEvent
 from src.services.jobs import JOB_TYPE_ORDER_FETCH_SYNC, enqueue_job
 from src.services.order_mutations import OrderCreateInput, create_queued_order
