@@ -81,12 +81,13 @@ Use a hybrid model:
 
 Use FastAPI's built-in SSE support (`fastapi.sse.EventSourceResponse` and `ServerSentEvent`, added in FastAPI 0.135.0) with an in-process event broadcaster.
 
+Prerequisite: upgrade FastAPI from 0.129.0 to ≥0.135.0 (`uv add "fastapi>=0.135"`).
+
 FastAPI handles automatically:
 
 1. keepalive pings every 15 seconds
 2. `Cache-Control: no-cache` header
 3. `X-Accel-Buffering: no` header (prevents Nginx buffering)
-4. `Last-Event-ID` header support for connection resumption
 
 Core pieces:
 
@@ -98,12 +99,13 @@ Core pieces:
    1. `GET /api/v1/events/stream`
    2. optional query `topics=jobs,orders`
    3. uses `EventSourceResponse` as `response_class`
-   4. yields `ServerSentEvent` instances with `data`, `event`, `id` fields
+   4. yields `ServerSentEvent` instances with `data`, `event` fields
 3. publisher hooks in existing mutation/sync flows
    1. job enqueue
    2. job status transitions
-   3. order create/update/cancel/sync
-   4. worker heartbeat changes if exposed
+   3. job archive (via `PUT /api/v1/jobs/{id}/archive`)
+   4. order create/update/cancel/sync
+   5. worker heartbeat changes if exposed
 
 ### Frontend
 
@@ -179,14 +181,17 @@ Worker status:
 
 ### Payload Strategy
 
-Use full row payloads for Phase 1, not patches.
+Use full response DTO payloads for Phase 1, not patches or raw DB rows.
+
+SSE payloads must match the same shape returned by the corresponding REST endpoints. For orders this means the enriched `OrderResponse` projection (with `account_alias`, `contract_display_name`, `option_right`, `option_strike`, contract dates, etc. from `to_order_response()`), not the raw `Order` model. For jobs this means the same shape returned by `GET /api/v1/jobs`.
 
 Reason:
 
-1. simpler client logic
-2. low event volume for this app
-3. easier debugging
-4. avoids drift from partial patch application bugs
+1. simpler client logic — SSE rows are drop-in replacements for REST rows
+2. no shape drift between REST snapshot and SSE updates
+3. low event volume for this app
+4. easier debugging
+5. avoids drift from partial patch application bugs
 
 Example order event:
 
@@ -199,17 +204,49 @@ Example order event:
   "version": 1,
   "payload": {
     "id": 123,
+    "account_id": 1,
+    "account_alias": "paper-1",
     "status": "filled",
     "symbol": "CL",
+    "sec_type": "FUT",
+    "contract_display_name": "CL Jul 2026",
     "side": "SELL",
     "filled_quantity": 1.0,
     "avg_fill_price": 2.31,
+    "option_right": null,
+    "option_strike": null,
     "updated_at": "2026-03-11T15:04:05Z"
   }
 }
 ```
 
 ## Backend Design Details
+
+### SSE Endpoint Implementation
+
+Use `EventSourceResponse` and `ServerSentEvent` from `fastapi.sse`:
+
+```python
+from collections.abc import AsyncIterable
+from fastapi import APIRouter
+from fastapi.sse import EventSourceResponse, ServerSentEvent
+
+router = APIRouter()
+
+@router.get("/events/stream", response_class=EventSourceResponse)
+async def stream_events(
+    topics: str = "jobs,orders",
+) -> AsyncIterable[ServerSentEvent]:
+    subscriber = broadcaster.subscribe(topics.split(","))
+    try:
+        async for event in subscriber:
+            yield ServerSentEvent(
+                data=event.payload,    # response DTO (Pydantic model) — serialized automatically
+                event=event.event,     # e.g. "job.updated", "order.created"
+            )
+    finally:
+        broadcaster.unsubscribe(subscriber)
+```
 
 ### Broadcaster
 
@@ -220,7 +257,7 @@ Behavior:
 1. each SSE connection gets an async queue
 2. publisher writes typed events into matching subscriber queues
 3. disconnect removes the queue
-4. keepalive comments are emitted on a fixed cadence
+4. keepalive pings are handled automatically by FastAPI (every 15s)
 
 This is sufficient for the current single-app-process deployment style.
 
@@ -236,8 +273,9 @@ Required publish points:
 
 1. `enqueue_job`
 2. job worker state transitions
-3. order create/update/cancel mutations
-4. broker order sync updates
+3. job archive (`PUT /api/v1/jobs/{id}/archive` in `src/api/routers/jobs.py`)
+4. order create/update/cancel mutations
+5. broker order sync updates
 
 Rule:
 
@@ -252,7 +290,7 @@ Client flow:
 3. merge incoming full-row updates by `id`
 4. optionally run a slow background reconciliation fetch every few minutes
 
-This avoids requiring resumable event IDs in Phase 1.
+Phase 1 does not support event replay on reconnect. The in-memory broadcaster has no retained event log. On reconnect, the client re-fetches the REST snapshot and resumes receiving live events. Replay support (via `Last-Event-ID` and an event log) is deferred until there is evidence of missed-update problems.
 
 ## Frontend Design Details
 
@@ -308,7 +346,7 @@ Minimum requirements:
 
 ### Keepalive
 
-Send SSE keepalive comments every 10-20 seconds to reduce idle timeout risk through local proxies and browser intermediaries.
+FastAPI's `EventSourceResponse` sends keepalive ping comments every 15 seconds automatically. No custom keepalive logic is needed.
 
 ### Backpressure
 
@@ -367,14 +405,28 @@ WebSockets are not justified for Phase 1.
 
 ## Rollout Plan
 
-1. Add backend in-process broadcaster and shared event models.
-2. Add SSE endpoint for `jobs` and `orders`.
-3. Publish events from job and order mutation paths after commit.
-4. Add frontend shared EventSource client.
-5. Convert `JobsTable` and `OrdersTable` to snapshot + stream.
-6. Convert `OrdersSideTable` to shared orders store.
-7. Reduce or remove interval polling in those views.
-8. Optionally adapt worker status lights.
+### Sequential foundation (each step shapes the next)
+
+1. Upgrade FastAPI to ≥0.135.0 for built-in SSE support.
+2. Create in-memory async event broadcaster (`src/services/ui_events.py`).
+3. Define shared SSE event envelope models (response DTOs, not raw DB rows).
+4. Add SSE streaming endpoint (`GET /api/v1/events/stream`).
+
+### Parallel tier 1 — backend publish hooks (subagents)
+
+Run in parallel once the foundation is in place:
+
+5a. Publish SSE events from job mutation paths (enqueue, state transitions, archive).
+5b. Publish SSE events from order mutation paths (create, update, cancel, broker sync).
+
+### Parallel tier 2 — frontend consumers (subagents)
+
+Run in parallel once publish hooks and the shared EventSource client are in place:
+
+6. Add frontend shared EventSource client (`frontend/src/lib/events.ts`).
+   7a. Convert `JobsTable` to snapshot + SSE stream, remove 2.5s polling.
+   7b. Convert `OrdersTable` and `OrdersSideTable` to shared orders store + SSE stream, remove 2.5-3s polling.
+   7c. Optionally adapt `WorkerStatusLights` to SSE.
 
 ## Acceptance Criteria
 
@@ -383,7 +435,7 @@ WebSockets are not justified for Phase 1.
 3. New/updated jobs appear in the UI without manual refresh.
 4. Order status transitions appear in the UI without manual refresh.
 5. A dropped SSE connection recovers automatically.
-6. A disconnected client can recover via snapshot + resumed stream.
+6. A disconnected client can recover via REST snapshot + new live events (no replay).
 7. Existing REST endpoints remain usable for direct fetch and debugging.
 
 ## Open Questions
