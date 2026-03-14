@@ -1,6 +1,4 @@
-# Next Gen Trader Pro
-
-Before using this project, read the [Disclaimer](#disclaimer).
+# Next Gen Vol (NGV) Trader
 
 ## Getting Started
 

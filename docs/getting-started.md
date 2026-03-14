@@ -1,10 +1,10 @@
 # Getting Started
 
-A step-by-step guide to set up ngtrader-pro locally and start using it.
+A step-by-step guide to set up ngv-trader locally and start using it.
 
 ## Architecture Overview
 
-ngtrader-pro has four main components that work together:
+ngv-trader has four main components that work together:
 
 ```text
 ┌─────────────────┐     ┌──────────────────┐     ┌──────────────┐
@@ -43,8 +43,8 @@ Install these before proceeding:
 ## 1. Clone and Install Dependencies
 
 ```bash
-git clone <repo-url> ngtrader-pro
-cd ngtrader-pro
+git clone <repo-url> ngv-trader
+cd ngv-trader
 ```
 
 Install Python dependencies:
@@ -158,7 +158,7 @@ task validate -- --no-tws
 
 ## 5. Set Up IBKR TWS or IB Gateway (optional)
 
-ngtrader-pro connects to Interactive Brokers through TWS (Trader Workstation) or IB Gateway. You need one of them running locally for live data sync.
+ngv-trader connects to Interactive Brokers through TWS (Trader Workstation) or IB Gateway. You need one of them running locally for live data sync.
 
 ### Configure TWS / Gateway for API access
 
