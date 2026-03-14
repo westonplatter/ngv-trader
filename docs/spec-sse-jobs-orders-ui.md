@@ -79,17 +79,26 @@ Use a hybrid model:
 
 ### Backend
 
-Add an in-process event broadcaster for UI-facing updates.
+Use FastAPI's built-in SSE support (`fastapi.sse.EventSourceResponse` and `ServerSentEvent`, added in FastAPI 0.135.0) with an in-process event broadcaster.
+
+FastAPI handles automatically:
+
+1. keepalive pings every 15 seconds
+2. `Cache-Control: no-cache` header
+3. `X-Accel-Buffering: no` header (prevents Nginx buffering)
+4. `Last-Event-ID` header support for connection resumption
 
 Core pieces:
 
 1. `src/services/ui_events.py`
-   1. lightweight pub/sub broker
+   1. lightweight in-memory async pub/sub broker
    2. supports channels like `jobs`, `orders`, `worker_status`
-   3. serializes typed event payloads
+   3. no manual serialization needed — `ServerSentEvent(data=...)` accepts Pydantic models directly
 2. SSE API router
    1. `GET /api/v1/events/stream`
    2. optional query `topics=jobs,orders`
+   3. uses `EventSourceResponse` as `response_class`
+   4. yields `ServerSentEvent` instances with `data`, `event`, `id` fields
 3. publisher hooks in existing mutation/sync flows
    1. job enqueue
    2. job status transitions

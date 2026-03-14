@@ -1,5 +1,5 @@
 [project]
-name = "ngtrader"
+name = "ngv-trader"
 version = "0.1.1"
 description = "Review market price action, monitor portfolio strategies, and execute live trades with AI"
 readme = "README.md"
