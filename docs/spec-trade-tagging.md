@@ -17,13 +17,13 @@ After quorum input from SWE, DBA, and UX, the Trade Desk Analyst selects:
 ## Problem
 
 The desk needs to organize orders, trades, and executions into strategy-aligned lifecycle groupings across multiple accounts.  
-Today, activity can originate from ngtrader-pro or outside workflows (for example phone trading), and must still roll up into coherent campaign-level PnL.
+Today, activity can originate from ngv-trader or outside workflows (for example phone trading), and must still roll up into coherent campaign-level PnL.
 
 ## Goals
 
 1. Represent each strategy campaign from entry to final exit, including rolls and adjustments.
 2. Support flexible tagging for strategy intent and risk context.
-3. Allow manual post-trade association for activity executed outside ngtrader-pro.
+3. Allow manual post-trade association for activity executed outside ngv-trader.
 4. Provide reliable PnL reporting by theme, strategy, and lifecycle grouping.
 5. Keep V1 implementation simple enough for near-term production use by an agentic trade desk.
 

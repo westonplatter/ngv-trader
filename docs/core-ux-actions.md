@@ -1,6 +1,6 @@
 # Core UX Actions
 
-Reusable interaction patterns for high-frequency operator workflows in ngtrader-pro.
+Reusable interaction patterns for high-frequency operator workflows in ngv-trader.
 
 ## Purpose
 
