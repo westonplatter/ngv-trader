@@ -5,7 +5,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import case, select
 from sqlalchemy.orm import Session
 
 from src.api.deps import get_db
@@ -29,6 +29,23 @@ _MONTH_CODE_TO_MONTH = {
     "V": 10,
     "X": 11,
     "Z": 12,
+}
+_EXEC_ROLE_DISPLAY_PRIORITY = {
+    "combo_summary": 0,
+    "standalone": 1,
+    "leg": 2,
+}
+_OPEN_CLOSE_DISPLAY = {
+    "O": "Open",
+    "OPEN": "Open",
+    "OPENING": "Open",
+    "TOOPEN": "Open",
+    "OPENPOSITION": "Open",
+    "C": "Close",
+    "CLOSE": "Close",
+    "CLOSING": "Close",
+    "TOCLOSE": "Close",
+    "CLOSEPOSITION": "Close",
 }
 
 
@@ -183,6 +200,64 @@ def _trade_contract_display_name(trade: Trade, execution_raw: dict | None) -> st
     )
 
 
+def _execution_display_priority():
+    return case(
+        *[(TradeExecution.exec_role == role, priority) for role, priority in _EXEC_ROLE_DISPLAY_PRIORITY.items()],
+        else_=99,
+    )
+
+
+def _trade_lifecycle_from_execution(raw: dict | None, exec_role: str | None) -> str | None:
+    if exec_role == "combo_summary":
+        return "Roll"
+
+    execution = raw.get("execution") if raw else None
+    if not isinstance(execution, dict):
+        return None
+
+    for field in ("openClose", "positionEffect"):
+        value = execution.get(field)
+        normalized = _OPEN_CLOSE_DISPLAY.get(str(value or "").strip().upper())
+        if normalized is not None:
+            return normalized
+    return None
+
+
+def _execution_realized_pnl(raw: dict | None) -> float | None:
+    commission_report = raw.get("commissionReport") if raw else None
+    if not isinstance(commission_report, dict):
+        return None
+
+    value = commission_report.get("realizedPNL")
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _trade_realized_pnl_from_executions(executions: list[tuple[dict | None, str | None, bool]]) -> float | None:
+    canonical = [(raw, exec_role) for raw, exec_role, is_canonical in executions if is_canonical]
+    if not canonical:
+        return None
+
+    combo_values = [
+        realized_pnl
+        for raw, exec_role in canonical
+        if exec_role == "combo_summary"
+        for realized_pnl in [_execution_realized_pnl(raw)]
+        if realized_pnl is not None
+    ]
+    if combo_values:
+        return sum(combo_values)
+
+    values = [realized_pnl for raw, _ in canonical for realized_pnl in [_execution_realized_pnl(raw)] if realized_pnl is not None]
+    if not values:
+        return None
+    return sum(values)
+
+
 class TradeResponse(BaseModel):
     model_config = {"from_attributes": True}
 
@@ -190,6 +265,7 @@ class TradeResponse(BaseModel):
     account_id: int
     account_alias: str | None
     contract_display_name: str | None
+    lifecycle: str | None
     is_assigned: bool = False
     assigned_trade_group_id: int | None = None
     ib_perm_id: int | None
@@ -203,6 +279,7 @@ class TradeResponse(BaseModel):
     status: str
     total_quantity: float
     avg_price: float | None
+    realized_pnl: float | None
     first_executed_at: datetime | None
     last_executed_at: datetime | None
     fetched_at: datetime
@@ -233,6 +310,7 @@ class TradeExecutionResponse(BaseModel):
     currency: str | None
     liquidity: str | None
     commission: float | None
+    realized_pnl: float | None
     is_canonical: bool
     contract_display: str | None
     fetched_at: datetime
@@ -282,16 +360,29 @@ def list_trades(  # noqa: C901, PLR0912
     trade_ids = [trade.id for trade in trades]
 
     raw_by_trade_id: dict[int, dict] = {}
+    raw_exec_role_by_trade_id: dict[int, str | None] = {}
+    execution_summary_by_trade_id: dict[int, list[tuple[dict | None, str | None, bool]]] = {}
     contract_ref_by_trade_id: dict[int, ContractRef] = {}
     assigned_trade_group_id_by_trade_id: dict[int, int] = {}
     if trade_ids:
         execution_rows = db.execute(
-            select(TradeExecution.trade_id, TradeExecution.raw, TradeExecution.con_id)
+            select(
+                TradeExecution.trade_id,
+                TradeExecution.raw,
+                TradeExecution.con_id,
+                TradeExecution.exec_role,
+                TradeExecution.is_canonical,
+            )
             .where(TradeExecution.trade_id.in_(trade_ids))
-            .order_by(TradeExecution.trade_id.asc(), TradeExecution.executed_at.desc(), TradeExecution.id.desc())
+            .order_by(
+                TradeExecution.trade_id.asc(),
+                _execution_display_priority(),
+                TradeExecution.executed_at.desc(),
+                TradeExecution.id.desc(),
+            )
         ).all()
         con_ids: set[int] = set()
-        for _, _, con_id in execution_rows:
+        for _, _, con_id, _, _ in execution_rows:
             if con_id is not None:
                 con_ids.add(con_id)
         contract_ref_by_con_id: dict[int, ContractRef] = {}
@@ -299,9 +390,13 @@ def list_trades(  # noqa: C901, PLR0912
             contract_ref_rows = db.execute(select(ContractRef).where(ContractRef.con_id.in_(con_ids))).scalars().all()
             contract_ref_by_con_id = {row.con_id: row for row in contract_ref_rows}
 
-        for trade_id, raw, con_id in execution_rows:
+        for trade_id, raw, con_id, exec_role, is_canonical in execution_rows:
+            execution_summary_by_trade_id.setdefault(trade_id, []).append(
+                (raw, exec_role, is_canonical),
+            )
             if trade_id not in raw_by_trade_id:
                 raw_by_trade_id[trade_id] = raw
+                raw_exec_role_by_trade_id[trade_id] = exec_role
                 if con_id is not None and con_id in contract_ref_by_con_id:
                     contract_ref_by_trade_id[trade_id] = contract_ref_by_con_id[con_id]
 
@@ -340,6 +435,10 @@ def list_trades(  # noqa: C901, PLR0912
                     contract_ref_by_trade_id.get(trade.id),
                 )
                 or _trade_contract_display_name(trade, raw_by_trade_id.get(trade.id)),
+                lifecycle=_trade_lifecycle_from_execution(
+                    raw_by_trade_id.get(trade.id),
+                    raw_exec_role_by_trade_id.get(trade.id),
+                ),
                 is_assigned=bool(is_assigned),
                 assigned_trade_group_id=assigned_trade_group_id_by_trade_id.get(
                     trade.id,
@@ -355,6 +454,9 @@ def list_trades(  # noqa: C901, PLR0912
                 status=trade.status,
                 total_quantity=trade.total_quantity,
                 avg_price=trade.avg_price,
+                realized_pnl=_trade_realized_pnl_from_executions(
+                    execution_summary_by_trade_id.get(trade.id, []),
+                ),
                 first_executed_at=trade.first_executed_at,
                 last_executed_at=trade.last_executed_at,
                 fetched_at=trade.fetched_at,
@@ -380,16 +482,27 @@ def get_trade(trade_id: int, db: Session = DB_SESSION_DEPENDENCY):
 
     trade, acct, is_assigned = row
     execution_row = db.execute(
-        select(TradeExecution.raw, TradeExecution.con_id)
+        select(TradeExecution.raw, TradeExecution.con_id, TradeExecution.exec_role)
         .where(TradeExecution.trade_id == trade_id)
-        .order_by(TradeExecution.executed_at.desc(), TradeExecution.id.desc())
+        .order_by(
+            _execution_display_priority(),
+            TradeExecution.executed_at.desc(),
+            TradeExecution.id.desc(),
+        )
         .limit(1)
     ).first()
     execution_raw: dict | None = execution_row[0] if execution_row else None
     execution_con_id: int | None = execution_row[1] if execution_row else None
+    execution_exec_role: str | None = execution_row[2] if execution_row else None
     contract_ref = None
     if execution_con_id is not None:
         contract_ref = db.execute(select(ContractRef).where(ContractRef.con_id == execution_con_id)).scalar_one_or_none()
+    execution_summary_result = db.execute(
+        select(TradeExecution.raw, TradeExecution.exec_role, TradeExecution.is_canonical)
+        .where(TradeExecution.trade_id == trade_id)
+        .order_by(TradeExecution.executed_at.asc(), TradeExecution.id.asc())
+    ).all()
+    execution_summary_rows = [(raw, exec_role, is_canonical) for raw, exec_role, is_canonical in execution_summary_result]
     assigned_trade_group_id = db.execute(
         select(TradeGroupExecution.trade_group_id)
         .join(TradeExecution, TradeExecution.id == TradeGroupExecution.trade_execution_id)
@@ -408,6 +521,7 @@ def get_trade(trade_id: int, db: Session = DB_SESSION_DEPENDENCY):
         account_id=trade.account_id,
         account_alias=alias,
         contract_display_name=_contract_display_from_raw(execution_raw, contract_ref) or _trade_contract_display_name(trade, execution_raw),
+        lifecycle=_trade_lifecycle_from_execution(execution_raw, execution_exec_role),
         is_assigned=bool(is_assigned),
         assigned_trade_group_id=assigned_trade_group_id,
         ib_perm_id=trade.ib_perm_id,
@@ -421,6 +535,7 @@ def get_trade(trade_id: int, db: Session = DB_SESSION_DEPENDENCY):
         status=trade.status,
         total_quantity=trade.total_quantity,
         avg_price=trade.avg_price,
+        realized_pnl=_trade_realized_pnl_from_executions(execution_summary_rows),
         first_executed_at=trade.first_executed_at,
         last_executed_at=trade.last_executed_at,
         fetched_at=trade.fetched_at,
@@ -465,6 +580,7 @@ def list_trade_executions(trade_id: int, db: Session = DB_SESSION_DEPENDENCY):
             currency=ex.currency,
             liquidity=ex.liquidity,
             commission=ex.commission,
+            realized_pnl=_execution_realized_pnl(ex.raw),
             is_canonical=ex.is_canonical,
             contract_display=_contract_display_from_raw(ex.raw, contract_ref),
             fetched_at=ex.fetched_at,

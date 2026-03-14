@@ -6,10 +6,19 @@ Agentic software enabling one person to operate as an quick and nimble quantativ
 
 If any `docs/*.md` file is added, modified, renamed, or deleted (excluding `docs/_index.md`), update `docs/_index.md` in the same change.
 
-`docs/_index.md` has two sections — place the entry in the right one:
+Use `docs/planning-spec-format.md` as the default template when creating or substantially revising a planning spec.
+
+`docs/_index.md` has two sections:
 
 - **Project Docs** — runbooks, how-tos, and reference material.
 - **Specs** — architecture specs and design proposals (files prefixed `spec-`).
+
+When a spec becomes live/current-state documentation, do the wrap-up in the same change:
+
+1. Rewrite it as current-state documentation.
+2. Rename the file to remove the `spec-` prefix.
+3. Move its `docs/_index.md` entry from **Specs** to **Project Docs**.
+4. Update in-repo references to the old filename.
 
 When writing documentation or summaries, default to high-level overviews that point to detailed resources rather than verbose step-by-step instructions. Avoid hardcoding filenames in docs when the user wants lightweight guidance.
 
@@ -66,7 +75,6 @@ Exits 1 on failure.
 2. Run `scripts/setup_db.py` to ensure DB + migrations are current.
 3. Run `scripts/download_positions.py` to ingest broker positions.
 4. Run backend API (`src/api/main.py`) and frontend (`frontend/`).
-5. Use `scripts/execute_cl_buy_or_sell_continous_market.py` for live order execution.
 
 ### Key Files By Concern
 

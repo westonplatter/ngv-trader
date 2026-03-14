@@ -102,6 +102,10 @@ def _fill_to_raw(fill: Any) -> dict:
             "avgPrice": getattr(execution, "avgPrice", None),
             "orderRef": getattr(execution, "orderRef", None),
             "liquidation": getattr(execution, "liquidation", None),
+            # Preserve lifecycle hints from IBKR when available so the API/UI
+            # can distinguish open vs close without guessing from side.
+            "openClose": getattr(execution, "openClose", None),
+            "positionEffect": getattr(execution, "positionEffect", None),
         }
     commission_report = getattr(fill, "commissionReport", None)
     if commission_report is not None:
