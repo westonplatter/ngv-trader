@@ -72,7 +72,7 @@ def _notify_api(path: str, payload: dict) -> None:
         headers={"Content-Type": "application/json"},
         method="POST",
     )
-    urllib.request.urlopen(req, timeout=2)  # noqa: S310
+    urllib.request.urlopen(req, timeout=2)  # nosec B310
 
 
 def _notify_job_event(job_id: int, event: str = "job.updated") -> None:

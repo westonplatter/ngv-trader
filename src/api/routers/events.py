@@ -13,9 +13,6 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from src.api.deps import get_db
-
-DB_SESSION_DEPENDENCY = Depends(get_db)
-
 from src.api.routers.jobs import to_job_response
 from src.api.routers.orders import to_order_response
 from src.models import Account, ContractRef, Job, Order, WorkerHeartbeat
@@ -29,6 +26,8 @@ from src.services.ui_events import (
 from src.services.worker_heartbeat import WorkerStatusPayload, _classify_light
 
 logger = logging.getLogger(__name__)
+
+DB_SESSION_DEPENDENCY = Depends(get_db)
 
 router = APIRouter()
 

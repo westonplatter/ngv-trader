@@ -54,14 +54,17 @@ def _classify_light(status: str, seconds_since: float | None) -> str:
 def _notify_worker_status(worker_type: str) -> None:
     """Fire-and-forget notification to the API SSE broadcaster."""
     try:
+        url = f"{_API_BASE_URL}/events/notify-worker-status"
+        if not url.startswith(("http://", "https://")):
+            return
         data = json.dumps({"worker_type": worker_type}).encode()
         req = urllib.request.Request(
-            f"{_API_BASE_URL}/events/notify-worker-status",
+            url,
             data=data,
             headers={"Content-Type": "application/json"},
             method="POST",
         )
-        urllib.request.urlopen(req, timeout=2)
+        urllib.request.urlopen(req, timeout=2)  # nosec B310
     except Exception as exc:
         logger.debug("SSE notify worker status failed: %s", exc)
 
