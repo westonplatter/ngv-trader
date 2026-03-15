@@ -25,6 +25,7 @@ const STATUS_CLASS: Record<string, string> = {
 
 const MARKET_DATA_JOB_TYPES = [
   "contracts.chain_sync",
+  "contracts.qualify_and_snapshot",
   "market_data.futures_prices",
   "market_data.futures_options",
   "market_data.snapshot",
@@ -37,46 +38,28 @@ interface JobPreset {
   useFilter?: boolean;
 }
 
-interface ChainSyncConfig {
+interface ChainSyncPreset {
   label: string;
   symbol: string;
   front_n: number;
-  ranges: { label: string; min_dte?: number; max_dte?: number }[];
 }
 
-const CHAIN_SYNC_CONFIGS: ChainSyncConfig[] = [
-  {
-    label: "CL",
-    symbol: "CL",
-    front_n: 6,
-    ranges: [
-      { label: "0–1yr", max_dte: 365 },
-      { label: "1–2yr", min_dte: 365, max_dte: 730 },
-      { label: "3–5yr", min_dte: 1095, max_dte: 1825 },
-    ],
-  },
-  {
-    label: "ES",
-    symbol: "ES",
-    front_n: 4,
-    ranges: [
-      { label: "0–1yr", max_dte: 365 },
-      { label: "1–2yr", min_dte: 365, max_dte: 730 },
-      { label: "3–5yr", min_dte: 1095, max_dte: 1825 },
-    ],
-  },
+const CHAIN_SYNC_PRESETS: ChainSyncPreset[] = [
+  { label: "Sync CL chain", symbol: "CL", front_n: 12 },
+  { label: "Sync ES chain", symbol: "ES", front_n: 5 },
+  { label: "Sync NQ chain", symbol: "NQ", front_n: 5 },
 ];
 
 const PRESETS: JobPreset[] = [
   {
     label: "CL futures prices",
     job_type: "market_data.futures_prices",
-    payload: { symbol: "CL", front_n: 6 },
+    payload: { symbol: "CL", front_n: 12 },
   },
   {
     label: "ES futures prices",
     job_type: "market_data.futures_prices",
-    payload: { symbol: "ES", front_n: 4 },
+    payload: { symbol: "ES", front_n: 5 },
   },
   {
     label: "CL options (filtered)",
@@ -377,35 +360,21 @@ export default function MarketDataPage() {
           Quick Actions
         </h2>
         <div className="flex flex-wrap gap-2 items-center">
-          {/* Chain sync dropdowns */}
-          {CHAIN_SYNC_CONFIGS.map((cfg) => (
-            <div key={cfg.symbol} className="flex items-center gap-1">
-              <span className="text-xs font-medium text-gray-600">
-                Sync {cfg.label}:
-              </span>
-              {cfg.ranges.map((range) => (
-                <button
-                  key={`${cfg.symbol}-${range.label}`}
-                  onClick={() => {
-                    const optionFilter: Record<string, number> = {};
-                    if (range.min_dte != null)
-                      optionFilter.min_dte = range.min_dte;
-                    if (range.max_dte != null)
-                      optionFilter.max_dte = range.max_dte;
-                    enqueueJob("contracts.chain_sync", {
-                      symbol: cfg.symbol,
-                      front_n: cfg.front_n,
-                      option_filter: optionFilter,
-                    });
-                  }}
-                  disabled={submitting !== null || pendingFilter !== null}
-                  className="rounded border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-                >
-                  {range.label}
-                </button>
-              ))}
-              <span className="mx-1 text-gray-300">|</span>
-            </div>
+          {/* Chain sync */}
+          {CHAIN_SYNC_PRESETS.map((preset) => (
+            <button
+              key={preset.symbol}
+              onClick={() =>
+                enqueueJob("contracts.chain_sync", {
+                  symbol: preset.symbol,
+                  front_n: preset.front_n,
+                })
+              }
+              disabled={submitting !== null || pendingFilter !== null}
+              className="rounded border border-gray-300 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+            >
+              {preset.label}
+            </button>
           ))}
           {/* Other presets */}
           {PRESETS.map((preset) => (

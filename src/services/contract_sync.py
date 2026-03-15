@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Any
 
 from ib_async import IB, Contract
@@ -249,27 +249,20 @@ def sync_futures_chain(
     symbol: str,
     exchange: str,
     currency: str = "USD",
-    front_n: int = 6,
-    option_filter: dict | None = None,
+    front_n: int = 12,
     connect_timeout_seconds: float = 20.0,
     ib: IB | None = None,
 ) -> dict:
-    """3-step IND → FUT → FOP contract discovery and sync.
+    """3-step IND → FUT → chain metadata discovery and sync.
 
     1. Qualify the Index contract
     2. Discover the option chain via reqSecDefOptParams
     3. Sync FUT contracts (limited to front_n)
-    4. Sync FOP contracts (all strikes, filtered by DTE range)
+    4. Bulk-insert all chain metadata into option_chain_meta (no IBKR qualification)
 
-    option_filter keys (all optional):
-      - min_dte: minimum days to expiry (default 0)
-      - max_dte: maximum days to expiry (default None = no limit)
-
-    Price fetching (market_data.futures_options) still uses narrow strike/moneyness
-    filters. If a user selects a contract without prices, a targeted snapshot job
-    can be kicked off.
+    Actual FOP contract qualification happens on-demand via the
+    contracts.qualify_and_snapshot job when a user selects a specific option.
     """
-    filt = option_filter or {}
     owns_ib = ib is None
     if ib is None:
         ib = IB()
@@ -400,68 +393,19 @@ def sync_futures_chain(
 
         logger.info("Synced %d FUT contracts for %s", counts["fut"], symbol)
 
-        logger.info("Syncing ALL FOP contracts for %s (no strike filtering)", symbol)
-
-        # Step 4: Sync ALL FOP contracts for each front FUT underlying
-        # Contract metadata is synced unfiltered so the UI can show the full chain.
-        # Price fetching (market_data.futures_options) still uses narrow filters.
-        # Load existing FOP coverage from DB to skip redundant IBKR calls
+        # Step 4: Store option chain metadata into option_chain_meta table
+        # This is a fast DB-only operation — no IBKR qualification needed.
+        # The full chain catalog lets the UI show all available options.
+        # Actual contract qualification happens on-demand when a user selects one.
         from datetime import date
 
-        from sqlalchemy import select
+        from src.models import OptionChainMeta
 
-        # Build a set of (underlying_con_id, trading_class, expiry, right, strike)
-        # for existing contracts so we can skip individual specs we already have
-        existing_con_ids: set[int] = set()
-        existing_specs: set[tuple[int, str, str, str, float]] = set()
-        with Session(engine) as session:
-            spec_q = select(
-                ContractRef.con_id,
-                ContractRef.underlying_con_id,
-                ContractRef.trading_class,
-                ContractRef.contract_expiry,
-                ContractRef.right,
-                ContractRef.strike,
-            ).where(
-                ContractRef.symbol == symbol,
-                ContractRef.sec_type == "FOP",
-                ContractRef.is_active.is_(True),
-            )
-            for row in session.execute(spec_q):
-                existing_con_ids.add(row.con_id)
-                if row.underlying_con_id and row.contract_expiry and row.right and row.strike:
-                    existing_specs.add(
-                        (
-                            row.underlying_con_id,
-                            row.trading_class or "",
-                            row.contract_expiry,
-                            row.right,
-                            float(row.strike),
-                        )
-                    )
-
-        logger.info(
-            "Existing FOP coverage: %d contracts (%d unique specs) in DB",
-            len(existing_con_ids),
-            len(existing_specs),
-        )
-
-        counts["fop_skipped"] = 0
-
-        # Phase 1: Build FOP Contract specs to qualify
-        # Each entry: (Contract spec, fut_con_id for underlying)
-        # Filter expirations by min_dte / max_dte from option_filter if provided
-        fop_specs: list[tuple[Contract, int]] = []
         today = date.today()
-        min_dte = filt.get("min_dte", 0) if filt else 0
-        max_dte = filt.get("max_dte") if filt else None
 
-        logger.info(
-            "FOP DTE filter: min_dte=%s, max_dte=%s",
-            min_dte,
-            max_dte if max_dte is not None else "none",
-        )
+        logger.info("Storing chain metadata for %s", symbol)
 
+        meta_rows: list[dict] = []
         for info in chain_info:
             fut_cid = info["fut_con_id"]
             if fut_cid not in front_fut_con_ids:
@@ -474,25 +418,18 @@ def sync_futures_chain(
             if not expirations or not strikes:
                 continue
 
-            # Filter expirations by DTE range
+            # Filter out already-expired expirations
             valid_expirations = []
             for exp in expirations:
                 try:
                     exp_date = date(int(exp[:4]), int(exp[4:6]), int(exp[6:8]))
-                    dte_val = (exp_date - today).days
-                    if dte_val < min_dte:
-                        continue
-                    if max_dte is not None and dte_val > max_dte:
-                        continue
-                    valid_expirations.append(exp)
+                    if (exp_date - today).days >= 0:
+                        valid_expirations.append(exp)
                 except (ValueError, IndexError):
                     continue
 
             if not valid_expirations:
                 continue
-
-            lo = min(strikes)
-            hi = max(strikes)
 
             logger.info(
                 "FUT con_id=%d tc=%s: %d expirations, %d strikes [%.2f–%.2f]",
@@ -500,113 +437,57 @@ def sync_futures_chain(
                 trading_class,
                 len(valid_expirations),
                 len(strikes),
-                lo,
-                hi,
+                min(strikes),
+                max(strikes),
             )
 
-            skipped_existing = 0
-            for expiry in valid_expirations:
+            for exp in valid_expirations:
                 for right_val in ("C", "P"):
                     for strike in strikes:
-                        # Skip if we already have this exact contract in the DB
-                        if (fut_cid, trading_class, expiry, right_val, strike) in existing_specs:
-                            skipped_existing += 1
-                            continue
-                        spec = Contract(
-                            symbol=symbol,
-                            secType="FOP",
-                            exchange=exchange,
-                            currency=currency,
-                            lastTradeDateOrContractMonth=expiry,
-                            tradingClass=trading_class,
-                            right=right_val,
-                            strike=strike,
+                        meta_rows.append(
+                            {
+                                "symbol": symbol,
+                                "sec_type": "FOP",
+                                "exchange": exchange,
+                                "trading_class": trading_class,
+                                "underlying_con_id": fut_cid,
+                                "expiration": exp,
+                                "strike": strike,
+                                "right": right_val,
+                                "synced_at": now,
+                            }
                         )
-                        fop_specs.append((spec, fut_cid))
-            if skipped_existing:
-                logger.info(
-                    "FUT con_id=%d tc=%s: skipped %d specs already in DB",
-                    fut_cid,
-                    trading_class,
-                    skipped_existing,
-                )
 
-        logger.info("Phase 1: built %d FOP specs to qualify", len(fop_specs))
-
-        if not fop_specs:
-            return {"symbol": symbol, **counts}
-
-        # Phase 2: Batch qualify all FOP specs
-        all_specs = [spec for spec, _ in fop_specs]
-        fut_cid_by_idx = {i: fut_cid for i, (_, fut_cid) in enumerate(fop_specs)}
-
-        qualified_fops: list[tuple[Contract, int]] = []
-        for i in range(0, len(all_specs), BATCH_SIZE):
-            batch = all_specs[i : i + BATCH_SIZE]
-            results = ib.qualifyContracts(*batch)
-            for j, contract in enumerate(results):
-                if contract.conId and contract.conId != 0:
-                    qualified_fops.append((contract, fut_cid_by_idx[i + j]))
-
-        logger.info("Phase 2: qualified %d/%d FOP contracts", len(qualified_fops), len(all_specs))
-
-        # Phase 3: Batch upsert, skipping contracts already in DB
-        new_fop_count = 0
-        skipped_count = 0
-        with Session(engine) as session:
-            for contract, fut_cid in qualified_fops:
-                if contract.conId in existing_con_ids:
-                    skipped_count += 1
-                    continue
-
-                raw_expiry = (contract.lastTradeDateOrContractMonth or "").strip() or None
-                contract_month = infer_contract_month_from_local_symbol(
-                    local_symbol=contract.localSymbol or None,
-                    contract_expiry=raw_expiry,
-                    sec_type="FOP",
-                ) or format_contract_month_from_expiry(raw_expiry)
-
-                values = {
-                    "con_id": contract.conId,
-                    "symbol": contract.symbol or symbol,
-                    "sec_type": "FOP",
-                    "exchange": contract.exchange or exchange,
-                    "currency": contract.currency or currency,
-                    "local_symbol": contract.localSymbol or None,
-                    "trading_class": contract.tradingClass or None,
-                    "contract_month": contract_month,
-                    "contract_expiry": raw_expiry,
-                    "multiplier": contract.multiplier or None,
-                    "strike": contract.strike if contract.strike and contract.strike != 0.0 else None,
-                    "right": contract.right if contract.right and contract.right != "?" else None,
-                    "primary_exchange": contract.primaryExchange or None,
-                    "underlying_con_id": fut_cid,
-                    "is_active": True,
-                    "fetched_at": now,
-                    "updated_at": now,
-                }
-                stmt = (
-                    insert(ContractRef)
-                    .values(**values, created_at=now)
-                    .on_conflict_do_update(
-                        index_elements=["con_id"],
-                        set_={k: v for k, v in values.items() if k != "con_id"},
+        if meta_rows:
+            meta_insert = insert(OptionChainMeta).values(meta_rows)
+            meta_insert.on_conflict_do_update(
+                constraint="uq_option_chain_meta_spec",
+                set_={
+                    "underlying_con_id": meta_insert.excluded.underlying_con_id,
+                    "exchange": meta_insert.excluded.exchange,
+                    "sec_type": meta_insert.excluded.sec_type,
+                    "synced_at": meta_insert.excluded.synced_at,
+                },
+            )
+            with Session(engine) as session:
+                # Batch insert in chunks to avoid oversized SQL
+                for i in range(0, len(meta_rows), 1000):
+                    chunk = meta_rows[i : i + 1000]
+                    chunk_insert = insert(OptionChainMeta).values(chunk)
+                    chunk_upsert = chunk_insert.on_conflict_do_update(
+                        constraint="uq_option_chain_meta_spec",
+                        set_={
+                            "underlying_con_id": chunk_insert.excluded.underlying_con_id,
+                            "exchange": chunk_insert.excluded.exchange,
+                            "sec_type": chunk_insert.excluded.sec_type,
+                            "synced_at": chunk_insert.excluded.synced_at,
+                        },
                     )
-                )
-                session.execute(stmt)
-                existing_con_ids.add(contract.conId)
-                new_fop_count += 1
+                    session.execute(chunk_upsert)
+                session.commit()
 
-            session.commit()
-
-        counts["fop"] = new_fop_count
-        counts["fop_skipped"] = skipped_count
-
-        logger.info(
-            "Phase 3: upserted %d new FOPs, skipped %d (already in DB)",
-            new_fop_count,
-            skipped_count,
-        )
+        counts["chain_meta"] = len(meta_rows)
+        logger.info("Stored %d option chain meta rows for %s", len(meta_rows), symbol)
 
         return {"symbol": symbol, **counts}
     finally:

@@ -77,6 +77,42 @@ class ContractRef(Base):
     )
 
 
+class OptionChainMeta(Base):
+    """Unqualified option chain catalog from reqSecDefOptParams.
+
+    Stores the universe of available options (all trading classes, expirations,
+    strikes) without requiring IBKR contract qualification. Generic for FOP and OPT.
+    """
+
+    __tablename__ = "option_chain_meta"
+    __table_args__ = (
+        UniqueConstraint(
+            "symbol",
+            "trading_class",
+            "expiration",
+            "strike",
+            "right",
+            name="uq_option_chain_meta_spec",
+        ),
+        Index("ix_option_chain_meta_lookup", "symbol", "underlying_con_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    symbol: Mapped[str] = mapped_column(String, nullable=False)
+    sec_type: Mapped[str] = mapped_column(String, nullable=False)
+    exchange: Mapped[str] = mapped_column(String, nullable=False)
+    trading_class: Mapped[str] = mapped_column(String, nullable=False)
+    underlying_con_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    expiration: Mapped[str] = mapped_column(String, nullable=False)
+    strike: Mapped[float] = mapped_column(Float, nullable=False)
+    right: Mapped[str] = mapped_column(String, nullable=False)
+    synced_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+
+
 class Account(Base):
     __tablename__ = "accounts"
 
@@ -592,6 +628,26 @@ class TsFuturesOptions(Base):
     und_price: Mapped[float | None] = mapped_column(Float, nullable=True)
     market_ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     ingested_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+
+
+class SavedStructure(Base):
+    __tablename__ = "saved_structures"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    instrument: Mapped[str] = mapped_column(String, nullable=False)
+    legs: Mapped[list] = mapped_column(JSON, nullable=False)
+    spot_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
         default=lambda: datetime.now(timezone.utc),

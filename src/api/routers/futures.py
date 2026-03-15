@@ -242,6 +242,105 @@ def _format_option_row(c: ContractRef, lo: LatestFuturesOptions | None) -> dict:
     }
 
 
+@router.get("/futures/{symbol}/chain")
+def get_chain(
+    symbol: str,
+    underlying_con_id: int | None = Query(default=None),
+    strike_gte: float | None = Query(default=None),
+    strike_lte: float | None = Query(default=None),
+    right: str | None = Query(default=None),
+    dte_gte: int | None = Query(default=None),
+    dte_lte: int | None = Query(default=None),
+):
+    """Return option chain catalog from option_chain_meta, enriched with
+    pricing data from qualified contracts where available."""
+    from datetime import timedelta
+
+    from src.data.option_filters import is_monthly_trading_class
+    from src.models import OptionChainMeta
+
+    engine = get_engine()
+    symbol = symbol.upper()
+
+    # Query chain metadata, LEFT JOIN to ContractRef + LatestFuturesOptions
+    # to get con_id and pricing for contracts that have been qualified
+    stmt = (
+        select(OptionChainMeta, ContractRef.con_id, LatestFuturesOptions)
+        .outerjoin(
+            ContractRef,
+            and_(
+                ContractRef.symbol == OptionChainMeta.symbol,
+                ContractRef.trading_class == OptionChainMeta.trading_class,
+                ContractRef.contract_expiry == OptionChainMeta.expiration,
+                ContractRef.strike == OptionChainMeta.strike,
+                ContractRef.right == OptionChainMeta.right,
+                ContractRef.sec_type == OptionChainMeta.sec_type,
+                ContractRef.is_active.is_(True),
+            ),
+        )
+        .outerjoin(
+            LatestFuturesOptions,
+            LatestFuturesOptions.con_id == ContractRef.con_id,
+        )
+        .where(OptionChainMeta.symbol == symbol)
+    )
+
+    if underlying_con_id is not None:
+        stmt = stmt.where(OptionChainMeta.underlying_con_id == underlying_con_id)
+    if strike_gte is not None:
+        stmt = stmt.where(OptionChainMeta.strike >= strike_gte)
+    if strike_lte is not None:
+        stmt = stmt.where(OptionChainMeta.strike <= strike_lte)
+    if right is not None:
+        stmt = stmt.where(OptionChainMeta.right == right.upper())
+    if dte_gte is not None:
+        min_expiry = (date.today() + timedelta(days=dte_gte)).strftime("%Y%m%d")
+        stmt = stmt.where(OptionChainMeta.expiration >= min_expiry)
+    if dte_lte is not None:
+        max_expiry = (date.today() + timedelta(days=dte_lte)).strftime("%Y%m%d")
+        stmt = stmt.where(OptionChainMeta.expiration <= max_expiry)
+
+    stmt = stmt.order_by(
+        OptionChainMeta.expiration.asc(),
+        OptionChainMeta.strike.asc(),
+    )
+
+    with Session(engine) as session:
+        rows = session.execute(stmt).all()
+        return [
+            {
+                "symbol": meta.symbol,
+                "trading_class": meta.trading_class,
+                "expiration": meta.expiration,
+                "strike": meta.strike,
+                "right": meta.right,
+                "dte": _dte(meta.expiration),
+                "underlying_con_id": meta.underlying_con_id,
+                "exchange": meta.exchange,
+                "sec_type": meta.sec_type,
+                "con_id": con_id,
+                "display_name": _display_name(
+                    meta.symbol,
+                    None,
+                    meta.sec_type,
+                    strike=meta.strike,
+                    right=meta.right,
+                    trading_class=meta.trading_class,
+                    contract_expiry=meta.expiration,
+                ),
+                "bid": lo.bid if lo else None,
+                "ask": lo.ask if lo else None,
+                "last": lo.last if lo else None,
+                "iv": lo.iv if lo else None,
+                "delta": lo.delta if lo else None,
+                "is_monthly": is_monthly_trading_class(meta.symbol, meta.trading_class),
+                "und_price": lo.und_price if lo else None,
+                "observed_at": lo.market_ts.isoformat() if lo and lo.market_ts else None,
+            }
+            for meta, con_id, lo in rows
+        ]
+
+
 @router.get("/futures/{symbol}/options")
 def get_options(
     symbol: str,
