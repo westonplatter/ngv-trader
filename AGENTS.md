@@ -139,7 +139,7 @@ logging.basicConfig(handlers=[TqdmLoggingHandler()], level=logging.INFO)
 
 ## Pandas
 
-### Principles
+### Pandas Principles
 
 1. **Use vectorized operations** - Avoid iterating over rows with `for` loops or `.iterrows()`. Use built-in vectorized methods for performance.
 

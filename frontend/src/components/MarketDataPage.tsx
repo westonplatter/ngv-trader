@@ -25,6 +25,7 @@ const STATUS_CLASS: Record<string, string> = {
 
 const MARKET_DATA_JOB_TYPES = [
   "contracts.chain_sync",
+  "contracts.qualify_and_snapshot",
   "market_data.futures_prices",
   "market_data.futures_options",
   "market_data.snapshot",
@@ -37,26 +38,28 @@ interface JobPreset {
   useFilter?: boolean;
 }
 
+interface ChainSyncPreset {
+  label: string;
+  symbol: string;
+  front_n: number;
+}
+
+const CHAIN_SYNC_PRESETS: ChainSyncPreset[] = [
+  { label: "Sync CL chain", symbol: "CL", front_n: 12 },
+  { label: "Sync ES chain", symbol: "ES", front_n: 5 },
+  { label: "Sync NQ chain", symbol: "NQ", front_n: 5 },
+];
+
 const PRESETS: JobPreset[] = [
-  {
-    label: "Sync CL chain (IND+FUT+FOP)",
-    job_type: "contracts.chain_sync",
-    payload: { symbol: "CL", front_n: 6 },
-  },
-  {
-    label: "Sync ES chain (IND+FUT+FOP)",
-    job_type: "contracts.chain_sync",
-    payload: { symbol: "ES", front_n: 4 },
-  },
   {
     label: "CL futures prices",
     job_type: "market_data.futures_prices",
-    payload: { symbol: "CL", front_n: 6 },
+    payload: { symbol: "CL", front_n: 12 },
   },
   {
     label: "ES futures prices",
     job_type: "market_data.futures_prices",
-    payload: { symbol: "ES", front_n: 4 },
+    payload: { symbol: "ES", front_n: 5 },
   },
   {
     label: "CL options (filtered)",
@@ -228,6 +231,43 @@ export default function MarketDataPage() {
     }
   };
 
+  const rerunJob = async (jobId: number) => {
+    setSubmitting(`rerun-${jobId}`);
+    setMessage(null);
+    try {
+      const res = await fetch(`${API_BASE_URL}/jobs/${jobId}/rerun`, {
+        method: "POST",
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || `HTTP ${res.status}`);
+      }
+      const job = await res.json();
+      setMessage(`Job #${job.id} enqueued (rerun of #${jobId})`);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSubmitting(null);
+    }
+  };
+
+  const archiveJob = async (jobId: number) => {
+    setSubmitting(`archive-${jobId}`);
+    try {
+      const res = await fetch(`${API_BASE_URL}/jobs/${jobId}/archive`, {
+        method: "POST",
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || `HTTP ${res.status}`);
+      }
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSubmitting(null);
+    }
+  };
+
   const handlePreset = async (preset: JobPreset) => {
     if (preset.useFilter) {
       const symbol = preset.payload.symbol as string;
@@ -319,7 +359,24 @@ export default function MarketDataPage() {
         <h2 className="mb-3 text-sm font-semibold text-gray-800">
           Quick Actions
         </h2>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2 items-center">
+          {/* Chain sync */}
+          {CHAIN_SYNC_PRESETS.map((preset) => (
+            <button
+              key={preset.symbol}
+              onClick={() =>
+                enqueueJob("contracts.chain_sync", {
+                  symbol: preset.symbol,
+                  front_n: preset.front_n,
+                })
+              }
+              disabled={submitting !== null || pendingFilter !== null}
+              className="rounded border border-gray-300 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+            >
+              {preset.label}
+            </button>
+          ))}
+          {/* Other presets */}
           {PRESETS.map((preset) => (
             <button
               key={preset.label}
@@ -457,12 +514,15 @@ export default function MarketDataPage() {
                 <th className="px-2 py-1 font-semibold text-gray-700">
                   Result / Error
                 </th>
+                <th className="px-2 py-1 font-semibold text-gray-700">
+                  Actions
+                </th>
               </tr>
             </thead>
             <tbody>
               {jobs.length === 0 && (
                 <tr>
-                  <td className="px-2 py-3 text-gray-500" colSpan={6}>
+                  <td className="px-2 py-3 text-gray-500" colSpan={7}>
                     No market data jobs yet. Use the actions above to enqueue
                     one.
                   </td>
@@ -493,6 +553,26 @@ export default function MarketDataPage() {
                       : job.result
                         ? JSON.stringify(job.result)
                         : "—"}
+                  </td>
+                  <td className="px-2 py-1">
+                    <div className="flex gap-1">
+                      <button
+                        onClick={() => rerunJob(job.id)}
+                        disabled={submitting !== null}
+                        className="rounded border border-blue-300 px-1.5 py-0.5 text-xs text-blue-700 hover:bg-blue-50 disabled:opacity-50"
+                        title="Rerun this job"
+                      >
+                        Rerun
+                      </button>
+                      <button
+                        onClick={() => archiveJob(job.id)}
+                        disabled={submitting !== null}
+                        className="rounded border border-gray-300 px-1.5 py-0.5 text-xs text-gray-500 hover:bg-gray-50 hover:text-red-600 disabled:opacity-50"
+                        title="Archive this job"
+                      >
+                        Archive
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}

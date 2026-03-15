@@ -15,8 +15,10 @@
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
     "ai": "^6.0.91",
+    "plotly.js": "^3.4.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
+    "react-plotly.js": "^2.6.0",
     "react-router-dom": "^7.13.0"
   },
   "devDependencies": {
@@ -25,6 +27,7 @@
     "@types/node": "^24.10.1",
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",
+    "@types/react-plotly.js": "^2.6.4",
     "@vitejs/plugin-react": "^5.1.1",
     "eslint": "^9.39.1",
     "eslint-plugin-react-hooks": "^7.0.1",

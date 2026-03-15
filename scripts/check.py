@@ -8,7 +8,6 @@ Usage:
 
 import importlib
 import pkgutil
-import sys
 
 import typer
 
@@ -38,7 +37,7 @@ def check_module(module: str) -> bool:
 
 @app.command()
 def main(
-    modules: list[str] = typer.Argument(
+    modules: list[str] = typer.Argument(  # noqa: B008
         default=None,
         help="Module paths to check (e.g. src.models). Omit to check all src/ modules.",
     ),

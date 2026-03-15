@@ -7,6 +7,7 @@ import {
 } from "react-router-dom";
 import AccountsTable from "./components/AccountsTable";
 import MarketDataPage from "./components/MarketDataPage";
+import PricingPage from "./components/PricingPage";
 import OrdersTable from "./components/OrdersTable";
 import PositionsTable from "./components/PositionsTable";
 import TradebotChat from "./components/TradebotChat";
@@ -24,6 +25,7 @@ const NAV_ITEMS = [
   { label: "Tagging", path: "/tagging" },
   { label: "Watch Lists", path: "/watchlists" },
   { label: "Market Data", path: "/market-data" },
+  { label: "Structures", path: "/structures" },
   { label: "Tradebot", path: "/tradebot" },
 ] as const;
 
@@ -87,6 +89,7 @@ function App() {
           <Route path="/tagging" element={<TradeTaggingPage />} />
           <Route path="/watchlists" element={<WatchListsPage />} />
           <Route path="/market-data" element={<MarketDataPage />} />
+          <Route path="/structures" element={<PricingPage />} />
           <Route path="/tradebot" element={<TradebotChat />} />
           <Route path="*" element={<Navigate to="/tradebot" replace />} />
         </Routes>

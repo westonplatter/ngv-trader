@@ -27,6 +27,7 @@ from src.db import get_engine
 from src.models import Job
 from src.services.jobs import (
     JOB_TYPE_CONTRACTS_CHAIN_SYNC,
+    JOB_TYPE_CONTRACTS_QUALIFY_AND_SNAPSHOT,
     JOB_TYPE_CONTRACTS_SYNC,
     JOB_TYPE_MARKET_DATA_FUTURES_OPTIONS,
     JOB_TYPE_MARKET_DATA_FUTURES_PRICES,
@@ -418,9 +419,6 @@ def handle_contracts_chain_sync(job: Job, engine: Engine, ib_pool: IBSessionPool
     currency = payload.get("currency", "USD")
     front_n = payload.get("front_n", 6)
 
-    # Optional override for option filter (otherwise uses per-symbol defaults)
-    option_filter = payload.get("option_filter")
-
     ib = ib_pool.get(host=host, port=port, client_id=client_id, connect_timeout_seconds=connect_timeout_seconds)
     return sync_futures_chain(
         engine=engine,
@@ -431,7 +429,6 @@ def handle_contracts_chain_sync(job: Job, engine: Engine, ib_pool: IBSessionPool
         exchange=exchange,
         currency=currency,
         front_n=front_n,
-        option_filter=option_filter,
         connect_timeout_seconds=connect_timeout_seconds,
         ib=ib,
     )
@@ -508,6 +505,82 @@ def handle_market_data_snapshot(job: Job, engine: Engine, ib_pool: IBSessionPool
     )
 
 
+def handle_contracts_qualify_and_snapshot(job: Job, engine: Engine, ib_pool: IBSessionPool) -> dict:
+    """Qualify a single option contract and fetch its price in one shot."""
+    from ib_async import Contract
+
+    from src.services.contract_sync import sync_contracts_with_ib
+    from src.services.market_data import fetch_snapshot
+
+    payload = job.payload or {}
+    host, port, client_id, connect_timeout_seconds = resolve_tws_connection(payload, default_client_id=38)
+
+    symbol = payload.get("symbol")
+    sec_type = payload.get("sec_type", "FOP")
+    exchange_val = payload.get("exchange")
+    trading_class = payload.get("trading_class", "")
+    expiration = payload.get("expiration")
+    strike = payload.get("strike")
+    right = payload.get("right")
+
+    if not all([symbol, exchange_val, expiration, strike, right]):
+        raise ValueError("Missing required fields: symbol, exchange, expiration, strike, right")
+
+    spec = Contract(
+        symbol=symbol,
+        secType=sec_type,
+        exchange=exchange_val,
+        currency=payload.get("currency", "USD"),
+        lastTradeDateOrContractMonth=expiration,
+        tradingClass=trading_class,
+        right=right,
+        strike=float(strike),
+    )
+
+    ib = ib_pool.get(host=host, port=port, client_id=client_id, connect_timeout_seconds=connect_timeout_seconds)
+
+    # Step 1: Qualify and insert into ContractRef
+    sync_result = sync_contracts_with_ib(engine=engine, ib=ib, specs=[spec])
+
+    # Step 2: Fetch price if we got a con_id
+    snapshot_result = {}
+    if sync_result.get("unique_con_ids", 0) > 0:
+        # Find the con_id we just qualified
+        from sqlalchemy import select
+        from sqlalchemy.orm import Session
+
+        from src.models import ContractRef
+
+        with Session(engine) as session:
+            row = session.execute(
+                select(ContractRef.con_id).where(
+                    ContractRef.symbol == symbol,
+                    ContractRef.sec_type == sec_type,
+                    ContractRef.trading_class == trading_class,
+                    ContractRef.contract_expiry == expiration,
+                    ContractRef.strike == float(strike),
+                    ContractRef.right == right,
+                    ContractRef.is_active.is_(True),
+                )
+            ).first()
+
+        if row:
+            snapshot_result = fetch_snapshot(
+                engine=engine,
+                host=host,
+                port=port,
+                client_id=client_id,
+                con_ids=[row.con_id],
+                connect_timeout_seconds=connect_timeout_seconds,
+                ib=ib,
+            )
+
+    return {
+        "sync": sync_result,
+        "snapshot": snapshot_result,
+    }
+
+
 def get_handler(job_type: str) -> Callable[[Job, Engine, IBSessionPool], dict] | None:
     handlers: dict[str, Callable[[Job, Engine, IBSessionPool], dict]] = {
         JOB_TYPE_POSITIONS_SYNC: handle_positions_sync,
@@ -520,6 +593,7 @@ def get_handler(job_type: str) -> Callable[[Job, Engine, IBSessionPool], dict] |
         JOB_TYPE_MARKET_DATA_FUTURES_PRICES: handle_market_data_futures_prices,
         JOB_TYPE_MARKET_DATA_FUTURES_OPTIONS: handle_market_data_futures_options,
         JOB_TYPE_MARKET_DATA_SNAPSHOT: handle_market_data_snapshot,
+        JOB_TYPE_CONTRACTS_QUALIFY_AND_SNAPSHOT: handle_contracts_qualify_and_snapshot,
     }
     return handlers.get(job_type)
 
