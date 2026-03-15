@@ -37,17 +37,37 @@ interface JobPreset {
   useFilter?: boolean;
 }
 
+interface ChainSyncConfig {
+  label: string;
+  symbol: string;
+  front_n: number;
+  ranges: { label: string; min_dte?: number; max_dte?: number }[];
+}
+
+const CHAIN_SYNC_CONFIGS: ChainSyncConfig[] = [
+  {
+    label: "CL",
+    symbol: "CL",
+    front_n: 6,
+    ranges: [
+      { label: "0–1yr", max_dte: 365 },
+      { label: "1–2yr", min_dte: 365, max_dte: 730 },
+      { label: "3–5yr", min_dte: 1095, max_dte: 1825 },
+    ],
+  },
+  {
+    label: "ES",
+    symbol: "ES",
+    front_n: 4,
+    ranges: [
+      { label: "0–1yr", max_dte: 365 },
+      { label: "1–2yr", min_dte: 365, max_dte: 730 },
+      { label: "3–5yr", min_dte: 1095, max_dte: 1825 },
+    ],
+  },
+];
+
 const PRESETS: JobPreset[] = [
-  {
-    label: "Sync CL chain (IND+FUT+FOP)",
-    job_type: "contracts.chain_sync",
-    payload: { symbol: "CL", front_n: 6 },
-  },
-  {
-    label: "Sync ES chain (IND+FUT+FOP)",
-    job_type: "contracts.chain_sync",
-    payload: { symbol: "ES", front_n: 4 },
-  },
   {
     label: "CL futures prices",
     job_type: "market_data.futures_prices",
@@ -228,6 +248,43 @@ export default function MarketDataPage() {
     }
   };
 
+  const rerunJob = async (jobId: number) => {
+    setSubmitting(`rerun-${jobId}`);
+    setMessage(null);
+    try {
+      const res = await fetch(`${API_BASE_URL}/jobs/${jobId}/rerun`, {
+        method: "POST",
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || `HTTP ${res.status}`);
+      }
+      const job = await res.json();
+      setMessage(`Job #${job.id} enqueued (rerun of #${jobId})`);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSubmitting(null);
+    }
+  };
+
+  const archiveJob = async (jobId: number) => {
+    setSubmitting(`archive-${jobId}`);
+    try {
+      const res = await fetch(`${API_BASE_URL}/jobs/${jobId}/archive`, {
+        method: "POST",
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || `HTTP ${res.status}`);
+      }
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSubmitting(null);
+    }
+  };
+
   const handlePreset = async (preset: JobPreset) => {
     if (preset.useFilter) {
       const symbol = preset.payload.symbol as string;
@@ -319,7 +376,38 @@ export default function MarketDataPage() {
         <h2 className="mb-3 text-sm font-semibold text-gray-800">
           Quick Actions
         </h2>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2 items-center">
+          {/* Chain sync dropdowns */}
+          {CHAIN_SYNC_CONFIGS.map((cfg) => (
+            <div key={cfg.symbol} className="flex items-center gap-1">
+              <span className="text-xs font-medium text-gray-600">
+                Sync {cfg.label}:
+              </span>
+              {cfg.ranges.map((range) => (
+                <button
+                  key={`${cfg.symbol}-${range.label}`}
+                  onClick={() => {
+                    const optionFilter: Record<string, number> = {};
+                    if (range.min_dte != null)
+                      optionFilter.min_dte = range.min_dte;
+                    if (range.max_dte != null)
+                      optionFilter.max_dte = range.max_dte;
+                    enqueueJob("contracts.chain_sync", {
+                      symbol: cfg.symbol,
+                      front_n: cfg.front_n,
+                      option_filter: optionFilter,
+                    });
+                  }}
+                  disabled={submitting !== null || pendingFilter !== null}
+                  className="rounded border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                >
+                  {range.label}
+                </button>
+              ))}
+              <span className="mx-1 text-gray-300">|</span>
+            </div>
+          ))}
+          {/* Other presets */}
           {PRESETS.map((preset) => (
             <button
               key={preset.label}
@@ -457,12 +545,15 @@ export default function MarketDataPage() {
                 <th className="px-2 py-1 font-semibold text-gray-700">
                   Result / Error
                 </th>
+                <th className="px-2 py-1 font-semibold text-gray-700">
+                  Actions
+                </th>
               </tr>
             </thead>
             <tbody>
               {jobs.length === 0 && (
                 <tr>
-                  <td className="px-2 py-3 text-gray-500" colSpan={6}>
+                  <td className="px-2 py-3 text-gray-500" colSpan={7}>
                     No market data jobs yet. Use the actions above to enqueue
                     one.
                   </td>
@@ -493,6 +584,26 @@ export default function MarketDataPage() {
                       : job.result
                         ? JSON.stringify(job.result)
                         : "—"}
+                  </td>
+                  <td className="px-2 py-1">
+                    <div className="flex gap-1">
+                      <button
+                        onClick={() => rerunJob(job.id)}
+                        disabled={submitting !== null}
+                        className="rounded border border-blue-300 px-1.5 py-0.5 text-xs text-blue-700 hover:bg-blue-50 disabled:opacity-50"
+                        title="Rerun this job"
+                      >
+                        Rerun
+                      </button>
+                      <button
+                        onClick={() => archiveJob(job.id)}
+                        disabled={submitting !== null}
+                        className="rounded border border-gray-300 px-1.5 py-0.5 text-xs text-gray-500 hover:bg-gray-50 hover:text-red-600 disabled:opacity-50"
+                        title="Archive this job"
+                      >
+                        Archive
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}

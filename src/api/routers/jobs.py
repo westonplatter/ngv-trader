@@ -103,6 +103,26 @@ def create_job(
     return response
 
 
+@router.post("/jobs/{job_id}/rerun", response_model=JobResponse, status_code=201)
+def rerun_job(job_id: int, db: Session = DB_SESSION_DEPENDENCY) -> JobResponse:
+    """Create a new job with the same type and payload as an existing job."""
+    job = db.get(Job, job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    new_job = enqueue_job(
+        session=db,
+        job_type=job.job_type,
+        payload=job.payload,
+        source=job.source or "ui",
+        request_text=job.request_text,
+    )
+    db.commit()
+    db.refresh(new_job)
+    response = to_job_response(new_job)
+    broadcaster.publish(make_event(TOPIC_JOBS, "job.created", response, entity_id=new_job.id))
+    return response
+
+
 @router.post("/jobs/{job_id}/archive", response_model=JobResponse)
 def archive_job(job_id: int, db: Session = DB_SESSION_DEPENDENCY) -> JobResponse:
     job = db.get(Job, job_id)

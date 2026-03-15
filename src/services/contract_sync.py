@@ -258,19 +258,18 @@ def sync_futures_chain(
 
     1. Qualify the Index contract
     2. Discover the option chain via reqSecDefOptParams
-    3. Sync FUT contracts (limited to front_n), fetch prices
-    4. Sync FOP contracts filtered by strike/moneyness/modulus
+    3. Sync FUT contracts (limited to front_n)
+    4. Sync FOP contracts (all strikes, filtered by DTE range)
 
     option_filter keys (all optional):
-      - moneyness_gte/moneyness_lte: strike as % of FUT price (e.g. 90.0, 110.0)
-      - strike_gte/strike_lte: absolute strike bounds
-      - modulus_eq: only keep strikes divisible by this (e.g. 0.5, 5.0, 500.0)
+      - min_dte: minimum days to expiry (default 0)
+      - max_dte: maximum days to expiry (default None = no limit)
 
-    If option_filter is None, uses per-symbol defaults from src.data.option_filters.
+    Price fetching (market_data.futures_options) still uses narrow strike/moneyness
+    filters. If a user selects a contract without prices, a targeted snapshot job
+    can be kicked off.
     """
-    from src.data.option_filters import get_option_filter
-
-    filt = option_filter if option_filter is not None else get_option_filter(symbol)
+    filt = option_filter or {}
     owns_ib = ib is None
     if ib is None:
         ib = IB()
@@ -401,183 +400,136 @@ def sync_futures_chain(
 
         logger.info("Synced %d FUT contracts for %s", counts["fut"], symbol)
 
-        # Look up FUT prices from latest_futures table (populated by market_data.futures_prices job)
-        STALE_MINUTES = 10
-        needs_price = "moneyness_gte" in filt or "moneyness_lte" in filt
-        fut_prices: dict[int, float] = {}
-        if needs_price:
-            from sqlalchemy import select
+        logger.info("Syncing ALL FOP contracts for %s (no strike filtering)", symbol)
 
-            from src.models import LatestFutures
-
-            stale_cutoff = now - timedelta(minutes=STALE_MINUTES)
-
-            with Session(engine) as session:
-                rows = session.execute(
-                    select(LatestFutures.con_id, LatestFutures.last, LatestFutures.close, LatestFutures.market_ts).where(
-                        LatestFutures.con_id.in_(list(front_fut_con_ids))
-                    )
-                ).all()
-                stale_ids: list[int] = []
-                for row in rows:
-                    price = row.last if row.last and row.last > 0 else row.close
-                    if price and price > 0:
-                        is_stale = row.market_ts < stale_cutoff if row.market_ts else True
-                        fut_prices[row.con_id] = float(price)
-                        if is_stale:
-                            stale_ids.append(row.con_id)
-                        logger.info(
-                            "FUT con_id=%d price=%.4f (from DB%s)",
-                            row.con_id,
-                            price,
-                            ", STALE" if is_stale else "",
-                        )
-
-            missing = front_fut_con_ids - set(fut_prices.keys())
-            if missing or stale_ids:
-                logger.warning(
-                    "FUT prices need refresh — missing: %s, stale (>%dm): %s. " "Run market_data.futures_prices first for accurate moneyness filtering.",
-                    missing or "none",
-                    STALE_MINUTES,
-                    stale_ids or "none",
-                )
-
-        logger.info("FOP filter for %s: %s", symbol, filt)
-
-        # Step 4: Sync FOP contracts for each front FUT underlying
+        # Step 4: Sync ALL FOP contracts for each front FUT underlying
+        # Contract metadata is synced unfiltered so the UI can show the full chain.
+        # Price fetching (market_data.futures_options) still uses narrow filters.
         # Load existing FOP coverage from DB to skip redundant IBKR calls
         from datetime import date
 
-        from sqlalchemy import func, select
+        from sqlalchemy import select
 
-        existing_coverage: dict[tuple[int, str, str], tuple[float, float]] = {}
+        # Build a set of (underlying_con_id, trading_class, expiry, right, strike)
+        # for existing contracts so we can skip individual specs we already have
         existing_con_ids: set[int] = set()
+        existing_specs: set[tuple[int, str, str, str, float]] = set()
         with Session(engine) as session:
-            # Get min/max strike per (underlying_con_id, contract_expiry, right)
-            coverage_q = (
-                select(
-                    ContractRef.underlying_con_id,
-                    ContractRef.contract_expiry,
-                    ContractRef.right,
-                    func.min(ContractRef.strike).label("min_strike"),
-                    func.max(ContractRef.strike).label("max_strike"),
-                )
-                .where(
-                    ContractRef.symbol == symbol,
-                    ContractRef.sec_type == "FOP",
-                    ContractRef.is_active.is_(True),
-                    ContractRef.underlying_con_id.in_(list(front_fut_con_ids)),
-                )
-                .group_by(
-                    ContractRef.underlying_con_id,
-                    ContractRef.contract_expiry,
-                    ContractRef.right,
-                )
-            )
-            for row in session.execute(coverage_q):
-                key = (row.underlying_con_id, row.contract_expiry or "", row.right or "")
-                existing_coverage[key] = (float(row.min_strike or 0), float(row.max_strike or 0))
-
-            # Get all existing active FOP con_ids for this symbol
-            con_id_q = select(ContractRef.con_id).where(
+            spec_q = select(
+                ContractRef.con_id,
+                ContractRef.underlying_con_id,
+                ContractRef.trading_class,
+                ContractRef.contract_expiry,
+                ContractRef.right,
+                ContractRef.strike,
+            ).where(
                 ContractRef.symbol == symbol,
                 ContractRef.sec_type == "FOP",
                 ContractRef.is_active.is_(True),
             )
-            existing_con_ids = {row[0] for row in session.execute(con_id_q)}
+            for row in session.execute(spec_q):
+                existing_con_ids.add(row.con_id)
+                if row.underlying_con_id and row.contract_expiry and row.right and row.strike:
+                    existing_specs.add(
+                        (
+                            row.underlying_con_id,
+                            row.trading_class or "",
+                            row.contract_expiry,
+                            row.right,
+                            float(row.strike),
+                        )
+                    )
 
         logger.info(
-            "Existing FOP coverage: %d expiry/right combos, %d contracts in DB",
-            len(existing_coverage),
+            "Existing FOP coverage: %d contracts (%d unique specs) in DB",
             len(existing_con_ids),
+            len(existing_specs),
         )
 
         counts["fop_skipped"] = 0
 
-        # Phase 1: Build all FOP Contract specs we need to qualify
+        # Phase 1: Build FOP Contract specs to qualify
         # Each entry: (Contract spec, fut_con_id for underlying)
+        # Filter expirations by min_dte / max_dte from option_filter if provided
         fop_specs: list[tuple[Contract, int]] = []
         today = date.today()
-        max_dte = filt.get("max_dte")
+        min_dte = filt.get("min_dte", 0) if filt else 0
+        max_dte = filt.get("max_dte") if filt else None
+
+        logger.info(
+            "FOP DTE filter: min_dte=%s, max_dte=%s",
+            min_dte,
+            max_dte if max_dte is not None else "none",
+        )
 
         for info in chain_info:
             fut_cid = info["fut_con_id"]
             if fut_cid not in front_fut_con_ids:
                 continue
 
-            trading_class = info["trading_class"]
-            all_expirations = sorted(info["expirations"])
+            trading_class = info["trading_class"] or ""
+            expirations = sorted(info["expirations"])
             strikes = sorted(info["strikes"])
 
-            if not all_expirations or not strikes:
+            if not expirations or not strikes:
                 continue
 
-            # Filter expirations by max_dte
-            if max_dte is not None:
-                expirations = []
-                for exp in all_expirations:
-                    try:
-                        exp_date = date(int(exp[:4]), int(exp[4:6]), int(exp[6:8]))
-                        if (exp_date - today).days <= max_dte:
-                            expirations.append(exp)
-                    except (ValueError, IndexError):
+            # Filter expirations by DTE range
+            valid_expirations = []
+            for exp in expirations:
+                try:
+                    exp_date = date(int(exp[:4]), int(exp[4:6]), int(exp[6:8]))
+                    dte_val = (exp_date - today).days
+                    if dte_val < min_dte:
                         continue
-                logger.info(
-                    "FUT con_id=%d tc=%s: max_dte=%d filtered expirations %d → %d",
-                    fut_cid,
-                    trading_class,
-                    max_dte,
-                    len(all_expirations),
-                    len(expirations),
-                )
-            else:
-                expirations = all_expirations
+                    if max_dte is not None and dte_val > max_dte:
+                        continue
+                    valid_expirations.append(exp)
+                except (ValueError, IndexError):
+                    continue
 
-            if not expirations:
+            if not valid_expirations:
                 continue
 
-            fut_price = fut_prices.get(fut_cid)
-            filtered_strikes = [s for s in strikes if _passes_strike_filter(s, fut_price, filt)]
-            if not filtered_strikes:
-                continue
-
-            new_lo = min(filtered_strikes)
-            new_hi = max(filtered_strikes)
+            lo = min(strikes)
+            hi = max(strikes)
 
             logger.info(
-                "FUT con_id=%d tc=%s price=%s: %d expirations, %d/%d strikes [%.2f–%.2f]",
+                "FUT con_id=%d tc=%s: %d expirations, %d strikes [%.2f–%.2f]",
                 fut_cid,
                 trading_class,
-                f"{fut_price:.4f}" if fut_price else "N/A",
-                len(expirations),
-                len(filtered_strikes),
+                len(valid_expirations),
                 len(strikes),
-                new_lo,
-                new_hi,
+                lo,
+                hi,
             )
 
-            for expiry in expirations:
+            skipped_existing = 0
+            for expiry in valid_expirations:
                 for right_val in ("C", "P"):
-                    # Skip if existing DB coverage already spans the new strike range
-                    coverage_key = (fut_cid, expiry, right_val)
-                    existing = existing_coverage.get(coverage_key)
-                    if existing:
-                        ex_lo, ex_hi = existing
-                        if ex_lo <= new_lo and ex_hi >= new_hi:
+                    for strike in strikes:
+                        # Skip if we already have this exact contract in the DB
+                        if (fut_cid, trading_class, expiry, right_val, strike) in existing_specs:
+                            skipped_existing += 1
                             continue
-
-                    for strike in filtered_strikes:
                         spec = Contract(
                             symbol=symbol,
                             secType="FOP",
                             exchange=exchange,
                             currency=currency,
                             lastTradeDateOrContractMonth=expiry,
-                            tradingClass=trading_class or "",
+                            tradingClass=trading_class,
                             right=right_val,
                             strike=strike,
                         )
                         fop_specs.append((spec, fut_cid))
+            if skipped_existing:
+                logger.info(
+                    "FUT con_id=%d tc=%s: skipped %d specs already in DB",
+                    fut_cid,
+                    trading_class,
+                    skipped_existing,
+                )
 
         logger.info("Phase 1: built %d FOP specs to qualify", len(fop_specs))
 
