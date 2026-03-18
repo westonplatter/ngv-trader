@@ -33,8 +33,8 @@ ngv-trader has four main components that work together:
 Install these before proceeding:
 
 | Tool                   | Version  | Install                                                                             |
-| ---------------------- | -------- | ----------------------------------------------------------------------------------- | --- |
-| `uv`                   | latest   | `curl -LsSf https://astral.sh/uv/install.sh                                         | sh` |
+| ---------------------- | -------- | ----------------------------------------------------------------------------------- |
+| `uv`                   | latest   | `curl -LsSf https://astral.sh/uv/install.sh \| sh`                                  |
 | Bun                    | 1.0+     | [bun.sh](https://bun.sh/)                                                           |
 | PostgreSQL             | 14+      | [postgresql.org](https://www.postgresql.org/download/) or `brew install postgresql` |
 | Task                   | latest   | [taskfile.dev](https://taskfile.dev/docs/installation)                              |
