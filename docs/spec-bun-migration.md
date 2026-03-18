@@ -1,6 +1,6 @@
 # Spec: Migrate Frontend from Node.js/npm to Bun
 
-## Complexity: 1/5
+## Complexity: 1
 
 ## Purpose
 
