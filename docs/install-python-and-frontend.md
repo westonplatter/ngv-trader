@@ -6,7 +6,7 @@ Install and run both app surfaces locally.
 
 - Python `3.12+`
 - `uv` installed
-- Node.js `20+` and `npm`
+- [Bun](https://bun.sh/) `1.0+`
 - 1Password CLI (`op`) if you use `task api` with `.env.dev`
 
 ## Backend (Python/FastAPI)
@@ -35,13 +35,13 @@ Install frontend dependencies:
 
 ```bash
 cd frontend
-npm install
+bun install
 ```
 
 Start Vite dev server:
 
 ```bash
-npm run dev
+bun run dev
 ```
 
 Frontend runs on `http://localhost:5173` and calls API on `http://localhost:8000`.
