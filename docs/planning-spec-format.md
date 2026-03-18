@@ -39,6 +39,10 @@ Avoid:
 ```md
 # Spec: <Short Feature Name>
 
+## Complexity: <1-5>
+
+<Rate the implementation complexity from 1 (trivial config/dependency changes, no app code) to 5 (cross-cutting architectural change touching many systems). This helps prioritize and set expectations.>
+
 ## Purpose
 
 <One short paragraph explaining why this work matters.>
