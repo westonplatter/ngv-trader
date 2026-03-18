@@ -32,7 +32,7 @@ Replace Node.js and npm with Bun as the JavaScript runtime and package manager f
 - Package manager: npm with `package-lock.json`
 - Build tool: Vite 7.x with React and Tailwind plugins
 - Scripts in `package.json` use `node ./node_modules/vite/bin/vite.js` directly
-- Dependencies: React 19, react-router-dom, plotly.js, ai-sdk, dnd-kit
+- Dependencies: React 19, react-router-dom, plotly.js, @ai-sdk/react, ai, dnd-kit
 
 ## Desired Outcome
 
