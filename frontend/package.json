@@ -4,10 +4,10 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "node ./node_modules/vite/bin/vite.js",
-    "build": "tsc -b && node ./node_modules/vite/bin/vite.js build",
-    "lint": "eslint .",
-    "preview": "node ./node_modules/vite/bin/vite.js preview"
+    "dev": "bunx --bun vite",
+    "build": "bunx --bun tsc -b && bunx --bun vite build",
+    "lint": "bunx eslint .",
+    "preview": "bunx --bun vite preview"
   },
   "dependencies": {
     "@ai-sdk/react": "^3.0.93",
