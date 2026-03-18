@@ -18,7 +18,7 @@ tasks:
   frontend:
     desc: Start the Vite dev server (port 5173)
     dir: frontend
-    cmd: npm run dev
+    cmd: bun run dev
 
   worker:jobs:
     desc: Start generic job worker (dispatches by job_type)
@@ -35,7 +35,7 @@ tasks:
   frontend:install:
     desc: Install frontend dependencies
     dir: frontend
-    cmd: npm install
+    cmd: bun install
 
   migrate:
     desc: Run alembic migrations to head

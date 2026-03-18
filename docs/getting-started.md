@@ -33,9 +33,9 @@ ngv-trader has four main components that work together:
 Install these before proceeding:
 
 | Tool                   | Version  | Install                                                                             |
-| ---------------------- | -------- | ----------------------------------------------------------------------------------- | --- |
-| `uv`                   | latest   | `curl -LsSf https://astral.sh/uv/install.sh                                         | sh` |
-| Node.js + npm          | 20+      | [nodejs.org](https://nodejs.org/)                                                   |
+| ---------------------- | -------- | ----------------------------------------------------------------------------------- |
+| `uv`                   | latest   | `curl -LsSf https://astral.sh/uv/install.sh \| sh`                                  |
+| Bun                    | 1.0+     | [bun.sh](https://bun.sh/)                                                           |
 | PostgreSQL             | 14+      | [postgresql.org](https://www.postgresql.org/download/) or `brew install postgresql` |
 | Task                   | latest   | [taskfile.dev](https://taskfile.dev/docs/installation)                              |
 | IBKR TWS or IB Gateway | optional | [interactivebrokers.com](https://www.interactivebrokers.com/en/trading/tws.php)     |
@@ -57,7 +57,7 @@ Install frontend dependencies:
 
 ```bash
 cd frontend
-npm install
+bun install
 cd ..
 ```
 
@@ -282,7 +282,7 @@ task list              # Show all available tasks
 task api               # Start FastAPI backend (port 8000)
 task frontend          # Start Vite frontend (port 5173)
 task dev               # Start both API and frontend
-task frontend:install  # npm install for frontend
+task frontend:install  # bun install for frontend
 task migrate           # Run Alembic migrations to head
 task migrate:down      # Roll back one migration
 task migrate:new -- "description"  # Create a new migration

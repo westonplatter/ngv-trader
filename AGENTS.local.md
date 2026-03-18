@@ -67,7 +67,7 @@ Exits 1 on failure.
 - `scripts/execute_cl_buy_or_sell_continous_market.py`: trade execution service for CL front-month market orders with confirmation + what-if checks.
 - `scripts/test_tws_connection.py`: connectivity/health service for IBKR API session checks.
 - `src/api/main.py`: FastAPI service entrypoint (`task api` or `uv run uvicorn src.api.main:app --reload --port 8000`).
-- `frontend/` dev server: UI service (`task frontend` or `npm run dev` in `frontend/`).
+- `frontend/` dev server: UI service (`task frontend` or `bun run dev` in `frontend/`).
 
 ### End-to-End Workflow (Current)
 
