@@ -90,10 +90,13 @@ interface LegRow {
   ivstart: number;
   ivend: number | null;
   quantity: number;
+  quantityInput: string;
   tradePrice: number | null;
   bid: number | null;
   ask: number | null;
   undPrice: number | null;
+  volume: number | null;
+  openInterest: number | null;
   observedAt: string | null;
   fetchStatus: FetchStatus;
   fetchJobId: number | null;
@@ -116,6 +119,8 @@ interface ExpectedPnlResponse {
   model_outputs: ModelOutputs;
 }
 
+type SidebarActionStatus = "idle" | "pending" | "success" | "error";
+
 function createEmptyLeg(): LegRow {
   return {
     id: crypto.randomUUID(),
@@ -129,10 +134,13 @@ function createEmptyLeg(): LegRow {
     ivstart: 0,
     ivend: null,
     quantity: 1,
+    quantityInput: "1",
     tradePrice: null,
     bid: null,
     ask: null,
     undPrice: null,
+    volume: null,
+    openInterest: null,
     observedAt: null,
     fetchStatus: "idle",
     fetchJobId: null,
@@ -142,6 +150,17 @@ function createEmptyLeg(): LegRow {
 function midPrice(bid: number | null, ask: number | null): number | null {
   if (bid != null && ask != null) return (bid + ask) / 2;
   return bid ?? ask ?? null;
+}
+
+function formatQuantityInput(quantity: number): string {
+  return Number.isFinite(quantity) ? String(quantity) : "";
+}
+
+function parseQuantityInput(value: string): number | null {
+  const trimmed = value.trim();
+  if (trimmed === "") return 0;
+  const parsed = Number(trimmed);
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 // --- Expiration formatting ---
@@ -198,6 +217,8 @@ export default function PricingPage() {
   const [loadedStructureId, setLoadedStructureId] = useState<number | null>(
     null,
   );
+  const [saveStatus, setSaveStatus] = useState<SidebarActionStatus>("idle");
+  const [saveFeedback, setSaveFeedback] = useState<string | null>(null);
 
   // Results
   const [loading, setLoading] = useState(false);
@@ -285,14 +306,18 @@ export default function PricingPage() {
       ivstart: sl.ivstart,
       ivend: sl.ivend ?? null,
       quantity: sl.quantity,
+      quantityInput: formatQuantityInput(sl.quantity),
       tradePrice: sl.tradePrice,
       bid: sl.bid,
       ask: sl.ask,
       undPrice: sl.undPrice,
+      volume: null,
+      openInterest: null,
       contractLabel: sl.contractLabel,
       selectedConId: sl.selectedConId,
       selectedExpiry: sl.selectedExpiry ?? null,
       selectedTradingClass: sl.selectedTradingClass ?? null,
+      observedAt: null,
       fetchStatus: "idle" as FetchStatus,
       fetchJobId: null,
     }));
@@ -303,6 +328,8 @@ export default function PricingPage() {
     (structureId: number) => {
       const s = savedStructures.find((x) => x.id === structureId);
       if (!s) return;
+      setSaveStatus("idle");
+      setSaveFeedback(null);
       setInstrument(s.instrument);
       setLegs(savedLegsToRows(s.legs));
       if (s.spot_price != null) {
@@ -319,18 +346,34 @@ export default function PricingPage() {
   const handleSave = useCallback(async () => {
     if (loadedStructureId == null) return;
     const spot = parseFloat(spotPrice);
-    await fetch(`${API_BASE_URL}/structures/${loadedStructureId}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        name:
-          savedStructures.find((s) => s.id === loadedStructureId)?.name ?? "",
-        instrument,
-        legs: legsToSaved(legs),
-        spot_price: isNaN(spot) ? null : spot,
-      }),
-    });
-    fetchSavedStructures();
+    setSaveStatus("pending");
+    setSaveFeedback(null);
+    try {
+      const res = await fetch(
+        `${API_BASE_URL}/structures/${loadedStructureId}`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name:
+              savedStructures.find((s) => s.id === loadedStructureId)?.name ??
+              "",
+            instrument,
+            legs: legsToSaved(legs),
+            spot_price: isNaN(spot) ? null : spot,
+          }),
+        },
+      );
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      fetchSavedStructures();
+      setSaveStatus("success");
+      setSaveFeedback(`Saved ${new Date().toLocaleTimeString()}`);
+    } catch (err) {
+      setSaveStatus("error");
+      setSaveFeedback(
+        `Save failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
   }, [
     loadedStructureId,
     instrument,
@@ -343,6 +386,8 @@ export default function PricingPage() {
   const handleSaveAs = useCallback(async () => {
     const name = window.prompt("Enter a name for this structure:");
     if (!name) return;
+    setSaveStatus("idle");
+    setSaveFeedback(null);
     const spot = parseFloat(spotPrice);
     const res = await fetch(`${API_BASE_URL}/structures`, {
       method: "POST",
@@ -367,6 +412,8 @@ export default function PricingPage() {
     await fetch(`${API_BASE_URL}/structures/${loadedStructureId}`, {
       method: "DELETE",
     });
+    setSaveStatus("idle");
+    setSaveFeedback(null);
     setLoadedStructureId(null);
     fetchSavedStructures();
   }, [loadedStructureId, fetchSavedStructures]);
@@ -462,12 +509,17 @@ export default function PricingPage() {
       if (payload.status === "completed") {
         const result = payload.result;
         const snapshot = (result?.snapshot as Record<string, unknown>) ?? {};
-        const results =
-          (snapshot?.results as Array<Record<string, unknown>>) ?? [];
+        const results = Array.isArray(result?.results)
+          ? (result.results as Array<Record<string, unknown>>)
+          : ((snapshot?.results as Array<Record<string, unknown>>) ?? []);
         const priceData = results[0];
         next[legIdx] = {
           ...leg,
           fetchStatus: "done",
+          selectedConId:
+            priceData?.con_id != null
+              ? Number(priceData.con_id)
+              : leg.selectedConId,
           bid: priceData?.bid != null ? Number(priceData.bid) : leg.bid,
           ask: priceData?.ask != null ? Number(priceData.ask) : leg.ask,
           ivstart: priceData?.iv != null ? Number(priceData.iv) : leg.ivstart,
@@ -475,6 +527,12 @@ export default function PricingPage() {
             priceData?.und_price != null
               ? Number(priceData.und_price)
               : leg.undPrice,
+          volume:
+            priceData?.volume != null ? Number(priceData.volume) : leg.volume,
+          openInterest:
+            priceData?.open_interest != null
+              ? Number(priceData.open_interest)
+              : leg.openInterest,
           tradePrice:
             priceData?.bid != null && priceData?.ask != null
               ? (Number(priceData.bid) + Number(priceData.ask)) / 2
@@ -597,9 +655,10 @@ export default function PricingPage() {
             <>
               <button
                 onClick={handleSave}
-                className="text-xs bg-blue-600 text-white rounded px-2 py-1 hover:bg-blue-700"
+                disabled={saveStatus === "pending"}
+                className="text-xs bg-blue-600 text-white rounded px-2 py-1 hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                Save
+                {saveStatus === "pending" ? "Saving..." : "Save"}
               </button>
               <button
                 onClick={handleDeleteStructure}
@@ -607,6 +666,16 @@ export default function PricingPage() {
               >
                 Delete
               </button>
+              {saveFeedback && (
+                <p
+                  aria-live="polite"
+                  className={`text-[11px] leading-tight ${
+                    saveStatus === "error" ? "text-red-600" : "text-gray-500"
+                  }`}
+                >
+                  {saveFeedback}
+                </p>
+              )}
             </>
           )}
         </div>
@@ -672,7 +741,7 @@ export default function PricingPage() {
           </label>
         </div>
 
-        {/* Legs Table — order: # | Type | Expiry | Strike | Qty | IV | IV End | Und | Bid | Ask | Mid | x */}
+        {/* Legs Table — order: # | Type | Expiry | Strike | Qty | IV | IV End | Und | Bid | Ask | Mid | Volume | OI | Con Id | x */}
         <div className="mb-4">
           <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-2">
             Legs
@@ -692,6 +761,9 @@ export default function PricingPage() {
                 <th className="px-2 py-1.5 text-left w-20">Bid</th>
                 <th className="px-2 py-1.5 text-left w-20">Ask</th>
                 <th className="px-2 py-1.5 text-left w-20">Mid</th>
+                <th className="px-2 py-1.5 text-left w-24">Volume</th>
+                <th className="px-2 py-1.5 text-left w-24">OI</th>
+                <th className="px-2 py-1.5 text-left w-24">Con Id</th>
               </tr>
             </thead>
             <tbody>
@@ -807,6 +879,13 @@ function LegRowComponent({
   const isCash = leg.optionType === "cash";
   const isOption = !isD1 && !isCash;
   const mid = midPrice(leg.bid, leg.ask);
+  const canRefreshOption =
+    isOption &&
+    leg.selectedExpiry != null &&
+    leg.selectedTradingClass != null &&
+    leg.strike != null;
+  const showRefreshButton =
+    isOption || leg.fetchStatus === "done" || leg.fetchStatus === "error";
 
   // --- Option cascade: Type → Expiry → Strike ---
   const rightFilter = leg.optionType === "c" ? "C" : "P";
@@ -889,6 +968,8 @@ function LegRowComponent({
       ask: contract.ask,
       tradePrice: m,
       undPrice: contract.und_price,
+      volume: null,
+      openInterest: null,
       observedAt: contract.observed_at,
       fetchStatus: hasData ? "done" : "idle",
     });
@@ -910,6 +991,8 @@ function LegRowComponent({
       ask: null,
       tradePrice: null,
       undPrice: null,
+      volume: null,
+      openInterest: null,
     });
   };
 
@@ -926,6 +1009,8 @@ function LegRowComponent({
         bid: null,
         ask: null,
         tradePrice: null,
+        volume: null,
+        openInterest: null,
       });
     }
   };
@@ -944,6 +1029,8 @@ function LegRowComponent({
       ask: fut.ask,
       tradePrice: m,
       undPrice: price,
+      volume: fut.volume,
+      openInterest: fut.open_interest,
     });
     if (!hasPricingData(fut)) {
       onFetchPrice(leg.id, {
@@ -981,6 +1068,25 @@ function LegRowComponent({
     }
   };
 
+  const handleQuantityChange = (value: string) => {
+    const parsedQuantity = parseQuantityInput(value);
+    onUpdate(leg.id, {
+      quantityInput: value,
+      ...(parsedQuantity != null ? { quantity: parsedQuantity } : {}),
+    });
+  };
+
+  const handleQuantityBlur = () => {
+    const parsedQuantity = parseQuantityInput(leg.quantityInput);
+    onUpdate(leg.id, {
+      quantity: parsedQuantity ?? leg.quantity,
+      quantityInput:
+        parsedQuantity != null
+          ? formatQuantityInput(parsedQuantity)
+          : formatQuantityInput(leg.quantity),
+    });
+  };
+
   const resetLeg = (newType: LegRow["optionType"]) => {
     onUpdate(leg.id, {
       optionType: newType,
@@ -992,10 +1098,13 @@ function LegRowComponent({
       dte: 0,
       ivstart: 0,
       ivend: null,
+      quantityInput: formatQuantityInput(leg.quantity),
       bid: null,
       ask: null,
       tradePrice: null,
       undPrice: null,
+      volume: null,
+      openInterest: null,
       observedAt: null,
       fetchStatus: "idle",
       fetchJobId: null,
@@ -1039,10 +1148,12 @@ function LegRowComponent({
             />
           )}
           {index + 1}
-          {(leg.fetchStatus === "done" || leg.fetchStatus === "error") && (
+          {showRefreshButton && (
             <button
               onClick={handleRefresh}
-              disabled={leg.fetchStatus === "working"}
+              disabled={
+                leg.fetchStatus === "working" || (isOption && !canRefreshOption)
+              }
               className="ml-1 rounded border border-gray-300 px-1.5 py-0.5 text-[11px] text-gray-600 hover:bg-gray-50 hover:text-blue-600"
               title="Refresh pricing data"
             >
@@ -1085,6 +1196,8 @@ function LegRowComponent({
                 ask: null,
                 tradePrice: null,
                 undPrice: null,
+                volume: null,
+                openInterest: null,
               })
             }
             placeholder={futuresLoading ? "Loading..." : "Select future..."}
@@ -1159,6 +1272,8 @@ function LegRowComponent({
                 ask: null,
                 tradePrice: null,
                 undPrice: null,
+                volume: null,
+                openInterest: null,
               })
             }
             placeholder="Strike..."
@@ -1169,12 +1284,11 @@ function LegRowComponent({
       {/* Qty */}
       <td className="px-2 py-1.5">
         <input
-          type="number"
-          step="any"
-          value={leg.quantity}
-          onChange={(e) =>
-            onUpdate(leg.id, { quantity: parseFloat(e.target.value) || 0 })
-          }
+          type="text"
+          inputMode="decimal"
+          value={leg.quantityInput}
+          onChange={(e) => handleQuantityChange(e.target.value)}
+          onBlur={handleQuantityBlur}
           className="border border-gray-300 rounded px-1 py-0.5 text-sm w-full"
         />
       </td>
@@ -1235,6 +1349,15 @@ function LegRowComponent({
           }
           className="border border-gray-300 rounded px-1 py-0.5 text-sm w-full"
         />
+      </td>
+      <td className="px-2 py-1.5 text-gray-500">
+        {leg.volume != null ? leg.volume.toLocaleString() : "—"}
+      </td>
+      <td className="px-2 py-1.5 text-gray-500">
+        {leg.openInterest != null ? leg.openInterest.toLocaleString() : "—"}
+      </td>
+      <td className="px-2 py-1.5 font-mono text-xs text-gray-500">
+        {leg.selectedConId ?? "—"}
       </td>
     </tr>
   );
