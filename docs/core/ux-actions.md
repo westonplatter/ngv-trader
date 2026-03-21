@@ -52,6 +52,27 @@ Use one-click actions for safe operations (refresh, sync, edit mode, retry).
 - Show in-flight state (`Refreshing...`, `Saving...`).
 - Show inline success/error feedback near action.
 
+Recommended variants:
+
+- Inline stateful button: keep the action in place, switch label during mutation (`Save` -> `Saving...`), then show nearby success/error text.
+- Persistent status line: show a small adjacent or below-action message such as `Saved 10:42:13` or `Save failed: HTTP 500`.
+
+Preferred pattern for sidebar entity save actions:
+
+- Keep primary action label stable at rest (`Save`).
+- On click, disable repeat submission while pending.
+- Change label to `Saving...` during the request.
+- Show inline feedback directly under the action group after completion.
+- Success copy should be short and confirm completion, ideally with a timestamp.
+- Error copy should be human-readable and preserve context for retry.
+
+Recommended copy:
+
+- Idle: `Save`
+- Busy: `Saving...`
+- Success: `Saved 10:42:13`
+- Error: `Save failed: HTTP 500`
+
 ## State Model
 
 For any action component, keep these states explicit:
@@ -103,3 +124,5 @@ Before implementing an action on any page:
 - `/watchlists`:
   - Row-level remove instrument: inline `Remove -> Confirm -> DELETE`.
   - Watch list delete: full-entity confirm dialog before `DELETE`.
+- `/structures`:
+  - Sidebar save: single-step `Save` action with `Saving...` pending state and inline success/error text directly below the actions.

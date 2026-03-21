@@ -293,9 +293,11 @@ def get_chain(
         stmt = stmt.where(OptionChainMeta.strike <= strike_lte)
     if right is not None:
         stmt = stmt.where(OptionChainMeta.right == right.upper())
-    if dte_gte is not None:
-        min_expiry = (date.today() + timedelta(days=dte_gte)).strftime("%Y%m%d")
-        stmt = stmt.where(OptionChainMeta.expiration >= min_expiry)
+    # Default to filtering out expired options (DTE < 0)
+    if dte_gte is None:
+        dte_gte = 0
+    min_expiry = (date.today() + timedelta(days=dte_gte)).strftime("%Y%m%d")
+    stmt = stmt.where(OptionChainMeta.expiration >= min_expiry)
     if dte_lte is not None:
         max_expiry = (date.today() + timedelta(days=dte_lte)).strftime("%Y%m%d")
         stmt = stmt.where(OptionChainMeta.expiration <= max_expiry)

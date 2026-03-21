@@ -1,6 +1,6 @@
 """Saved option structures API router."""
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -38,11 +38,27 @@ def to_structure_response(s: SavedStructure) -> StructureResponse:
     )
 
 
+def _has_expired_leg(legs: list) -> bool:
+    """Return True if any leg has a selectedExpiry in the past (DTE < 0)."""
+    today = date.today()
+    for leg in legs:
+        expiry_str = leg.get("selectedExpiry") if isinstance(leg, dict) else None
+        if not expiry_str:
+            continue
+        try:
+            exp = datetime.strptime(expiry_str, "%Y%m%d").date()
+            if (exp - today).days < 0:
+                return True
+        except (ValueError, TypeError):
+            continue
+    return False
+
+
 @router.get("/structures", response_model=list[StructureResponse])
 def list_structures(db: Session = DB_SESSION_DEPENDENCY) -> list[StructureResponse]:
     stmt = select(SavedStructure).order_by(SavedStructure.updated_at.desc())
     rows = db.execute(stmt).scalars().all()
-    return [to_structure_response(s) for s in rows]
+    return [to_structure_response(s) for s in rows if not _has_expired_leg(s.legs)]
 
 
 @router.get("/structures/{structure_id}", response_model=StructureResponse)
