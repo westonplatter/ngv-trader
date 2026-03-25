@@ -11,6 +11,8 @@
 # APS (Agentic Prompt Sync)
 .aps-backups/
 
+.claude
+
 # ----------------- standard python ignores -----------------
 
 # Byte-compiled / optimized / DLL files
