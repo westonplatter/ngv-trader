@@ -4,6 +4,20 @@
 
 Agentic software enabling one person to operate as an quick and nimble quantative futures, vol. and options trade desk.
 
+## Planning Agents
+
+Custom sub-agents for multi-perspective planning and review. Invoke via `@` mention in Claude Code.
+
+| Agent          | Purpose                                     | When to use                                              |
+| -------------- | ------------------------------------------- | -------------------------------------------------------- |
+| `@ngv-quorum`  | Full quorum deliberation (all perspectives) | Feature planning, spec generation, design decisions      |
+| `@ngv-analyst` | Trade Desk Analyst (decision lead)          | Business requirements, prioritization, tie-breaking      |
+| `@ngv-swe`     | SWE (Python/SQLAlchemy)                     | Implementation feasibility, migration safety             |
+| `@ngv-dba`     | Postgres DBA                                | Schema design, indexing, constraint review               |
+| `@ngv-ux`      | UX Designer                                 | Interaction patterns, workflow speed, provenance clarity |
+
+Start with `@ngv-quorum` for cross-cutting questions. Use individual agents for targeted analysis. See `docs/planning-spec-format.md` for the spec workflow.
+
 ## Docs Index Rule
 
 If any `docs/*.md` file is added, modified, renamed, or deleted (excluding `docs/_index.md`), update `docs/_index.md` in the same change.
@@ -35,59 +49,86 @@ Always use `uv run python scripts/check.py <module>` to verify imports. Never us
 
 Exits 1 on failure.
 
+## Documentation Discovery
+
+`docs/_index.md` is the master index for all project documentation. It lists every doc and spec with tags and descriptions. **Read `docs/_index.md` first** to find relevant docs by topic before reading individual files.
+
 ## Codebase Survey
 
 ### Repository Layout
 
-- `src/`: Python backend application code (current import root is `src`).
+- `src/`: Python backend — FastAPI API, SQLAlchemy models, services (import root is `src`).
+- `src/api/routers/`: one router file per domain concern.
+- `src/services/`: business logic and broker integration services.
+- `src/utils/`: small helpers (account masking, contract display, env vars).
+- `alembic/` + `alembic.ini`: Postgres schema migrations.
+- `frontend/`: React + Vite + TypeScript UI (uses Bun).
 - `scripts/`: operator-facing workflows and broker/database utilities.
-- `alembic/` + `alembic.ini`: database migrations for Postgres schema.
-- `frontend/`: React + Vite UI for portfolio/positions views.
-- `docs/`: runbooks and architecture notes.
-- `Taskfile.yaml`: common dev commands for API, frontend, and migrations.
+- `docs/`: runbooks, architecture notes, and specs. Indexed in `docs/_index.md`.
+- `Taskfile.yaml`: dev commands (`task api`, `task frontend`, `task worker:jobs`).
 
-### Primitives
+### Domain Model
 
-- `src/db.py`: pure-ish DB URL and SQLAlchemy engine builders (`get_database_url`, `get_engine`).
-- `src/utils/ibkr_account.py`: account masking helper (`mask_ibkr_account`) for safer logs.
-- `scripts/execute_cl_buy_or_sell_continous_market.py`: contains many small parsing/formatting primitives (`parse_float`, `parse_contract_expiry`, `format_money`) used by the order workflow.
+All models in `src/models.py` (SQLAlchemy DeclarativeBase, Mapped columns, timestamptz throughout):
 
-### Components
+- **Broker data**: ContractRef, OptionChainMeta, Account, Position, Order, OrderEvent
+- **Trades**: Trade, TradeExecution (execution-level source of truth)
+- **Trade tagging**: TradeGroup, TradeGroupExecution, TradeGroupExecutionEvent, Tag, TagLink, TradeGroupLink
+- **Market data**: LatestFutures, TsFutures, LatestFuturesOptions, TsFuturesOptions
+- **Operations**: Job, WatchList, WatchListInstrument, WorkerHeartbeat, SavedStructure, UserPreference
 
-- `src/models.py`: SQLAlchemy `Base` and `Position` entity (single source for table structure in app code).
-- `src/schemas.py`: Pandera DataFrame schema for position validation shape.
-- `src/api/deps.py`: FastAPI DB session dependency component (`get_db`).
-- `src/api/routers/positions.py`: API component that maps DB `Position` rows to response model and exposes `/positions`.
-- `frontend/src/components/PositionsTable.tsx`: UI component fetching and rendering `/api/v1/positions`.
+### API Surface
+
+Routers in `src/api/routers/` — each file owns one domain:
+
+- `positions.py`, `trades.py`, `orders.py`, `accounts.py` — core portfolio
+- `trade_groups.py`, `tags.py` — trade tagging and strategy catalog
+- `jobs.py`, `workers.py` — background job management and worker health
+- `watch_lists.py` — watchlist CRUD and instrument management
+- `futures.py`, `reports.py`, `structures.py` — market data and saved structures
+- `tradebot.py` — LangGraph chat agent endpoint
+- `events.py` — SSE event stream
+- `user_preferences.py` — user settings
+
+Entrypoint: `src/api/main.py`.
+
+### Frontend Components
+
+React components in `frontend/src/components/`:
+
+- `PositionsTable.tsx`, `TradesTable.tsx`, `OrdersTable.tsx` — core data tables
+- `TradeTaggingPage.tsx` — strategy catalog, trade group management, timeline
+- `MarketDataPage.tsx`, `PricingPage.tsx` — market data and pricing views
+- `WatchListsPage.tsx` — watchlist management
+- `TradebotChat.tsx` — LLM chat interface
+- `JobsTable.tsx`, `AccountsTable.tsx` — supporting tables
+- `WorkerStatusLights.tsx` — system health indicators
+- `ComboboxInput.tsx`, `OrdersSideTable.tsx` — shared/utility components
 
 ### Services
 
-- `scripts/setup_db.py`: service entrypoint to create DB (if needed) and run Alembic migrations.
-- `scripts/download_positions.py`: service entrypoint to connect to IBKR TWS and upsert live positions into Postgres.
-- `scripts/execute_cl_buy_or_sell_continous_market.py`: trade execution service for CL front-month market orders with confirmation + what-if checks.
-- `scripts/test_tws_connection.py`: connectivity/health service for IBKR API session checks.
-- `src/api/main.py`: FastAPI service entrypoint (`task api` or `uv run uvicorn src.api.main:app --reload --port 8000`).
-- `frontend/` dev server: UI service (`task frontend` or `bun run dev` in `frontend/`).
+Backend services in `src/services/`:
 
-### End-to-End Workflow (Current)
+- `trade_sync.py`, `order_sync.py`, `position_sync.py` — broker data ingestion
+- `order_mutations.py`, `order_queue.py` — order lifecycle and submission
+- `tradebot_agent.py` — LangGraph chat agent with tool registry
+- `market_data.py`, `contract_lookup.py`, `contract_sync.py` — market data and contracts
+- `jobs.py` — background job orchestration
+- `watchlist_quotes.py`, `watchlist_instrument_sync.py` — watchlist data refresh
+- `ui_events.py` — SSE broadcast, `worker_heartbeat.py` — health tracking
 
-1. Start IBKR TWS or Gateway.
-2. Run `scripts/setup_db.py` to ensure DB + migrations are current.
-3. Run `scripts/download_positions.py` to ingest broker positions.
-4. Run backend API (`src/api/main.py`) and frontend (`frontend/`).
+### Key Utilities
 
-### Key Files By Concern
-
-- Broker integration: `scripts/download_positions.py`, `scripts/test_tws_connection.py`, `scripts/execute_cl_buy_or_sell_continous_market.py`
-- Data model/storage: `src/models.py`, `src/db.py`, `alembic/versions/20260217221407_create_positions_table.py`
-- API surface: `src/api/main.py`, `src/api/routers/positions.py`
-- UI surface: `frontend/src/App.tsx`, `frontend/src/components/PositionsTable.tsx`
-- Ops docs: `docs/download-positions.md`, `docs/execute-future-cl-order-script.md`, `docs/secrets-using-1password.md`
+- `src/db.py`: DB URL and SQLAlchemy engine builders.
+- `src/schemas.py`: Pandera DataFrame validation schemas.
+- `src/api/deps.py`: FastAPI DB session dependency (`get_db`).
+- `src/utils/ibkr_account.py`: account masking for logs.
+- `src/utils/contract_display.py`: contract display name formatting.
 
 ### Active Architecture Direction
 
-- Planned migration to installable internal app package layout: `docs/spec-installable-internal-app-layout.md`.
-- Target state is `src/ngtrader/...` imports (replacing `from src...`) while staying installable via uv.
+- Planned migration to installable package layout: `docs/spec-installable-internal-app-layout.md`.
+- Target: `src/ngtrader/...` imports (replacing `from src...`) via uv.
 
 ## Python
 
