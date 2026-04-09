@@ -9,15 +9,27 @@ The goal is to produce a spec that is:
 3. concrete enough to implement
 4. easy for both humans and agents to review
 
+## Using the Planning Quorum
+
+Before writing a spec, run the `@ngv-quorum` agent against the feature question. The quorum deliberates across Trade Desk Analyst, SWE, DBA, and UX perspectives, producing two artifacts in `docs/quorum-sessions/`:
+
+- `round-1-positions.md` — individual positions and tensions
+- `round-2-resolution.md` — analyst verdict, requirements, accepted tradeoffs, and open questions
+
+Use the quorum output to populate the spec template below. The quorum's Requirements map to Functional Plan, Accepted Tradeoffs map to Non-goals, and Open Questions carry over directly.
+
+Individual perspective agents (`@ngv-analyst`, `@ngv-swe`, `@ngv-dba`, `@ngv-ux`) can be invoked for targeted follow-up on specific sections.
+
 ## Instructions
 
 When creating a new spec:
 
-1. copy this structure into a new `docs/spec-*.md` file
-2. replace every placeholder with feature-specific content
-3. remove sections that truly do not apply
-4. keep the language descriptive, not aspirational
-5. prefer concrete behaviors over vague goals
+1. run `@ngv-quorum` with the feature question to generate multi-perspective analysis
+2. copy this structure into a new `docs/spec-*.md` file
+3. populate the template using quorum output and your own judgment
+4. remove sections that truly do not apply
+5. keep the language descriptive, not aspirational
+6. prefer concrete behaviors over vague goals
 
 When filling it in:
 
