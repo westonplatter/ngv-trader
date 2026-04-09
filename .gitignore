@@ -12,6 +12,7 @@
 .aps-backups/
 
 .claude
+!.claude/agents/
 
 # ----------------- standard python ignores -----------------
 
