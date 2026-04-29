@@ -1,69 +1,35 @@
-import {
-  Fragment,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePrivacy } from "../contexts/PrivacyContext";
 import { PRIVACY_MASK } from "../utils/privacy";
 import { API_BASE_URL } from "../config";
 
-interface Trade {
-  id: number;
-  account_id: number;
-  account_alias: string | null;
-  contract_display_name: string | null;
-  lifecycle: string | null;
-  ib_perm_id: number | null;
-  order_ref: string | null;
-  ib_order_id: number | null;
-  symbol: string | null;
-  sec_type: string | null;
-  side: string | null;
-  exchange: string | null;
-  currency: string | null;
-  status: string;
-  total_quantity: number;
-  avg_price: number | null;
-  realized_pnl: number | null;
-  first_executed_at: string | null;
-  last_executed_at: string | null;
-  is_assigned: boolean;
-  assigned_trade_group_id: number | null;
-  fetched_at: string;
-  created_at: string;
-  updated_at: string;
-}
-
-interface TradeExecution {
+interface TradeExecutionRow {
   id: number;
   trade_id: number;
   account_id: number;
+  account_alias: string | null;
   ib_exec_id: string;
-  exec_id_base: string;
-  exec_revision: number;
-  ib_perm_id: number | null;
-  ib_order_id: number | null;
-  order_ref: string | null;
-  sec_type: string | null;
-  con_id: number | null;
   exec_role: string;
+  sec_type: string | null;
   executed_at: string;
   quantity: number;
   price: number;
   side: string | null;
   exchange: string | null;
-  currency: string | null;
-  liquidity: string | null;
   commission: number | null;
   realized_pnl: number | null;
   is_canonical: boolean;
   contract_display: string | null;
-  fetched_at: string;
-  created_at: string;
-  updated_at: string;
+  parent_ib_exec_id: string | null;
+  trade_ib_perm_id: number | null;
+  trade_order_ref: string | null;
+  trade_status: string;
+  trade_lifecycle: string | null;
+  trade_contract_display_name: string | null;
+  trade_realized_pnl: number | null;
+  trade_assigned_trade_group_id: number | null;
+  trade_first_executed_at: string | null;
+  trade_last_executed_at: string | null;
 }
 
 interface TradeGroupResult {
@@ -121,14 +87,30 @@ function tradeGroupLabel(group: TradeGroupResult): string {
   return `${strategy} > ${group.name}`;
 }
 
+function execRoleBadge(role: string): { label: string; className: string } {
+  if (role === "combo_summary") {
+    return { label: "COMBO", className: "bg-indigo-100 text-indigo-800" };
+  }
+  if (role === "leg") {
+    return { label: "LEG", className: "bg-amber-100 text-amber-800" };
+  }
+  return { label: "—", className: "bg-gray-100 text-gray-700" };
+}
+
 function TagGroupCell({
-  trade,
-  onAssigned,
+  tradeId,
+  accountId,
+  contractDisplayName,
+  assignedTradeGroupId,
   groupLabel,
+  onAssigned,
 }: {
-  trade: Trade;
-  onAssigned: () => void;
+  tradeId: number;
+  accountId: number;
+  contractDisplayName: string | null;
+  assignedTradeGroupId: number | null;
   groupLabel: string | null;
+  onAssigned: () => void;
 }) {
   const [mode, setMode] = useState<"display" | "search">("display");
   const [query, setQuery] = useState("");
@@ -159,13 +141,8 @@ function TagGroupCell({
   }, []);
 
   const searchGroups = useCallback(async (searchQuery: string) => {
-    const params = new URLSearchParams({
-      limit: "20",
-      status: "open",
-    });
-    if (searchQuery.trim()) {
-      params.set("q", searchQuery.trim());
-    }
+    const params = new URLSearchParams({ limit: "20", status: "open" });
+    if (searchQuery.trim()) params.set("q", searchQuery.trim());
     const response = await fetch(
       `${API_BASE_URL}/trade-groups?${params.toString()}`,
     );
@@ -227,7 +204,6 @@ function TagGroupCell({
     setError(null);
   }, []);
 
-  // Close dropdown on outside click, scroll, or resize
   useEffect(() => {
     if (mode !== "search") return;
     const handleOutsideClick = (event: MouseEvent) => {
@@ -249,7 +225,6 @@ function TagGroupCell({
     };
   }, [mode, closeSearch]);
 
-  // Cleanup debounce on unmount
   useEffect(() => {
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -261,7 +236,7 @@ function TagGroupCell({
     setError(null);
     try {
       const execResponse = await fetch(
-        `${API_BASE_URL}/trades/${trade.id}/executions`,
+        `${API_BASE_URL}/trades/${tradeId}/executions`,
       );
       if (!execResponse.ok) {
         throw new Error(
@@ -283,7 +258,7 @@ function TagGroupCell({
             execution_ids: executionIds,
             source: "manual",
             created_by: "ui-trader",
-            reason: `trade ${trade.id} assigned from trades page`,
+            reason: `trade ${tradeId} assigned from trades page`,
             force_reassign: true,
           }),
         },
@@ -304,12 +279,12 @@ function TagGroupCell({
   };
 
   const unassignFromGroup = async () => {
-    if (!trade.assigned_trade_group_id) return;
+    if (!assignedTradeGroupId) return;
     setAssigning(true);
     setError(null);
     try {
       const execResponse = await fetch(
-        `${API_BASE_URL}/trades/${trade.id}/executions`,
+        `${API_BASE_URL}/trades/${tradeId}/executions`,
       );
       if (!execResponse.ok) {
         throw new Error(
@@ -320,7 +295,7 @@ function TagGroupCell({
       const executionIds = tradeExecutions.map((ex) => ex.id);
 
       const unassignResponse = await fetch(
-        `${API_BASE_URL}/trade-groups/${trade.assigned_trade_group_id}/executions:unassign`,
+        `${API_BASE_URL}/trade-groups/${assignedTradeGroupId}/executions:unassign`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -328,7 +303,7 @@ function TagGroupCell({
             execution_ids: executionIds,
             source: "manual",
             created_by: "ui-trader",
-            reason: `trade ${trade.id} unassigned from trades page`,
+            reason: `trade ${tradeId} unassigned from trades page`,
           }),
         },
       );
@@ -347,7 +322,7 @@ function TagGroupCell({
   };
 
   if (mode === "display") {
-    if (trade.assigned_trade_group_id) {
+    if (assignedTradeGroupId) {
       return (
         <div className="flex items-center gap-1">
           <span
@@ -358,15 +333,13 @@ function TagGroupCell({
             }}
             title="Click to reassign"
           >
-            {groupLabel ?? `Group #${trade.assigned_trade_group_id}`}
+            {groupLabel ?? `Group #${assignedTradeGroupId}`}
           </span>
           <button
             onClick={(e) => {
               e.stopPropagation();
               if (
-                window.confirm(
-                  `Unassign from group #${trade.assigned_trade_group_id}?`,
-                )
+                window.confirm(`Unassign from group #${assignedTradeGroupId}?`)
               ) {
                 void unassignFromGroup();
               }
@@ -435,8 +408,8 @@ function TagGroupCell({
               <button
                 onClick={() => {
                   const params = new URLSearchParams({
-                    account_id: String(trade.account_id),
-                    prefill_group_name: `${trade.contract_display_name ?? trade.symbol ?? "Trade"} Lifecycle Group`,
+                    account_id: String(accountId),
+                    prefill_group_name: `${contractDisplayName ?? "Trade"} Lifecycle Group`,
                   });
                   window.open(
                     `/tagging?${params.toString()}`,
@@ -479,7 +452,7 @@ function TagGroupCell({
 
 export default function TradesTable() {
   const { privacyMode } = usePrivacy();
-  const [trades, setTrades] = useState<Trade[]>([]);
+  const [executions, setExecutions] = useState<TradeExecutionRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
@@ -488,11 +461,11 @@ export default function TradesTable() {
   const [symbolFilter, setSymbolFilter] = useState("");
   const [accountFilter, setAccountFilter] = useState<string>("all");
   const [timeRange, setTimeRange] = useState<string>("all");
-  const [expandedTradeId, setExpandedTradeId] = useState<number | null>(null);
-  const [executions, setExecutions] = useState<TradeExecution[]>([]);
-  const [executionsLoading, setExecutionsLoading] = useState(false);
+  const [highlightedTradeId, setHighlightedTradeId] = useState<number | null>(
+    null,
+  );
   const [allTradeGroups, setAllTradeGroups] = useState<TradeGroupResult[]>([]);
-  const expandedTradeIdRef = useRef<number | null>(null);
+
   const groupLabelById = useMemo(() => {
     const map = new Map<number, string>();
     for (const group of allTradeGroups) {
@@ -508,34 +481,32 @@ export default function TradesTable() {
     setAllTradeGroups(data);
   }, []);
 
-  const loadTrades = useCallback(async () => {
-    const res = await fetch(`${API_BASE_URL}/trades`);
+  const loadExecutions = useCallback(async () => {
+    const res = await fetch(`${API_BASE_URL}/trade-executions?limit=1000`);
     if (!res.ok) {
-      throw new Error(await readErrorMessage(res, "Unable to load trades"));
+      throw new Error(await readErrorMessage(res, "Unable to load executions"));
     }
-    const data: Trade[] = await res.json();
-    setTrades(data);
+    const data: TradeExecutionRow[] = await res.json();
+    setExecutions(data);
     setError(null);
   }, []);
 
   useEffect(() => {
-    void loadTrades()
+    void loadExecutions()
       .catch((err) => {
         const message =
-          err instanceof Error ? err.message : "Unknown trades load error";
+          err instanceof Error ? err.message : "Unknown executions load error";
         setError(message);
       })
       .finally(() => setLoading(false));
     void loadTradeGroups();
 
     const timer = window.setInterval(() => {
-      void loadTrades().catch(() => {});
+      void loadExecutions().catch(() => {});
     }, 5000);
 
-    return () => {
-      window.clearInterval(timer);
-    };
-  }, [loadTrades, loadTradeGroups]);
+    return () => window.clearInterval(timer);
+  }, [loadExecutions, loadTradeGroups]);
 
   const symbolRegex = useMemo(() => {
     const raw = symbolFilter.trim();
@@ -549,23 +520,25 @@ export default function TradesTable() {
 
   const accounts = useMemo(() => {
     const seen = new Map<string, string>();
-    for (const trade of trades) {
-      const key = String(trade.account_id);
+    for (const row of executions) {
+      const key = String(row.account_id);
       if (!seen.has(key)) {
-        seen.set(key, trade.account_alias ?? `Account ${trade.account_id}`);
+        seen.set(key, row.account_alias ?? `Account ${row.account_id}`);
       }
     }
     return Array.from(seen.entries()).map(([id, label]) => ({ id, label }));
-  }, [trades]);
+  }, [executions]);
 
-  const filteredTrades = useMemo(() => {
-    let next = trades;
+  const filteredRows = useMemo(() => {
+    let next = executions;
     if (accountFilter !== "all") {
-      next = next.filter((trade) => String(trade.account_id) === accountFilter);
+      next = next.filter((row) => String(row.account_id) === accountFilter);
     }
     if (symbolRegex) {
-      next = next.filter((trade) =>
-        symbolRegex.test(trade.contract_display_name ?? trade.symbol ?? ""),
+      next = next.filter((row) =>
+        symbolRegex.test(
+          row.contract_display ?? row.trade_contract_display_name ?? "",
+        ),
       );
     }
     if (timeRange !== "all") {
@@ -577,15 +550,38 @@ export default function TradesTable() {
       const hours = hoursMap[timeRange];
       if (hours) {
         const cutoff = Date.now() - hours * 60 * 60 * 1000;
-        next = next.filter((trade) => {
-          const ts = trade.last_executed_at ?? trade.first_executed_at;
-          if (!ts) return false;
-          return Date.parse(ts) >= cutoff;
-        });
+        next = next.filter((row) => Date.parse(row.executed_at) >= cutoff);
       }
     }
     return next;
-  }, [trades, accountFilter, symbolRegex, timeRange]);
+  }, [executions, accountFilter, symbolRegex, timeRange]);
+
+  // For each trade_id, the row that owns the Tag Group cell.
+  // Prefer combo_summary; otherwise the earliest row in the filtered view.
+  const tagGroupRowIdByTradeId = useMemo(() => {
+    const map = new Map<number, number>();
+    for (const row of filteredRows) {
+      if (row.exec_role === "combo_summary") {
+        map.set(row.trade_id, row.id);
+      }
+    }
+    for (const row of filteredRows) {
+      if (!map.has(row.trade_id)) {
+        map.set(row.trade_id, row.id);
+      } else {
+        const currentId = map.get(row.trade_id)!;
+        const current = filteredRows.find((r) => r.id === currentId);
+        if (
+          current &&
+          current.exec_role !== "combo_summary" &&
+          Date.parse(row.executed_at) < Date.parse(current.executed_at)
+        ) {
+          map.set(row.trade_id, row.id);
+        }
+      }
+    }
+    return map;
+  }, [filteredRows]);
 
   const kickOffTradesSync = async (lookbackDays: number, label: string) => {
     setSyncing(true);
@@ -610,9 +606,7 @@ export default function TradesTable() {
         `Queued ${label.toLowerCase()} job #${data.job_id} (${data.status}).`,
       );
       window.setTimeout(() => {
-        void loadTrades().catch(() => {
-          // no-op
-        });
+        void loadExecutions().catch(() => {});
       }, 2000);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unknown sync error";
@@ -622,50 +616,23 @@ export default function TradesTable() {
     }
   };
 
-  const toggleExecutions = async (tradeId: number) => {
-    if (expandedTradeId === tradeId) {
-      setExpandedTradeId(null);
-      expandedTradeIdRef.current = null;
-      setExecutions([]);
-      return;
-    }
-
-    setExpandedTradeId(tradeId);
-    expandedTradeIdRef.current = tradeId;
-    setExecutionsLoading(true);
-
-    try {
-      const res = await fetch(`${API_BASE_URL}/trades/${tradeId}/executions`);
-      if (!res.ok) {
-        throw new Error(
-          await readErrorMessage(res, "Unable to load executions"),
-        );
-      }
-      if (expandedTradeIdRef.current !== tradeId) return;
-      const data: TradeExecution[] = await res.json();
-      setExecutions(data);
-    } catch (err) {
-      if (expandedTradeIdRef.current !== tradeId) return;
-      const message =
-        err instanceof Error ? err.message : "Unable to load executions";
-      setError(message);
-      setExecutions([]);
-    } finally {
-      if (expandedTradeIdRef.current === tradeId) setExecutionsLoading(false);
-    }
-  };
-
   const handleTradeAssigned = useCallback(() => {
-    void loadTrades().catch(() => {});
+    void loadExecutions().catch(() => {});
     void loadTradeGroups().catch(() => {});
-  }, [loadTrades, loadTradeGroups]);
+  }, [loadExecutions, loadTradeGroups]);
+
+  const toggleHighlight = (tradeId: number) => {
+    setHighlightedTradeId((current) => (current === tradeId ? null : tradeId));
+  };
 
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-lg font-semibold text-gray-900">Trades</h2>
-          <p className="text-xs text-gray-500">{trades.length} trade(s)</p>
+          <p className="text-xs text-gray-500">
+            {filteredRows.length} execution(s)
+          </p>
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -742,16 +709,15 @@ export default function TradesTable() {
       {syncError && (
         <p className="text-sm text-red-600">Sync error: {syncError}</p>
       )}
-      {loading && <p className="text-gray-500">Loading trades...</p>}
+      {loading && <p className="text-gray-500">Loading executions...</p>}
       {error && <p className="text-red-600">Error: {error}</p>}
 
       <div className="overflow-x-auto rounded border border-gray-200 bg-white">
         <table className="min-w-full border-collapse text-sm">
           <thead>
             <tr className="bg-gray-100 text-left">
-              <th className="w-8 whitespace-nowrap px-3 py-2 font-semibold text-gray-700" />
               <th className="whitespace-nowrap px-3 py-2 font-semibold text-gray-700">
-                Last Exec
+                Time
               </th>
               <th className="whitespace-nowrap px-3 py-2 font-semibold text-gray-700">
                 <div className="space-y-1">
@@ -764,20 +730,23 @@ export default function TradesTable() {
                   <div>Contract</div>
                 </div>
               </th>
+              <th className="w-12 whitespace-nowrap px-2 py-2 font-semibold text-gray-700">
+                Role
+              </th>
               <th className="w-10 whitespace-nowrap px-2 py-2 font-semibold text-gray-700">
                 Type
               </th>
               <th className="w-10 whitespace-nowrap px-2 py-2 font-semibold text-gray-700">
                 Side
               </th>
-              <th className="whitespace-nowrap px-2 py-2 font-semibold text-gray-700">
-                Lifecycle
-              </th>
               <th className="w-10 whitespace-nowrap px-2 py-2 font-semibold text-gray-700">
                 Qty
               </th>
               <th className="whitespace-nowrap px-3 py-2 font-semibold text-gray-700">
-                Avg Price
+                Price
+              </th>
+              <th className="whitespace-nowrap px-3 py-2 font-semibold text-gray-700">
+                Commission
               </th>
               <th className="whitespace-nowrap px-3 py-2 font-semibold text-gray-700">
                 Realized PnL
@@ -792,7 +761,10 @@ export default function TradesTable() {
                 Tag Group
               </th>
               <th className="whitespace-nowrap px-3 py-2 font-semibold text-gray-700">
-                Perm ID
+                Exec ID
+              </th>
+              <th className="whitespace-nowrap px-3 py-2 font-semibold text-gray-700">
+                Parent Exec ID
               </th>
               <th className="whitespace-nowrap px-3 py-2 font-semibold text-gray-700">
                 Order Ref
@@ -800,206 +772,134 @@ export default function TradesTable() {
             </tr>
           </thead>
           <tbody>
-            {!loading && filteredTrades.length === 0 && (
+            {!loading && filteredRows.length === 0 && (
               <tr>
                 <td
-                  colSpan={14}
+                  colSpan={15}
                   className="px-3 py-6 text-center text-gray-500"
                 >
-                  No trades found.
+                  No executions found.
                 </td>
               </tr>
             )}
-            {filteredTrades.map((trade) => (
-              <Fragment key={trade.id}>
+            {filteredRows.map((row) => {
+              const ownsTagCell =
+                tagGroupRowIdByTradeId.get(row.trade_id) === row.id;
+              const isHighlighted = highlightedTradeId === row.trade_id;
+              const role = execRoleBadge(row.exec_role);
+              return (
                 <tr
-                  onClick={() => {
-                    void toggleExecutions(trade.id);
-                  }}
-                  className="cursor-pointer border-b border-gray-200 hover:bg-gray-50"
+                  key={row.id}
+                  className={`border-b border-gray-200 ${
+                    isHighlighted ? "bg-yellow-50" : "hover:bg-gray-50"
+                  }`}
                 >
-                  <td className="whitespace-nowrap px-3 py-2 text-xs text-gray-400">
-                    {expandedTradeId === trade.id ? "▼" : "▶"}
-                  </td>
                   <td className="whitespace-nowrap px-3 py-2 text-gray-700">
-                    {formatDateTime(trade.last_executed_at)}
+                    {formatDateTime(row.executed_at)}
                   </td>
                   <td className="whitespace-nowrap px-3 py-2 font-medium text-gray-800">
-                    {trade.contract_display_name ?? trade.symbol ?? "-"}
+                    {row.contract_display ??
+                      row.trade_contract_display_name ??
+                      "-"}
+                  </td>
+                  <td className="whitespace-nowrap px-2 py-2 text-xs">
+                    <span
+                      className={`rounded px-1.5 py-0.5 font-medium ${role.className}`}
+                    >
+                      {role.label}
+                    </span>
                   </td>
                   <td className="whitespace-nowrap px-2 py-2 text-xs text-gray-700">
-                    {trade.sec_type ?? "-"}
+                    {row.sec_type ?? "-"}
                   </td>
                   <td className="whitespace-nowrap px-2 py-2 text-xs text-gray-700">
-                    {trade.side ?? "-"}
+                    {row.side ?? "-"}
                   </td>
                   <td className="whitespace-nowrap px-2 py-2 text-xs text-gray-700">
-                    {trade.lifecycle ?? "-"}
-                  </td>
-                  <td className="whitespace-nowrap px-2 py-2 text-xs text-gray-700">
-                    {privacyMode ? PRIVACY_MASK : trade.total_quantity}
+                    {privacyMode ? PRIVACY_MASK : row.quantity}
                   </td>
                   <td className="whitespace-nowrap px-3 py-2 text-gray-700">
-                    {formatPrice(trade.avg_price)}
+                    {formatPrice(row.price)}
                   </td>
                   <td className="whitespace-nowrap px-3 py-2 text-gray-700">
-                    {privacyMode
-                      ? PRIVACY_MASK
-                      : formatPrice(trade.realized_pnl)}
+                    {formatPrice(row.commission)}
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-2 text-gray-700">
+                    {privacyMode ? PRIVACY_MASK : formatPrice(row.realized_pnl)}
                   </td>
                   <td className="whitespace-nowrap px-3 py-2 text-gray-800">
-                    {trade.account_alias ?? `Account ${trade.account_id}`}
+                    {row.account_alias ?? `Account ${row.account_id}`}
                   </td>
                   <td className="whitespace-nowrap px-3 py-2">
                     <span
-                      className={`rounded px-2 py-0.5 text-xs font-medium ${STATUS_CLASS[trade.status] ?? "bg-gray-100 text-gray-800"}`}
+                      className={`rounded px-2 py-0.5 text-xs font-medium ${STATUS_CLASS[row.trade_status] ?? "bg-gray-100 text-gray-800"}`}
                     >
-                      {trade.status}
+                      {row.trade_status}
                     </span>
                   </td>
-                  <td
-                    className="px-3 py-2"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <TagGroupCell
-                      trade={trade}
-                      onAssigned={handleTradeAssigned}
-                      groupLabel={
-                        trade.assigned_trade_group_id
-                          ? (groupLabelById.get(
-                              trade.assigned_trade_group_id,
-                            ) ?? null)
-                          : null
-                      }
-                    />
+                  <td className="px-3 py-2">
+                    {ownsTagCell ? (
+                      <TagGroupCell
+                        tradeId={row.trade_id}
+                        accountId={row.account_id}
+                        contractDisplayName={
+                          row.trade_contract_display_name ??
+                          row.contract_display
+                        }
+                        assignedTradeGroupId={row.trade_assigned_trade_group_id}
+                        groupLabel={
+                          row.trade_assigned_trade_group_id
+                            ? (groupLabelById.get(
+                                row.trade_assigned_trade_group_id,
+                              ) ?? null)
+                            : null
+                        }
+                        onAssigned={handleTradeAssigned}
+                      />
+                    ) : null}
                   </td>
-                  <td className="whitespace-nowrap px-3 py-2 text-xs text-gray-600">
-                    {privacyMode ? PRIVACY_MASK : (trade.ib_perm_id ?? "-")}
+                  <td className="max-w-[200px] truncate whitespace-nowrap px-3 py-2 font-mono text-xs text-gray-600">
+                    {privacyMode ? PRIVACY_MASK : row.ib_exec_id}
+                  </td>
+                  <td className="max-w-[200px] truncate whitespace-nowrap px-3 py-2 font-mono text-xs">
+                    {(() => {
+                      const isParentRow = row.exec_role === "combo_summary";
+                      const parentId =
+                        row.parent_ib_exec_id ??
+                        (isParentRow ? row.ib_exec_id : null);
+                      if (!parentId)
+                        return <span className="text-gray-400">—</span>;
+                      const baseClass = isHighlighted
+                        ? "bg-yellow-200 text-yellow-900"
+                        : isParentRow
+                          ? "text-gray-400 hover:text-gray-600"
+                          : "text-blue-600 hover:text-blue-800";
+                      return (
+                        <button
+                          onClick={() => toggleHighlight(row.trade_id)}
+                          className={`rounded px-1.5 py-0.5 hover:bg-yellow-100 ${baseClass}`}
+                          title={
+                            isParentRow
+                              ? "This row is the parent — click to highlight the group"
+                              : "Highlight sibling executions"
+                          }
+                        >
+                          {isParentRow && (
+                            <span className="mr-1" aria-hidden="true">
+                              ⤴
+                            </span>
+                          )}
+                          {privacyMode ? PRIVACY_MASK : parentId}
+                        </button>
+                      );
+                    })()}
                   </td>
                   <td className="max-w-[160px] truncate whitespace-nowrap px-3 py-2 text-xs text-gray-600">
-                    {trade.order_ref ?? "-"}
+                    {row.trade_order_ref ?? "-"}
                   </td>
                 </tr>
-                {expandedTradeId === trade.id && (
-                  <tr>
-                    <td colSpan={14} className="p-0">
-                      <div className="border-b border-gray-200 bg-gray-50 px-6 py-3">
-                        <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-600">
-                          Executions
-                        </h4>
-                        {executionsLoading && (
-                          <p className="text-xs text-gray-500">Loading...</p>
-                        )}
-                        {!executionsLoading && executions.length === 0 && (
-                          <p className="text-xs text-gray-500">
-                            No executions found.
-                          </p>
-                        )}
-                        {!executionsLoading && executions.length > 0 && (
-                          <table className="min-w-full border-collapse text-xs">
-                            <thead>
-                              <tr className="text-left text-gray-500">
-                                <th className="px-2 py-1 font-medium">Time</th>
-                                <th className="px-2 py-1 font-medium">
-                                  Contract
-                                </th>
-                                <th className="px-2 py-1 font-medium">Role</th>
-                                <th className="px-2 py-1 font-medium">Side</th>
-                                <th className="px-2 py-1 font-medium">Qty</th>
-                                <th className="px-2 py-1 font-medium">Price</th>
-                                <th className="px-2 py-1 font-medium">
-                                  Commission
-                                </th>
-                                <th className="px-2 py-1 font-medium">
-                                  Realized PnL
-                                </th>
-                                <th className="px-2 py-1 font-medium">
-                                  Exchange
-                                </th>
-                                <th className="px-2 py-1 font-medium">
-                                  Exec ID
-                                </th>
-                                <th className="px-2 py-1 font-medium">Rev</th>
-                                <th className="px-2 py-1 font-medium">
-                                  Canonical
-                                </th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {executions.map((execution) => (
-                                <tr
-                                  key={execution.id}
-                                  className={`border-t border-gray-200 ${!execution.is_canonical ? "opacity-50" : ""}`}
-                                >
-                                  <td className="whitespace-nowrap px-2 py-1 text-gray-700">
-                                    {formatDateTime(execution.executed_at)}
-                                  </td>
-                                  <td className="whitespace-nowrap px-2 py-1 font-medium text-gray-800">
-                                    {execution.contract_display ?? "-"}
-                                  </td>
-                                  <td className="whitespace-nowrap px-2 py-1 text-gray-700">
-                                    {execution.exec_role === "combo_summary"
-                                      ? "COMBO"
-                                      : execution.exec_role === "leg"
-                                        ? "LEG"
-                                        : "-"}
-                                  </td>
-                                  <td className="whitespace-nowrap px-2 py-1 text-gray-700">
-                                    {execution.side ?? "-"}
-                                  </td>
-                                  <td className="whitespace-nowrap px-2 py-1 text-gray-700">
-                                    {privacyMode
-                                      ? PRIVACY_MASK
-                                      : execution.quantity}
-                                  </td>
-                                  <td className="whitespace-nowrap px-2 py-1 text-gray-700">
-                                    {formatPrice(execution.price)}
-                                  </td>
-                                  <td className="whitespace-nowrap px-2 py-1 text-gray-700">
-                                    {formatPrice(execution.commission)}
-                                  </td>
-                                  <td className="whitespace-nowrap px-2 py-1 text-gray-700">
-                                    {privacyMode
-                                      ? PRIVACY_MASK
-                                      : formatPrice(execution.realized_pnl)}
-                                  </td>
-                                  <td className="whitespace-nowrap px-2 py-1 text-gray-700">
-                                    {execution.exchange ?? "-"}
-                                  </td>
-                                  <td className="max-w-[200px] truncate whitespace-nowrap px-2 py-1 font-mono text-gray-500">
-                                    {privacyMode
-                                      ? PRIVACY_MASK
-                                      : execution.ib_exec_id}
-                                  </td>
-                                  <td className="whitespace-nowrap px-2 py-1 text-gray-600">
-                                    .
-                                    {String(execution.exec_revision).padStart(
-                                      2,
-                                      "0",
-                                    )}
-                                  </td>
-                                  <td className="whitespace-nowrap px-2 py-1">
-                                    {execution.is_canonical ? (
-                                      <span className="rounded bg-emerald-100 px-1.5 py-0.5 font-medium text-emerald-700">
-                                        yes
-                                      </span>
-                                    ) : (
-                                      <span className="rounded bg-zinc-200 px-1.5 py-0.5 text-zinc-600">
-                                        no
-                                      </span>
-                                    )}
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                )}
-              </Fragment>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       </div>

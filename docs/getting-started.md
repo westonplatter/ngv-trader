@@ -304,6 +304,29 @@ To target production:
 ENV=prod task api
 ```
 
+## Troubleshooting
+
+### Worker fails with `ConnectionRefusedError` on port 7496/7497
+
+```
+ib_async.client ERROR API connection failed: ConnectionRefusedError(61, "Connect call failed ('127.0.0.1', 7496)")
+```
+
+Nothing is listening on the IBKR API port. Check, in order:
+
+1. **TWS or IB Gateway is running** and you are logged in.
+2. **API access is enabled**: Edit > Global Configuration > API > Settings > **"Enable ActiveX and Socket Clients"** must be checked.
+3. **Socket port matches your env**: 7497 = TWS paper, 7496 = TWS live, 4002 = Gateway paper, 4001 = Gateway live. `BROKER_TWS_PORT` in your env file must match what TWS is listening on.
+4. **`127.0.0.1` is in Trusted IPs** (same API settings screen).
+
+Verify nothing-vs-something on the port:
+
+```bash
+lsof -nP -iTCP:7496 -sTCP:LISTEN   # or 7497 for paper
+```
+
+Empty output = TWS not listening; fix on the TWS side.
+
 ## Further Reading
 
 | Doc                                                              | Topic                                                |

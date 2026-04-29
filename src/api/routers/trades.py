@@ -1,7 +1,7 @@
 """Trades API router."""
 
 import re
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
@@ -318,6 +318,37 @@ class TradeExecutionResponse(BaseModel):
     updated_at: datetime
 
 
+class TradeExecutionListItem(BaseModel):
+    model_config = {"from_attributes": True}
+
+    id: int
+    trade_id: int
+    account_id: int
+    account_alias: str | None
+    ib_exec_id: str
+    exec_role: str
+    sec_type: str | None
+    executed_at: datetime
+    quantity: float
+    price: float
+    side: str | None
+    exchange: str | None
+    commission: float | None
+    realized_pnl: float | None
+    is_canonical: bool
+    contract_display: str | None
+    parent_ib_exec_id: str | None
+    trade_ib_perm_id: int | None
+    trade_order_ref: str | None
+    trade_status: str
+    trade_lifecycle: str | None
+    trade_contract_display_name: str | None
+    trade_realized_pnl: float | None
+    trade_assigned_trade_group_id: int | None
+    trade_first_executed_at: datetime | None
+    trade_last_executed_at: datetime | None
+
+
 class TradeSyncRequest(BaseModel):
     source: str = "manual-ui"
     request_text: str | None = None
@@ -589,6 +620,130 @@ def list_trade_executions(trade_id: int, db: Session = DB_SESSION_DEPENDENCY):
         )
         for ex, contract_ref in executions
     ]
+
+
+@router.get("/trade-executions", response_model=list[TradeExecutionListItem])
+def list_all_trade_executions(  # noqa: C901, PLR0912, PLR0915
+    account_id: int | None = Query(default=None),
+    lookback_days: int | None = Query(default=None, ge=1, le=365),
+    limit: int = Query(default=500, ge=1, le=5000),
+    db: Session = DB_SESSION_DEPENDENCY,
+):
+    stmt = select(TradeExecution, ContractRef).outerjoin(ContractRef, ContractRef.con_id == TradeExecution.con_id).where(TradeExecution.is_canonical.is_(True))
+    if account_id is not None:
+        stmt = stmt.where(TradeExecution.account_id == account_id)
+    if lookback_days is not None:
+        cutoff = datetime.now(timezone.utc) - timedelta(days=lookback_days)
+        stmt = stmt.where(TradeExecution.executed_at >= cutoff)
+    stmt = stmt.order_by(TradeExecution.executed_at.desc(), TradeExecution.id.desc()).limit(limit)
+    rows = db.execute(stmt).all()
+
+    if not rows:
+        return []
+
+    trade_ids = {ex.trade_id for ex, _ in rows}
+    account_ids = {ex.account_id for ex, _ in rows}
+
+    trade_by_id: dict[int, Trade] = {t.id: t for t in db.execute(select(Trade).where(Trade.id.in_(trade_ids))).scalars().all()}
+    account_by_id: dict[int, Account] = {a.id: a for a in db.execute(select(Account).where(Account.id.in_(account_ids))).scalars().all()}
+
+    parent_ib_exec_id_by_trade_id: dict[int, str] = {}
+    combo_rows = db.execute(
+        select(TradeExecution.trade_id, TradeExecution.ib_exec_id).where(
+            TradeExecution.trade_id.in_(trade_ids),
+            TradeExecution.is_canonical.is_(True),
+            TradeExecution.exec_role == "combo_summary",
+        )
+    ).all()
+    for trade_id, ib_exec_id in combo_rows:
+        parent_ib_exec_id_by_trade_id[trade_id] = ib_exec_id
+
+    trade_executions_summary: dict[int, list[tuple[dict | None, str | None, bool]]] = {}
+    summary_rows = db.execute(
+        select(
+            TradeExecution.trade_id,
+            TradeExecution.raw,
+            TradeExecution.exec_role,
+            TradeExecution.is_canonical,
+        ).where(TradeExecution.trade_id.in_(trade_ids))
+    ).all()
+    for trade_id, raw, exec_role, is_canonical in summary_rows:
+        trade_executions_summary.setdefault(trade_id, []).append((raw, exec_role, is_canonical))
+
+    assigned_group_by_trade_id: dict[int, int] = {}
+    assignment_rows = db.execute(
+        select(TradeExecution.trade_id, TradeGroupExecution.trade_group_id)
+        .join(TradeGroupExecution, TradeGroupExecution.trade_execution_id == TradeExecution.id)
+        .where(TradeExecution.trade_id.in_(trade_ids))
+        .order_by(
+            TradeExecution.trade_id.asc(),
+            TradeGroupExecution.assigned_at.desc(),
+            TradeGroupExecution.trade_execution_id.desc(),
+        )
+    ).all()
+    for trade_id, trade_group_id in assignment_rows:
+        if trade_id not in assigned_group_by_trade_id:
+            assigned_group_by_trade_id[trade_id] = trade_group_id
+
+    trade_contract_display: dict[int, str | None] = {}
+    for trade_id, raws in trade_executions_summary.items():
+        trade = trade_by_id.get(trade_id)
+        if trade is None:
+            continue
+        canonical_for_display = sorted(
+            [(raw, exec_role) for raw, exec_role, is_c in raws if is_c],
+            key=lambda pair: _EXEC_ROLE_DISPLAY_PRIORITY.get(pair[1] or "standalone", 99),
+        )
+        primary_raw = canonical_for_display[0][0] if canonical_for_display else None
+        trade_contract_display[trade_id] = _contract_display_from_raw(primary_raw, None) or _trade_contract_display_name(trade, primary_raw)
+
+    results: list[TradeExecutionListItem] = []
+    for ex, contract_ref in rows:
+        trade = trade_by_id.get(ex.trade_id)
+        acct = account_by_id.get(ex.account_id)
+        alias = None
+        if acct:
+            alias = acct.alias if acct.alias else acct.account
+
+        combo_ib_exec_id = parent_ib_exec_id_by_trade_id.get(ex.trade_id)
+        if ex.exec_role == "leg" and combo_ib_exec_id and combo_ib_exec_id != ex.ib_exec_id:
+            parent_ib_exec_id = combo_ib_exec_id
+        else:
+            parent_ib_exec_id = None
+
+        results.append(
+            TradeExecutionListItem(
+                id=ex.id,
+                trade_id=ex.trade_id,
+                account_id=ex.account_id,
+                account_alias=alias,
+                ib_exec_id=ex.ib_exec_id,
+                exec_role=ex.exec_role,
+                sec_type=ex.sec_type,
+                executed_at=ex.executed_at,
+                quantity=ex.quantity,
+                price=ex.price,
+                side=ex.side,
+                exchange=ex.exchange,
+                commission=ex.commission,
+                realized_pnl=_execution_realized_pnl(ex.raw),
+                is_canonical=ex.is_canonical,
+                contract_display=_contract_display_from_raw(ex.raw, contract_ref),
+                parent_ib_exec_id=parent_ib_exec_id,
+                trade_ib_perm_id=trade.ib_perm_id if trade else None,
+                trade_order_ref=trade.order_ref if trade else None,
+                trade_status=trade.status if trade else "unknown",
+                trade_lifecycle=_trade_lifecycle_from_execution(ex.raw, ex.exec_role),
+                trade_contract_display_name=trade_contract_display.get(ex.trade_id),
+                trade_realized_pnl=_trade_realized_pnl_from_executions(
+                    trade_executions_summary.get(ex.trade_id, []),
+                ),
+                trade_assigned_trade_group_id=assigned_group_by_trade_id.get(ex.trade_id),
+                trade_first_executed_at=trade.first_executed_at if trade else None,
+                trade_last_executed_at=trade.last_executed_at if trade else None,
+            )
+        )
+    return results
 
 
 @router.post("/trades/sync", response_model=TradeSyncResponse, status_code=status.HTTP_202_ACCEPTED)
