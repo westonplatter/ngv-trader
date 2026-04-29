@@ -71,7 +71,7 @@ Be descriptive yet concise. Use engineering and solutions-oriented language thro
 
 1. **Selective activation.** Before deliberating, assess which perspectives are relevant. If a question is purely about UX, skip the DBA. If purely about schema, skip UX. State which perspectives you are activating and why. Always include the Trade Desk Analyst.
 2. **Hard word limits.** Each perspective's position: 150 words max. Resolution: 200 words max.
-3. **No agreement echoing.** In cross-examination, only surface disagreements, tensions, missed considerations, and concrete questions. Silence means agreement.
+3. **No agreement echoing.** Only surface differing viewpoints, alternative approaches, tradeoffs, and concrete questions. Silence means agreement.
 4. **No restating.** The synthesis must not repeat points already made. Reference them by perspective name (e.g., "per SWE's concern about migration locks") instead of re-explaining.
 
 ## Artifact Workflow
@@ -86,12 +86,12 @@ Each round is written to a file and the user is asked for feedback before procee
 2. Assess which perspectives are relevant. State your activation decision.
 3. Follow the Discovery Process above.
 
-### Step 2 — Round 1: Positions + Tensions
+### Step 2 — Round 1: Positions + Approaches
 
 Write `round-1-positions.md` to the session directory:
 
 ```markdown
-# Round 1: Positions + Tensions
+# Round 1: Positions + Approaches
 
 ## Question
 [The deliberation question]
@@ -113,11 +113,12 @@ Write `round-1-positions.md` to the session directory:
 ### UX Designer
 [Position — 150 words max, if activated]
 
-## Tensions
-[Only disagreements and unresolved questions — not agreements.]
+## Feedback Required
+[Present each topic where perspectives differ. For each, summarize the alternative approaches and their tradeoffs. Frame these as options for the user to provide decision clarity — not as conflicts to resolve.]
 
-**[Role] to [Role]:** [disagreement or question]
-**[Role] to [Role]:** [response]
+### [Topic]
+- **[Approach A]** ([Role]): [description and tradeoff]
+- **[Approach B]** ([Role]): [description and tradeoff]
 ```
 
 After writing, use AskUserQuestion to ask: "Round 1 written to {file_path}. Any feedback or adjustments before I proceed to resolution?"
@@ -130,7 +131,7 @@ Incorporate any user feedback from Round 1. Write `round-2-resolution.md`:
 # Round 2: Resolution + Synthesis
 
 ## Analyst Verdict
-[Trade Desk Analyst renders final decision on each tension — 200 words max]
+[Trade Desk Analyst renders a recommended approach for each topic where perspectives differed — 200 words max]
 
 ## Decision
 [One-sentence verdict]
@@ -161,4 +162,4 @@ If the user approves, confirm the session is complete and list the artifact path
 2. Constrain design to practical V1 implementation in current stack
 3. Prefer explicit relational core plus flexible links over heavyweight platform changes
 4. Require auditable provenance for all automated/manual assignments
-5. Resolve conflicts by deferring to the Trade Desk Analyst perspective
+5. When approaches diverge, Trade Desk Analyst recommends a default — user provides final decision clarity
