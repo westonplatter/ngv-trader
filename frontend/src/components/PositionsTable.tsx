@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { usePrivacy } from "../contexts/PrivacyContext";
 import { PRIVACY_MASK } from "../utils/privacy";
 import { API_BASE_URL } from "../config";
@@ -55,6 +55,7 @@ function expiryForPosition(pos: Position): string {
 }
 
 const COLUMNS: { key: keyof Position; label: string }[] = [
+  { key: "account_alias", label: "Account" },
   { key: "con_id", label: "Con ID" },
   { key: "symbol", label: "Symbol" },
   { key: "sec_type", label: "Sec Type" },
@@ -93,9 +94,7 @@ export default function PositionsTable() {
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
   const [syncError, setSyncError] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
-  const [collapsedAccounts, setCollapsedAccounts] = useState<Set<string>>(
-    new Set(),
-  );
+  const [accountFilter, setAccountFilter] = useState<string>("all");
   const [symbolFilter, setSymbolFilter] = useState("");
   const [localSymbolFilter, setLocalSymbolFilter] = useState("");
   const [secTypeFilter, setSecTypeFilter] = useState("");
@@ -116,7 +115,13 @@ export default function PositionsTable() {
     return Number.isFinite(parsed) ? parsed : null;
   }, [dteMaxFilter]);
 
-  const groupedPositions = useMemo(() => {
+  const accountAliases = useMemo(() => {
+    const seen = new Set<string>();
+    for (const p of positions) seen.add(p.account_alias);
+    return Array.from(seen).sort();
+  }, [positions]);
+
+  const sortedPositions = useMemo(() => {
     const filtered = positions.filter((p) => {
       const dteMatches =
         dteMin === null && dteMax === null
@@ -125,6 +130,7 @@ export default function PositionsTable() {
             (dteMin === null || p.dte >= dteMin) &&
             (dteMax === null || p.dte <= dteMax);
       return (
+        (accountFilter === "all" || p.account_alias === accountFilter) &&
         regexMatch(p.symbol, symbolFilter) &&
         regexMatch(p.local_symbol, localSymbolFilter) &&
         regexMatch(p.sec_type, secTypeFilter) &&
@@ -174,47 +180,22 @@ export default function PositionsTable() {
       return direction === "desc" ? -cmp : cmp;
     };
 
-    const groups = new Map<string, Position[]>();
-    for (const pos of filtered) {
-      const key = pos.account_alias;
-      if (!groups.has(key)) groups.set(key, []);
-      groups.get(key)!.push(pos);
-    }
-
-    for (const rows of groups.values()) {
-      if (sortColumn !== null && sortDirection !== "none") {
-        rows.sort((a, b) => {
-          const sortDiff = compareValues(
-            sortValueFor(a, sortColumn),
-            sortValueFor(b, sortColumn),
-            sortDirection,
-          );
-          if (sortDiff !== 0) return sortDiff;
-          return a.con_id - b.con_id;
-        });
-      }
-    }
-
-    if (sortColumn === null || sortDirection === "none") {
-      return groups;
-    }
-
-    return new Map(
-      [...groups.entries()].sort(([, rowsA], [, rowsB]) => {
-        const topA = rowsA.length > 0 ? rowsA[0] : null;
-        const topB = rowsB.length > 0 ? rowsB[0] : null;
-        if (!topA && !topB) return 0;
-        if (!topA) return 1;
-        if (!topB) return -1;
-        return compareValues(
-          sortValueFor(topA, sortColumn),
-          sortValueFor(topB, sortColumn),
+    if (sortColumn !== null && sortDirection !== "none") {
+      filtered.sort((a, b) => {
+        const sortDiff = compareValues(
+          sortValueFor(a, sortColumn),
+          sortValueFor(b, sortColumn),
           sortDirection,
         );
-      }),
-    );
+        if (sortDiff !== 0) return sortDiff;
+        return a.con_id - b.con_id;
+      });
+    }
+
+    return filtered;
   }, [
     positions,
+    accountFilter,
     symbolFilter,
     localSymbolFilter,
     secTypeFilter,
@@ -223,15 +204,6 @@ export default function PositionsTable() {
     sortColumn,
     sortDirection,
   ]);
-
-  const toggleAccount = (alias: string) => {
-    setCollapsedAccounts((prev) => {
-      const next = new Set(prev);
-      if (next.has(alias)) next.delete(alias);
-      else next.add(alias);
-      return next;
-    });
-  };
 
   const loadPositions = () => {
     fetch(`${API_BASE_URL}/positions`)
@@ -336,6 +308,34 @@ export default function PositionsTable() {
           </button>
         </div>
       </div>
+
+      {accountAliases.length > 1 && (
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setAccountFilter("all")}
+            className={`rounded px-2.5 py-1 text-xs font-medium uppercase tracking-wide ${
+              accountFilter === "all"
+                ? "bg-gray-900 text-white"
+                : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+            }`}
+          >
+            All
+          </button>
+          {accountAliases.map((alias) => (
+            <button
+              key={alias}
+              onClick={() => setAccountFilter(alias)}
+              className={`rounded px-2.5 py-1 text-xs font-medium tracking-wide ${
+                accountFilter === alias
+                  ? "bg-gray-900 text-white"
+                  : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+              }`}
+            >
+              {alias}
+            </button>
+          ))}
+        </div>
+      )}
 
       {syncMessage && <p className="text-sm text-green-700">{syncMessage}</p>}
       {syncError && (
@@ -473,53 +473,36 @@ export default function PositionsTable() {
             </tr>
           </thead>
           <tbody>
-            {[...groupedPositions.entries()].map(([account, rows]) => {
-              const collapsed = collapsedAccounts.has(account);
-              return (
-                <Fragment key={account}>
-                  <tr
-                    className="bg-gray-100 cursor-pointer select-none"
-                    onClick={() => toggleAccount(account)}
-                  >
-                    <td
-                      colSpan={COLUMNS.length}
-                      className="px-3 py-2 font-semibold text-gray-800"
-                    >
-                      <span className="mr-2">{collapsed ? "▸" : "▾"}</span>
-                      {account}
-                      <span className="ml-2 text-xs font-normal text-gray-500">
-                        ({rows.length} position{rows.length !== 1 ? "s" : ""})
-                      </span>
-                    </td>
-                  </tr>
-                  {!collapsed &&
-                    rows.map((pos) => (
-                      <tr
-                        key={pos.id}
-                        className="border-b border-gray-200 hover:bg-gray-50"
-                      >
-                        {COLUMNS.map((col) => (
-                          <td
-                            key={col.key}
-                            className="px-3 py-2 whitespace-nowrap"
-                          >
-                            {col.key === "position" && privacyMode
-                              ? PRIVACY_MASK
-                              : col.key === "last_trade_date"
-                                ? formatExpiry(pos[col.key] as string | null)
-                                : col.key === "option_expiry_date"
-                                  ? expiryForPosition(pos)
-                                  : col.key === "strike" &&
-                                      pos.sec_type === "FUT"
-                                    ? "—"
-                                    : (pos[col.key] ?? "—")}
-                          </td>
-                        ))}
-                      </tr>
-                    ))}
-                </Fragment>
-              );
-            })}
+            {sortedPositions.length === 0 && (
+              <tr>
+                <td
+                  colSpan={COLUMNS.length}
+                  className="px-3 py-6 text-center text-gray-500"
+                >
+                  No positions match the current filters.
+                </td>
+              </tr>
+            )}
+            {sortedPositions.map((pos) => (
+              <tr
+                key={pos.id}
+                className="border-b border-gray-200 hover:bg-gray-50"
+              >
+                {COLUMNS.map((col) => (
+                  <td key={col.key} className="px-3 py-2 whitespace-nowrap">
+                    {col.key === "position" && privacyMode
+                      ? PRIVACY_MASK
+                      : col.key === "last_trade_date"
+                        ? formatExpiry(pos[col.key] as string | null)
+                        : col.key === "option_expiry_date"
+                          ? expiryForPosition(pos)
+                          : col.key === "strike" && pos.sec_type === "FUT"
+                            ? "—"
+                            : (pos[col.key] ?? "—")}
+                  </td>
+                ))}
+              </tr>
+            ))}
           </tbody>
         </table>
       </div>
