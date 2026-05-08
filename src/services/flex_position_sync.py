@@ -9,11 +9,11 @@ reportDate (T-1 EOD snapshot).
 from __future__ import annotations
 
 import logging
-import xml.etree.ElementTree as ET
 from datetime import date, datetime, timezone
 from typing import Any
 
 import pandas as pd
+from defusedxml import ElementTree as ET
 from ngv_reports_ibkr.custom_flex_report import CustomFlexReport
 from ngv_reports_ibkr.flex_client import DateRange, FlexClient
 from sqlalchemy import Engine

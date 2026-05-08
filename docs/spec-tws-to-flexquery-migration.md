@@ -149,7 +149,7 @@ The TWS (Trader WorkStation) API only exposes the last 7 days of execution histo
 
 ### New table: `flex_sync_log`
 
-```
+```text
 flex_sync_log
   id              SERIAL PRIMARY KEY
   account_id      INTEGER NOT NULL REFERENCES accounts(id)

@@ -11,18 +11,18 @@ Writes one flex_sync_log row per call.
 from __future__ import annotations
 
 import logging
-import xml.etree.ElementTree as ET
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 import pandas as pd
+from defusedxml import ElementTree as ET
 from ngv_reports_ibkr.custom_flex_report import CustomFlexReport
 from ngv_reports_ibkr.flex_client import DateRange, FlexClient
 from sqlalchemy import Engine, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
-from src.models import Account, FlexSyncLog, Trade, TradeExecution
+from src.models import FlexSyncLog, Trade, TradeExecution
 from src.services.trade_sync import (
     _enforce_canonical_flags,
     _ensure_account,

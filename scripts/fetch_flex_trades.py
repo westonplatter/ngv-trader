@@ -2,11 +2,11 @@
 
 import json
 import os
-import xml.etree.ElementTree as ET
 from datetime import date, timedelta
 from pathlib import Path
 
 import pandas as pd
+from defusedxml import ElementTree as ET
 from loguru import logger
 from ngv_reports_ibkr.custom_flex_report import CustomFlexReport
 from ngv_reports_ibkr.flex_client import DateRange, FlexClient
@@ -26,7 +26,7 @@ client = FlexClient()
 
 try:
     xml_data = client.fetch_flex_report(token=flex_token, query_id=query_id, date_range=date_range)
-    logger.debug(f"Report fetched with custom date range")
+    logger.debug("Report fetched with custom date range")
     logger.debug(f"XML data length: {len(xml_data)} bytes")
 except Exception as e:
     logger.error(f"Error fetching report: {e}")

@@ -20,17 +20,20 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 BATCH_SIZE = 5000
+_ALLOWED_TABLES = frozenset({"trades", "trade_executions"})
 
 
 def _batched_update(table: str, mapping: dict[str, str]) -> None:
+    if table not in _ALLOWED_TABLES:
+        raise ValueError(f"Refusing to run migration against unexpected table: {table!r}")
     bind = op.get_bind()
-    max_id = bind.execute(sa.text(f"SELECT COALESCE(MAX(id), 0) FROM {table}")).scalar() or 0
+    max_id = bind.execute(sa.text(f"SELECT COALESCE(MAX(id), 0) FROM {table}")).scalar() or 0  # noqa: S608
     for old_value, new_value in mapping.items():
         start = 1
         while start <= max_id:
             end = start + BATCH_SIZE - 1
             bind.execute(
-                sa.text(f"UPDATE {table} SET side = :new " f"WHERE side = :old AND id BETWEEN :start AND :end"),
+                sa.text(f"UPDATE {table} SET side = :new WHERE side = :old AND id BETWEEN :start AND :end"),  # noqa: S608
                 {"new": new_value, "old": old_value, "start": start, "end": end},
             )
             start = end + 1

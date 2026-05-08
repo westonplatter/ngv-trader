@@ -16,6 +16,7 @@ dependencies = [
   "pandera[pandas]>=0.20",
   "fastapi>=0.135",
   "uvicorn[standard]>=0.34",
+  "defusedxml>=0.7.1",
 ]
 
 [build-system]
