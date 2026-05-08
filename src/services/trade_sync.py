@@ -72,6 +72,15 @@ def _safe_float(val: Any) -> float | None:
         return None
 
 
+_SIDE_NORMALIZATION = {"BOT": "BUY", "SLD": "SELL"}
+
+
+def _normalize_side(val: str | None) -> str | None:
+    if val is None:
+        return None
+    return _SIDE_NORMALIZATION.get(val, val)
+
+
 def _ensure_account(session: Session, account_code: str) -> Account:
     stmt = select(Account).where(Account.account == account_code).limit(1)
     existing = session.execute(stmt).scalars().first()
@@ -396,7 +405,7 @@ def sync_trades_with_ib(
             order_ref = _safe_str(getattr(execution, "orderRef", None))
             quantity = _safe_float(getattr(execution, "shares", None)) or 0.0
             price = _safe_float(getattr(execution, "price", None)) or 0.0
-            side = _safe_str(getattr(execution, "side", None))
+            side = _normalize_side(_safe_str(getattr(execution, "side", None)))
             exchange = _safe_str(getattr(execution, "exchange", None))
 
             # Contract info

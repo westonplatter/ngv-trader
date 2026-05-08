@@ -29,6 +29,8 @@ from src.services.jobs import (
     JOB_TYPE_CONTRACTS_CHAIN_SYNC,
     JOB_TYPE_CONTRACTS_QUALIFY_AND_SNAPSHOT,
     JOB_TYPE_CONTRACTS_SYNC,
+    JOB_TYPE_FLEX_POSITIONS_SYNC,
+    JOB_TYPE_FLEX_TRADES_SYNC,
     JOB_TYPE_MARKET_DATA_FUTURES_OPTIONS,
     JOB_TYPE_MARKET_DATA_FUTURES_PRICES,
     JOB_TYPE_MARKET_DATA_SNAPSHOT,
@@ -404,6 +406,111 @@ def handle_trades_sync(job: Job, engine: Engine, ib_pool: IBSessionPool) -> dict
     }
 
 
+def _resolve_flex_credentials(payload: dict, account_code: str | None) -> tuple[str, str, str]:
+    """Look up (account_code, flex_token, query_id) from IB_JSON env / payload.
+
+    Payload may override flex_token/query_id; otherwise pulled from the matching
+    account in IB_JSON. If account_code is None, the first IB_JSON account is used.
+    """
+    import json
+    import os
+
+    ib_json_raw = os.environ.get("IB_JSON")
+    if not ib_json_raw:
+        raise RuntimeError("IB_JSON environment variable is not set")
+    ib_json = json.loads(ib_json_raw)
+    accounts = ib_json.get("accounts", [])
+    if not accounts:
+        raise RuntimeError("IB_JSON has no accounts configured")
+
+    def _code(entry: dict) -> str | None:
+        return entry.get("name") or entry.get("account") or entry.get("account_code")
+
+    if account_code:
+        account_entry = next((a for a in accounts if _code(a) == account_code), None)
+        if account_entry is None:
+            raise RuntimeError(f"IB_JSON has no entry for account {account_code!r}")
+    else:
+        account_entry = accounts[0]
+        account_code = _code(account_entry)
+
+    flex_token = payload.get("flex_token") or account_entry.get("flex_token")
+    query_id = payload.get("query_id") or account_entry.get("daily")
+    if not flex_token or not query_id:
+        raise RuntimeError(f"Missing flex_token or query_id for account {account_code!r}")
+    return account_code, flex_token, query_id
+
+
+def handle_flex_trades_sync(job: Job, engine: Engine, ib_pool: IBSessionPool) -> dict:
+    from datetime import date as _date
+    from datetime import timedelta as _td
+
+    from src.services.flex_trade_sync import (
+        fetch_flex_report,
+        previous_business_day,
+        sync_flex_trades,
+    )
+
+    payload = job.payload or {}
+    # account_code in payload is optional; when set, only that IBKR account is synced
+    filter_account = payload.get("account_code")
+    _, flex_token, query_id = _resolve_flex_credentials(payload, None)
+
+    if "start_date" in payload and "end_date" in payload:
+        start_date = _date.fromisoformat(payload["start_date"])
+        end_date = _date.fromisoformat(payload["end_date"])
+    else:
+        days = int(payload.get("days", 7))
+        end_date = previous_business_day()
+        start_date = end_date - _td(days=days)
+
+    report = fetch_flex_report(flex_token, query_id, start_date, end_date)
+    per_account: dict[str, dict] = {}
+    for account_id in report.account_ids():
+        if filter_account and account_id != filter_account:
+            continue
+        per_account[account_id] = sync_flex_trades(
+            engine=engine,
+            account_code=account_id,
+            report=report,
+            start_date=start_date,
+            end_date=end_date,
+        )
+    return {"per_account": per_account, "accounts_synced": list(per_account)}
+
+
+def handle_flex_positions_sync(job: Job, engine: Engine, ib_pool: IBSessionPool) -> dict:
+    from datetime import date as _date
+
+    from src.services.flex_position_sync import sync_flex_positions
+    from src.services.flex_trade_sync import previous_business_day
+
+    payload = job.payload or {}
+    account_code, flex_token, query_id = _resolve_flex_credentials(payload, payload.get("account_code"))
+
+    if "start_date" in payload and "end_date" in payload:
+        start_date = _date.fromisoformat(payload["start_date"])
+        end_date = _date.fromisoformat(payload["end_date"])
+    else:
+        end_date = previous_business_day()
+        start_date = end_date
+
+    result = sync_flex_positions(
+        engine=engine,
+        account_code=account_code,
+        flex_token=flex_token,
+        query_id=query_id,
+        start_date=start_date,
+        end_date=end_date,
+    )
+    as_of = result.get("as_of_date")
+    return {
+        "upserted_count": result.get("upserted_count", 0),
+        "as_of_date": as_of.isoformat() if as_of else None,
+        "account_code": account_code,
+    }
+
+
 def handle_contracts_chain_sync(job: Job, engine: Engine, ib_pool: IBSessionPool) -> dict:
     from src.services.contract_sync import sync_futures_chain
 
@@ -590,6 +697,8 @@ def get_handler(job_type: str) -> Callable[[Job, Engine, IBSessionPool], dict] |
         JOB_TYPE_WATCHLIST_ADD_INSTRUMENT: handle_watchlist_add_instrument,
         JOB_TYPE_WATCHLIST_QUOTES_REFRESH: handle_watchlist_quotes_refresh,
         JOB_TYPE_TRADES_SYNC: handle_trades_sync,
+        JOB_TYPE_FLEX_TRADES_SYNC: handle_flex_trades_sync,
+        JOB_TYPE_FLEX_POSITIONS_SYNC: handle_flex_positions_sync,
         JOB_TYPE_MARKET_DATA_FUTURES_PRICES: handle_market_data_futures_prices,
         JOB_TYPE_MARKET_DATA_FUTURES_OPTIONS: handle_market_data_futures_options,
         JOB_TYPE_MARKET_DATA_SNAPSHOT: handle_market_data_snapshot,

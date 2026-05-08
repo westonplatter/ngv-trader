@@ -7,6 +7,7 @@
 
 *.duckdb
 *.duckdb.wal
+scripts/data/
 
 # APS (Agentic Prompt Sync)
 .aps-backups/
@@ -127,5 +128,4 @@ cython_debug/
 
 # ignore private files
 .ipy*
-
 
