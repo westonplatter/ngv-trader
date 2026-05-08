@@ -12,13 +12,15 @@ from __future__ import annotations
 
 import logging
 from datetime import date, datetime, timedelta, timezone
+from functools import reduce
+from math import gcd
 from typing import Any
 
 import pandas as pd
 from defusedxml import ElementTree as ET
 from ngv_reports_ibkr.custom_flex_report import CustomFlexReport
 from ngv_reports_ibkr.flex_client import DateRange, FlexClient
-from sqlalchemy import Engine, select
+from sqlalchemy import Engine, func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
@@ -117,23 +119,27 @@ def _resolve_or_create_flex_trade(
         session.flush()
         return trade
 
-    candidates = (
+    # FlexQuery `ib_order_id` uniquely identifies an IBKR order, so the composite
+    # `(account_id, ib_order_id, symbol, side)` is sufficient for parent dedup.
+    # We do NOT add a trade_date check because timezone normalization between the
+    # DataFrame's exec_time and the persisted `first_executed_at` can disagree
+    # at the day boundary, causing duplicate parents on re-runs.
+    existing = (
         session.execute(
-            select(Trade).where(
+            select(Trade)
+            .where(
                 Trade.account_id == account_id,
                 Trade.ib_order_id == ib_order_id,
                 Trade.symbol == symbol,
                 Trade.side == side,
             )
+            .order_by(Trade.id.asc())
         )
         .scalars()
-        .all()
+        .first()
     )
-    for candidate in candidates:
-        if candidate.first_executed_at is not None:
-            candidate_date = candidate.first_executed_at.strftime("%Y-%m-%d")
-            if candidate_date == trade_date:
-                return candidate
+    if existing is not None:
+        return existing
 
     trade = Trade(
         account_id=account_id,
@@ -153,8 +159,28 @@ def _resolve_or_create_flex_trade(
     return trade
 
 
+def _combo_groups(rows: list[pd.Series]) -> dict[str, list[int]]:
+    """Group EXECUTION rows by brokerageOrderID. Return only multi-leg groups (≥2).
+
+    Returns {brokerageOrderID: [row_index_in_rows_list]}.
+    Rows with empty/blank brokerageOrderID are skipped (treated as solo).
+    """
+    groups: dict[str, list[int]] = {}
+    for idx, row in enumerate(rows):
+        bid = _safe_str(row.get("brokerageOrderID"))
+        if not bid:
+            continue
+        groups.setdefault(bid, []).append(idx)
+    return {bid: idxs for bid, idxs in groups.items() if len(idxs) >= 2}
+
+
 def _row_raw(row: pd.Series) -> dict[str, Any]:
-    """Serialize a FlexQuery trade row to a JSON-safe dict for audit storage."""
+    """Serialize a FlexQuery trade row to a JSON-safe dict for audit storage.
+
+    Also emits a TWS-compatible `contract` sub-dict so display helpers like
+    `_contract_display_from_raw` (which expect raw["contract"]["symbol"], etc.)
+    work uniformly for TWS- and FlexQuery-sourced executions.
+    """
     out: dict[str, Any] = {}
     for key, val in row.items():
         if pd.isna(val):
@@ -165,6 +191,23 @@ def _row_raw(row: pd.Series) -> dict[str, Any]:
             out[key] = val
         else:
             out[key] = str(val)
+
+    # Synthesize a TWS-shaped contract sub-dict for the display layer.
+    # FlexQuery flat fields → ib_async Contract field names.
+    sec_type = out.get("assetCategory") or out.get("secType")
+    out["contract"] = {
+        "conId": out.get("conid"),
+        "symbol": out.get("underlyingSymbol") or out.get("symbol"),
+        "secType": sec_type,
+        "exchange": out.get("exchange") or out.get("listingExchange"),
+        "currency": out.get("currency"),
+        "localSymbol": out.get("symbol"),  # FlexQuery's `symbol` is the OCC/local symbol
+        "lastTradeDateOrContractMonth": out.get("expiry"),
+        "strike": out.get("strike"),
+        "right": out.get("putCall"),
+        "tradingClass": None,
+        "multiplier": out.get("multiplier"),
+    }
     return out
 
 
@@ -242,7 +285,11 @@ def sync_flex_trades(
                     log_row.status = "error"
                     log_row.error_message = f"FlexTokenExpiredError: {exc}"
                     session.commit()
-            logger.error("FlexQuery token expired/invalid for account=%s: %s", account_code, exc)
+            logger.error(
+                "FlexQuery token expired/invalid for account=%s: %s",
+                f"{account_code[:3]}***{account_code[-2:]}" if len(account_code) >= 5 else "***",
+                exc,
+            )
             raise
         except Exception as exc:
             with Session(engine) as session:
@@ -258,18 +305,31 @@ def sync_flex_trades(
     touched_trade_ids: set[int] = set()
     affected_bases: list[tuple[int, str]] = []
     fetched_count = 0
+    combo_count = 0
 
     with Session(engine) as session:
         account = _ensure_account(session, account_code)
         df = report.trades_by_account_id(account_code)
         if df is None or len(df.index) == 0:
-            logger.info("flex_trade_sync: account=%s no trades in range", account_code)
+            logger.info(
+                "flex_trade_sync: account=%s no trades in range",
+                f"{account_code[:3]}***{account_code[-2:]}" if len(account_code) >= 5 else "***",
+            )
             rows: list[pd.Series] = []
         else:
+            # Restrict to EXECUTION level — other levels (SUMMARY, LOT, etc.) carry
+            # no ibExecID and are not individual fills.
+            df = df.query("levelOfDetail == 'EXECUTION'") if "levelOfDetail" in df.columns else df
             rows = [row for _, row in df.iterrows()]
         fetched_count = len(rows)
 
-        for row in rows:
+        # Pre-pass: identify multi-leg combo groups by brokerageOrderID
+        combo_groups = _combo_groups(rows)
+        combo_idx_to_bid: dict[int, str] = {idx: bid for bid, idxs in combo_groups.items() for idx in idxs}
+        # Cache: brokerageOrderID -> shared parent Trade (created on first leg)
+        parent_trade_by_combo: dict[str, Trade] = {}
+
+        for idx, row in enumerate(rows):
             exec_id = _safe_str(row.get("ibExecID"))
             if not exec_id:
                 continue
@@ -304,24 +364,74 @@ def sync_flex_trades(
 
             trade_date = exec_time.strftime("%Y-%m-%d")
 
-            trade = _resolve_or_create_flex_trade(
-                session=session,
-                account_id=account.id,
-                order_ref=order_ref,
-                ib_order_id=ib_order_id,
-                symbol=symbol,
-                side=side,
-                trade_date=trade_date,
-                now=now,
-            )
-            if trade.symbol is None and symbol:
-                trade.symbol = symbol
-            if trade.sec_type is None and sec_type:
-                trade.sec_type = sec_type
-            if trade.exchange is None and exchange:
-                trade.exchange = exchange
-            if trade.currency is None and currency:
-                trade.currency = currency
+            combo_bid = combo_idx_to_bid.get(idx)
+            if combo_bid is not None:
+                # Multi-leg combo leg — share one Trade parent across all legs of this brokerageOrderID
+                trade = parent_trade_by_combo.get(combo_bid)
+                if trade is None:
+                    # Tier-0 dedup: re-attach to existing parent created by a prior sync run.
+                    # Combo summaries store brokerageOrderID in raw["brokerage_order_id"].
+                    # `raw` is JSON (not JSONB), so use json_extract_path_text.
+                    existing_combo = (
+                        session.execute(
+                            select(TradeExecution)
+                            .where(
+                                TradeExecution.account_id == account.id,
+                                TradeExecution.exec_role == "combo_summary",
+                                func.json_extract_path_text(TradeExecution.raw, "brokerage_order_id") == combo_bid,
+                            )
+                            .limit(1)
+                        )
+                        .scalars()
+                        .first()
+                    )
+                    if existing_combo is not None:
+                        trade = session.get(Trade, existing_combo.trade_id)
+                    if trade is None:
+                        # Derive parent symbol from the most-common underlyingSymbol across legs
+                        # (mirrors TWS BAG behavior, which carried the underlying like "AAPL").
+                        leg_indices = combo_groups[combo_bid]
+                        underlyings = [_safe_str(rows[i].get("underlyingSymbol")) for i in leg_indices]
+                        underlyings = [u for u in underlyings if u]
+                        parent_symbol = max(set(underlyings), key=underlyings.count) if underlyings else None
+                        trade = Trade(
+                            account_id=account.id,
+                            ib_perm_id=None,
+                            order_ref=order_ref,
+                            ib_order_id=None,
+                            symbol=parent_symbol,
+                            sec_type="BAG",
+                            side=None,
+                            status="partial",
+                            data_source="flex",
+                            fetched_at=now,
+                            created_at=now,
+                            updated_at=now,
+                        )
+                        session.add(trade)
+                        session.flush()
+                    parent_trade_by_combo[combo_bid] = trade
+                exec_role = "leg"
+            else:
+                trade = _resolve_or_create_flex_trade(
+                    session=session,
+                    account_id=account.id,
+                    order_ref=order_ref,
+                    ib_order_id=ib_order_id,
+                    symbol=symbol,
+                    side=side,
+                    trade_date=trade_date,
+                    now=now,
+                )
+                if trade.symbol is None and symbol:
+                    trade.symbol = symbol
+                if trade.sec_type is None and sec_type:
+                    trade.sec_type = sec_type
+                if trade.exchange is None and exchange:
+                    trade.exchange = exchange
+                if trade.currency is None and currency:
+                    trade.currency = currency
+                exec_role = "standalone"
 
             raw = _row_raw(row)
 
@@ -338,7 +448,7 @@ def sync_flex_trades(
                     order_ref=order_ref,
                     sec_type=sec_type,
                     con_id=con_id,
-                    exec_role="standalone",
+                    exec_role=exec_role,
                     executed_at=exec_time,
                     quantity=quantity,
                     price=price,
@@ -364,7 +474,7 @@ def sync_flex_trades(
                         "commission": commission,
                         "sec_type": sec_type,
                         "con_id": con_id,
-                        "exec_role": "standalone",
+                        "exec_role": exec_role,
                         "data_source": "flex",
                         "flex_transaction_id": flex_transaction_id,
                         "raw": raw,
@@ -379,6 +489,27 @@ def sync_flex_trades(
 
             affected_bases.append((account.id, exec_id_base))
             touched_trade_ids.add(trade.id)
+
+        # Synthesize a combo_summary execution per multi-leg combo group
+        for combo_bid, leg_indices in combo_groups.items():
+            parent_trade = parent_trade_by_combo.get(combo_bid)
+            if parent_trade is None:
+                continue
+            inserted = _synthesize_combo_summary(
+                session=session,
+                account_id=account.id,
+                parent_trade_id=parent_trade.id,
+                parent_symbol=parent_trade.symbol,
+                brokerage_order_id=combo_bid,
+                leg_rows=[rows[i] for i in leg_indices],
+                now=now,
+            )
+            if inserted is not None:
+                combo_count += 1
+                if inserted.get("inserted"):
+                    inserted_count += 1
+                affected_bases.append((account.id, inserted["exec_id_base"]))
+                touched_trade_ids.add(parent_trade.id)
 
         for acct_id, base in affected_bases:
             canonical_changes += _enforce_canonical_flags(session, acct_id, base)
@@ -397,20 +528,212 @@ def sync_flex_trades(
         "fetched_executions_count": fetched_count,
         "inserted_executions_count": inserted_count,
         "canonical_changes_count": canonical_changes,
+        "combo_summaries_count": combo_count,
         "touched_trade_ids": sorted(touched_trade_ids),
         "touched_trades_count": len(touched_trade_ids),
         "start_date": start_date.isoformat(),
         "end_date": end_date.isoformat(),
         "flex_sync_log_id": log_id,
     }
+    masked_account = f"{account_code[:3]}***{account_code[-2:]}" if len(account_code) >= 5 else "***"
     logger.info(
-        "[flex_trade_sync] account=%s start=%s end=%s rows=%d status=success",
-        account_code,
+        "[flex_trade_sync] account=%s start=%s end=%s rows=%d combos=%d status=success",
+        masked_account,
         start_date.isoformat(),
         end_date.isoformat(),
         fetched_count,
+        combo_count,
     )
     return metrics
+
+
+def _synthesize_combo_summary(
+    session: Session,
+    *,
+    account_id: int,
+    parent_trade_id: int,
+    parent_symbol: str | None,
+    brokerage_order_id: str,
+    leg_rows: list[pd.Series],
+    now: datetime,
+) -> dict[str, Any] | None:
+    """Upsert a synthetic combo_summary execution row for a multi-leg combo.
+
+    Idempotent: keyed on `ib_exec_id = f"{brokerage_order_id}.combo"`.
+    Returns metadata dict (with `inserted: bool` and `exec_id_base`) or None on skip.
+    """
+    if len(leg_rows) < 2:
+        return None
+
+    quantities: list[float] = []
+    signed_cash = 0.0
+    commissions: list[float] = []
+    earliest: datetime | None = None
+    leg_exec_ids: list[str] = []
+    order_refs: list[str] = []
+    currencies: set[str] = set()
+    exchanges: set[str] = set()
+
+    for row in leg_rows:
+        qty = _safe_float(row.get("quantity")) or 0.0
+        px = _safe_float(row.get("tradePrice")) or 0.0
+        quantities.append(qty)
+        signed_cash += qty * px
+        comm = _safe_float(row.get("ibCommission"))
+        if comm is not None:
+            commissions.append(comm)
+        ts = row.get("dateTime")
+        if isinstance(ts, str):
+            try:
+                ts = datetime.fromisoformat(ts)
+            except ValueError:
+                ts = None
+        elif isinstance(ts, pd.Timestamp):
+            ts = ts.to_pydatetime()
+        if ts is not None:
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=timezone.utc)
+            if earliest is None or ts < earliest:
+                earliest = ts
+        ex_id = _safe_str(row.get("ibExecID"))
+        if ex_id:
+            leg_exec_ids.append(ex_id)
+        oref = _safe_str(row.get("orderReference"))
+        order_refs.append(oref or "")
+        cur = _safe_str(row.get("currency"))
+        if cur:
+            currencies.add(cur)
+        exch = _safe_str(row.get("exchange"))
+        if exch:
+            exchanges.add(exch)
+
+    if earliest is None:
+        return None
+
+    # gcd over absolute integer quantities; falls back to 1 if any non-integer
+    abs_int_qtys = []
+    for q in quantities:
+        a = abs(q)
+        if a == 0:
+            continue
+        if float(int(a)) == a:
+            abs_int_qtys.append(int(a))
+        else:
+            abs_int_qtys = []
+            break
+    combo_qty = reduce(gcd, abs_int_qtys) if abs_int_qtys else 1
+    if combo_qty <= 0:
+        combo_qty = 1
+
+    combo_price = signed_cash / combo_qty if combo_qty else 0.0
+    combo_side = "BUY" if signed_cash > 0 else "SELL"
+    combo_commission = sum(commissions) if commissions else None
+
+    # order_ref: only carry over if every leg has the same non-empty value
+    if order_refs and all(o for o in order_refs) and len(set(order_refs)) == 1:
+        combo_order_ref = order_refs[0]
+    else:
+        combo_order_ref = None
+
+    # Derive the combo summary's ib_exec_id from the leg numbering. IBKR formats
+    # ibExecID as `<acct-prefix>.<order-prefix>.<leg-number>.<revision>` and reserves
+    # leg "01" for the BAG/combo summary slot (legs themselves are .02, .03, ...).
+    # Use that natural slot when all legs share the same prefix; otherwise fall back
+    # to a brokerageOrderID-based ID so we always have a deterministic key.
+    combo_exec_id: str | None = None
+    if leg_exec_ids:
+        prefixes = set()
+        for ex_id in leg_exec_ids:
+            parts = ex_id.split(".")
+            if len(parts) >= 4:
+                prefixes.add(".".join(parts[:2]))
+        if len(prefixes) == 1:
+            combo_exec_id = f"{next(iter(prefixes))}.01.01"
+    if combo_exec_id is None:
+        combo_exec_id = f"{brokerage_order_id}.combo"
+    combo_exec_id_base, _ = _parse_exec_id(combo_exec_id)
+
+    raw = {
+        "synthetic": True,
+        "brokerage_order_id": brokerage_order_id,
+        "leg_ib_exec_ids": leg_exec_ids,
+        "leg_count": len(leg_rows),
+        "signed_net_cash": signed_cash,
+        "leg_quantities": quantities,
+        # TWS-compatible contract sub-dict so display helpers render the BAG row
+        # like a TWS combo (e.g. "AAPL Combo" via contract_display_name's BAG rule).
+        "contract": {
+            "conId": None,
+            "symbol": parent_symbol,
+            "secType": "BAG",
+            "exchange": next(iter(exchanges)) if len(exchanges) == 1 else None,
+            "currency": next(iter(currencies)) if len(currencies) == 1 else None,
+            "localSymbol": None,
+            "lastTradeDateOrContractMonth": None,
+            "strike": None,
+            "right": None,
+            "tradingClass": None,
+            "multiplier": None,
+        },
+    }
+
+    stmt = (
+        insert(TradeExecution)
+        .values(
+            trade_id=parent_trade_id,
+            account_id=account_id,
+            ib_exec_id=combo_exec_id,
+            exec_id_base=combo_exec_id_base,
+            exec_revision=1,
+            ib_perm_id=None,
+            ib_order_id=None,
+            order_ref=combo_order_ref,
+            sec_type="BAG",
+            con_id=None,
+            exec_role="combo_summary",
+            executed_at=earliest,
+            quantity=float(combo_qty),
+            price=combo_price,
+            side=combo_side,
+            exchange=next(iter(exchanges)) if len(exchanges) == 1 else None,
+            currency=next(iter(currencies)) if len(currencies) == 1 else None,
+            liquidity=None,
+            commission=combo_commission,
+            is_canonical=True,
+            data_source="flex",
+            flex_transaction_id=None,
+            raw=raw,
+            fetched_at=now,
+            created_at=now,
+            updated_at=now,
+        )
+        .on_conflict_do_update(
+            index_elements=["ib_exec_id"],
+            set_={
+                "trade_id": parent_trade_id,
+                "quantity": float(combo_qty),
+                "price": combo_price,
+                "side": combo_side,
+                "commission": combo_commission,
+                "exec_role": "combo_summary",
+                "sec_type": "BAG",
+                "executed_at": earliest,
+                "order_ref": combo_order_ref,
+                "raw": raw,
+                "fetched_at": now,
+                "updated_at": now,
+            },
+        )
+    )
+    result = session.execute(stmt)
+    inserted = getattr(result, "rowcount", None) == 1
+    return {
+        "inserted": inserted,
+        "exec_id_base": combo_exec_id_base,
+        "ib_exec_id": combo_exec_id,
+        "qty": combo_qty,
+        "price": combo_price,
+    }
 
 
 def recompute_aggregates_for_trades(

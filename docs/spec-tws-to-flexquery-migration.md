@@ -251,20 +251,30 @@ All FlexQuery-sourced executions will have `exec_role = 'standalone'`. The `comb
 
 - **FlexQuery query configuration** _(resolved)_: Verified against a sample local FlexQuery export (not committed; gitignored under `scripts/data/`) — all six required fields are present in the configured query: `ibExecID`, `transactionID`, `orderReference`, `ibCommission`, `openCloseIndicator`, `conid`. No reconfiguration needed before the sync service is built.
 
-- **`exec_role` and combo spreads** _(deferred to implementation)_: Should multi-leg spreads be reconstructed from FlexQuery data by grouping legs that share an `ibOrderID` and have matching `openCloseIndicator` patterns? Or is `standalone` for all FlexQuery executions acceptable in the trade group P&L view? **The user has agency and responsibility to direct this decision during implementation.** No commitment is made in this spec; the implementing engineer should surface the tradeoff to the user when the FlexQuery sync service is being built and let the user choose based on what the trade group P&L view actually needs at that point.
-  Use the same trade group contstruction logic if possible. If not, we'll need to find another leg matching mechanism.
+- **`exec_role` and combo spreads** _(resolved: client-side reconstruction via `brokerageOrderID`)_: FlexQuery does not emit a parent BAG/combo aggregate at any level. Empirically verified — see Phase 6.6. Multi-leg combos are reconstructed in `flex_trade_sync` by grouping `levelOfDetail='EXECUTION'` rows by `brokerageOrderID`; each group of ≥2 legs gets a synthesized `combo_summary` row (`sec_type='BAG'`) with a deterministic `ib_exec_id` derived from the leg ibExecID prefix. The TWS combo-summary code path in `_recompute_trade_aggregates` is reused unchanged. `ibOrderID` is per-leg in FlexQuery (each leg has its own), so it is **not** used for combo grouping; `brokerageOrderID` is the canonical combo key.
 
 ## Related Files
 
-- `src/services/trade_sync.py` — current TWS trade sync (reference for logic to port)
-- `src/services/position_sync.py` — current TWS position sync (reference for logic to port)
-- `scripts/fetch_flex_trades.py` — existing FlexQuery proof-of-concept (starting point for new service)
-- `src/models.py` — all SQLAlchemy models; tables to be augmented
-- `alembic/versions/20260227000000_add_trades_and_trade_executions.py` — migration reference for trades schema
-- `alembic/versions/20260217221407_create_positions_table.py` — migration reference for positions schema
-- `.venv/lib/python3.12/site-packages/ngv_reports_ibkr/flex_client.py` — FlexQuery HTTP client
-- `.venv/lib/python3.12/site-packages/ngv_reports_ibkr/custom_flex_report.py` — DataFrame extraction methods
-- `.venv/lib/python3.12/site-packages/ngv_reports_ibkr/schemas/ibkr_flex_report.py` — 72-column Pandera validation schema
+- `src/services/trade_sync.py` — TWS trade sync (preserved as fallback; `_recompute_trade_aggregates` is reused by flex sync)
+- `src/services/position_sync.py` — TWS position sync (preserved as fallback)
+- `src/services/flex_trade_sync.py` — **new**: FlexQuery trade ingest, combo synthesis, idempotent upsert
+- `src/services/flex_position_sync.py` — **new**: FlexQuery EOD position ingest with LOT aggregation
+- `scripts/backfill_flex_trades.py` — **new**: 180-day backfill script, per-token fetch, per-account dispatch
+- `scripts/fetch_flex_trades.py` — proof-of-concept retained for ad-hoc XML inspection (saves to gitignored `scripts/data/`)
+- `scripts/inspect_flex_xml.py` — **new**: REPL helper to load saved XML into a `CustomFlexReport` and explore as DataFrames
+- `scripts/work_jobs.py` — `handle_flex_trades_sync` / `handle_flex_positions_sync` handlers + `_resolve_flex_credentials`
+- `src/api/routers/admin.py` — **new**: `GET /api/v1/admin/flex-sync-log`
+- `src/api/routers/trades.py` — `data_source` + `flex_transaction_id` exposed; `_execution_realized_pnl` source-agnostic; `POST /api/v1/trades/flex-sync`
+- `src/api/routers/positions.py` — `data_source` + `as_of_date` exposed; `POST /api/v1/positions/flex-sync`
+- `src/models.py` — `data_source`, `flex_transaction_id`, `as_of_date` columns + `FlexSyncLog` table; `ib_order_id`/`ib_perm_id` widened to `BigInteger`
+- `alembic/versions/20260507204206_add_data_source_to_trades_executions_.py` — `790b1dac7d8a`
+- `alembic/versions/20260507204209_add_flex_transaction_id_to_trade_.py` — `1a9d2390bd8e`
+- `alembic/versions/20260507204209_add_as_of_date_to_positions.py` — `6b5e1576ec39`
+- `alembic/versions/20260507204210_create_flex_sync_log_table.py` — `01ca3f6d2394`
+- `alembic/versions/20260507204422_normalize_side_bot_sld_to_buy_sell.py` — `683ce2f42f99`
+- `alembic/versions/20260507212131_widen_ib_order_id_and_ib_perm_id_to_.py` — `22ce4113fb3c`
+- `.venv/lib/python3.12/site-packages/ngv_reports_ibkr/flex_client.py` — FlexQuery HTTP client (queryName/query_id is configured server-side in IBKR; this codebase only consumes the `daily` query_id from `IB_JSON`)
+- `.venv/lib/python3.12/site-packages/ngv_reports_ibkr/custom_flex_report.py` — `trades_by_account_id`, `open_positions_by_account_id`
 
 ## Task List
 
@@ -314,7 +324,7 @@ All FlexQuery-sourced executions will have `exec_role = 'standalone'`. The `comb
 - [x] 6.1 `scripts/backfill_flex_trades.py` with `--days 180` default; sequential per-account from `IB_JSON`
 - [x] 6.2 Calls `sync_flex_trades(skip_aggregate_recompute=True)` per chunk, then `recompute_aggregates_for_trades` once at the end
 - [x] 6.3 Chunks ranges into ≤365-day windows via `_chunked_ranges`; each `flex_sync_log` row is per-chunk per-account
-- [ ] 6.4 Verify idempotency (re-run produces zero new inserts) — partial: second backfill ran without duplicate-key errors; needs a clean re-run with explicit insert-count check
+- [x] 6.4 Idempotency verified — back-to-back backfill runs converge to **trades=96, trade_executions=180, orphan_trades=0**; all 4 accounts report `success`
 
 ### Phase 6.5: Discovered during validation (not in original spec)
 
@@ -323,6 +333,31 @@ All FlexQuery-sourced executions will have `exec_role = 'standalone'`. The `comb
 - [x] 6.5.3 Refactor backfill + worker to fetch FlexQuery once per token and dispatch over `report.account_ids()` — a single FlexQuery token returns trades for all linked accounts; the IB_JSON `name` field is a local token alias, not the IBKR account ID
 - [x] 6.5.4 `previous_business_day()` helper — defaults `end_date` to last weekday (skips Sat/Sun; no holiday calendar)
 - [x] 6.5.5 Cleaned up an `accounts` row created by the early alias-as-account bug, plus its orphan `flex_sync_log` rows
+
+### Phase 6.6: Client-side BAG/combo reconstruction (resolves open decision)
+
+FlexQuery does not emit a parent BAG/combo aggregate at any level (verified via grep: 0 hits for `BAG`, `Combo`, `MultiLeg`; the only `assetCategory` values are `CASH/CRYPTO/FOP/FUT/OPT/STK`). To preserve the TWS UX (combo_summary parent above legs in timeline / P&L / trade-group views), `flex_trade_sync` synthesizes the parent client-side.
+
+- [x] 6.6.1 Added `_combo_groups(rows)` — groups EXECUTION rows by `brokerageOrderID`, returns only multi-leg groups (≥2)
+- [x] 6.6.2 Added `_synthesize_combo_summary(...)` — for each group, upserts a synthetic `exec_role='combo_summary'`, `sec_type='BAG'` row keyed on a deterministic `ib_exec_id`. Uses IBKR's natural `<leg-prefix>.01.01` slot (e.g. `0000abcd.12345678.01.01`) when all legs share a prefix; falls back to `<brokerageOrderID>.combo` for cross-route combos where legs have heterogeneous prefixes.
+- [x] 6.6.3 Quantity uses `gcd(|leg_qty|, ...)` (handles plain spreads + ratio combos like 1-2-1 butterflies). Net price = signed cash ÷ gcd. Side is BUY (debit) or SELL (credit). Commission summed across legs.
+- [x] 6.6.4 `order_ref` carried over only when every leg shares the same non-empty `orderReference`; otherwise NULL.
+- [x] 6.6.5 Parent `Trade` row created once per combo, `sec_type='BAG'`. Symbol derived from the most-common `underlyingSymbol` across legs (mirrors what TWS BAG rows carried — e.g. an equity option spread parent gets the underlying ticker; a futures-option spread parent gets the futures contract local symbol).
+- [x] 6.6.6 Tier-0 dedup on rerun: matches an existing combo_summary by `func.json_extract_path_text(raw, "brokerage_order_id")` so all combo legs reattach to the existing parent. Validated to keep `orphan_trades=0` after multiple back-to-back runs.
+- [x] 6.6.7 Combo legs themselves are tagged `exec_role='leg'`. Solo legs remain `exec_role='standalone'`. `_recompute_trade_aggregates` (in `trade_sync.py`) was already combo-aware and required no changes — it correctly prefers `combo_summary` rows when computing parent qty/avg_price.
+- [x] 6.6.8 `_row_raw` now emits a TWS-compatible `contract` sub-dict alongside the flat FlexQuery fields (keys: `conId`, `symbol`, `secType`, `exchange`, `currency`, `localSymbol`, `lastTradeDateOrContractMonth`, `strike`, `right`, `tradingClass`, `multiplier`). This unblocked `_contract_display_from_raw` so the frontend renders contract names instead of "UNKNOWN" for both legs and synthesized combo summaries.
+- [x] 6.6.9 Solo-leg dedup tier-3 simplified — dropped the timezone-fragile `trade_date` comparison; `(account_id, ib_order_id, symbol, side)` is unique enough for FlexQuery's `ib_order_id`. Returns lowest-id candidate deterministically. (Was producing duplicate orphan parents on rerun.)
+- [x] 6.6.10 Restricted `flex_trade_sync` ingest to `levelOfDetail='EXECUTION'` rows; the new query also exposes `SUMMARY`, `LOT`, `CLOSED_LOT`, `ASSET_SUMMARY`, `SYMBOL_SUMMARY`, `WASH_SALE` rows that we don't want as fills.
+- [x] 6.6.11 Account-number masking in logs: backfill script and service log lines now print `U28***10` style instead of full account IDs. Privacy-by-default for shared screenshots/transcripts.
+
+**Validation (14-day prod backfill, post-truncate, after rerun):**
+
+- `data_source='flex'` rows split across `combo_summary` / `leg` / `standalone` as expected
+- A majority of synthesized combo summaries use the natural `<prefix>.01.01` IBKR slot; a minority fall back to the `<brokerageOrderID>.combo` form for cross-route combos
+- **Orphan trades = 0** after back-to-back idempotent runs
+- Spot-checked one option spread (single-route) — combo summary's `quantity = gcd(leg qtys)`, signed-cash net price, `secType='BAG'`, parent `Trade.symbol` = underlying ticker
+- Spot-checked one futures-options spread (single-route) — same shape; net price negative (credit) → `side='SELL'`
+- Spot-checked one cross-route combo (4 fills for 2 contracts × 2 exchange routes) — single BAG parent reattached to all 4 leg executions; net price equals signed-cash sum across all four fills
 
 ### Phase 7: Validation, rollout, observability
 
@@ -333,6 +368,12 @@ All FlexQuery-sourced executions will have `exec_role = 'standalone'`. The `comb
 - [ ] 7.5 Run 180-day backfill per account; monitor `flex_sync_log` for two weeks — pending live run
 - [ ] 7.6 Verify all Acceptance Criteria pass — needs a clean idempotent backfill + position validation
 
-### Open decision (to surface during Phase 3)
+### Open decision (resolved in Phase 6.6)
 
-- [ ] Decide combo-spread reconstruction strategy for FlexQuery executions (reuse trade group construction logic if possible; otherwise propose alternative leg-matching mechanism) — surface tradeoff to user before finalizing `flex_trade_sync.py`
+- [x] Combo-spread reconstruction strategy: FlexQuery does not emit a BAG row → synthesize one client-side, keyed on `brokerageOrderID`, using IBKR's natural `<leg-prefix>.01.01` slot. See Phase 6.6 above.
+
+### Follow-ups still open
+
+- [ ] **`lp` token has no `daily` query_id in IB_JSON.** Backfill skips it gracefully. Either configure a `daily` FlexQuery in IBKR for the `lp` account, or add a `--query-key {daily,weekly,annual}` flag to the backfill script. Out of scope for this spec.
+- [ ] **Cross-route combo IDs.** 5 of 40 combos in the validation run use the `<brokerageOrderID>.combo` fallback because their legs span multiple ibExecID prefixes (same combo order, fills routed to different exchanges). Functionally identical; cosmetically distinguishable from natural `<prefix>.01.01` IDs. Could switch to `<earliest-leg-prefix>.01.01` if the fallback format becomes a UX issue.
+- [ ] **TWS `_fill_to_raw` shape divergence from FlexQuery `_row_raw`.** FlexQuery now emits a TWS-compatible `contract` sub-dict so `_contract_display_from_raw` works for both. If TWS sync is ever fully retired, the dual shape can be simplified.
