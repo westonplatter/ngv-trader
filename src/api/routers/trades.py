@@ -11,7 +11,11 @@ from sqlalchemy.orm import Session
 from src.api.deps import get_db
 from src.models import Account, ContractRef, Trade, TradeExecution, TradeGroupExecution
 from src.services.cl_contracts import infer_contract_month_from_local_symbol
-from src.services.jobs import JOB_TYPE_TRADES_SYNC, enqueue_job
+from src.services.jobs import (
+    JOB_TYPE_FLEX_TRADES_SYNC,
+    JOB_TYPE_TRADES_SYNC,
+    enqueue_job,
+)
 from src.utils.contract_display import contract_display_name
 
 router = APIRouter()
@@ -224,11 +228,21 @@ def _trade_lifecycle_from_execution(raw: dict | None, exec_role: str | None) -> 
 
 
 def _execution_realized_pnl(raw: dict | None) -> float | None:
-    commission_report = raw.get("commissionReport") if raw else None
-    if not isinstance(commission_report, dict):
+    if not raw:
         return None
 
-    value = commission_report.get("realizedPNL")
+    # TWS shape: raw.commissionReport.realizedPNL (nested)
+    commission_report = raw.get("commissionReport")
+    if isinstance(commission_report, dict):
+        value = commission_report.get("realizedPNL")
+        if value is not None:
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                pass
+
+    # FlexQuery shape: fifoPnlRealized at top level
+    value = raw.get("fifoPnlRealized")
     if value is None:
         return None
     try:
@@ -282,6 +296,7 @@ class TradeResponse(BaseModel):
     realized_pnl: float | None
     first_executed_at: datetime | None
     last_executed_at: datetime | None
+    data_source: str
     fetched_at: datetime
     created_at: datetime
     updated_at: datetime
@@ -312,6 +327,8 @@ class TradeExecutionResponse(BaseModel):
     commission: float | None
     realized_pnl: float | None
     is_canonical: bool
+    data_source: str
+    flex_transaction_id: int | None = None
     contract_display: str | None
     fetched_at: datetime
     created_at: datetime
@@ -338,6 +355,7 @@ class TradeExecutionListItem(BaseModel):
     is_canonical: bool
     contract_display: str | None
     parent_ib_exec_id: str | None
+    data_source: str
     trade_ib_perm_id: int | None
     trade_order_ref: str | None
     trade_status: str
@@ -353,6 +371,16 @@ class TradeSyncRequest(BaseModel):
     source: str = "manual-ui"
     request_text: str | None = None
     lookback_days: int = 7
+    max_attempts: int = 3
+
+
+class FlexTradeSyncRequest(BaseModel):
+    source: str = "manual-ui"
+    request_text: str | None = None
+    days: int = 7
+    account_code: str | None = None
+    start_date: str | None = None
+    end_date: str | None = None
     max_attempts: int = 3
 
 
@@ -490,6 +518,7 @@ def list_trades(  # noqa: C901, PLR0912
                 ),
                 first_executed_at=trade.first_executed_at,
                 last_executed_at=trade.last_executed_at,
+                data_source=trade.data_source,
                 fetched_at=trade.fetched_at,
                 created_at=trade.created_at,
                 updated_at=trade.updated_at,
@@ -569,6 +598,7 @@ def get_trade(trade_id: int, db: Session = DB_SESSION_DEPENDENCY):
         realized_pnl=_trade_realized_pnl_from_executions(execution_summary_rows),
         first_executed_at=trade.first_executed_at,
         last_executed_at=trade.last_executed_at,
+        data_source=trade.data_source,
         fetched_at=trade.fetched_at,
         created_at=trade.created_at,
         updated_at=trade.updated_at,
@@ -613,6 +643,8 @@ def list_trade_executions(trade_id: int, db: Session = DB_SESSION_DEPENDENCY):
             commission=ex.commission,
             realized_pnl=_execution_realized_pnl(ex.raw),
             is_canonical=ex.is_canonical,
+            data_source=ex.data_source,
+            flex_transaction_id=ex.flex_transaction_id,
             contract_display=_contract_display_from_raw(ex.raw, contract_ref),
             fetched_at=ex.fetched_at,
             created_at=ex.created_at,
@@ -730,6 +762,7 @@ def list_all_trade_executions(  # noqa: C901, PLR0912, PLR0915
                 is_canonical=ex.is_canonical,
                 contract_display=_contract_display_from_raw(ex.raw, contract_ref),
                 parent_ib_exec_id=parent_ib_exec_id,
+                data_source=ex.data_source,
                 trade_ib_perm_id=trade.ib_perm_id if trade else None,
                 trade_order_ref=trade.order_ref if trade else None,
                 trade_status=trade.status if trade else "unknown",
@@ -758,6 +791,33 @@ def enqueue_trades_sync(
         payload={"lookback_days": body.lookback_days},
         source=body.source,
         request_text=request_text,
+        max_attempts=body.max_attempts,
+    )
+    db.commit()
+    return TradeSyncResponse(
+        job_id=job.id,
+        job_type=job.job_type,
+        status=job.status,
+    )
+
+
+@router.post("/trades/flex-sync", response_model=TradeSyncResponse, status_code=status.HTTP_202_ACCEPTED)
+def enqueue_flex_trades_sync(
+    body: FlexTradeSyncRequest,
+    db: Session = DB_SESSION_DEPENDENCY,
+):
+    payload: dict[str, object] = {"days": body.days}
+    if body.account_code:
+        payload["account_code"] = body.account_code
+    if body.start_date and body.end_date:
+        payload["start_date"] = body.start_date
+        payload["end_date"] = body.end_date
+    job = enqueue_job(
+        session=db,
+        job_type=JOB_TYPE_FLEX_TRADES_SYNC,
+        payload=payload,
+        source=body.source,
+        request_text=body.request_text or "Manual flex trades sync.",
         max_attempts=body.max_attempts,
     )
     db.commit()

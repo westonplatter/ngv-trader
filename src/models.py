@@ -1,10 +1,12 @@
 """SQLAlchemy models for ngtrader."""
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from sqlalchemy import (
     JSON,
+    BigInteger,
     Boolean,
+    Date,
     DateTime,
     Float,
     ForeignKey,
@@ -141,6 +143,8 @@ class Position(Base):
     multiplier: Mapped[str | None] = mapped_column(String)
     position: Mapped[float] = mapped_column(Float, nullable=False)
     avg_cost: Mapped[float] = mapped_column(Float, nullable=False)
+    data_source: Mapped[str] = mapped_column(Text, nullable=False, default="tws", server_default="tws")
+    as_of_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     fetched_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
@@ -278,9 +282,9 @@ class Trade(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     account_id: Mapped[int] = mapped_column(Integer, nullable=False)
-    ib_perm_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    ib_perm_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     order_ref: Mapped[str | None] = mapped_column(Text, nullable=True)
-    ib_order_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    ib_order_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     symbol: Mapped[str | None] = mapped_column(String, nullable=True)
     sec_type: Mapped[str | None] = mapped_column(String, nullable=True)
     side: Mapped[str | None] = mapped_column(String, nullable=True)
@@ -291,6 +295,7 @@ class Trade(Base):
     avg_price: Mapped[float | None] = mapped_column(Float, nullable=True)
     first_executed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_executed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    data_source: Mapped[str] = mapped_column(Text, nullable=False, default="tws", server_default="tws")
     fetched_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
@@ -317,8 +322,8 @@ class TradeExecution(Base):
     ib_exec_id: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
     exec_id_base: Mapped[str] = mapped_column(Text, nullable=False)
     exec_revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
-    ib_perm_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    ib_order_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    ib_perm_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    ib_order_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     order_ref: Mapped[str | None] = mapped_column(Text, nullable=True)
     sec_type: Mapped[str | None] = mapped_column(Text, nullable=True)
     con_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -332,6 +337,8 @@ class TradeExecution(Base):
     liquidity: Mapped[str | None] = mapped_column(Text, nullable=True)
     commission: Mapped[float | None] = mapped_column(Float, nullable=True)
     is_canonical: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    data_source: Mapped[str] = mapped_column(Text, nullable=False, default="tws", server_default="tws")
+    flex_transaction_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     raw: Mapped[dict] = mapped_column(JSON, nullable=False)
     fetched_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -348,6 +355,24 @@ class TradeExecution(Base):
         nullable=False,
         default=lambda: datetime.now(timezone.utc),
     )
+
+
+class FlexSyncLog(Base):
+    __tablename__ = "flex_sync_log"
+    __table_args__ = (Index("ix_flex_sync_log_account_range", "account_id", "start_date", "end_date"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    account_id: Mapped[int] = mapped_column(Integer, ForeignKey("accounts.id", ondelete="RESTRICT"), nullable=False)
+    start_date: Mapped[date] = mapped_column(Date, nullable=False)
+    end_date: Mapped[date] = mapped_column(Date, nullable=False)
+    fetched_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    row_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    status: Mapped[str] = mapped_column(Text, nullable=False)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class TradeGroup(Base):

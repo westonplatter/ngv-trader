@@ -10,7 +10,11 @@ from sqlalchemy.orm import Session
 from src.api.deps import get_db
 from src.models import Account, Position
 from src.services.cl_contracts import infer_contract_month_from_local_symbol
-from src.services.jobs import JOB_TYPE_POSITIONS_SYNC, enqueue_job
+from src.services.jobs import (
+    JOB_TYPE_FLEX_POSITIONS_SYNC,
+    JOB_TYPE_POSITIONS_SYNC,
+    enqueue_job,
+)
 from src.utils.contract_display import contract_display_name
 
 router = APIRouter()
@@ -39,12 +43,23 @@ class PositionResponse(BaseModel):
     multiplier: str | None
     position: float
     avg_cost: float
+    data_source: str
+    as_of_date: date | None
     fetched_at: datetime
 
 
 class PositionSyncRequest(BaseModel):
     source: str = Field(default="manual-ui", min_length=1)
     request_text: str | None = None
+    max_attempts: int = Field(default=3, ge=1, le=10)
+
+
+class FlexPositionSyncRequest(BaseModel):
+    source: str = Field(default="manual-ui", min_length=1)
+    request_text: str | None = None
+    account_code: str | None = None
+    start_date: str | None = None
+    end_date: str | None = None
     max_attempts: int = Field(default=3, ge=1, le=10)
 
 
@@ -123,6 +138,8 @@ def list_positions(db: Session = DB_SESSION_DEPENDENCY):
                 multiplier=pos.multiplier,
                 position=pos.position,
                 avg_cost=pos.avg_cost,
+                data_source=pos.data_source,
+                as_of_date=pos.as_of_date,
                 fetched_at=pos.fetched_at,
             )
         )
@@ -141,6 +158,34 @@ def enqueue_positions_sync(
         payload={},
         source=body.source,
         request_text=request_text,
+        max_attempts=body.max_attempts,
+    )
+    db.commit()
+    return PositionSyncResponse(
+        job_id=job.id,
+        job_type=job.job_type,
+        status=job.status,
+        max_attempts=job.max_attempts,
+    )
+
+
+@router.post("/positions/flex-sync", response_model=PositionSyncResponse, status_code=status.HTTP_202_ACCEPTED)
+def enqueue_flex_positions_sync(
+    body: FlexPositionSyncRequest,
+    db: Session = DB_SESSION_DEPENDENCY,
+) -> PositionSyncResponse:
+    payload: dict[str, object] = {}
+    if body.account_code:
+        payload["account_code"] = body.account_code
+    if body.start_date and body.end_date:
+        payload["start_date"] = body.start_date
+        payload["end_date"] = body.end_date
+    job = enqueue_job(
+        session=db,
+        job_type=JOB_TYPE_FLEX_POSITIONS_SYNC,
+        payload=payload,
+        source=body.source,
+        request_text=body.request_text or "Manual flex positions sync.",
         max_attempts=body.max_attempts,
     )
     db.commit()
