@@ -614,14 +614,16 @@ def handle_contracts_qualify_and_snapshot(job: Job, engine: Engine, ib_pool: IBS
 
 
 def get_handler(job_type: str) -> Callable[[Job, Engine, IBSessionPool], dict] | None:
+    # TWS sync entries (JOB_TYPE_POSITIONS_SYNC_TWS, JOB_TYPE_TRADES_SYNC_TWS) are
+    # intentionally not registered while Flex Query is the active path. The
+    # handle_*_tws functions remain defined above so this is reversible by adding
+    # the two map entries back when real-time TWS data fetching returns.
     handlers: dict[str, Callable[[Job, Engine, IBSessionPool], dict]] = {
-        JOB_TYPE_POSITIONS_SYNC_TWS: handle_positions_sync_tws,
         JOB_TYPE_CONTRACTS_SYNC: handle_contracts_sync,
         JOB_TYPE_CONTRACTS_CHAIN_SYNC: handle_contracts_chain_sync,
         JOB_TYPE_ORDER_FETCH_SYNC: handle_order_fetch_sync,
         JOB_TYPE_WATCHLIST_ADD_INSTRUMENT: handle_watchlist_add_instrument,
         JOB_TYPE_WATCHLIST_QUOTES_REFRESH: handle_watchlist_quotes_refresh,
-        JOB_TYPE_TRADES_SYNC_TWS: handle_trades_sync_tws,
         JOB_TYPE_TRADES_SYNC_FLEXQUERY: handle_trades_sync_flexquery,
         JOB_TYPE_POSITIONS_SYNC_FLEXQUERY: handle_positions_sync_flexquery,
         JOB_TYPE_MARKET_DATA_FUTURES_PRICES: handle_market_data_futures_prices,
