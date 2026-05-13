@@ -482,7 +482,7 @@ export default function TradesTable() {
   }, []);
 
   const loadExecutions = useCallback(async () => {
-    const res = await fetch(`${API_BASE_URL}/trade-executions?limit=1000`);
+    const res = await fetch(`${API_BASE_URL}/trade-executions?limit=5000`);
     if (!res.ok) {
       throw new Error(await readErrorMessage(res, "Unable to load executions"));
     }
@@ -733,6 +733,9 @@ export default function TradesTable() {
               <th className="w-12 whitespace-nowrap px-2 py-2 font-semibold text-gray-700">
                 Role
               </th>
+              <th className="w-16 whitespace-nowrap px-2 py-2 font-semibold text-gray-700">
+                Action
+              </th>
               <th className="w-10 whitespace-nowrap px-2 py-2 font-semibold text-gray-700">
                 Type
               </th>
@@ -775,7 +778,7 @@ export default function TradesTable() {
             {!loading && filteredRows.length === 0 && (
               <tr>
                 <td
-                  colSpan={15}
+                  colSpan={16}
                   className="px-3 py-6 text-center text-gray-500"
                 >
                   No executions found.
@@ -808,6 +811,23 @@ export default function TradesTable() {
                     >
                       {role.label}
                     </span>
+                  </td>
+                  <td className="whitespace-nowrap px-2 py-2 text-xs">
+                    {row.trade_lifecycle ? (
+                      <span
+                        className={`rounded px-1.5 py-0.5 font-medium ${
+                          row.trade_lifecycle === "Open"
+                            ? "bg-green-100 text-green-800"
+                            : row.trade_lifecycle === "Close"
+                              ? "bg-red-100 text-red-800"
+                              : "bg-purple-100 text-purple-800"
+                        }`}
+                      >
+                        {row.trade_lifecycle}
+                      </span>
+                    ) : (
+                      <span className="text-gray-400">—</span>
+                    )}
                   </td>
                   <td className="whitespace-nowrap px-2 py-2 text-xs text-gray-700">
                     {row.sec_type ?? "-"}

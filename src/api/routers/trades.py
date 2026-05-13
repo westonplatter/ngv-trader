@@ -215,15 +215,25 @@ def _trade_lifecycle_from_execution(raw: dict | None, exec_role: str | None) -> 
     if exec_role == "combo_summary":
         return "Roll"
 
-    execution = raw.get("execution") if raw else None
-    if not isinstance(execution, dict):
+    if not raw:
         return None
 
-    for field in ("openClose", "positionEffect"):
-        value = execution.get(field)
+    # FlexQuery: flat top-level field
+    for field in ("openCloseIndicator", "openClose", "positionEffect"):
+        value = raw.get(field)
         normalized = _OPEN_CLOSE_DISPLAY.get(str(value or "").strip().upper())
         if normalized is not None:
             return normalized
+
+    # TWS: fields nested under raw.execution
+    execution = raw.get("execution")
+    if isinstance(execution, dict):
+        for field in ("openClose", "positionEffect"):
+            value = execution.get(field)
+            normalized = _OPEN_CLOSE_DISPLAY.get(str(value or "").strip().upper())
+            if normalized is not None:
+                return normalized
+
     return None
 
 

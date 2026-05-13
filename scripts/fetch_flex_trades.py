@@ -1,4 +1,4 @@
-"""Fetch the IBKR FlexQuery daily report, save it, and grep for BAG/combo markers.
+"""Fetch the IBKR FlexQuery daily report, save it, and print a summary.
 
 Usage:
     op run --env-file=.env.prod -- uv run python scripts/fetch_flex_trades.py [--days 14] [--name <ib_json_name>]
@@ -15,11 +15,14 @@ import json
 import os
 import re
 import sys
+from collections import Counter
 from datetime import date, timedelta
 from pathlib import Path
 
 from loguru import logger
 from ngv_reports_ibkr.flex_client import DateRange, FlexClient
+
+from src.utils.ibkr_account import mask_ibkr_account
 
 
 def _ib_json_entry(name: str | None) -> dict:
@@ -37,33 +40,30 @@ def _ib_json_entry(name: str | None) -> dict:
     return accounts[0]
 
 
-def grep_summary(xml_text: str) -> None:
-    """Print line counts for combo-relevant tokens — same idea as `grep -ic`."""
-    needles = ["BAG", "Combo", "combo", "Spread", "spread", "ComboTrade", "MultiLeg"]
-    print("\n=== grep summary ===")
-    for n in needles:
-        count = xml_text.count(n)
-        print(f"  {n:<12} {count}")
-
-    print("\n=== sample lines for each non-zero hit (first 3) ===")
-    lines = xml_text.splitlines()
-    for n in needles:
-        matches = [(i + 1, ln) for i, ln in enumerate(lines) if n in ln]
-        if not matches:
+def print_summary(xml_text: str, start_date: date, end_date: date) -> None:
+    trade_tags = re.findall(r"<Trade\s[^>]*", xml_text)
+    counts: Counter[str] = Counter()
+    for tag in trade_tags:
+        if 'levelOfDetail="EXECUTION"' not in tag:
             continue
-        print(f"\n  --- {n} ({len(matches)} line(s)) ---")
-        for line_no, ln in matches[:3]:
-            snippet = ln if len(ln) <= 240 else ln[:240] + "…"
-            print(f"  L{line_no}: {snippet}")
+        m = re.search(r'accountId="([^"]*)"', tag)
+        if m:
+            counts[m.group(1)] += 1
 
-    print("\n=== distinct attribute values that could mark a combo ===")
-    for attr in ("levelOfDetail", "assetCategory", "secType", "transactionType"):
-        values = sorted(set(re.findall(rf'{attr}="([^"]*)"', xml_text)))
-        print(f"  {attr}: {values}")
+    logger.info("=== date range ===")
+    logger.info(f"  start: {start_date}")
+    logger.info(f"  end:   {end_date}")
+
+    logger.info("=== trades by account (levelOfDetail=EXECUTION) ===")
+    masked = {mask_ibkr_account(a): c for a, c in counts.items()}
+    width = max((len(a) for a in masked), default=10)
+    for account, count in sorted(masked.items()):
+        logger.info(f"  {account:<{width}}  {count}")
+    logger.info(f"  {'TOTAL':<{width}}  {sum(masked.values())}")
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Fetch FlexQuery daily report and grep for BAG/combo markers")
+    parser = argparse.ArgumentParser(description="Fetch FlexQuery daily report and print a trade-count summary")
     parser.add_argument("--days", type=int, default=14)
     parser.add_argument("--name", type=str, default=None, help="IB_JSON entry name (default: first entry)")
     args = parser.parse_args()
@@ -92,7 +92,7 @@ def main() -> int:
     xml_path.write_text(xml_text, encoding="utf-8")
     logger.info(f"Wrote raw XML to {xml_path}")
 
-    grep_summary(xml_text)
+    print_summary(xml_text, start_date, end_date)
     return 0
 
 
