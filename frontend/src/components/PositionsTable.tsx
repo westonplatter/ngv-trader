@@ -225,12 +225,13 @@ export default function PositionsTable() {
     setSyncError(null);
     setSyncMessage(null);
     try {
-      const res = await fetch(`${API_BASE_URL}/positions/sync`, {
+      const res = await fetch(`${API_BASE_URL}/positions/sync/flex-query`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           source: "manual-ui",
-          request_text: "Kick off positions sync from Positions page.",
+          request_text:
+            "Kick off flex query positions sync from Positions page.",
           max_attempts: 3,
         }),
       });

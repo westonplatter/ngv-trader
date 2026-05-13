@@ -588,14 +588,14 @@ export default function TradesTable() {
     setSyncMessage(null);
     setSyncError(null);
     try {
-      const res = await fetch(`${API_BASE_URL}/trades/sync`, {
+      const res = await fetch(`${API_BASE_URL}/trades/sync/flex-query`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           source: "manual-ui",
-          request_text: `${label} from Trades page.`,
+          request_text: `${label} (flex query) from Trades page.`,
           max_attempts: 3,
-          lookback_days: lookbackDays,
+          days: lookbackDays,
         }),
       });
       if (!res.ok) {
