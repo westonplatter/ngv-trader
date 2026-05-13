@@ -11,8 +11,8 @@ from src.api.deps import get_db
 from src.models import Account, Position
 from src.services.cl_contracts import infer_contract_month_from_local_symbol
 from src.services.jobs import (
-    JOB_TYPE_FLEX_POSITIONS_SYNC,
-    JOB_TYPE_POSITIONS_SYNC,
+    JOB_TYPE_POSITIONS_SYNC_FLEXQUERY,
+    JOB_TYPE_POSITIONS_SYNC_TWS,
     enqueue_job,
 )
 from src.utils.contract_display import contract_display_name
@@ -146,7 +146,7 @@ def list_positions(db: Session = DB_SESSION_DEPENDENCY):
     return results
 
 
-@router.post("/positions/sync", response_model=PositionSyncResponse, status_code=status.HTTP_202_ACCEPTED)
+@router.post("/positions/sync/tws", response_model=PositionSyncResponse, status_code=status.HTTP_202_ACCEPTED)
 def enqueue_positions_sync(
     body: PositionSyncRequest,
     db: Session = DB_SESSION_DEPENDENCY,
@@ -154,7 +154,7 @@ def enqueue_positions_sync(
     request_text = body.request_text or "Manual positions sync from UI."
     job = enqueue_job(
         session=db,
-        job_type=JOB_TYPE_POSITIONS_SYNC,
+        job_type=JOB_TYPE_POSITIONS_SYNC_TWS,
         payload={},
         source=body.source,
         request_text=request_text,
@@ -169,7 +169,7 @@ def enqueue_positions_sync(
     )
 
 
-@router.post("/positions/flex-sync", response_model=PositionSyncResponse, status_code=status.HTTP_202_ACCEPTED)
+@router.post("/positions/sync/flex-query", response_model=PositionSyncResponse, status_code=status.HTTP_202_ACCEPTED)
 def enqueue_flex_positions_sync(
     body: FlexPositionSyncRequest,
     db: Session = DB_SESSION_DEPENDENCY,
@@ -182,7 +182,7 @@ def enqueue_flex_positions_sync(
         payload["end_date"] = body.end_date
     job = enqueue_job(
         session=db,
-        job_type=JOB_TYPE_FLEX_POSITIONS_SYNC,
+        job_type=JOB_TYPE_POSITIONS_SYNC_FLEXQUERY,
         payload=payload,
         source=body.source,
         request_text=body.request_text or "Manual flex positions sync.",

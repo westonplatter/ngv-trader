@@ -34,7 +34,7 @@ from src.services.jobs import (
     JOB_TYPE_CONTRACTS_SYNC,
     JOB_TYPE_MARKET_DATA_SNAPSHOT,
     JOB_TYPE_ORDER_FETCH_SYNC,
-    JOB_TYPE_POSITIONS_SYNC,
+    JOB_TYPE_POSITIONS_SYNC_FLEXQUERY,
     JOB_TYPE_WATCHLIST_ADD_INSTRUMENT,
     enqueue_job,
 )
@@ -770,7 +770,7 @@ def _tool_enqueue_positions_sync_job(session: Session, latest_user_text: str, ar
     request_text = _coerce_optional_str_arg(args, "request_text") or latest_user_text
     job = enqueue_job(
         session=session,
-        job_type=JOB_TYPE_POSITIONS_SYNC,
+        job_type=JOB_TYPE_POSITIONS_SYNC_FLEXQUERY,
         payload={},
         source=_TOOL_SOURCE,
         request_text=request_text,

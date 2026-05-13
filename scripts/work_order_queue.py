@@ -32,7 +32,7 @@ from src.services.cl_contracts import (
 )
 from src.services.jobs import (
     JOB_TYPE_ORDER_FETCH_SYNC,
-    JOB_TYPE_POSITIONS_SYNC,
+    JOB_TYPE_POSITIONS_SYNC_FLEXQUERY,
     enqueue_job_if_idle,
 )
 from src.services.order_queue import (
@@ -670,7 +670,7 @@ def run_worker(args: argparse.Namespace) -> int:
                     )
                     enqueue_job_if_idle(
                         session=session,
-                        job_type=JOB_TYPE_POSITIONS_SYNC,
+                        job_type=JOB_TYPE_POSITIONS_SYNC_FLEXQUERY,
                         payload={},
                         source="worker:orders",
                         request_text="Auto sync after order processing",
