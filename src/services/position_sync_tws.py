@@ -5,11 +5,12 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from ib_async import IB
-from sqlalchemy import Engine, delete, inspect, select
+from sqlalchemy import Engine, delete, inspect
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
-from src.models import Account, Position
+from src.models import Position
+from src.services.sync_common import get_or_create_accounts
 
 
 def check_positions_tables_ready(engine: Engine) -> None:
@@ -18,18 +19,6 @@ def check_positions_tables_ready(engine: Engine) -> None:
     for required in ("positions", "accounts"):
         if required not in tables:
             raise RuntimeError(f"'{required}' table does not exist. Run: task migrate")
-
-
-def get_or_create_accounts(session: Session, account_strings: set[str]) -> dict[str, int]:
-    lookup: dict[str, int] = {}
-    for account_string in account_strings:
-        row = session.execute(select(Account).where(Account.account == account_string)).scalar_one_or_none()
-        if row is None:
-            row = Account(account=account_string)
-            session.add(row)
-            session.flush()
-        lookup[account_string] = row.id
-    return lookup
 
 
 def sync_positions_once(

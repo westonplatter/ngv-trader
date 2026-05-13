@@ -124,7 +124,7 @@ def resolve_tws_connection(
 
 
 def handle_positions_sync_tws(job: Job, engine: Engine, ib_pool: IBSessionPool) -> dict:
-    from src.services.position_sync import sync_positions_with_ib
+    from src.services.position_sync_tws import sync_positions_with_ib
 
     payload = job.payload or {}
     host, port, client_id, connect_timeout_seconds = resolve_tws_connection(payload, default_client_id=31)
@@ -284,7 +284,7 @@ def handle_watchlist_quotes_refresh(job: Job, engine: Engine, ib_pool: IBSession
 
 
 def handle_order_fetch_sync(job: Job, engine: Engine, ib_pool: IBSessionPool) -> dict:
-    from src.services.order_sync import sync_orders_with_ib
+    from src.services.order_sync_tws import sync_orders_with_ib
 
     payload = job.payload or {}
     host, port, client_id, connect_timeout_seconds = resolve_tws_connection(payload, default_client_id=0)
@@ -304,7 +304,7 @@ def handle_order_fetch_sync(job: Job, engine: Engine, ib_pool: IBSessionPool) ->
 
 
 def handle_trades_sync_tws(job: Job, engine: Engine, ib_pool: IBSessionPool) -> dict:
-    from src.services.trade_sync import sync_trades_with_ib
+    from src.services.trade_sync_tws import sync_trades_with_ib
 
     payload = job.payload or {}
     lookback_days_raw = payload.get("lookback_days")
@@ -370,7 +370,7 @@ def handle_trades_sync_flexquery(job: Job, engine: Engine, ib_pool: IBSessionPoo
     from datetime import date as _date
     from datetime import timedelta as _td
 
-    from src.services.flex_trade_sync import (
+    from src.services.trade_sync_flexquery import (
         fetch_flex_report,
         previous_business_day,
         sync_flex_trades,
@@ -407,8 +407,8 @@ def handle_trades_sync_flexquery(job: Job, engine: Engine, ib_pool: IBSessionPoo
 def handle_positions_sync_flexquery(job: Job, engine: Engine, ib_pool: IBSessionPool) -> dict:
     from datetime import date as _date
 
-    from src.services.flex_position_sync import sync_flex_positions
-    from src.services.flex_trade_sync import previous_business_day
+    from src.services.position_sync_flexquery import sync_flex_positions
+    from src.services.trade_sync_flexquery import previous_business_day
 
     payload = job.payload or {}
     account_code, flex_token, query_id = _resolve_flex_credentials(payload, payload.get("account_code"))

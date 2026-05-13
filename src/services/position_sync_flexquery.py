@@ -21,9 +21,13 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from src.models import Position
-from src.services.flex_trade_sync import FlexTokenExpiredError
-from src.services.position_sync import get_or_create_accounts
-from src.services.trade_sync import _safe_float, _safe_int, _safe_str
+from src.services.sync_common import (
+    _safe_float,
+    _safe_int,
+    _safe_str,
+    get_or_create_accounts,
+)
+from src.services.trade_sync_flexquery import FlexTokenExpiredError
 
 logger = logging.getLogger("flex_position_sync")
 

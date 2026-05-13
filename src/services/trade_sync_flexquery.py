@@ -25,7 +25,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from src.models import FlexSyncLog, Trade, TradeExecution
-from src.services.trade_sync import (
+from src.services.sync_common import (
     _enforce_canonical_flags,
     _ensure_account,
     _parse_exec_id,

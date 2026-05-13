@@ -11,7 +11,10 @@ import os
 from dotenv import load_dotenv
 
 from src.db import get_engine
-from src.services.position_sync import check_positions_tables_ready, sync_positions_once
+from src.services.position_sync_tws import (
+    check_positions_tables_ready,
+    sync_positions_once,
+)
 from src.utils.env_vars import get_int_env
 
 

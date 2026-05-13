@@ -27,7 +27,7 @@ from src.services.jobs import (
     complete_job,
     fail_or_retry_job,
 )
-from src.services.position_sync import check_positions_tables_ready
+from src.services.position_sync_tws import check_positions_tables_ready
 from src.services.worker_heartbeat import WORKER_TYPE_JOBS, upsert_worker_heartbeat
 from src.workers.jobs import IBSessionPool, get_handler
 
