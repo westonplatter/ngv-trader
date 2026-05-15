@@ -19,7 +19,7 @@ from typing import Any
 import pandas as pd
 from defusedxml import ElementTree as ET
 from ngv_reports_ibkr.custom_flex_report import CustomFlexReport
-from ngv_reports_ibkr.flex_client import DateRange, FlexClient
+from ngv_reports_ibkr.flex_client import DateRange
 from sqlalchemy import Engine, func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
