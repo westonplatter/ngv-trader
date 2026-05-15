@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePrivacy } from "../contexts/PrivacyContext";
 import { PRIVACY_MASK } from "../utils/privacy";
 import { API_BASE_URL } from "../config";
+import { useSSE } from "../lib/events";
 
 interface TradeExecutionRow {
   id: number;
@@ -187,7 +188,7 @@ function TagGroupCell({
       .catch(() => setResults([]))
       .finally(() => setLoading(false));
     setTimeout(() => {
-      inputRef.current?.focus();
+      inputRef.current?.focus({ preventScroll: true });
       updateDropdownPos();
     }, 0);
   }, [searchGroups, updateDropdownPos]);
@@ -214,14 +215,9 @@ function TagGroupCell({
         closeSearch();
       }
     };
-    const handleScrollOrResize = () => closeSearch();
     document.addEventListener("mousedown", handleOutsideClick);
-    window.addEventListener("scroll", handleScrollOrResize, true);
-    window.addEventListener("resize", handleScrollOrResize);
     return () => {
       document.removeEventListener("mousedown", handleOutsideClick);
-      window.removeEventListener("scroll", handleScrollOrResize, true);
-      window.removeEventListener("resize", handleScrollOrResize);
     };
   }, [mode, closeSearch]);
 
@@ -481,15 +477,24 @@ export default function TradesTable() {
     setAllTradeGroups(data);
   }, []);
 
+  const serverSymbol = useMemo(() => {
+    const raw = symbolFilter.trim();
+    return /^[A-Za-z0-9]+$/.test(raw) ? raw.toUpperCase() : null;
+  }, [symbolFilter]);
+
   const loadExecutions = useCallback(async () => {
-    const res = await fetch(`${API_BASE_URL}/trade-executions?limit=1000`);
+    const params = new URLSearchParams({ limit: "5000" });
+    if (serverSymbol) params.set("symbol", serverSymbol);
+    const res = await fetch(
+      `${API_BASE_URL}/trade-executions?${params.toString()}`,
+    );
     if (!res.ok) {
       throw new Error(await readErrorMessage(res, "Unable to load executions"));
     }
     const data: TradeExecutionRow[] = await res.json();
     setExecutions(data);
     setError(null);
-  }, []);
+  }, [serverSymbol]);
 
   useEffect(() => {
     void loadExecutions()
@@ -500,13 +505,12 @@ export default function TradesTable() {
       })
       .finally(() => setLoading(false));
     void loadTradeGroups();
-
-    const timer = window.setInterval(() => {
-      void loadExecutions().catch(() => {});
-    }, 5000);
-
-    return () => window.clearInterval(timer);
   }, [loadExecutions, loadTradeGroups]);
+
+  useSSE<Record<string, unknown>>("trades", () => {
+    void loadExecutions().catch(() => {});
+    void loadTradeGroups().catch(() => {});
+  });
 
   const symbolRegex = useMemo(() => {
     const raw = symbolFilter.trim();
@@ -588,14 +592,14 @@ export default function TradesTable() {
     setSyncMessage(null);
     setSyncError(null);
     try {
-      const res = await fetch(`${API_BASE_URL}/trades/sync`, {
+      const res = await fetch(`${API_BASE_URL}/trades/sync/flex-query`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           source: "manual-ui",
-          request_text: `${label} from Trades page.`,
+          request_text: `${label} (flex query) from Trades page.`,
           max_attempts: 3,
-          lookback_days: lookbackDays,
+          days: lookbackDays,
         }),
       });
       if (!res.ok) {
@@ -733,6 +737,9 @@ export default function TradesTable() {
               <th className="w-12 whitespace-nowrap px-2 py-2 font-semibold text-gray-700">
                 Role
               </th>
+              <th className="w-16 whitespace-nowrap px-2 py-2 font-semibold text-gray-700">
+                Action
+              </th>
               <th className="w-10 whitespace-nowrap px-2 py-2 font-semibold text-gray-700">
                 Type
               </th>
@@ -744,9 +751,6 @@ export default function TradesTable() {
               </th>
               <th className="whitespace-nowrap px-3 py-2 font-semibold text-gray-700">
                 Price
-              </th>
-              <th className="whitespace-nowrap px-3 py-2 font-semibold text-gray-700">
-                Commission
               </th>
               <th className="whitespace-nowrap px-3 py-2 font-semibold text-gray-700">
                 Realized PnL
@@ -809,6 +813,23 @@ export default function TradesTable() {
                       {role.label}
                     </span>
                   </td>
+                  <td className="whitespace-nowrap px-2 py-2 text-xs">
+                    {row.trade_lifecycle ? (
+                      <span
+                        className={`rounded px-1.5 py-0.5 font-medium ${
+                          row.trade_lifecycle === "Open"
+                            ? "bg-green-100 text-green-800"
+                            : row.trade_lifecycle === "Close"
+                              ? "bg-red-100 text-red-800"
+                              : "bg-purple-100 text-purple-800"
+                        }`}
+                      >
+                        {row.trade_lifecycle}
+                      </span>
+                    ) : (
+                      <span className="text-gray-400">—</span>
+                    )}
+                  </td>
                   <td className="whitespace-nowrap px-2 py-2 text-xs text-gray-700">
                     {row.sec_type ?? "-"}
                   </td>
@@ -820,9 +841,6 @@ export default function TradesTable() {
                   </td>
                   <td className="whitespace-nowrap px-3 py-2 text-gray-700">
                     {formatPrice(row.price)}
-                  </td>
-                  <td className="whitespace-nowrap px-3 py-2 text-gray-700">
-                    {formatPrice(row.commission)}
                   </td>
                   <td className="whitespace-nowrap px-3 py-2 text-gray-700">
                     {privacyMode ? PRIVACY_MASK : formatPrice(row.realized_pnl)}

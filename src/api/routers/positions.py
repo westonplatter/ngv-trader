@@ -11,8 +11,8 @@ from src.api.deps import get_db
 from src.models import Account, Position
 from src.services.cl_contracts import infer_contract_month_from_local_symbol
 from src.services.jobs import (
-    JOB_TYPE_FLEX_POSITIONS_SYNC,
-    JOB_TYPE_POSITIONS_SYNC,
+    JOB_TYPE_POSITIONS_SYNC_FLEXQUERY,
+    JOB_TYPE_POSITIONS_SYNC_TWS,
     enqueue_job,
 )
 from src.utils.contract_display import contract_display_name
@@ -43,6 +43,9 @@ class PositionResponse(BaseModel):
     multiplier: str | None
     position: float
     avg_cost: float
+    mark_price: float | None
+    position_value: float | None
+    fifo_pnl_unrealized: float | None
     data_source: str
     as_of_date: date | None
     fetched_at: datetime
@@ -72,9 +75,12 @@ class PositionSyncResponse(BaseModel):
 
 def _parse_raw_expiry_date(raw_value: str | None) -> date | None:
     value = (raw_value or "").strip()
-    if len(value) >= 8 and value[:8].isdigit():
+    if not value:
+        return None
+    digits = value.replace("-", "")
+    if len(digits) >= 8 and digits[:8].isdigit():
         try:
-            return datetime.strptime(value[:8], "%Y%m%d").date()
+            return datetime.strptime(digits[:8], "%Y%m%d").date()
         except ValueError:
             return None
     return None
@@ -138,6 +144,9 @@ def list_positions(db: Session = DB_SESSION_DEPENDENCY):
                 multiplier=pos.multiplier,
                 position=pos.position,
                 avg_cost=pos.avg_cost,
+                mark_price=pos.mark_price,
+                position_value=pos.position_value,
+                fifo_pnl_unrealized=pos.fifo_pnl_unrealized,
                 data_source=pos.data_source,
                 as_of_date=pos.as_of_date,
                 fetched_at=pos.fetched_at,
@@ -146,7 +155,7 @@ def list_positions(db: Session = DB_SESSION_DEPENDENCY):
     return results
 
 
-@router.post("/positions/sync", response_model=PositionSyncResponse, status_code=status.HTTP_202_ACCEPTED)
+@router.post("/positions/sync/tws", response_model=PositionSyncResponse, status_code=status.HTTP_202_ACCEPTED)
 def enqueue_positions_sync(
     body: PositionSyncRequest,
     db: Session = DB_SESSION_DEPENDENCY,
@@ -154,7 +163,7 @@ def enqueue_positions_sync(
     request_text = body.request_text or "Manual positions sync from UI."
     job = enqueue_job(
         session=db,
-        job_type=JOB_TYPE_POSITIONS_SYNC,
+        job_type=JOB_TYPE_POSITIONS_SYNC_TWS,
         payload={},
         source=body.source,
         request_text=request_text,
@@ -169,7 +178,7 @@ def enqueue_positions_sync(
     )
 
 
-@router.post("/positions/flex-sync", response_model=PositionSyncResponse, status_code=status.HTTP_202_ACCEPTED)
+@router.post("/positions/sync/flex-query", response_model=PositionSyncResponse, status_code=status.HTTP_202_ACCEPTED)
 def enqueue_flex_positions_sync(
     body: FlexPositionSyncRequest,
     db: Session = DB_SESSION_DEPENDENCY,
@@ -182,7 +191,7 @@ def enqueue_flex_positions_sync(
         payload["end_date"] = body.end_date
     job = enqueue_job(
         session=db,
-        job_type=JOB_TYPE_FLEX_POSITIONS_SYNC,
+        job_type=JOB_TYPE_POSITIONS_SYNC_FLEXQUERY,
         payload=payload,
         source=body.source,
         request_text=body.request_text or "Manual flex positions sync.",

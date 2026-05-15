@@ -12,8 +12,8 @@ from src.api.deps import get_db
 from src.models import Account, ContractRef, Trade, TradeExecution, TradeGroupExecution
 from src.services.cl_contracts import infer_contract_month_from_local_symbol
 from src.services.jobs import (
-    JOB_TYPE_FLEX_TRADES_SYNC,
-    JOB_TYPE_TRADES_SYNC,
+    JOB_TYPE_TRADES_SYNC_FLEXQUERY,
+    JOB_TYPE_TRADES_SYNC_TWS,
     enqueue_job,
 )
 from src.utils.contract_display import contract_display_name
@@ -215,15 +215,25 @@ def _trade_lifecycle_from_execution(raw: dict | None, exec_role: str | None) -> 
     if exec_role == "combo_summary":
         return "Roll"
 
-    execution = raw.get("execution") if raw else None
-    if not isinstance(execution, dict):
+    if not raw:
         return None
 
-    for field in ("openClose", "positionEffect"):
-        value = execution.get(field)
+    # FlexQuery: flat top-level field
+    for field in ("openCloseIndicator", "openClose", "positionEffect"):
+        value = raw.get(field)
         normalized = _OPEN_CLOSE_DISPLAY.get(str(value or "").strip().upper())
         if normalized is not None:
             return normalized
+
+    # TWS: fields nested under raw.execution
+    execution = raw.get("execution")
+    if isinstance(execution, dict):
+        for field in ("openClose", "positionEffect"):
+            value = execution.get(field)
+            normalized = _OPEN_CLOSE_DISPLAY.get(str(value or "").strip().upper())
+            if normalized is not None:
+                return normalized
+
     return None
 
 
@@ -657,13 +667,21 @@ def list_trade_executions(trade_id: int, db: Session = DB_SESSION_DEPENDENCY):
 @router.get("/trade-executions", response_model=list[TradeExecutionListItem])
 def list_all_trade_executions(  # noqa: C901, PLR0912, PLR0915
     account_id: int | None = Query(default=None),
+    symbol: str | None = Query(default=None),
     lookback_days: int | None = Query(default=None, ge=1, le=365),
     limit: int = Query(default=500, ge=1, le=5000),
     db: Session = DB_SESSION_DEPENDENCY,
 ):
-    stmt = select(TradeExecution, ContractRef).outerjoin(ContractRef, ContractRef.con_id == TradeExecution.con_id).where(TradeExecution.is_canonical.is_(True))
+    stmt = (
+        select(TradeExecution, ContractRef)
+        .join(Trade, Trade.id == TradeExecution.trade_id)
+        .outerjoin(ContractRef, ContractRef.con_id == TradeExecution.con_id)
+        .where(TradeExecution.is_canonical.is_(True))
+    )
     if account_id is not None:
         stmt = stmt.where(TradeExecution.account_id == account_id)
+    if symbol is not None:
+        stmt = stmt.where(Trade.symbol == symbol.upper())
     if lookback_days is not None:
         cutoff = datetime.now(timezone.utc) - timedelta(days=lookback_days)
         stmt = stmt.where(TradeExecution.executed_at >= cutoff)
@@ -779,7 +797,7 @@ def list_all_trade_executions(  # noqa: C901, PLR0912, PLR0915
     return results
 
 
-@router.post("/trades/sync", response_model=TradeSyncResponse, status_code=status.HTTP_202_ACCEPTED)
+@router.post("/trades/sync/tws", response_model=TradeSyncResponse, status_code=status.HTTP_202_ACCEPTED)
 def enqueue_trades_sync(
     body: TradeSyncRequest,
     db: Session = DB_SESSION_DEPENDENCY,
@@ -787,7 +805,7 @@ def enqueue_trades_sync(
     request_text = body.request_text or "Manual trades sync."
     job = enqueue_job(
         session=db,
-        job_type=JOB_TYPE_TRADES_SYNC,
+        job_type=JOB_TYPE_TRADES_SYNC_TWS,
         payload={"lookback_days": body.lookback_days},
         source=body.source,
         request_text=request_text,
@@ -801,7 +819,7 @@ def enqueue_trades_sync(
     )
 
 
-@router.post("/trades/flex-sync", response_model=TradeSyncResponse, status_code=status.HTTP_202_ACCEPTED)
+@router.post("/trades/sync/flex-query", response_model=TradeSyncResponse, status_code=status.HTTP_202_ACCEPTED)
 def enqueue_flex_trades_sync(
     body: FlexTradeSyncRequest,
     db: Session = DB_SESSION_DEPENDENCY,
@@ -814,7 +832,7 @@ def enqueue_flex_trades_sync(
         payload["end_date"] = body.end_date
     job = enqueue_job(
         session=db,
-        job_type=JOB_TYPE_FLEX_TRADES_SYNC,
+        job_type=JOB_TYPE_TRADES_SYNC_FLEXQUERY,
         payload=payload,
         source=body.source,
         request_text=body.request_text or "Manual flex trades sync.",

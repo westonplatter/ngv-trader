@@ -13,7 +13,7 @@ tasks:
     desc: Start the FastAPI backend (port 8000)
     env:
       ENV: "{{.ENV}}"
-    cmd: uv run uvicorn src.api.main:app --reload --port 8000
+    cmd: op run --env-file=.env.{{.ENV}} -- uv run uvicorn src.api.main:app --reload --port 8000 --timeout-graceful-shutdown 1
 
   frontend:
     desc: Start the Vite dev server (port 5173)
@@ -24,13 +24,13 @@ tasks:
     desc: Start generic job worker (dispatches by job_type)
     env:
       ENV: "{{.ENV}}"
-    cmd: uv run python scripts/work_jobs.py
+    cmd: op run --env-file=.env.{{.ENV}} -- uv run python scripts/work_jobs.py
 
   worker:orders:
     desc: Start order execution worker
     env:
       ENV: "{{.ENV}}"
-    cmd: uv run python scripts/work_order_queue.py
+    cmd: op run --env-file=.env.{{.ENV}} -- uv run python scripts/work_order_queue.py
 
   frontend:install:
     desc: Install frontend dependencies

@@ -143,6 +143,9 @@ class Position(Base):
     multiplier: Mapped[str | None] = mapped_column(String)
     position: Mapped[float] = mapped_column(Float, nullable=False)
     avg_cost: Mapped[float] = mapped_column(Float, nullable=False)
+    mark_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    position_value: Mapped[float | None] = mapped_column(Float, nullable=True)
+    fifo_pnl_unrealized: Mapped[float | None] = mapped_column(Float, nullable=True)
     data_source: Mapped[str] = mapped_column(Text, nullable=False, default="tws", server_default="tws")
     as_of_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     fetched_at: Mapped[datetime] = mapped_column(

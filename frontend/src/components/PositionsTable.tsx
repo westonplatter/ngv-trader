@@ -1,7 +1,9 @@
+import type React from "react";
 import { useEffect, useMemo, useState } from "react";
 import { usePrivacy } from "../contexts/PrivacyContext";
 import { PRIVACY_MASK } from "../utils/privacy";
 import { API_BASE_URL } from "../config";
+import { useSSE } from "../lib/events";
 
 interface Position {
   id: number;
@@ -23,6 +25,9 @@ interface Position {
   multiplier: string | null;
   position: number;
   avg_cost: number;
+  mark_price: number | null;
+  position_value: number | null;
+  fifo_pnl_unrealized: number | null;
   fetched_at: string;
 }
 
@@ -71,6 +76,9 @@ const COLUMNS: { key: keyof Position; label: string }[] = [
   { key: "multiplier", label: "Multiplier" },
   { key: "position", label: "Position" },
   { key: "avg_cost", label: "Avg Cost" },
+  { key: "mark_price", label: "Mark" },
+  { key: "position_value", label: "Value" },
+  { key: "fifo_pnl_unrealized", label: "Unrealized PnL" },
 ];
 
 function regexMatch(
@@ -205,6 +213,18 @@ export default function PositionsTable() {
     sortDirection,
   ]);
 
+  const totalUnrealizedPnl = useMemo(() => {
+    let total = 0;
+    let any = false;
+    for (const p of sortedPositions) {
+      if (p.fifo_pnl_unrealized != null) {
+        total += p.fifo_pnl_unrealized;
+        any = true;
+      }
+    }
+    return any ? total : null;
+  }, [sortedPositions]);
+
   const loadPositions = () => {
     fetch(`${API_BASE_URL}/positions`)
       .then((res) => {
@@ -220,17 +240,22 @@ export default function PositionsTable() {
     loadPositions();
   }, []);
 
+  useSSE<Record<string, unknown>>("positions", () => {
+    loadPositions();
+  });
+
   const kickOffPositionSync = async () => {
     setSyncing(true);
     setSyncError(null);
     setSyncMessage(null);
     try {
-      const res = await fetch(`${API_BASE_URL}/positions/sync`, {
+      const res = await fetch(`${API_BASE_URL}/positions/sync/flex-query`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           source: "manual-ui",
-          request_text: "Kick off positions sync from Positions page.",
+          request_text:
+            "Kick off flex query positions sync from Positions page.",
           max_attempts: 3,
         }),
       });
@@ -296,7 +321,28 @@ export default function PositionsTable() {
             Clear Filters
           </button>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
+          <span className="text-sm text-gray-600">
+            Unrealized PnL:{" "}
+            <span
+              className={
+                totalUnrealizedPnl == null
+                  ? "text-gray-500"
+                  : totalUnrealizedPnl >= 0
+                    ? "font-semibold text-emerald-700"
+                    : "font-semibold text-red-700"
+              }
+            >
+              {privacyMode
+                ? PRIVACY_MASK
+                : totalUnrealizedPnl == null
+                  ? "—"
+                  : totalUnrealizedPnl.toLocaleString(undefined, {
+                      style: "currency",
+                      currency: "USD",
+                    })}
+            </span>
+          </span>
           <button
             onClick={() => {
               void kickOffPositionSync();
@@ -488,19 +534,48 @@ export default function PositionsTable() {
                 key={pos.id}
                 className="border-b border-gray-200 hover:bg-gray-50"
               >
-                {COLUMNS.map((col) => (
-                  <td key={col.key} className="px-3 py-2 whitespace-nowrap">
-                    {col.key === "position" && privacyMode
-                      ? PRIVACY_MASK
-                      : col.key === "last_trade_date"
-                        ? formatExpiry(pos[col.key] as string | null)
-                        : col.key === "option_expiry_date"
-                          ? expiryForPosition(pos)
-                          : col.key === "strike" && pos.sec_type === "FUT"
-                            ? "—"
-                            : (pos[col.key] ?? "—")}
-                  </td>
-                ))}
+                {COLUMNS.map((col) => {
+                  const renderNumeric = (
+                    val: number | null,
+                  ): React.ReactNode => (val == null ? "—" : val.toFixed(2));
+                  let content: React.ReactNode;
+                  let extraClass = "";
+                  if (col.key === "position" && privacyMode) {
+                    content = PRIVACY_MASK;
+                  } else if (col.key === "last_trade_date") {
+                    content = formatExpiry(pos[col.key] as string | null);
+                  } else if (col.key === "option_expiry_date") {
+                    content = expiryForPosition(pos);
+                  } else if (col.key === "strike" && pos.sec_type === "FUT") {
+                    content = "—";
+                  } else if (col.key === "mark_price") {
+                    content = renderNumeric(pos.mark_price);
+                  } else if (col.key === "position_value") {
+                    content = renderNumeric(pos.position_value);
+                  } else if (col.key === "fifo_pnl_unrealized") {
+                    if (privacyMode) {
+                      content = PRIVACY_MASK;
+                    } else {
+                      content = renderNumeric(pos.fifo_pnl_unrealized);
+                      if (pos.fifo_pnl_unrealized != null) {
+                        extraClass =
+                          pos.fifo_pnl_unrealized >= 0
+                            ? "text-emerald-700 font-medium"
+                            : "text-red-700 font-medium";
+                      }
+                    }
+                  } else {
+                    content = pos[col.key] ?? "—";
+                  }
+                  return (
+                    <td
+                      key={col.key}
+                      className={`px-3 py-2 whitespace-nowrap ${extraClass}`}
+                    >
+                      {content}
+                    </td>
+                  );
+                })}
               </tr>
             ))}
           </tbody>

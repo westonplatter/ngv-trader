@@ -18,14 +18,25 @@ How jobs, orders, and worker status flow from backend processes to the browser i
 │  REST endpoints │               │  In-memory       │          │  Workers     │
 │  /jobs, /orders │               │  Broadcaster     │◀─publish─│  (jobs,      │
 │  /workers/status│               │  (ui_events.py)  │  via API │   orders)    │
-└─────────────────┘               └──────────────────┘          └──────┬───────┘
-                                                                       │
-                                                                ┌──────┴───────┐
-                                                                │ IBKR TWS /   │
-                                                                │ IB Gateway   │
-                                                                │ (:7497)      │
-                                                                └──────────────┘
+└─────────────────┘               └──────────────────┘          └──┬────────┬──┘
+                                                                   │        │
+                                                          TWS sync │        │ Flex Query
+                                                          (sync    │        │ (async HTTPS
+                                                           socket) │        │  poll)
+                                                                   ▼        ▼
+                                                          ┌──────────────┐ ┌──────────────────┐
+                                                          │ IBKR TWS /   │ │ IBKR Flex Query  │
+                                                          │ IB Gateway   │ │ Web Service      │
+                                                          │ (:7497)      │ │ (ndcdyn.ibllc... │
+                                                          └──────────────┘ └──────────────────┘
 ```
+
+IBKR data reaches the workers through two independent transports:
+
+- **TWS / IB Gateway** — local socket connection on `:7497` used by `*_sync_tws.py` services (orders, and the TWS variants of trades/positions). Low-latency, session-bound, requires a running TWS/Gateway login.
+- **Flex Query Web Service** — async HTTPS request/response against IBKR's hosted Flex Query API used by `*_sync_flexquery.py` services (trades, positions). The worker requests a report token, polls until the report is ready, then downloads and ingests the XML. No local broker session is required, but data is delayed (Flex Query refresh windows).
+
+Both transports terminate in worker code that commits to PostgreSQL and then publishes SSE events through the same notify endpoints — the UI does not need to know which source produced a row.
 
 ### How an event reaches the browser
 
@@ -130,8 +141,8 @@ Payloads are full response DTOs — the same shape returned by `GET /api/v1/jobs
 | `job.updated`      | `jobs`          | Worker completes a job (running → completed)    | `scripts/work_jobs.py` via notify             | `JobResponse`         |
 | `job.updated`      | `jobs`          | Worker fails a job (running → failed/queued)    | `scripts/work_jobs.py` via notify             | `JobResponse`         |
 | `job.archived`     | `jobs`          | `POST /api/v1/jobs/{id}/archive`                | `src/api/routers/jobs.py`                     | `JobResponse`         |
-| `order.created`    | `orders`        | Broker sync discovers a new order               | `src/services/order_sync.py`                  | `OrderResponse`       |
-| `order.updated`    | `orders`        | Broker sync updates an existing order           | `src/services/order_sync.py`                  | `OrderResponse`       |
+| `order.created`    | `orders`        | TWS broker sync discovers a new order           | `src/services/order_sync_tws.py`              | `OrderResponse`       |
+| `order.updated`    | `orders`        | TWS broker sync updates an existing order       | `src/services/order_sync_tws.py`              | `OrderResponse`       |
 | `order.cancelled`  | `orders`        | `POST /api/v1/orders/{id}/cancel`               | `src/api/routers/orders.py`                   | `OrderResponse`       |
 | `worker.heartbeat` | `worker_status` | Worker heartbeat upsert (every poll cycle)      | `src/services/worker_heartbeat.py` via notify | `WorkerStatusPayload` |
 
@@ -172,7 +183,7 @@ Payloads are full response DTOs — the same shape returned by `GET /api/v1/jobs
 | `src/api/routers/events.py`        | SSE stream endpoint + worker notification endpoints                              |
 | `src/api/routers/jobs.py`          | Publishes `job.created` and `job.archived` after API mutations                   |
 | `src/api/routers/orders.py`        | Publishes `order.cancelled` after cancel; `job.created` after order sync enqueue |
-| `src/services/order_sync.py`       | Publishes `order.created` / `order.updated` after broker sync commit             |
+| `src/services/order_sync_tws.py`   | Publishes `order.created` / `order.updated` after broker sync commit             |
 | `src/services/worker_heartbeat.py` | Publishes `worker.heartbeat` after each heartbeat upsert                         |
 | `scripts/work_jobs.py`             | Calls `POST /events/notify-job` after job state transitions                      |
 | `frontend/src/lib/events.ts`       | Shared EventSource client with `useSSE` React hook                               |

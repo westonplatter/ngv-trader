@@ -19,13 +19,13 @@ from typing import Any
 import pandas as pd
 from defusedxml import ElementTree as ET
 from ngv_reports_ibkr.custom_flex_report import CustomFlexReport
-from ngv_reports_ibkr.flex_client import DateRange, FlexClient
+from ngv_reports_ibkr.flex_client import DateRange
 from sqlalchemy import Engine, func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from src.models import FlexSyncLog, Trade, TradeExecution
-from src.services.trade_sync import (
+from src.services.sync_common import (
     _enforce_canonical_flags,
     _ensure_account,
     _parse_exec_id,
@@ -212,7 +212,9 @@ def _row_raw(row: pd.Series) -> dict[str, Any]:
 
 
 def _fetch_flex_xml(token: str, query_id: str, start_date: date, end_date: date) -> str:
-    client = FlexClient()
+    from src.services.flex_client_factory import make_flex_client
+
+    client = make_flex_client()
     date_range = DateRange(from_date=start_date, to_date=end_date)
     try:
         return client.fetch_flex_report(token=token, query_id=query_id, date_range=date_range)
@@ -332,7 +334,14 @@ def sync_flex_trades(
         for idx, row in enumerate(rows):
             exec_id = _safe_str(row.get("ibExecID"))
             if not exec_id:
-                continue
+                # BookTrade rows (assignments/exercises/expirations) carry no
+                # ibExecID but have a unique Flex transactionID. Synthesize a
+                # sentinel ib_exec_id so they get persisted; the unique partial
+                # index on flex_transaction_id provides idempotency.
+                book_txn_id = _safe_int(row.get("transactionID"))
+                if book_txn_id is None:
+                    continue
+                exec_id = f"FLEX-TX-{book_txn_id}"
 
             exec_time = row.get("dateTime")
             if exec_time is None or pd.isna(exec_time):
