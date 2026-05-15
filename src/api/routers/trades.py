@@ -667,13 +667,21 @@ def list_trade_executions(trade_id: int, db: Session = DB_SESSION_DEPENDENCY):
 @router.get("/trade-executions", response_model=list[TradeExecutionListItem])
 def list_all_trade_executions(  # noqa: C901, PLR0912, PLR0915
     account_id: int | None = Query(default=None),
+    symbol: str | None = Query(default=None),
     lookback_days: int | None = Query(default=None, ge=1, le=365),
     limit: int = Query(default=500, ge=1, le=5000),
     db: Session = DB_SESSION_DEPENDENCY,
 ):
-    stmt = select(TradeExecution, ContractRef).outerjoin(ContractRef, ContractRef.con_id == TradeExecution.con_id).where(TradeExecution.is_canonical.is_(True))
+    stmt = (
+        select(TradeExecution, ContractRef)
+        .join(Trade, Trade.id == TradeExecution.trade_id)
+        .outerjoin(ContractRef, ContractRef.con_id == TradeExecution.con_id)
+        .where(TradeExecution.is_canonical.is_(True))
+    )
     if account_id is not None:
         stmt = stmt.where(TradeExecution.account_id == account_id)
+    if symbol is not None:
+        stmt = stmt.where(Trade.symbol == symbol.upper())
     if lookback_days is not None:
         cutoff = datetime.now(timezone.utc) - timedelta(days=lookback_days)
         stmt = stmt.where(TradeExecution.executed_at >= cutoff)

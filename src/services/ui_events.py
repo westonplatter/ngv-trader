@@ -22,6 +22,8 @@ logger = logging.getLogger(__name__)
 TOPIC_JOBS = "jobs"
 TOPIC_ORDERS = "orders"
 TOPIC_WORKER_STATUS = "worker_status"
+TOPIC_TRADES = "trades"
+TOPIC_POSITIONS = "positions"
 
 
 class UIEvent(BaseModel):
@@ -48,6 +50,26 @@ def make_event(
         entity_id=entity_id,
         occurred_at=datetime.now(timezone.utc),
         payload=payload.model_dump(mode="json"),
+    )
+
+
+def make_coarse_event(
+    topic: str,
+    event: str,
+    payload: dict[str, Any] | None = None,
+) -> UIEvent:
+    """Build a coarse-grained "something changed" envelope with no DTO.
+
+    Consumers should treat this as a hint to re-fetch the relevant REST
+    snapshot. Payload may carry small hints (e.g. account_id) but is not
+    a full entity.
+    """
+    return UIEvent(
+        topic=topic,
+        event=event,
+        entity_id=None,
+        occurred_at=datetime.now(timezone.utc),
+        payload=payload or {},
     )
 
 

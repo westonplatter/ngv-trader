@@ -1,6 +1,6 @@
 """Trade groups API router."""
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, Field
@@ -9,15 +9,23 @@ from sqlalchemy.orm import Session
 
 from src.api.deps import get_db
 from src.api.routers.tags import TagLinkResponse, _normalize_tag_value
+from src.api.routers.trades import _contract_display_from_raw, _execution_realized_pnl
 from src.models import (
+    Account,
+    ContractRef,
+    Position,
     Tag,
     TagLink,
+    Trade,
     TradeExecution,
     TradeGroup,
     TradeGroupExecution,
     TradeGroupExecutionEvent,
     TradeGroupLink,
 )
+from src.services.cl_contracts import infer_contract_month_from_local_symbol
+from src.services.ui_events import TOPIC_TRADES, broadcaster, make_coarse_event
+from src.utils.contract_display import contract_display_name
 
 router = APIRouter()
 DB_SESSION_DEPENDENCY = Depends(get_db)
@@ -432,6 +440,7 @@ def assign_executions(
         )
 
     db.commit()
+    broadcaster.publish(make_coarse_event(TOPIC_TRADES, "trades.changed"))
 
 
 @router.post("/trade-groups/{trade_group_id}/executions:unassign", status_code=204)
@@ -473,6 +482,7 @@ def unassign_executions(
         db.delete(assignment)
 
     db.commit()
+    broadcaster.publish(make_coarse_event(TOPIC_TRADES, "trades.changed"))
 
 
 @router.post("/trade-executions/{execution_id}/trade-group:reassign", status_code=204)
@@ -610,3 +620,173 @@ def trade_group_timeline(trade_group_id: int, db: Session = DB_SESSION_DEPENDENC
 
     events.sort(key=lambda item: (item.occurred_at, item.event_id))
     return TimelineResponse(trade_group_id=trade_group_id, events=events)
+
+
+class TradeGroupExecutionItem(BaseModel):
+    id: int
+    trade_id: int
+    account_id: int
+    account_alias: str | None
+    executed_at: datetime
+    side: str | None
+    quantity: float
+    price: float
+    commission: float | None
+    realized_pnl: float | None
+    exec_role: str
+    sec_type: str | None
+    contract_display: str | None
+    data_source: str
+
+
+class TradeGroupOpenPositionItem(BaseModel):
+    account_id: int
+    account_alias: str | None
+    con_id: int
+    symbol: str | None
+    local_symbol: str | None
+    contract_display: str | None
+    sec_type: str | None
+    position: float
+    avg_cost: float
+    multiplier: str | None
+    mark_price: float | None
+    position_value: float | None
+    fifo_pnl_unrealized: float | None
+    as_of_date: date | None
+
+
+class TradeGroupExecutionsResponse(BaseModel):
+    trade_group_id: int
+    total_realized_pnl: float | None
+    total_unrealized_pnl: float | None
+    executions: list[TradeGroupExecutionItem]
+    open_positions: list[TradeGroupOpenPositionItem]
+
+
+@router.get("/trade-groups/{trade_group_id}/executions", response_model=TradeGroupExecutionsResponse)
+def trade_group_executions(trade_group_id: int, db: Session = DB_SESSION_DEPENDENCY):
+    _ensure_group(db, trade_group_id)
+
+    rows = db.execute(
+        select(TradeExecution, ContractRef, Trade, Account)
+        .join(TradeGroupExecution, TradeGroupExecution.trade_execution_id == TradeExecution.id)
+        .join(Trade, Trade.id == TradeExecution.trade_id)
+        .outerjoin(ContractRef, ContractRef.con_id == TradeExecution.con_id)
+        .outerjoin(Account, Account.id == TradeExecution.account_id)
+        .where(TradeGroupExecution.trade_group_id == trade_group_id)
+        .order_by(TradeExecution.executed_at.asc(), TradeExecution.id.asc())
+    ).all()
+
+    items: list[TradeGroupExecutionItem] = []
+    pnl_values: list[float] = []
+    for execution, contract_ref, _trade, account in rows:
+        realized = _execution_realized_pnl(execution.raw)
+        if realized is not None and execution.exec_role != "combo_summary":
+            # Avoid double counting: when a combo_summary row carries the realized PnL,
+            # leg rows should not also be summed. Keep both displayed; only sum non-leg
+            # rows when no combo_summary is present for that trade.
+            pnl_values.append(realized)
+        items.append(
+            TradeGroupExecutionItem(
+                id=execution.id,
+                trade_id=execution.trade_id,
+                account_id=execution.account_id,
+                account_alias=account.alias if account else None,
+                executed_at=execution.executed_at,
+                side=execution.side,
+                quantity=execution.quantity,
+                price=execution.price,
+                commission=execution.commission,
+                realized_pnl=realized,
+                exec_role=execution.exec_role,
+                sec_type=execution.sec_type,
+                contract_display=_contract_display_from_raw(execution.raw, contract_ref),
+                data_source=execution.data_source,
+            )
+        )
+
+    # If any combo_summary rows are present in this group, prefer those for the total
+    # (combo_summary rolls up its leg PnL on IBKR side).
+    combo_totals = [
+        _execution_realized_pnl(execution.raw)
+        for execution, _ref, _trade, _account in rows
+        if execution.exec_role == "combo_summary" and _execution_realized_pnl(execution.raw) is not None
+    ]
+    if combo_totals:
+        # Sum combo totals plus any standalone (non-leg, non-combo) realized PnL values
+        standalone = [
+            _execution_realized_pnl(execution.raw)
+            for execution, _ref, _trade, _account in rows
+            if execution.exec_role not in {"combo_summary", "leg"} and _execution_realized_pnl(execution.raw) is not None
+        ]
+        total_pnl: float | None = sum(combo_totals) + sum(standalone)
+    else:
+        total_pnl = sum(pnl_values) if pnl_values else None
+
+    # Open positions linked to this group: match on (account_id, con_id) pairs
+    # that appear in any of the group's executions and that still have non-zero
+    # position quantity.
+    account_con_pairs = {(execution.account_id, execution.con_id) for execution, _ref, _trade, _account in rows if execution.con_id is not None}
+    open_positions: list[TradeGroupOpenPositionItem] = []
+    total_unrealized: float | None = None
+    if account_con_pairs:
+        from sqlalchemy import tuple_ as sa_tuple
+
+        position_rows = db.execute(
+            select(Position, Account)
+            .outerjoin(Account, Account.id == Position.account_id)
+            .where(
+                sa_tuple(Position.account_id, Position.con_id).in_(list(account_con_pairs)),
+                Position.position != 0,
+            )
+            .order_by(Position.account_id.asc(), Position.con_id.asc())
+        ).all()
+        unrealized_values: list[float] = []
+        for position, account in position_rows:
+            if position.fifo_pnl_unrealized is not None:
+                unrealized_values.append(position.fifo_pnl_unrealized)
+            inferred_month = infer_contract_month_from_local_symbol(
+                local_symbol=position.local_symbol,
+                contract_expiry=position.last_trade_date,
+                sec_type=position.sec_type,
+            )
+            display_name = contract_display_name(
+                symbol=position.symbol,
+                sec_type=position.sec_type,
+                local_symbol=position.local_symbol,
+                right=position.right,
+                strike=position.strike,
+                contract_expiry=position.last_trade_date,
+                contract_month=inferred_month,
+                exchange=position.exchange,
+                trading_class=position.trading_class,
+            )
+            open_positions.append(
+                TradeGroupOpenPositionItem(
+                    account_id=position.account_id,
+                    account_alias=(account.alias if account else None) or (account.account if account else None),
+                    con_id=position.con_id,
+                    symbol=position.symbol,
+                    local_symbol=position.local_symbol,
+                    contract_display=display_name,
+                    sec_type=position.sec_type,
+                    position=position.position,
+                    avg_cost=position.avg_cost,
+                    multiplier=position.multiplier,
+                    mark_price=position.mark_price,
+                    position_value=position.position_value,
+                    fifo_pnl_unrealized=position.fifo_pnl_unrealized,
+                    as_of_date=position.as_of_date,
+                )
+            )
+        if unrealized_values:
+            total_unrealized = sum(unrealized_values)
+
+    return TradeGroupExecutionsResponse(
+        trade_group_id=trade_group_id,
+        total_realized_pnl=total_pnl,
+        total_unrealized_pnl=total_unrealized,
+        executions=items,
+        open_positions=open_positions,
+    )

@@ -19,8 +19,11 @@ from src.models import Account, ContractRef, Job, Order, WorkerHeartbeat
 from src.services.ui_events import (
     TOPIC_JOBS,
     TOPIC_ORDERS,
+    TOPIC_POSITIONS,
+    TOPIC_TRADES,
     TOPIC_WORKER_STATUS,
     broadcaster,
+    make_coarse_event,
     make_event,
 )
 from src.services.worker_heartbeat import WorkerStatusPayload, _classify_light
@@ -34,7 +37,7 @@ router = APIRouter()
 
 @router.get("/events/stream", response_class=EventSourceResponse)
 async def stream_events(
-    topics: str = "jobs,orders,worker_status",
+    topics: str = "jobs,orders,worker_status,trades,positions",
 ) -> AsyncIterable[ServerSentEvent]:
     topic_list = [t.strip() for t in topics.split(",") if t.strip()]
     subscriber = broadcaster.subscribe(topic_list)
@@ -124,3 +127,26 @@ def notify_order(
     order, account, contract_ref = row
     resp = to_order_response(order, account, contract_ref)
     broadcaster.publish(make_event(TOPIC_ORDERS, body.event, resp, entity_id=order.id))
+
+
+# ---------------------------------------------------------------------------
+# Coarse-grained "something changed, re-fetch" notifications.
+#
+# Used by trades/positions sync where the UI just needs a hint to re-pull
+# the REST snapshot, not a per-row DTO.
+# ---------------------------------------------------------------------------
+
+
+class NotifyCoarseRequest(BaseModel):
+    event: str | None = None
+    payload: dict | None = None
+
+
+@router.post("/events/notify-trades", status_code=204)
+def notify_trades(body: NotifyCoarseRequest) -> None:
+    broadcaster.publish(make_coarse_event(TOPIC_TRADES, body.event or "trades.changed", body.payload))
+
+
+@router.post("/events/notify-positions", status_code=204)
+def notify_positions(body: NotifyCoarseRequest) -> None:
+    broadcaster.publish(make_coarse_event(TOPIC_POSITIONS, body.event or "positions.changed", body.payload))

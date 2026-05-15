@@ -25,6 +25,13 @@ YELLOW_SECONDS = 30.0
 
 _API_BASE_URL = os.environ.get("API_BASE_URL", "http://localhost:8000/api/v1")
 
+# In-process dedup for SSE worker-status notifications.
+# We notify on status transitions only, with a long-interval safety tick so the
+# UI can still resync staleness if it missed an event.
+_FORCE_NOTIFY_AFTER_SECONDS = 30.0
+_last_notified_status: dict[str, str] = {}
+_last_notified_at: dict[str, datetime] = {}
+
 
 class WorkerStatusPayload(BaseModel):
     worker_type: str
@@ -93,4 +100,13 @@ def upsert_worker_heartbeat(
             row.heartbeat_at = heartbeat_at
             row.updated_at = heartbeat_at
         session.commit()
-    _notify_worker_status(worker_type)
+
+    now = now_utc()
+    last_status = _last_notified_status.get(worker_type)
+    last_at = _last_notified_at.get(worker_type)
+    status_changed = last_status != status
+    stale = last_at is None or (now - last_at).total_seconds() >= _FORCE_NOTIFY_AFTER_SECONDS
+    if status_changed or stale:
+        _notify_worker_status(worker_type)
+        _last_notified_status[worker_type] = status
+        _last_notified_at[worker_type] = now

@@ -43,6 +43,9 @@ class PositionResponse(BaseModel):
     multiplier: str | None
     position: float
     avg_cost: float
+    mark_price: float | None
+    position_value: float | None
+    fifo_pnl_unrealized: float | None
     data_source: str
     as_of_date: date | None
     fetched_at: datetime
@@ -72,9 +75,12 @@ class PositionSyncResponse(BaseModel):
 
 def _parse_raw_expiry_date(raw_value: str | None) -> date | None:
     value = (raw_value or "").strip()
-    if len(value) >= 8 and value[:8].isdigit():
+    if not value:
+        return None
+    digits = value.replace("-", "")
+    if len(digits) >= 8 and digits[:8].isdigit():
         try:
-            return datetime.strptime(value[:8], "%Y%m%d").date()
+            return datetime.strptime(digits[:8], "%Y%m%d").date()
         except ValueError:
             return None
     return None
@@ -138,6 +144,9 @@ def list_positions(db: Session = DB_SESSION_DEPENDENCY):
                 multiplier=pos.multiplier,
                 position=pos.position,
                 avg_cost=pos.avg_cost,
+                mark_price=pos.mark_price,
+                position_value=pos.position_value,
+                fifo_pnl_unrealized=pos.fifo_pnl_unrealized,
                 data_source=pos.data_source,
                 as_of_date=pos.as_of_date,
                 fetched_at=pos.fetched_at,

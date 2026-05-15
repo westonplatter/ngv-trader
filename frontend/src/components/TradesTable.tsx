@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePrivacy } from "../contexts/PrivacyContext";
 import { PRIVACY_MASK } from "../utils/privacy";
 import { API_BASE_URL } from "../config";
+import { useSSE } from "../lib/events";
 
 interface TradeExecutionRow {
   id: number;
@@ -187,7 +188,7 @@ function TagGroupCell({
       .catch(() => setResults([]))
       .finally(() => setLoading(false));
     setTimeout(() => {
-      inputRef.current?.focus();
+      inputRef.current?.focus({ preventScroll: true });
       updateDropdownPos();
     }, 0);
   }, [searchGroups, updateDropdownPos]);
@@ -214,14 +215,9 @@ function TagGroupCell({
         closeSearch();
       }
     };
-    const handleScrollOrResize = () => closeSearch();
     document.addEventListener("mousedown", handleOutsideClick);
-    window.addEventListener("scroll", handleScrollOrResize, true);
-    window.addEventListener("resize", handleScrollOrResize);
     return () => {
       document.removeEventListener("mousedown", handleOutsideClick);
-      window.removeEventListener("scroll", handleScrollOrResize, true);
-      window.removeEventListener("resize", handleScrollOrResize);
     };
   }, [mode, closeSearch]);
 
@@ -481,15 +477,24 @@ export default function TradesTable() {
     setAllTradeGroups(data);
   }, []);
 
+  const serverSymbol = useMemo(() => {
+    const raw = symbolFilter.trim();
+    return /^[A-Za-z0-9]+$/.test(raw) ? raw.toUpperCase() : null;
+  }, [symbolFilter]);
+
   const loadExecutions = useCallback(async () => {
-    const res = await fetch(`${API_BASE_URL}/trade-executions?limit=5000`);
+    const params = new URLSearchParams({ limit: "5000" });
+    if (serverSymbol) params.set("symbol", serverSymbol);
+    const res = await fetch(
+      `${API_BASE_URL}/trade-executions?${params.toString()}`,
+    );
     if (!res.ok) {
       throw new Error(await readErrorMessage(res, "Unable to load executions"));
     }
     const data: TradeExecutionRow[] = await res.json();
     setExecutions(data);
     setError(null);
-  }, []);
+  }, [serverSymbol]);
 
   useEffect(() => {
     void loadExecutions()
@@ -500,13 +505,12 @@ export default function TradesTable() {
       })
       .finally(() => setLoading(false));
     void loadTradeGroups();
-
-    const timer = window.setInterval(() => {
-      void loadExecutions().catch(() => {});
-    }, 5000);
-
-    return () => window.clearInterval(timer);
   }, [loadExecutions, loadTradeGroups]);
+
+  useSSE<Record<string, unknown>>("trades", () => {
+    void loadExecutions().catch(() => {});
+    void loadTradeGroups().catch(() => {});
+  });
 
   const symbolRegex = useMemo(() => {
     const raw = symbolFilter.trim();
@@ -749,9 +753,6 @@ export default function TradesTable() {
                 Price
               </th>
               <th className="whitespace-nowrap px-3 py-2 font-semibold text-gray-700">
-                Commission
-              </th>
-              <th className="whitespace-nowrap px-3 py-2 font-semibold text-gray-700">
                 Realized PnL
               </th>
               <th className="whitespace-nowrap px-3 py-2 font-semibold text-gray-700">
@@ -778,7 +779,7 @@ export default function TradesTable() {
             {!loading && filteredRows.length === 0 && (
               <tr>
                 <td
-                  colSpan={16}
+                  colSpan={15}
                   className="px-3 py-6 text-center text-gray-500"
                 >
                   No executions found.
@@ -840,9 +841,6 @@ export default function TradesTable() {
                   </td>
                   <td className="whitespace-nowrap px-3 py-2 text-gray-700">
                     {formatPrice(row.price)}
-                  </td>
-                  <td className="whitespace-nowrap px-3 py-2 text-gray-700">
-                    {formatPrice(row.commission)}
                   </td>
                   <td className="whitespace-nowrap px-3 py-2 text-gray-700">
                     {privacyMode ? PRIVACY_MASK : formatPrice(row.realized_pnl)}

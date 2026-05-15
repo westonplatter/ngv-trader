@@ -29,13 +29,46 @@ type TagLink = {
   created_by: string;
 };
 
-type TimelineEvent = {
-  event_id: string;
-  event_type: string;
-  occurred_at: string;
-  execution_id: number | null;
-  related_trade_group_id: number | null;
-  summary: string;
+type GroupExecution = {
+  id: number;
+  trade_id: number;
+  account_id: number;
+  account_alias: string | null;
+  executed_at: string;
+  side: string | null;
+  quantity: number;
+  price: number;
+  commission: number | null;
+  realized_pnl: number | null;
+  exec_role: string;
+  sec_type: string | null;
+  contract_display: string | null;
+  data_source: string;
+};
+
+type GroupOpenPosition = {
+  account_id: number;
+  account_alias: string | null;
+  con_id: number;
+  symbol: string | null;
+  local_symbol: string | null;
+  contract_display: string | null;
+  sec_type: string | null;
+  position: number;
+  avg_cost: number;
+  multiplier: string | null;
+  mark_price: number | null;
+  position_value: number | null;
+  fifo_pnl_unrealized: number | null;
+  as_of_date: string | null;
+};
+
+type GroupExecutionsResponse = {
+  trade_group_id: number;
+  total_realized_pnl: number | null;
+  total_unrealized_pnl: number | null;
+  executions: GroupExecution[];
+  open_positions: GroupOpenPosition[];
 };
 
 type Tag = {
@@ -86,7 +119,12 @@ export default function TradeTaggingPage() {
   const [groups, setGroups] = useState<TradeGroup[]>([]);
   const [selectedGroupId, setSelectedGroupId] = useState<number | null>(null);
   const [groupDetail, setGroupDetail] = useState<TradeGroupDetail | null>(null);
-  const [timeline, setTimeline] = useState<TimelineEvent[]>([]);
+  const [executions, setExecutions] = useState<GroupExecution[]>([]);
+  const [totalRealizedPnl, setTotalRealizedPnl] = useState<number | null>(null);
+  const [openPositions, setOpenPositions] = useState<GroupOpenPosition[]>([]);
+  const [totalUnrealizedPnl, setTotalUnrealizedPnl] = useState<number | null>(
+    null,
+  );
 
   const [showNewStrategy, setShowNewStrategy] = useState(false);
   const [newStrategyValue, setNewStrategyValue] = useState("");
@@ -166,17 +204,20 @@ export default function TradeTaggingPage() {
     setGroupDetail(data);
   }, []);
 
-  const loadTimeline = useCallback(async (tradeGroupId: number) => {
+  const loadExecutions = useCallback(async (tradeGroupId: number) => {
     const response = await fetch(
-      `${API_BASE_URL}/trade-groups/${tradeGroupId}/timeline`,
+      `${API_BASE_URL}/trade-groups/${tradeGroupId}/executions`,
     );
     if (!response.ok) {
       throw new Error(
-        await readErrorMessage(response, "Unable to load timeline"),
+        await readErrorMessage(response, "Unable to load group executions"),
       );
     }
-    const data: { events: TimelineEvent[] } = await response.json();
-    setTimeline(data.events);
+    const data: GroupExecutionsResponse = await response.json();
+    setExecutions(data.executions);
+    setTotalRealizedPnl(data.total_realized_pnl);
+    setOpenPositions(data.open_positions ?? []);
+    setTotalUnrealizedPnl(data.total_unrealized_pnl);
   }, []);
 
   useEffect(() => {
@@ -231,7 +272,10 @@ export default function TradeTaggingPage() {
   useEffect(() => {
     if (selectedGroupId == null) {
       setGroupDetail(null);
-      setTimeline([]);
+      setExecutions([]);
+      setTotalRealizedPnl(null);
+      setOpenPositions([]);
+      setTotalUnrealizedPnl(null);
       setEditingGroup(false);
       return;
     }
@@ -243,14 +287,14 @@ export default function TradeTaggingPage() {
           : "Failed to load group detail.";
       setError(nextMessage);
     });
-    void loadTimeline(selectedGroupId).catch((timelineError: unknown) => {
+    void loadExecutions(selectedGroupId).catch((execError: unknown) => {
       const nextMessage =
-        timelineError instanceof Error
-          ? timelineError.message
-          : "Failed to load trade group timeline.";
+        execError instanceof Error
+          ? execError.message
+          : "Failed to load trade group executions.";
       setError(nextMessage);
     });
-  }, [loadGroupDetail, loadTimeline, selectedGroupId]);
+  }, [loadGroupDetail, loadExecutions, selectedGroupId]);
 
   const createStrategy = async () => {
     if (!newStrategyValue.trim()) {
@@ -405,24 +449,6 @@ export default function TradeTaggingPage() {
     setMessage(`Deleted trade group #${selectedGroupId}.`);
     setSelectedGroupId(null);
     await loadGroups(selectedStrategy?.value ?? null);
-  };
-
-  const timelineEventIcon = (eventType: string): string => {
-    if (eventType.includes("entry")) return "IN";
-    if (eventType.includes("exit")) return "OUT";
-    if (eventType.includes("reassigned_in")) return "RE+";
-    if (eventType.includes("reassigned_out")) return "RE-";
-    if (eventType.includes("unassigned")) return "UN";
-    if (eventType.includes("roll")) return "ROLL";
-    return "ADJ";
-  };
-
-  const timelineEventColor = (eventType: string): string => {
-    if (eventType.includes("entry")) return "text-emerald-700 bg-emerald-50";
-    if (eventType.includes("exit")) return "text-red-700 bg-red-50";
-    if (eventType.includes("unassigned")) return "text-amber-700 bg-amber-50";
-    if (eventType.includes("roll")) return "text-purple-700 bg-purple-50";
-    return "text-gray-700 bg-gray-50";
   };
 
   return (
@@ -726,36 +752,334 @@ export default function TradeTaggingPage() {
                     </button>
                   </div>
 
-                  {/* Timeline */}
+                  {/* PnL Summary */}
+                  {(() => {
+                    const totalPnl =
+                      totalUnrealizedPnl == null && totalRealizedPnl == null
+                        ? null
+                        : (totalUnrealizedPnl ?? 0) + (totalRealizedPnl ?? 0);
+                    let capital: number | null = null;
+                    if (openPositions.length > 0) {
+                      let sum = 0;
+                      let allHaveMultiplier = true;
+                      for (const pos of openPositions) {
+                        const mult =
+                          pos.multiplier != null
+                            ? Number.parseFloat(pos.multiplier)
+                            : NaN;
+                        if (!Number.isFinite(mult) || mult <= 0) {
+                          allHaveMultiplier = false;
+                          break;
+                        }
+                        sum += Math.abs(pos.avg_cost * pos.position) * mult;
+                      }
+                      if (allHaveMultiplier && sum > 0) capital = sum;
+                    }
+                    const fmt = (v: number | null) =>
+                      v == null
+                        ? "—"
+                        : v.toLocaleString(undefined, {
+                            style: "currency",
+                            currency: "USD",
+                          });
+                    const cls = (v: number | null) =>
+                      v == null
+                        ? "text-gray-500"
+                        : v >= 0
+                          ? "font-semibold text-emerald-700"
+                          : "font-semibold text-red-700";
+                    const pct = (v: number | null) =>
+                      v == null || capital == null
+                        ? "—"
+                        : `${((v / capital) * 100).toFixed(2)}%`;
+                    const row = (
+                      label: string,
+                      v: number | null,
+                      showPct: boolean,
+                      colorize: boolean,
+                    ) => (
+                      <div className="grid grid-cols-[7rem_6rem_5rem] items-baseline">
+                        <span className="text-gray-500">{label}:</span>
+                        <span
+                          className={`text-right ${colorize ? cls(v) : "font-semibold text-gray-800"}`}
+                        >
+                          {fmt(v)}
+                        </span>
+                        <span
+                          className={`text-right ${showPct ? cls(v) : "text-gray-400"}`}
+                        >
+                          {showPct ? pct(v) : ""}
+                        </span>
+                      </div>
+                    );
+                    return (
+                      <div className="flex flex-col gap-0.5 rounded border border-gray-200 bg-gray-50 px-3 py-1.5 text-xs">
+                        {row("Capital invested", capital, false, false)}
+                        {row("Total PnL", totalPnl, true, true)}
+                        {row("Unrealized PnL", totalUnrealizedPnl, true, true)}
+                        {row("Realized PnL", totalRealizedPnl, true, true)}
+                      </div>
+                    );
+                  })()}
+
+                  {/* Open Positions */}
                   <div>
-                    <h5 className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-600">
-                      Timeline ({timeline.length} events)
-                    </h5>
-                    {timeline.length === 0 && (
-                      <p className="text-xs text-gray-400">
-                        No events recorded yet.
+                    <div className="mb-2 flex items-baseline justify-between">
+                      <h5 className="text-xs font-semibold uppercase tracking-wide text-gray-600">
+                        Open Positions ({openPositions.length})
+                      </h5>
+                      <span className="text-xs text-gray-600">
+                        Unrealized PnL:{" "}
+                        <span
+                          className={
+                            totalUnrealizedPnl == null
+                              ? "text-gray-500"
+                              : totalUnrealizedPnl >= 0
+                                ? "font-semibold text-emerald-700"
+                                : "font-semibold text-red-700"
+                          }
+                        >
+                          {totalUnrealizedPnl == null
+                            ? "—"
+                            : totalUnrealizedPnl.toLocaleString(undefined, {
+                                style: "currency",
+                                currency: "USD",
+                              })}
+                        </span>
+                      </span>
+                    </div>
+                    {openPositions.length === 0 && (
+                      <p className="mb-3 text-xs text-gray-400">
+                        No open positions linked to this group.
                       </p>
                     )}
-                    <div className="max-h-[300px] space-y-1 overflow-y-auto">
-                      {timeline.map((event) => (
-                        <div
-                          key={event.event_id}
-                          className="flex items-start gap-2 rounded px-2 py-1 text-xs"
+                    {openPositions.length > 0 && (
+                      <div className="mb-4 max-h-[260px] overflow-auto rounded border border-gray-200">
+                        <table className="w-full text-left text-xs">
+                          <thead className="sticky top-0 bg-gray-50 text-gray-600">
+                            <tr>
+                              <th className="px-2 py-1 font-medium">Account</th>
+                              <th className="px-2 py-1 font-medium">
+                                Contract
+                              </th>
+                              <th className="px-2 py-1 text-right font-medium">
+                                Qty
+                              </th>
+                              <th className="px-2 py-1 text-right font-medium">
+                                Avg Cost
+                              </th>
+                              <th className="px-2 py-1 text-right font-medium">
+                                Mark
+                              </th>
+                              <th className="px-2 py-1 text-right font-medium">
+                                Value
+                              </th>
+                              <th className="px-2 py-1 text-right font-medium">
+                                Unrealized
+                              </th>
+                              <th className="px-2 py-1 font-medium">As of</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {openPositions.map((pos) => {
+                              const qtyClass =
+                                pos.position > 0
+                                  ? "text-emerald-700"
+                                  : pos.position < 0
+                                    ? "text-red-700"
+                                    : "text-gray-600";
+                              const pnlClass =
+                                pos.fifo_pnl_unrealized == null
+                                  ? "text-gray-400"
+                                  : pos.fifo_pnl_unrealized >= 0
+                                    ? "text-emerald-700"
+                                    : "text-red-700";
+                              return (
+                                <tr
+                                  key={`${pos.account_id}-${pos.con_id}`}
+                                  className="border-t border-gray-100"
+                                >
+                                  <td className="px-2 py-1 text-gray-700">
+                                    {pos.account_alias ??
+                                      `Account ${pos.account_id}`}
+                                  </td>
+                                  <td className="px-2 py-1 text-gray-800">
+                                    {pos.contract_display ??
+                                      pos.local_symbol ??
+                                      pos.symbol ??
+                                      `#${pos.con_id}`}
+                                  </td>
+                                  <td
+                                    className={`px-2 py-1 text-right font-mono ${qtyClass}`}
+                                  >
+                                    {pos.position}
+                                  </td>
+                                  <td className="px-2 py-1 text-right font-mono text-gray-700">
+                                    {pos.avg_cost.toFixed(2)}
+                                  </td>
+                                  <td className="px-2 py-1 text-right font-mono text-gray-700">
+                                    {pos.mark_price == null
+                                      ? "—"
+                                      : pos.mark_price.toFixed(2)}
+                                  </td>
+                                  <td className="px-2 py-1 text-right font-mono text-gray-700">
+                                    {pos.position_value == null
+                                      ? "—"
+                                      : pos.position_value.toFixed(2)}
+                                  </td>
+                                  <td
+                                    className={`px-2 py-1 text-right font-mono ${pnlClass}`}
+                                  >
+                                    {pos.fifo_pnl_unrealized == null
+                                      ? "—"
+                                      : pos.fifo_pnl_unrealized.toFixed(2)}
+                                  </td>
+                                  <td className="px-2 py-1 text-gray-500">
+                                    {pos.as_of_date ?? "—"}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Trades */}
+                  <div>
+                    <div className="mb-2 flex items-baseline justify-between">
+                      <h5 className="text-xs font-semibold uppercase tracking-wide text-gray-600">
+                        Trades ({executions.length})
+                      </h5>
+                      <span className="text-xs text-gray-600">
+                        Total realized PnL:{" "}
+                        <span
+                          className={
+                            totalRealizedPnl == null
+                              ? "text-gray-500"
+                              : totalRealizedPnl >= 0
+                                ? "font-semibold text-emerald-700"
+                                : "font-semibold text-red-700"
+                          }
                         >
-                          <span
-                            className={`mt-0.5 shrink-0 rounded px-1.5 py-0.5 font-mono text-[10px] font-bold ${timelineEventColor(event.event_type)}`}
-                          >
-                            {timelineEventIcon(event.event_type)}
-                          </span>
-                          <div className="min-w-0 flex-1">
-                            <p className="text-gray-700">{event.summary}</p>
-                            <p className="text-gray-400">
-                              {formatDate(event.occurred_at)}
-                            </p>
-                          </div>
-                        </div>
-                      ))}
+                          {totalRealizedPnl == null
+                            ? "—"
+                            : totalRealizedPnl.toLocaleString(undefined, {
+                                style: "currency",
+                                currency: "USD",
+                              })}
+                        </span>
+                      </span>
                     </div>
+                    {executions.length === 0 && (
+                      <p className="mb-3 text-xs text-gray-400">
+                        No trades assigned to this group yet.
+                      </p>
+                    )}
+                    {executions.length > 0 && (
+                      <div className="mb-4 max-h-[300px] overflow-auto rounded border border-gray-200">
+                        <table className="w-full text-left text-xs">
+                          <thead className="sticky top-0 bg-gray-50 text-gray-600">
+                            <tr>
+                              <th className="px-2 py-1 font-medium">When</th>
+                              <th className="px-2 py-1 font-medium">Account</th>
+                              <th className="px-2 py-1 font-medium">
+                                Contract
+                              </th>
+                              <th className="px-2 py-1 text-right font-medium">
+                                Side
+                              </th>
+                              <th className="px-2 py-1 text-right font-medium">
+                                Qty
+                              </th>
+                              <th className="px-2 py-1 text-right font-medium">
+                                Price
+                              </th>
+                              <th className="px-2 py-1 text-right font-medium">
+                                Realized
+                              </th>
+                              <th className="px-2 py-1 text-right font-medium">
+                                Cum PnL
+                              </th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {(() => {
+                              let running = 0;
+                              const withRunning = executions.map((ex) => {
+                                const counted =
+                                  ex.realized_pnl != null &&
+                                  ex.exec_role !== "combo_summary";
+                                if (counted)
+                                  running += ex.realized_pnl as number;
+                                return { ex, counted, running };
+                              });
+                              return [...withRunning]
+                                .reverse()
+                                .map(({ ex, counted, running }) => {
+                                  const sideClass =
+                                    ex.side && /^(BOT|BUY)$/i.test(ex.side)
+                                      ? "text-emerald-700"
+                                      : ex.side
+                                        ? "text-red-700"
+                                        : "text-gray-500";
+                                  const pnlClass =
+                                    ex.realized_pnl == null
+                                      ? "text-gray-400"
+                                      : ex.realized_pnl >= 0
+                                        ? "text-emerald-700"
+                                        : "text-red-700";
+                                  return (
+                                    <tr
+                                      key={ex.id}
+                                      className="border-t border-gray-100"
+                                    >
+                                      <td className="px-2 py-1 text-gray-700">
+                                        {formatDate(ex.executed_at)}
+                                      </td>
+                                      <td className="px-2 py-1 text-gray-700">
+                                        {ex.account_alias ??
+                                          `Account ${ex.account_id}`}
+                                      </td>
+                                      <td className="px-2 py-1 text-gray-800">
+                                        {ex.contract_display ??
+                                          `#${ex.trade_id}`}
+                                        {ex.exec_role !== "standalone" && (
+                                          <span className="ml-1 rounded bg-gray-100 px-1 py-0.5 text-[10px] uppercase text-gray-500">
+                                            {ex.exec_role}
+                                          </span>
+                                        )}
+                                      </td>
+                                      <td
+                                        className={`px-2 py-1 text-right font-mono ${sideClass}`}
+                                      >
+                                        {ex.side ?? "—"}
+                                      </td>
+                                      <td className="px-2 py-1 text-right font-mono text-gray-800">
+                                        {ex.quantity}
+                                      </td>
+                                      <td className="px-2 py-1 text-right font-mono text-gray-800">
+                                        {Number(ex.price.toFixed(4))}
+                                      </td>
+                                      <td
+                                        className={`px-2 py-1 text-right font-mono ${pnlClass}`}
+                                      >
+                                        {ex.realized_pnl == null
+                                          ? "—"
+                                          : ex.realized_pnl.toFixed(2)}
+                                      </td>
+                                      <td className="px-2 py-1 text-right font-mono text-gray-700">
+                                        {counted ? running.toFixed(2) : "—"}
+                                      </td>
+                                    </tr>
+                                  );
+                                });
+                            })()}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}

@@ -68,6 +68,17 @@ def _notify_job_event(job_id: int, event: str = "job.updated") -> None:
         logger.warning("SSE notify job #%d failed: %s", job_id, exc)
 
 
+def _notify_coarse_for_job_type(job_type: str) -> None:
+    """Publish coarse trade/position SSE events when matching sync jobs finish."""
+    try:
+        if job_type == "trades.sync.flexquery":
+            _notify_api("/events/notify-trades", {})
+        elif job_type == "positions.sync.flexquery":
+            _notify_api("/events/notify-positions", {})
+    except Exception as exc:
+        logger.warning("SSE coarse notify for %s failed: %s", job_type, exc)
+
+
 def load_env(env_name: str) -> None:
     env_file = f".env.{env_name}"
     if not os.path.exists(env_file):
@@ -149,15 +160,20 @@ def main() -> int:
                         continue
 
                     logger.info("job #%d: starting %s", job_id, job.job_type)
+                    job_type_str = job.job_type
+                    completed_ok = False
                     try:
                         result = handler(job, engine, ib_pool)
                         complete_job(session, job, result)
-                        logger.info("job #%d: completed %s", job_id, job.job_type)
+                        completed_ok = True
+                        logger.info("job #%d: completed %s", job_id, job_type_str)
                     except Exception as exc:
                         fail_or_retry_job(session, job, str(exc))
-                        logger.error("job #%d: failed %s — %s", job_id, job.job_type, exc)
+                        logger.error("job #%d: failed %s — %s", job_id, job_type_str, exc)
                     session.commit()
                     _notify_job_event(job_id, "job.updated")
+                    if completed_ok:
+                        _notify_coarse_for_job_type(job_type_str)
 
             upsert_worker_heartbeat(
                 engine,

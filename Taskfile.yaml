@@ -13,7 +13,7 @@ tasks:
     desc: Start the FastAPI backend (port 8000)
     env:
       ENV: "{{.ENV}}"
-    cmd: op run --env-file=.env.{{.ENV}} -- uv run uvicorn src.api.main:app --reload --port 8000
+    cmd: op run --env-file=.env.{{.ENV}} -- uv run uvicorn src.api.main:app --reload --port 8000 --timeout-graceful-shutdown 1
 
   frontend:
     desc: Start the Vite dev server (port 5173)

@@ -406,10 +406,14 @@ def handle_positions_sync_flexquery(job: Job, engine: Engine, ib_pool: IBSession
     from datetime import date as _date
 
     from src.services.position_sync_flexquery import sync_flex_positions
-    from src.services.trade_sync_flexquery import previous_business_day
+    from src.services.trade_sync_flexquery import (
+        fetch_flex_report,
+        previous_business_day,
+    )
 
     payload = job.payload or {}
-    account_code, flex_token, query_id = _resolve_flex_credentials(payload, payload.get("account_code"))
+    filter_account = payload.get("account_code")
+    _, flex_token, query_id = _resolve_flex_credentials(payload, None)
 
     if "start_date" in payload and "end_date" in payload:
         start_date = _date.fromisoformat(payload["start_date"])
@@ -418,20 +422,24 @@ def handle_positions_sync_flexquery(job: Job, engine: Engine, ib_pool: IBSession
         end_date = previous_business_day()
         start_date = end_date
 
-    result = sync_flex_positions(
-        engine=engine,
-        account_code=account_code,
-        flex_token=flex_token,
-        query_id=query_id,
-        start_date=start_date,
-        end_date=end_date,
-    )
-    as_of = result.get("as_of_date")
-    return {
-        "upserted_count": result.get("upserted_count", 0),
-        "as_of_date": as_of.isoformat() if as_of else None,
-        "account_code": account_code,
-    }
+    report = fetch_flex_report(flex_token, query_id, start_date, end_date)
+
+    per_account: dict[str, dict] = {}
+    for account_id in report.account_ids():
+        if filter_account and account_id != filter_account:
+            continue
+        result = sync_flex_positions(
+            engine=engine,
+            account_code=account_id,
+            report=report,
+        )
+        as_of = result.get("as_of_date")
+        per_account[account_id] = {
+            "upserted_count": result.get("upserted_count", 0),
+            "as_of_date": as_of.isoformat() if as_of else None,
+        }
+
+    return {"per_account": per_account, "accounts_synced": list(per_account)}
 
 
 def handle_contracts_chain_sync(job: Job, engine: Engine, ib_pool: IBSessionPool) -> dict:

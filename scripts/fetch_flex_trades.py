@@ -20,8 +20,9 @@ from datetime import date, timedelta
 from pathlib import Path
 
 from loguru import logger
-from ngv_reports_ibkr.flex_client import DateRange, FlexClient
+from ngv_reports_ibkr.flex_client import DateRange
 
+from src.services.flex_client_factory import make_flex_client
 from src.utils.ibkr_account import mask_ibkr_account
 
 
@@ -66,6 +67,12 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Fetch FlexQuery daily report and print a trade-count summary")
     parser.add_argument("--days", type=int, default=14)
     parser.add_argument("--name", type=str, default=None, help="IB_JSON entry name (default: first entry)")
+    parser.add_argument(
+        "--end-date",
+        type=str,
+        default=None,
+        help="End date (YYYY-MM-DD or 'today'). Default: yesterday.",
+    )
     args = parser.parse_args()
 
     entry = _ib_json_entry(args.name)
@@ -75,11 +82,16 @@ def main() -> int:
         logger.error("IB_JSON entry name={!r} missing flex_token or daily query_id", entry.get("name"))
         return 1
 
-    end_date = date.today() - timedelta(days=1)
+    if args.end_date is None:
+        end_date = date.today() - timedelta(days=1)
+    elif args.end_date.lower() == "today":
+        end_date = date.today()
+    else:
+        end_date = date.fromisoformat(args.end_date)
     start_date = end_date - timedelta(days=args.days)
     logger.info(f"Fetching daily report: {start_date} → {end_date}")
 
-    xml_text = FlexClient().fetch_flex_report(
+    xml_text = make_flex_client().fetch_flex_report(
         token=flex_token,
         query_id=query_id,
         date_range=DateRange(from_date=start_date, to_date=end_date),
