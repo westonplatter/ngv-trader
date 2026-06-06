@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.1.3](https://github.com/westonplatter/ngv-trader/compare/ngv-trader-v0.1.2...ngv-trader-v0.1.3) (2026-06-06)
+
+
+### Features
+
+* setup flex query fetch process ([#28](https://github.com/westonplatter/ngv-trader/issues/28)) ([6f3e1ec](https://github.com/westonplatter/ngv-trader/commit/6f3e1ec6a27a957b95ba0bb10868290b58ddfc99))
+* switch to FlexQuery for position and trade data ([#26](https://github.com/westonplatter/ngv-trader/issues/26)) ([54b8dc7](https://github.com/westonplatter/ngv-trader/commit/54b8dc78d3dda4a80d490d3e7de007bf83847045))
+* **trades:** arrow-key tagging navigation + 30d sync button ([#29](https://github.com/westonplatter/ngv-trader/issues/29)) ([1089d76](https://github.com/westonplatter/ngv-trader/commit/1089d760c0e4c3f9997ee97630410a9cc8eabb8d))
+
 ## [0.1.2](https://github.com/westonplatter/ngv-trader/compare/ngv-trader-v0.1.1...ngv-trader-v0.1.2) (2026-04-29)
 
 
