@@ -124,10 +124,12 @@ function TagGroupCell({
     left: number;
     flipUp: boolean;
   } | null>(null);
+  const [highlightedIndex, setHighlightedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchVersionRef = useRef(0);
+  const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
   const updateDropdownPos = useCallback(() => {
     if (!inputRef.current) return;
@@ -226,6 +228,16 @@ function TagGroupCell({
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
   }, []);
+
+  // Reset the highlighted option whenever the result set changes.
+  useEffect(() => {
+    setHighlightedIndex(0);
+  }, [results]);
+
+  // Keep the highlighted option scrolled into view.
+  useEffect(() => {
+    itemRefs.current[highlightedIndex]?.scrollIntoView({ block: "nearest" });
+  }, [highlightedIndex]);
 
   const assignToGroup = async (groupId: number) => {
     setAssigning(true);
@@ -379,7 +391,25 @@ function TagGroupCell({
         value={query}
         onChange={(e) => handleQueryChange(e.target.value)}
         onKeyDown={(e) => {
-          if (e.key === "Escape") closeSearch();
+          if (e.key === "Escape") {
+            closeSearch();
+          } else if (e.key === "ArrowDown") {
+            if (results.length === 0) return;
+            e.preventDefault();
+            setHighlightedIndex((prev) => (prev + 1) % results.length);
+          } else if (e.key === "ArrowUp") {
+            if (results.length === 0) return;
+            e.preventDefault();
+            setHighlightedIndex(
+              (prev) => (prev - 1 + results.length) % results.length,
+            );
+          } else if (e.key === "Enter") {
+            const group = results[highlightedIndex];
+            if (group && !assigning) {
+              e.preventDefault();
+              void assignToGroup(group.id);
+            }
+          }
         }}
         className="w-full min-w-[200px] rounded border border-blue-300 px-2 py-1 text-xs"
         placeholder="Search trade groups..."
@@ -420,14 +450,20 @@ function TagGroupCell({
             </div>
           )}
           {!loading &&
-            results.map((group) => (
+            results.map((group, index) => (
               <button
                 key={group.id}
+                ref={(el) => {
+                  itemRefs.current[index] = el;
+                }}
+                onMouseEnter={() => setHighlightedIndex(index)}
                 onClick={() => {
                   void assignToGroup(group.id);
                 }}
                 disabled={assigning}
-                className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs hover:bg-blue-50 disabled:opacity-50"
+                className={`flex w-full items-center gap-2 px-3 py-2 text-left text-xs disabled:opacity-50 ${
+                  index === highlightedIndex ? "bg-blue-50" : "hover:bg-blue-50"
+                }`}
               >
                 <span className="font-medium text-gray-800">
                   {tradeGroupLabel(group)}
@@ -656,6 +692,15 @@ export default function TradesTable() {
             className="rounded border border-blue-300 px-3 py-1 text-sm text-blue-700 hover:bg-blue-50 disabled:opacity-50"
           >
             {syncing ? "Queueing..." : "Full Sync (7d)"}
+          </button>
+          <button
+            onClick={() => {
+              void kickOffTradesSync(30, "Extended sync");
+            }}
+            disabled={syncing}
+            className="rounded border border-blue-300 px-3 py-1 text-sm text-blue-700 hover:bg-blue-50 disabled:opacity-50"
+          >
+            {syncing ? "Queueing..." : "Extended Sync (30d)"}
           </button>
         </div>
       </div>
