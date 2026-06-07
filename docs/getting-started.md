@@ -95,7 +95,7 @@ BROKER_CL_MIN_DAYS_TO_EXPIRY=7
 
 # Tradebot LLM (optional — needed only for the chat feature)
 # TRADEBOT_LLM_API_KEY=sk-...
-# TRADEBOT_LLM_MODEL=gpt-4.1-mini
+# TRADEBOT_LLM_MODEL=gpt-5-mini
 # TRADEBOT_LLM_BASE_URL=https://api.openai.com/v1
 # TRADEBOT_LLM_TIMEOUT_SECONDS=45
 ```
@@ -184,9 +184,7 @@ With TWS/Gateway running, pull your current positions into the database:
 uv run python scripts/download_positions.py --env dev
 ```
 
-This connects to IBKR, fetches all positions across your managed accounts, creates `Account` rows, and upserts positions into the `positions` table.
-
-See [download-positions.md](download-positions.md) for details on accounts, aliases, and verification.
+This connects to IBKR, fetches all positions across your managed accounts, creates `Account` rows, and upserts positions into the `positions` table. This is a one-time bootstrap; ongoing position and trade sync runs through the FlexQuery jobs in `worker:jobs` (see [workers.md](workers.md)).
 
 ## 6. Start the Application
 
@@ -236,7 +234,7 @@ task worker:jobs
 
 Workers require TWS/Gateway to be running. The UI header shows worker health lights (green/yellow/red) based on heartbeat freshness.
 
-See [tradebot-workers.md](tradebot-workers.md) for worker architecture details.
+See [workers.md](workers.md) for worker architecture details.
 
 ## 7. Using the Application
 
@@ -331,10 +329,9 @@ Empty output = TWS not listening; fix on the TWS side.
 
 | Doc                                                              | Topic                                                |
 | ---------------------------------------------------------------- | ---------------------------------------------------- |
-| [install-python-and-frontend.md](install-python-and-frontend.md) | Concise install and startup commands                 |
-| [download-positions.md](download-positions.md)                   | Position sync and account aliases                    |
 | [contract-ref-setup.md](contract-ref-setup.md)                   | Contract caching and sync architecture               |
+| [trades-and-executions-sync.md](trades-and-executions-sync.md)   | Trade/position sync (FlexQuery), spreads, corrections |
 | [secrets-using-1password.md](secrets-using-1password.md)         | 1Password CLI integration                            |
 | [tradebot-chatbot.md](tradebot-chatbot.md)                       | Tradebot architecture, tools, and safety constraints |
-| [tradebot-workers.md](tradebot-workers.md)                       | Worker processes, heartbeats, and job dispatch       |
-| [index.md](_index.md)                                            | Full documentation index                             |
+| [workers.md](workers.md)                                         | Worker processes, heartbeats, and job dispatch       |
+| [_index.md](_index.md)                                           | Full documentation index                             |

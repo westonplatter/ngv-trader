@@ -119,7 +119,7 @@ Indexes:
 
 Market data is fetched by background jobs, not directly by API routes.
 
-Relevant job handlers in `scripts/work_jobs.py`:
+Relevant job handlers in `src/workers/jobs.py` (run by the `worker:jobs` entrypoint `scripts/work_jobs.py`):
 
 1. `market_data.futures_prices`
 2. `market_data.futures_options`
@@ -295,4 +295,4 @@ If IBKR does not provide `modelGreeks` for a futures option:
 3. `src/services/market_data.py`
 4. `src/services/contract_sync.py`
 5. `src/api/routers/futures.py`
-6. `scripts/work_jobs.py`
+6. `src/workers/jobs.py` (handlers; `scripts/work_jobs.py` is the entrypoint shim)

@@ -1,5 +1,13 @@
 # Spec: Worker Order Recovery
 
+> **Status: PARTIALLY IMPLEMENTED — scaffold only (as of 2026-06-06).** The
+> `orders`/`order_events`/`worker_heartbeats` tables, status state machine, and a
+> startup reconciliation pass exist, but **order submission is hard-disabled**
+> (`scripts/work_order_queue.py` raises before `placeOrder`), and the spec's
+> crash-safety fields (`worker_id`, `lease_expires_at`, `order_ref`,
+> `retry_count`) and row-level claim locking are not in the schema. This spec is
+> the plan to productionize the path.
+
 ## Purpose
 
 Define how `worker:orders` survives restarts/crashes without losing state or duplicating live orders in TWS.
