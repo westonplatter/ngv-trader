@@ -68,6 +68,7 @@ class TagResponse(BaseModel):
     normalized_value: str
     created_by: str
     created_at: datetime
+    archived_at: datetime | None
 
 
 class TagLinkResponse(BaseModel):
@@ -116,11 +117,14 @@ def list_tags(
     tag_type: str | None = Query(default=None),
     q: str | None = Query(default=None),
     limit: int = Query(default=50, ge=1, le=500),
+    include_archived: bool = Query(default=False),
     db: Session = DB_SESSION_DEPENDENCY,
 ):
     stmt = select(Tag)
     if tag_type is not None:
         stmt = stmt.where(Tag.tag_type == tag_type)
+    if not include_archived:
+        stmt = stmt.where(Tag.archived_at.is_(None))
     if q:
         normalized_q = _normalize_tag_value(q)
         escaped_q = normalized_q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
@@ -140,9 +144,10 @@ def create_tag(body: TagCreateRequest, db: Session = DB_SESSION_DEPENDENCY):
 def list_strategies(
     q: str | None = Query(default=None),
     limit: int = Query(default=50, ge=1, le=500),
+    include_archived: bool = Query(default=False),
     db: Session = DB_SESSION_DEPENDENCY,
 ):
-    return list_tags(tag_type="strategy", q=q, limit=limit, db=db)
+    return list_tags(tag_type="strategy", q=q, limit=limit, include_archived=include_archived, db=db)
 
 
 @router.post("/strategies", response_model=TagResponse, status_code=201)
@@ -174,6 +179,28 @@ def patch_strategy(strategy_id: int, body: TagPatchRequest, db: Session = DB_SES
     db.add(strategy)
     db.commit()
     db.refresh(strategy)
+    return TagResponse.model_validate(strategy)
+
+
+@router.post("/strategies/{strategy_id}/archive", response_model=TagResponse)
+def archive_strategy(strategy_id: int, db: Session = DB_SESSION_DEPENDENCY):
+    strategy = _ensure_tag(db, strategy_id, "strategy")
+    if strategy.archived_at is None:
+        strategy.archived_at = _now_utc()
+        db.add(strategy)
+        db.commit()
+        db.refresh(strategy)
+    return TagResponse.model_validate(strategy)
+
+
+@router.post("/strategies/{strategy_id}/unarchive", response_model=TagResponse)
+def unarchive_strategy(strategy_id: int, db: Session = DB_SESSION_DEPENDENCY):
+    strategy = _ensure_tag(db, strategy_id, "strategy")
+    if strategy.archived_at is not None:
+        strategy.archived_at = None
+        db.add(strategy)
+        db.commit()
+        db.refresh(strategy)
     return TagResponse.model_validate(strategy)
 
 
