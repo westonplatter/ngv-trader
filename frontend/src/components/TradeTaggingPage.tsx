@@ -78,6 +78,7 @@ type Tag = {
   normalized_value: string;
   created_by: string;
   created_at: string;
+  archived_at: string | null;
 };
 
 function formatDate(value: string | null): string {
@@ -128,6 +129,7 @@ export default function TradeTaggingPage() {
 
   const [showNewStrategy, setShowNewStrategy] = useState(false);
   const [newStrategyValue, setNewStrategyValue] = useState("");
+  const [showArchivedStrategies, setShowArchivedStrategies] = useState(false);
   const [showNewGroup, setShowNewGroup] = useState(false);
   const [newGroupName, setNewGroupName] = useState("");
   const [newGroupNotes, setNewGroupNotes] = useState("");
@@ -149,7 +151,11 @@ export default function TradeTaggingPage() {
   );
 
   const loadStrategies = useCallback(async () => {
-    const response = await fetch(`${API_BASE_URL}/strategies?limit=200`);
+    const params = new URLSearchParams({ limit: "200" });
+    if (showArchivedStrategies) params.set("include_archived", "true");
+    const response = await fetch(
+      `${API_BASE_URL}/strategies?${params.toString()}`,
+    );
     if (!response.ok) {
       throw new Error(
         await readErrorMessage(response, "Unable to load strategies"),
@@ -163,7 +169,7 @@ export default function TradeTaggingPage() {
         return current;
       return data[0].id;
     });
-  }, []);
+  }, [showArchivedStrategies]);
 
   const loadGroups = useCallback(async (strategyValue: string | null) => {
     if (!strategyValue) {
@@ -328,6 +334,26 @@ export default function TradeTaggingPage() {
     setSelectedStrategyId(createdStrategy.id);
   };
 
+  const setStrategyArchived = async (strategy: Tag, archived: boolean) => {
+    setError(null);
+    setMessage(null);
+
+    const action = archived ? "archive" : "unarchive";
+    const response = await fetch(
+      `${API_BASE_URL}/strategies/${strategy.id}/${action}`,
+      { method: "POST" },
+    );
+
+    if (!response.ok) {
+      throw new Error(
+        await readErrorMessage(response, `Unable to ${action} strategy`),
+      );
+    }
+
+    setMessage(archived ? "Archived strategy." : "Unarchived strategy.");
+    await loadStrategies();
+  };
+
   const createGroup = async () => {
     if (!selectedStrategyId) {
       setError("Select a strategy before creating a trade group.");
@@ -476,12 +502,24 @@ export default function TradeTaggingPage() {
         <section className="rounded border border-gray-200 bg-white p-3">
           <div className="mb-3 flex items-center justify-between">
             <h3 className="text-sm font-semibold">Strategies</h3>
-            <button
-              onClick={() => setShowNewStrategy(!showNewStrategy)}
-              className="rounded border border-gray-300 px-2 py-0.5 text-xs text-gray-600 hover:bg-gray-50"
-            >
-              {showNewStrategy ? "Cancel" : "+ New"}
-            </button>
+            <div className="flex items-center gap-2">
+              <label className="flex items-center gap-1 text-xs text-gray-500">
+                <input
+                  type="checkbox"
+                  checked={showArchivedStrategies}
+                  onChange={(event) =>
+                    setShowArchivedStrategies(event.target.checked)
+                  }
+                />
+                Show archived
+              </label>
+              <button
+                onClick={() => setShowNewStrategy(!showNewStrategy)}
+                className="rounded border border-gray-300 px-2 py-0.5 text-xs text-gray-600 hover:bg-gray-50"
+              >
+                {showNewStrategy ? "Cancel" : "+ New"}
+              </button>
+            </div>
           </div>
 
           {showNewStrategy && (
@@ -524,21 +562,48 @@ export default function TradeTaggingPage() {
             className="space-y-1 overflow-y-auto pr-1"
             style={{ maxHeight: "calc(100vh - 280px)" }}
           >
-            {strategies.map((strategy) => (
-              <li key={strategy.id}>
-                <button
-                  type="button"
-                  className={`w-full rounded border px-2 py-2 text-left text-sm ${
-                    selectedStrategyId === strategy.id
-                      ? "border-blue-300 bg-blue-50 text-blue-900"
-                      : "border-gray-200 hover:bg-gray-50"
-                  }`}
-                  onClick={() => setSelectedStrategyId(strategy.id)}
-                >
-                  <p className="font-medium">{strategy.value}</p>
-                </button>
-              </li>
-            ))}
+            {strategies.map((strategy) => {
+              const isArchived = strategy.archived_at !== null;
+              return (
+                <li key={strategy.id} className="group relative">
+                  <button
+                    type="button"
+                    className={`w-full rounded border px-2 py-2 pr-16 text-left text-sm ${
+                      selectedStrategyId === strategy.id
+                        ? "border-blue-300 bg-blue-50 text-blue-900"
+                        : "border-gray-200 hover:bg-gray-50"
+                    } ${isArchived ? "opacity-60" : ""}`}
+                    onClick={() => setSelectedStrategyId(strategy.id)}
+                  >
+                    <p className="font-medium">
+                      {strategy.value}
+                      {isArchived && (
+                        <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-normal text-amber-800">
+                          Archived
+                        </span>
+                      )}
+                    </p>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void setStrategyArchived(strategy, !isArchived).catch(
+                        (err: unknown) => {
+                          setError(
+                            err instanceof Error
+                              ? err.message
+                              : "Failed to update strategy.",
+                          );
+                        },
+                      );
+                    }}
+                    className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded border border-gray-200 bg-white px-1.5 py-0.5 text-[10px] text-gray-500 opacity-0 hover:bg-gray-50 group-hover:opacity-100"
+                  >
+                    {isArchived ? "Unarchive" : "Archive"}
+                  </button>
+                </li>
+              );
+            })}
             {strategies.length === 0 && (
               <li className="rounded border border-dashed border-gray-300 px-2 py-3 text-xs text-gray-500">
                 No strategies yet.
@@ -759,8 +824,11 @@ export default function TradeTaggingPage() {
                         ? null
                         : (totalUnrealizedPnl ?? 0) + (totalRealizedPnl ?? 0);
                     let capital: number | null = null;
+                    let optionsCapital: number | null = null;
+                    let equityCapital: number | null = null;
                     if (openPositions.length > 0) {
-                      let sum = 0;
+                      let optionsSum = 0;
+                      let equitySum = 0;
                       let allHaveMultiplier = true;
                       for (const pos of openPositions) {
                         const mult =
@@ -771,9 +839,19 @@ export default function TradeTaggingPage() {
                           allHaveMultiplier = false;
                           break;
                         }
-                        sum += Math.abs(pos.avg_cost * pos.position) * mult;
+                        const posCapital =
+                          Math.abs(pos.avg_cost * pos.position) * mult;
+                        if (pos.sec_type === "OPT" || pos.sec_type === "FOP") {
+                          optionsSum += posCapital;
+                        } else {
+                          equitySum += posCapital;
+                        }
                       }
-                      if (allHaveMultiplier && sum > 0) capital = sum;
+                      if (allHaveMultiplier && optionsSum + equitySum > 0) {
+                        optionsCapital = optionsSum;
+                        equityCapital = equitySum;
+                        capital = optionsSum + equitySum;
+                      }
                     }
                     const fmt = (v: number | null) =>
                       v == null
@@ -812,9 +890,20 @@ export default function TradeTaggingPage() {
                         </span>
                       </div>
                     );
+                    const subRow = (label: string, v: number | null) => (
+                      <div className="grid grid-cols-[7rem_6rem_5rem] items-baseline">
+                        <span className="pl-3 text-gray-400">{label}:</span>
+                        <span className="text-right font-medium text-gray-600">
+                          {fmt(v)}
+                        </span>
+                        <span />
+                      </div>
+                    );
                     return (
                       <div className="flex flex-col gap-0.5 rounded border border-gray-200 bg-gray-50 px-3 py-1.5 text-xs">
                         {row("Capital invested", capital, false, false)}
+                        {subRow("Options capital", optionsCapital)}
+                        {subRow("Equity capital", equityCapital)}
                         {row("Total PnL", totalPnl, true, true)}
                         {row("Unrealized PnL", totalUnrealizedPnl, true, true)}
                         {row("Realized PnL", totalRealizedPnl, true, true)}

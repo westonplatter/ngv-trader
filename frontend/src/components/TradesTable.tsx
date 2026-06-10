@@ -586,6 +586,8 @@ export default function TradesTable() {
         "24h": 24,
         "3d": 72,
         "7d": 168,
+        "30d": 720,
+        "90d": 2160,
       };
       const hours = hoursMap[timeRange];
       if (hours) {
@@ -739,6 +741,8 @@ export default function TradesTable() {
           { id: "24h", label: "24h" },
           { id: "3d", label: "3d" },
           { id: "7d", label: "7d" },
+          { id: "30d", label: "30d" },
+          { id: "90d", label: "90d" },
         ].map((opt) => (
           <button
             key={opt.id}
