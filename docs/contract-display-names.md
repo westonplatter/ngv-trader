@@ -181,9 +181,10 @@ the individual contract fields (`strike`, `right`, `trading_class`,
 
 ## Gap: Trade Executions
 
-`trade_executions` does not have dedicated contract columns. Display names
-are extracted from the `raw` JSON, which limits formatting to whatever IBKR
-puts in `localSymbol`. If `spec-first-class-spread-fields.md` adds
-`sec_type` to `trade_executions`, and if `con_id` is also added, the
-executions display could join to the `contracts` table and use the full
-`contract_display_name()` method for richer output.
+The trades router still derives execution display names from the `raw` JSON via
+`_contract_display_from_raw()`, which limits formatting to whatever IBKR puts in
+`localSymbol`. `trade_executions` now persists `sec_type` and `con_id` columns
+(see [trades-and-executions-sync.md](trades-and-executions-sync.md)), so the read
+path *could* join `con_id` → `contracts` and use the full
+`contract_display_name()` for richer per-leg labels — but that wiring is not done
+yet.

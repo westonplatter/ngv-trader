@@ -58,7 +58,7 @@ The table is designed to hold Futures, Equities, Options, and Future Options. Al
 
 ### Job Type: `contracts.sync`
 
-Handled by `handle_contracts_sync()` in `scripts/work_jobs.py`. Defaults to syncing CL futures from NYMEX. Payload can include custom specs:
+Handled by `handle_contracts_sync()` in `src/workers/jobs.py` (the `scripts/work_jobs.py` entrypoint is a thin shim). Defaults to syncing CL futures from NYMEX. Payload can include custom specs:
 
 ```json
 {
@@ -94,5 +94,6 @@ The agent **never imports `ib_async`**. All IB interaction happens in `worker:jo
 | `src/services/contract_sync.py`                          | IB -> DB sync logic                                                     |
 | `src/services/cl_contracts.py`                           | Pure utility functions (expiry parsing, month formatting)               |
 | `src/services/jobs.py`                                   | Job type constants                                                      |
-| `scripts/work_jobs.py`                                   | Job handlers for `positions.sync`, `contracts.sync`, and watchlist jobs |
+| `src/workers/jobs.py`                                    | Job handlers (`contracts.sync`, sync, watchlist, market-data)           |
+| `scripts/work_jobs.py`                                   | `worker:jobs` entrypoint shim                                           |
 | `src/services/tradebot_agent.py`                         | Agent tools (reads DB, enqueues jobs, never touches IB)                 |

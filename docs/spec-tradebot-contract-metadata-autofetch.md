@@ -1,5 +1,12 @@
 # Spec: Tradebot Contract Metadata Auto-Fetch
 
+> **Status: PARTIALLY IMPLEMENTED (as of 2026-06-06).** On-demand fetch works in
+> informational flows — `lookup_contract` and `add_watch_list_instrument` fall
+> back to an IBKR fetch on a cache miss (`find_contracts_with_fallback()` in
+> `src/services/contract_lookup.py`). **Not yet built:** auto-fetch + metadata
+> status reporting in the order preview path, and scheduled background freshness
+> for core symbols (CL/MCL/NG). The remainder of this spec covers that gap.
+
 ## Purpose
 
 Ensure Tradebot handles contract metadata upkeep behind the scenes, while informing the user when metadata is being fetched for their request.

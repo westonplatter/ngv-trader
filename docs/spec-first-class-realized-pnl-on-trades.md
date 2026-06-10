@@ -1,5 +1,12 @@
 # Spec: First-Class Realized PnL on Trades
 
+> **Status: NOT IMPLEMENTED (as of 2026-06-06).** Realized PnL is currently
+> computed on read by parsing `trade_executions.raw`
+> (`_execution_realized_pnl()` / `_trade_realized_pnl_from_executions()` in
+> `src/api/routers/trades.py`). The response schemas already expose
+> `realized_pnl`, but no DB columns, migration, sync-time population, or backfill
+> exist yet. This spec proposes making it first-class.
+
 ## Purpose
 
 Make IBKR realized PnL a first-class field on both `trade_executions` and `trades` so execution-level PnL is queryable in SQL and trade-level PnL is available without reparsing JSON on every read.
