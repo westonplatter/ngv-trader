@@ -8,11 +8,11 @@ queues. Two workers exist.
 | `worker:jobs` | `scripts/work_jobs.py` | `jobs` table | Active |
 | `worker:orders` | `scripts/work_order_queue.py` | `orders` table | Scaffold only — **submission is disabled** |
 
-Start commands (run under `op run` to resolve `op://` secrets):
+Start commands:
 
 ```bash
-ENV=dev task worker:jobs
-ENV=dev task worker:orders
+task worker:jobs
+task worker:orders
 ```
 
 ## Jobs worker (`worker:jobs`)

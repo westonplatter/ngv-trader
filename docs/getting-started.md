@@ -38,6 +38,7 @@ Install these before proceeding:
 | Bun                    | 1.0+     | [bun.sh](https://bun.sh/)                                                           |
 | PostgreSQL             | 14+      | [postgresql.org](https://www.postgresql.org/download/) or `brew install postgresql` |
 | Task                   | latest   | [taskfile.dev](https://taskfile.dev/docs/installation)                              |
+| 1Password CLI (`op`)   | latest   | [developer.1password.com](https://developer.1password.com/docs/cli/get-started/) — required; all `task` commands embed `op run` |
 | IBKR TWS or IB Gateway | optional | [interactivebrokers.com](https://www.interactivebrokers.com/en/trading/tws.php)     |
 
 ## 1. Clone and Install Dependencies
@@ -109,14 +110,13 @@ DB_PASSWORD=op://MyVault/ngtrader-db/password
 BROKER_TWS_PORT=op://MyVault/ibkr/tws-port
 ```
 
-To resolve `op://` references, wrap any command with `op run`:
+To resolve `op://` references, wrap scripts that don't use the task runner directly:
 
 ```bash
-op run --env-file=.env.dev -- task api
 op run --env-file=.env.dev -- uv run python scripts/setup_db.py --env dev
 ```
 
-`op run` resolves the references and injects the real values as environment variables before the inner command starts. All `task` commands work with or without the `op run` wrapper — it's your choice.
+`op run` resolves the references and injects the real values as environment variables before the inner command starts. All `task` commands (e.g. `task api`, `task worker:jobs`) already embed `op run` internally — run them directly.
 
 See [secrets-using-1password.md](secrets-using-1password.md) for details.
 
@@ -240,14 +240,17 @@ See [workers.md](workers.md) for worker architecture details.
 
 ### Pages
 
-| Page            | URL           | What it does                                              |
-| --------------- | ------------- | --------------------------------------------------------- |
-| **Tradebot**    | `/tradebot`   | AI chat interface — ask about positions, trigger syncs    |
-| **Accounts**    | `/accounts`   | View IBKR accounts and set display aliases                |
-| **Positions**   | `/positions`  | View current holdings with filters, trigger position sync |
-| **Orders**      | `/orders`     | View synced orders and track fill status                  |
-| **Trades**      | `/trades`     | View executed trade history and fill details              |
-| **Watch Lists** | `/watchlists` | Create watchlists, add instruments, view live quotes      |
+| Page            | URL            | What it does                                              |
+| --------------- | -------------- | --------------------------------------------------------- |
+| **Tradebot**    | `/tradebot`    | AI chat interface — ask about positions, trigger syncs    |
+| **Accounts**    | `/accounts`    | View IBKR accounts and set display aliases                |
+| **Positions**   | `/positions`   | View current holdings with filters, trigger position sync |
+| **Orders**      | `/orders`      | View synced orders and track fill status                  |
+| **Trades**      | `/trades`      | View executed trade history and fill details              |
+| **Tagging**     | `/tagging`     | Organize executions into trade groups with strategy tags  |
+| **Watch Lists** | `/watchlists`  | Create watchlists, add instruments, view live quotes      |
+| **Market Data** | `/market-data` | Monitor futures and options market data                   |
+| **Structures**  | `/structures`  | Build and price options structures; view expected PnL     |
 
 ### Common workflows
 
@@ -287,13 +290,6 @@ task migrate:new -- "description"  # Create a new migration
 task worker:jobs       # Start jobs worker (position sync, quotes)
 task validate          # Check env file, Postgres, migrations, TWS
 task validate -- --no-tws     # Skip TWS connectivity check
-```
-
-To use 1Password, wrap any task command:
-
-```bash
-op run --env-file=.env.dev -- task api
-op run --env-file=.env.dev -- task worker:jobs
 ```
 
 To target production:

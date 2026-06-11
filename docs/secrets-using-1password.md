@@ -37,18 +37,20 @@ When you run a command with `op run --env-file=<file>`, the 1Password CLI:
 
 ```bash
 # Dev
-op run --env-file=.env.dev -- uv run python scripts/example_env_vars.py --env dev
+op run --env-file=.env.dev -- uv run python scripts/setup_db.py --env dev
 
 # Prod
-op run --env-file=.env.prod -- uv run python scripts/example_env_vars.py --env prod
+op run --env-file=.env.prod -- uv run python scripts/setup_db.py --env prod
 ```
+
+Task commands (`task api`, `task worker:jobs`, etc.) already embed `op run` internally — run them directly without wrapping.
 
 ### Running without 1Password (plain dotenv only)
 
-If you don't need 1Password resolution (e.g., no `op://` refs in your env file), you can run directly:
+If you don't need 1Password resolution (e.g., no `op://` refs in your env file), you can run scripts directly:
 
 ```bash
-uv run python scripts/example_env_vars.py --env dev
+uv run python scripts/setup_db.py --env dev
 ```
 
 Note: any `op://` values will remain as literal strings in this case.
@@ -62,8 +64,6 @@ from dotenv import load_dotenv
 
 load_dotenv(".env.dev")  # no override — respects existing env vars
 ```
-
-See `scripts/example_env_vars.py` for a full working example.
 
 ## Adding new secrets
 
