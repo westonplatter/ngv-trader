@@ -111,7 +111,10 @@ Read API (`src/api/routers/trades.py`):
 - `GET /api/v1/trades`
 - `GET /api/v1/trades/{trade_id}`
 - `GET /api/v1/trades/{trade_id}/executions`
-- `POST /api/v1/trades/sync/flex-query`
+- `POST /api/v1/trades/sync/flex-query` — accepts a fixed lookback (`days`),
+  an explicit `start_date`/`end_date`, or `since_last_trade: true` (derives the
+  window from the latest execution date across all accounts through the
+  previous business day; the response echoes the computed `start_date`/`end_date`).
 
 Responses expose `data_source`, `flex_transaction_id`, `sec_type`, `exec_role`.
 Realized PnL is currently computed on read from `raw` (see
