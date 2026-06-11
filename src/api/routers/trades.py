@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
-from sqlalchemy import case, select
+from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
 from src.api.deps import get_db
@@ -16,6 +16,7 @@ from src.services.jobs import (
     JOB_TYPE_TRADES_SYNC_TWS,
     enqueue_job,
 )
+from src.services.trade_sync_flexquery import previous_business_day
 from src.utils.contract_display import contract_display_name
 
 router = APIRouter()
@@ -391,6 +392,7 @@ class FlexTradeSyncRequest(BaseModel):
     account_code: str | None = None
     start_date: str | None = None
     end_date: str | None = None
+    since_last_trade: bool = False
     max_attempts: int = 3
 
 
@@ -398,6 +400,8 @@ class TradeSyncResponse(BaseModel):
     job_id: int
     job_type: str
     status: str
+    start_date: str | None = None
+    end_date: str | None = None
 
 
 @router.get("/trades", response_model=list[TradeResponse])
@@ -827,9 +831,34 @@ def enqueue_flex_trades_sync(
     payload: dict[str, object] = {"days": body.days}
     if body.account_code:
         payload["account_code"] = body.account_code
-    if body.start_date and body.end_date:
-        payload["start_date"] = body.start_date
-        payload["end_date"] = body.end_date
+    start_date_str: str | None = None
+    end_date_str: str | None = None
+    if body.since_last_trade:
+        latest_executed_at = max(
+            (
+                value
+                for value in (
+                    db.execute(select(func.max(TradeExecution.executed_at))).scalar(),
+                    db.execute(select(func.max(Trade.last_executed_at))).scalar(),
+                )
+                if value is not None
+            ),
+            default=None,
+        )
+        if latest_executed_at is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No existing trades found to sync from; use a fixed lookback sync instead.",
+            )
+        end_date = previous_business_day()
+        start_date_str = min(latest_executed_at.date(), end_date).isoformat()
+        end_date_str = end_date.isoformat()
+    elif body.start_date and body.end_date:
+        start_date_str = body.start_date
+        end_date_str = body.end_date
+    if start_date_str and end_date_str:
+        payload["start_date"] = start_date_str
+        payload["end_date"] = end_date_str
     job = enqueue_job(
         session=db,
         job_type=JOB_TYPE_TRADES_SYNC_FLEXQUERY,
@@ -843,4 +872,6 @@ def enqueue_flex_trades_sync(
         job_id=job.id,
         job_type=job.job_type,
         status=job.status,
+        start_date=start_date_str,
+        end_date=end_date_str,
     )

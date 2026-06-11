@@ -625,7 +625,10 @@ export default function TradesTable() {
     return map;
   }, [filteredRows]);
 
-  const kickOffTradesSync = async (lookbackDays: number, label: string) => {
+  const kickOffTradesSync = async (
+    label: string,
+    options: { days?: number; sinceLastTrade?: boolean },
+  ) => {
     setSyncing(true);
     setSyncMessage(null);
     setSyncError(null);
@@ -637,15 +640,25 @@ export default function TradesTable() {
           source: "manual-ui",
           request_text: `${label} (flex query) from Trades page.`,
           max_attempts: 3,
-          days: lookbackDays,
+          ...(options.days !== undefined ? { days: options.days } : {}),
+          ...(options.sinceLastTrade ? { since_last_trade: true } : {}),
         }),
       });
       if (!res.ok) {
         throw new Error(await readErrorMessage(res, "Unable to queue sync"));
       }
-      const data: { job_id: number; status: string } = await res.json();
+      const data: {
+        job_id: number;
+        status: string;
+        start_date?: string | null;
+        end_date?: string | null;
+      } = await res.json();
+      const rangeNote =
+        data.start_date && data.end_date
+          ? ` Syncing ${data.start_date} → ${data.end_date}.`
+          : "";
       setSyncMessage(
-        `Queued ${label.toLowerCase()} job #${data.job_id} (${data.status}).`,
+        `Queued ${label.toLowerCase()} job #${data.job_id} (${data.status}).${rangeNote}`,
       );
       window.setTimeout(() => {
         void loadExecutions().catch(() => {});
@@ -679,7 +692,7 @@ export default function TradesTable() {
         <div className="flex items-center gap-2">
           <button
             onClick={() => {
-              void kickOffTradesSync(1, "Quick sync");
+              void kickOffTradesSync("Quick sync", { days: 1 });
             }}
             disabled={syncing}
             className="rounded border border-blue-300 px-3 py-1 text-sm text-blue-700 hover:bg-blue-50 disabled:opacity-50"
@@ -688,7 +701,7 @@ export default function TradesTable() {
           </button>
           <button
             onClick={() => {
-              void kickOffTradesSync(7, "Full sync");
+              void kickOffTradesSync("Full sync", { days: 7 });
             }}
             disabled={syncing}
             className="rounded border border-blue-300 px-3 py-1 text-sm text-blue-700 hover:bg-blue-50 disabled:opacity-50"
@@ -697,12 +710,24 @@ export default function TradesTable() {
           </button>
           <button
             onClick={() => {
-              void kickOffTradesSync(30, "Extended sync");
+              void kickOffTradesSync("Extended sync", { days: 30 });
             }}
             disabled={syncing}
             className="rounded border border-blue-300 px-3 py-1 text-sm text-blue-700 hover:bg-blue-50 disabled:opacity-50"
           >
             {syncing ? "Queueing..." : "Extended Sync (30d)"}
+          </button>
+          <button
+            onClick={() => {
+              void kickOffTradesSync("Sync since last trade", {
+                sinceLastTrade: true,
+              });
+            }}
+            disabled={syncing}
+            title="Sync from the most recent trade date across all accounts through today"
+            className="rounded border border-blue-300 px-3 py-1 text-sm text-blue-700 hover:bg-blue-50 disabled:opacity-50"
+          >
+            {syncing ? "Queueing..." : "Sync Since Last Trade"}
           </button>
         </div>
       </div>
