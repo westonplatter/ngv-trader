@@ -4,8 +4,6 @@
 
 New to the project? Follow the [Getting Started guide](docs/getting-started.md) for a full walkthrough covering prerequisites, database setup, IBKR configuration, and running the app.
 
-For a quick install reference, see [docs/install-python-and-frontend.md](docs/install-python-and-frontend.md).
-
 **You assume all risk.**
 
 ## License
