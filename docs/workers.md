@@ -11,8 +11,8 @@ queues. Two workers exist.
 Start commands:
 
 ```bash
-task worker:jobs
-task worker:orders
+task worker:jobs ENV=dev
+task worker:orders ENV=dev
 ```
 
 ## Jobs worker (`worker:jobs`)
