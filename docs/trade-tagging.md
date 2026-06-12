@@ -117,6 +117,7 @@ Implemented endpoints:
 7. `POST /api/v1/trade-groups/{trade_group_id}/executions:unassign`
 8. `POST /api/v1/trade-executions/{execution_id}/trade-group:reassign`
 9. `GET /api/v1/trade-groups/{trade_group_id}/timeline`
+10. `GET /api/v1/trade-groups/{trade_group_id}/executions`
 
 #### `GET /trade-groups`
 
@@ -190,11 +191,13 @@ Implemented endpoints:
 5. `GET /api/v1/strategies`
 6. `POST /api/v1/strategies`
 7. `PATCH /api/v1/strategies/{strategy_id}`
-8. `DELETE /api/v1/strategies/{strategy_id}`
-9. `GET /api/v1/themes`
-10. `POST /api/v1/themes`
-11. `PATCH /api/v1/themes/{theme_id}`
-12. `DELETE /api/v1/themes/{theme_id}`
+8. `POST /api/v1/strategies/{strategy_id}/archive`
+9. `POST /api/v1/strategies/{strategy_id}/unarchive`
+10. `DELETE /api/v1/strategies/{strategy_id}`
+11. `GET /api/v1/themes`
+12. `POST /api/v1/themes`
+13. `PATCH /api/v1/themes/{theme_id}`
+14. `DELETE /api/v1/themes/{theme_id}`
 
 Current behavior:
 
