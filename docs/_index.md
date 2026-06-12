@@ -49,6 +49,3 @@ Each carries a status banner; none is fully shipped.
 | [spec-tradebot-contract-metadata-autofetch.md](spec-tradebot-contract-metadata-autofetch.md) | Partial — on-demand fetch works; order-flow + background freshness pending |
 | [spec-worker-order-recovery.md](spec-worker-order-recovery.md) | Partial scaffold — submission disabled; crash-safety fields pending |
 
-> Other subdirectories: `plans/` (dated implementation plans) and
-> `quorum-sessions/` (planning session artifacts) are kept as historical records
-> and are not indexed here.

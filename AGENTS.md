@@ -100,6 +100,17 @@ Exits 1 on failure.
 - Always place python imports at top of file
 - Never import packages in functions
 
+### Package Installation Cooldown
+
+Before installing any new package with `uv add`, observe a **14-day cooldown**:
+
+1. Check when the package was last released (PyPI release date).
+2. If the release is fewer than 14 days old, do not install it — wait for the cooldown to pass.
+3. Applies to direct dependencies only; transitive upgrades pulled in by `uv sync` are exempt.
+4. Note the cooldown and the release date in the PR description when adding a new package.
+
+This prevents ingesting packages with undetected supply-chain issues or breaking changes in the days immediately after release.
+
 ### Principles
 
 1. **Use `uv run python`** - Always execute Python commands via `uv run python ...` to ensure consistent dependency management and virtual environment isolation.

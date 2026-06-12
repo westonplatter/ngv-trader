@@ -11,9 +11,11 @@ queues. Two workers exist.
 Start commands:
 
 ```bash
-task worker:jobs ENV=dev
-task worker:orders ENV=dev
+task worker:jobs
+task worker:orders
 ```
+
+Pass `ENV=prod` to target production: `ENV=prod task worker:jobs`.
 
 ## Jobs worker (`worker:jobs`)
 

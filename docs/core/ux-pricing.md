@@ -41,13 +41,15 @@ When a user selects an option from the catalog that hasn't been qualified yet:
 
 ### API endpoints
 
-| Endpoint                                           | Purpose                                                                                          |
-| -------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| `GET /futures/{symbol}/term-structure`             | Futures months with prices (for D1 legs and spot price)                                          |
-| `GET /futures/{symbol}/chain`                      | Full option chain catalog from `option_chain_meta`, LEFT JOINed to qualified contracts + pricing |
-| `POST /jobs` with `contracts.qualify_and_snapshot` | On-demand: qualify one contract + fetch its price                                                |
-| `POST /jobs` with `market_data.snapshot`           | Fetch price for already-qualified contract                                                       |
-| `POST /pricing-api/expected-pnl`                   | Compute expected PnL time series                                                                 |
+All `/api/v1/*` routes are served by the local FastAPI backend (`:8000`). The `/pricing-api/*` prefix is a Vite dev-server proxy that rewrites to the **nextgenvol service** at `http://localhost:8080/api/v1` — it is not part of the local FastAPI app.
+
+| Endpoint                                           | Service        | Purpose                                                                                          |
+| -------------------------------------------------- | -------------- | ------------------------------------------------------------------------------------------------ |
+| `GET /futures/{symbol}/term-structure`             | FastAPI (:8000) | Futures months with prices (for D1 legs and spot price)                                          |
+| `GET /futures/{symbol}/chain`                      | FastAPI (:8000) | Full option chain catalog from `option_chain_meta`, LEFT JOINed to qualified contracts + pricing |
+| `POST /jobs` with `contracts.qualify_and_snapshot` | FastAPI (:8000) | On-demand: qualify one contract + fetch its price                                                |
+| `POST /jobs` with `market_data.snapshot`           | FastAPI (:8000) | Fetch price for already-qualified contract                                                       |
+| `POST /pricing-api/expected-pnl`                   | nextgenvol (:8080) | Compute expected PnL time series (proxied via Vite; see `vite.config.ts`)                    |
 
 ## Leg Row Interaction
 
