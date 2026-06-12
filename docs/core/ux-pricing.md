@@ -101,4 +101,4 @@ Returns `pnl_records[]` with `(spot_price, days_into_future, value)` tuples, ren
 | `src/models.py` — `OptionChainMeta`                              | Unqualified option chain catalog         |
 | `src/services/contract_sync.py` — `sync_futures_chain`           | Chain sync: IND → FUT → chain metadata   |
 | `src/api/routers/futures.py` — `get_chain`                       | Chain catalog endpoint with pricing JOIN |
-| `scripts/work_jobs.py` — `handle_contracts_qualify_and_snapshot` | On-demand qualify + price fetch          |
+| `src/workers/jobs.py` — `handle_contracts_qualify_and_snapshot`  | On-demand qualify + price fetch          |

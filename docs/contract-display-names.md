@@ -80,7 +80,7 @@ if the local symbol pattern doesn't match.
 
 ## Where Display Names Are Built
 
-### Positions (`src/api/routers/positions.py:94`)
+### Positions (`src/api/routers/positions.py:115`)
 
 Uses `contract_display_name()` with full field set from the `Position` model:
 
@@ -125,7 +125,7 @@ contract_display_name(
 `orders.local_symbol`, `orders.contract_expiry`, `orders.trading_class`,
 `orders.exchange`, plus `contracts.*` via con_id join for richer metadata.
 
-### Watch Lists (`src/api/routers/watch_lists.py:135`)
+### Watch Lists (`src/api/routers/watch_lists.py:152`)
 
 Uses `contract_display_name()` with fields from `WatchListInstrument`:
 
@@ -135,7 +135,7 @@ Uses `contract_display_name()` with fields from `WatchListInstrument`:
 `watch_list_instruments.contract_expiry`,
 `watch_list_instruments.exchange`, `watch_list_instruments.trading_class`
 
-### Trade Executions (`src/api/routers/trades.py:18`)
+### Trade Executions (`src/api/routers/trades.py:111`)
 
 Uses a separate method `_contract_display_from_raw()` because
 `trade_executions` does not have contract columns — the contract info is

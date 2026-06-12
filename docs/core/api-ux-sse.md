@@ -60,7 +60,7 @@ Workers run in a separate process from the API, so they cannot access the in-mem
 
 ### SSE stream endpoint
 
-`GET /api/v1/events/stream?topics=jobs,orders,worker_status`
+`GET /api/v1/events/stream?topics=jobs,orders,worker_status,trades,positions`
 
 One multiplexed endpoint serves all topics. The browser opens a single `EventSource` connection per tab. FastAPI handles keepalive pings (every 15s), `Cache-Control: no-cache`, and `X-Accel-Buffering: no` automatically.
 
@@ -75,11 +75,13 @@ A lightweight async pub/sub broker running inside the API process:
 
 ### Worker notification endpoints
 
-| Endpoint                                   | Purpose                                                  |
-| ------------------------------------------ | -------------------------------------------------------- |
-| `POST /api/v1/events/notify-job`           | Worker sends `{ job_id, event }` after job state changes |
-| `POST /api/v1/events/notify-order`         | Worker sends `{ order_id, event }` after order mutations |
-| `POST /api/v1/events/notify-worker-status` | Worker sends `{ worker_type }` after heartbeat upserts   |
+| Endpoint                                   | Purpose                                                                              |
+| ------------------------------------------ | ------------------------------------------------------------------------------------ |
+| `POST /api/v1/events/notify-job`           | Worker sends `{ job_id, event }` after job state changes                             |
+| `POST /api/v1/events/notify-order`         | Worker sends `{ order_id, event }` after order mutations                             |
+| `POST /api/v1/events/notify-worker-status` | Worker sends `{ worker_type }` after heartbeat upserts                               |
+| `POST /api/v1/events/notify-trades`        | Worker sends coarse hint after `trades.sync.flexquery` completes (triggers re-fetch) |
+| `POST /api/v1/events/notify-positions`     | Worker sends coarse hint after `positions.sync.flexquery` completes (triggers re-fetch) |
 
 The API reads the committed row, builds the enriched response DTO, and publishes to the broadcaster. Notifications are fire-and-forget from the worker side — if the API is unreachable, the UI catches up on the next REST fetch or SSE reconnect.
 
@@ -114,7 +116,7 @@ All events use a consistent envelope:
 
 | Field         | Description                                                |
 | ------------- | ---------------------------------------------------------- |
-| `topic`       | `jobs`, `orders`, or `worker_status`                       |
+| `topic`       | `jobs`, `orders`, `worker_status`, `trades`, or `positions` |
 | `event`       | Semantic event type (see below)                            |
 | `entity_id`   | Row ID, or null for system events                          |
 | `occurred_at` | UTC ISO timestamp                                          |
@@ -123,13 +125,15 @@ All events use a consistent envelope:
 
 ### Event types
 
-| Topic         | Events                                              |
-| ------------- | --------------------------------------------------- |
-| Jobs          | `job.created`, `job.updated`, `job.archived`        |
-| Orders        | `order.created`, `order.updated`, `order.cancelled` |
-| Worker status | `worker.heartbeat`                                  |
+| Topic         | Events                                              | Payload shape                                      |
+| ------------- | --------------------------------------------------- | -------------------------------------------------- |
+| Jobs          | `job.created`, `job.updated`, `job.archived`        | Full `JobResponse` DTO                             |
+| Orders        | `order.created`, `order.updated`, `order.cancelled` | Full `OrderResponse` DTO                           |
+| Worker status | `worker.heartbeat`                                  | `WorkerStatusPayload`                              |
+| Trades        | `trades.changed`                                    | Coarse hint (`{}`) — consumer should re-fetch      |
+| Positions     | `positions.changed`                                 | Coarse hint (`{}`) — consumer should re-fetch      |
 
-Payloads are full response DTOs — the same shape returned by `GET /api/v1/jobs` and `GET /api/v1/orders`. This means SSE rows are drop-in replacements for REST rows with no shape drift.
+`jobs` and `orders` payloads are full response DTOs — drop-in replacements for REST rows with no shape drift. `trades` and `positions` events are coarse signals; `entity_id` is always `null` and the payload is empty (`{}`). Consumers re-fetch the REST snapshot on receipt.
 
 ### Event reference
 
@@ -144,7 +148,9 @@ Payloads are full response DTOs — the same shape returned by `GET /api/v1/jobs
 | `order.created`    | `orders`        | TWS broker sync discovers a new order           | `src/services/order_sync_tws.py`              | `OrderResponse`       |
 | `order.updated`    | `orders`        | TWS broker sync updates an existing order       | `src/services/order_sync_tws.py`              | `OrderResponse`       |
 | `order.cancelled`  | `orders`        | `POST /api/v1/orders/{id}/cancel`               | `src/api/routers/orders.py`                   | `OrderResponse`       |
-| `worker.heartbeat` | `worker_status` | Worker heartbeat upsert (every poll cycle)      | `src/services/worker_heartbeat.py` via notify | `WorkerStatusPayload` |
+| `worker.heartbeat`  | `worker_status` | Worker heartbeat upsert (every poll cycle)                      | `src/services/worker_heartbeat.py` via notify | `WorkerStatusPayload` |
+| `trades.changed`    | `trades`        | `trades.sync.flexquery` job completes                           | `scripts/work_jobs.py` via notify             | `{}` (coarse hint)    |
+| `positions.changed` | `positions`     | `positions.sync.flexquery` job completes                        | `scripts/work_jobs.py` via notify             | `{}` (coarse hint)    |
 
 **Notify path**: Events marked "via notify" originate in the worker process. After committing to Postgres, the worker POSTs to a notification endpoint on the API (`/events/notify-job` or `/events/notify-worker-status`). The API reads the committed row, builds the response DTO, and publishes to the in-memory broadcaster. Events without "via notify" are published directly by the API process after its own `db.commit()`.
 
@@ -167,6 +173,9 @@ Payloads are full response DTOs — the same shape returned by `GET /api/v1/jobs
 | `OrdersSideTable`    | `orders`                                   | 2.5s polling |
 | `MarketDataPage`     | `jobs` (filtered to market data job types) | 3s polling   |
 | `WorkerStatusLights` | `worker_status`                            | 4s polling   |
+| `PositionsTable`     | `positions` (coarse — triggers re-fetch)   | —            |
+| `TradesTable`        | `trades` (coarse — triggers re-fetch)      | —            |
+| `PricingPage`        | `jobs` (filtered to qualify/snapshot types) | —           |
 
 ### Merge rules
 
