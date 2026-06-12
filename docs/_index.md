@@ -32,12 +32,13 @@ banner at the top.
 | [core/ux-actions.md](core/ux-actions.md) | Reusable action patterns: destructive confirmation, save feedback, state model |
 | [core/ux-pricing.md](core/ux-pricing.md) | Pricing page: two-tier contract catalog, on-demand qualification, expected-PnL flow |
 
-## Planning
+## Planning & process
 
 | Doc | What it covers |
 | --- | --- |
 | [planning-spec-format.md](planning-spec-format.md) | Template and conventions for writing a new `spec-*.md` |
 | [planning-agents-quorum.md](planning-agents-quorum.md) | Agent quorum roles used to shape trade-tagging requirements |
+| [doc-review.md](doc-review.md) | Checklist and conventions for reviewing and refining project docs |
 
 ## Open specs (proposed / in progress)
 
