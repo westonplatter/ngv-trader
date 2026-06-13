@@ -175,6 +175,18 @@ Compact, high signal to noise write descriptions optimized for an engineer-to-en
 - State assumptions explicitly when needed.
 - Avoid redundancy.
 
+## Commits
+
+Write every commit as a Conventional Commit so release-please can version and changelog it. Format: `<type>(<scope>): <imperative description>`.
+
+Types (must match `release-please-config.json` `changelog-sections`): `feat`, `fix`, `docs`, `refactor`, `chore`, `perf`, `test`, `ci`, `build`, `style`.
+
+Scope is optional — a short area word like `trades`, `orders`, `api`, `db`, `ux`, `workers`, `deps`. Use `BREAKING CHANGE:` in the body (or `!` after type/scope) for breaking changes.
+
+Rules: lowercase type/scope, imperative mood, no capital after the colon, keep the subject under ~70 chars. Apply this to **each** commit, not just PR titles.
+
+Examples: `feat(trades): add sync-since-last-trade button`, `fix(workers): recover orphaned order jobs`, `docs: cross-check docs against codebase`.
+
 ## Pull Requests
 
 ### Pull Request Description
