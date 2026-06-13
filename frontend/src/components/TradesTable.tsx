@@ -496,6 +496,9 @@ export default function TradesTable() {
   const [highlightedTradeId, setHighlightedTradeId] = useState<number | null>(
     null,
   );
+  const [highlightedSymbol, setHighlightedSymbol] = useState<string | null>(
+    null,
+  );
   const [allTradeGroups, setAllTradeGroups] = useState<TradeGroupResult[]>([]);
 
   const groupLabelById = useMemo(() => {
@@ -678,6 +681,11 @@ export default function TradesTable() {
 
   const toggleHighlight = (tradeId: number) => {
     setHighlightedTradeId((current) => (current === tradeId ? null : tradeId));
+  };
+
+  const toggleSymbolHighlight = (symbol: string | null) => {
+    if (!symbol || symbol === "-") return;
+    setHighlightedSymbol((current) => (current === symbol ? null : symbol));
   };
 
   return (
@@ -864,6 +872,10 @@ export default function TradesTable() {
               const ownsTagCell =
                 tagGroupRowIdByTradeId.get(row.trade_id) === row.id;
               const isHighlighted = highlightedTradeId === row.trade_id;
+              const symbol =
+                row.contract_display ?? row.trade_contract_display_name ?? "-";
+              const isSymbolHighlighted =
+                highlightedSymbol !== null && symbol === highlightedSymbol;
               const role = execRoleBadge(row.exec_role);
               return (
                 <tr
@@ -875,10 +887,16 @@ export default function TradesTable() {
                   <td className="whitespace-nowrap px-3 py-2 text-gray-700">
                     {formatDateTime(row.executed_at)}
                   </td>
-                  <td className="whitespace-nowrap px-3 py-2 font-medium text-gray-800">
-                    {row.contract_display ??
-                      row.trade_contract_display_name ??
-                      "-"}
+                  <td
+                    onDoubleClick={() => toggleSymbolHighlight(symbol)}
+                    title="Double-click to highlight matching contracts"
+                    className={`cursor-pointer select-none whitespace-nowrap px-3 py-2 font-medium ${
+                      isSymbolHighlighted
+                        ? "bg-red-200 text-red-900"
+                        : "text-gray-800"
+                    }`}
+                  >
+                    {symbol}
                   </td>
                   <td className="whitespace-nowrap px-2 py-2 text-xs">
                     <span
