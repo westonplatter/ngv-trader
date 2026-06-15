@@ -207,5 +207,5 @@ All events use a consistent envelope:
 ## Future Considerations
 
 - **Multi-process deployment**: Replace the in-memory broadcaster with Redis pub/sub or Postgres LISTEN/NOTIFY.
-- **Additional topics**: Trades, positions, and watchlists could be added as new SSE topics using the same infrastructure.
+- **Additional topics**: Watchlists could be added as a new SSE topic using the same infrastructure.
 - **Event replay**: Add `Last-Event-ID` support with a short event log if missed-update problems emerge.

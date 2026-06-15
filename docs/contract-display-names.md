@@ -102,7 +102,7 @@ display_name = contract_display_name(
 `positions.local_symbol`, `positions.right`, `positions.strike`,
 `positions.last_trade_date`, `positions.exchange`, `positions.trading_class`
 
-### Orders (`src/api/routers/orders.py:184`)
+### Orders (`src/api/routers/orders.py:186`)
 
 Uses `contract_display_name()` with fields from the `Order` model,
 supplemented by contract ref lookups when available:
@@ -142,7 +142,7 @@ Uses a separate method `_contract_display_from_raw()` because
 stored in the `raw` JSON field.
 
 **Method:** `_contract_display_from_raw()`
-**Location:** `src/api/routers/trades.py:18`
+**Location:** `src/api/routers/trades.py:111`
 
 ```python
 def _contract_display_from_raw(raw: dict | None) -> str | None:
