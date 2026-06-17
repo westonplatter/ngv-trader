@@ -195,7 +195,7 @@ All events use a consistent envelope:
 | `src/services/order_sync_tws.py`   | Publishes `order.created` / `order.updated` after broker sync commit             |
 | `src/services/worker_heartbeat.py` | Publishes `worker.heartbeat` after each heartbeat upsert                         |
 | `scripts/work_jobs.py`             | Calls `POST /events/notify-job` after job state transitions                      |
-| `frontend/src/lib/events.ts`       | Shared EventSource client with `useSSE` React hook (**file missing** — components import from this path but the file does not exist on disk; needs to be created) |
+| `frontend/src/lib/events.ts`       | Shared EventSource client with `useSSE` React hook                                                                                                               |
 
 ## Resilience
 
