@@ -288,10 +288,29 @@ export default function PositionsTable() {
     setDteMaxFilter("");
   };
 
+  const isSortedBy = (column: SortColumn): boolean =>
+    sortColumn === column && sortDirection !== "none";
+
   const sortIndicatorFor = (column: SortColumn): string => {
-    if (sortColumn !== column || sortDirection === "none") return ">";
-    if (sortDirection === "asc") return "^";
-    return "v";
+    if (sortColumn !== column || sortDirection === "none") return "↕";
+    if (sortDirection === "asc") return "↑";
+    return "↓";
+  };
+
+  const SORTABLE_KEYS: SortColumn[] = [
+    "symbol",
+    "local_symbol",
+    "trading_class",
+    "option_expiry_date",
+    "dte",
+  ];
+
+  const ariaSortFor = (
+    column: keyof Position,
+  ): "ascending" | "descending" | "none" | undefined => {
+    if (!SORTABLE_KEYS.includes(column as SortColumn)) return undefined;
+    if (!isSortedBy(column as SortColumn)) return "none";
+    return sortDirection === "asc" ? "ascending" : "descending";
   };
 
   const toggleSort = (column: SortColumn) => {
@@ -395,6 +414,7 @@ export default function PositionsTable() {
               {COLUMNS.map((col) => (
                 <th
                   key={col.key}
+                  aria-sort={ariaSortFor(col.key)}
                   className="px-3 py-2 font-semibold text-gray-700 whitespace-nowrap"
                 >
                   {col.key === "symbol" ||
@@ -408,8 +428,17 @@ export default function PositionsTable() {
                       className="inline-flex items-center gap-1 text-gray-700 hover:text-gray-900"
                       title={`Cycle ${col.label} sort`}
                     >
-                      <span>{sortIndicatorFor(col.key as SortColumn)}</span>
                       <span>{col.label}</span>
+                      <span
+                        aria-hidden="true"
+                        className={
+                          isSortedBy(col.key as SortColumn)
+                            ? "text-gray-900"
+                            : "text-gray-400"
+                        }
+                      >
+                        {sortIndicatorFor(col.key as SortColumn)}
+                      </span>
                     </button>
                   ) : (
                     col.label
@@ -438,8 +467,9 @@ export default function PositionsTable() {
                           onClick={() => setSymbolFilter("")}
                           className="rounded border border-gray-300 px-1 text-xs text-gray-600 hover:bg-gray-100"
                           title="Clear symbol filter"
+                          aria-label="Clear symbol filter"
                         >
-                          x
+                          ×
                         </button>
                       ) : null}
                     </div>
@@ -458,8 +488,9 @@ export default function PositionsTable() {
                           onClick={() => setLocalSymbolFilter("")}
                           className="rounded border border-gray-300 px-1 text-xs text-gray-600 hover:bg-gray-100"
                           title="Clear local symbol filter"
+                          aria-label="Clear local symbol filter"
                         >
-                          x
+                          ×
                         </button>
                       ) : null}
                     </div>
@@ -478,8 +509,9 @@ export default function PositionsTable() {
                           onClick={() => setSecTypeFilter("")}
                           className="rounded border border-gray-300 px-1 text-xs text-gray-600 hover:bg-gray-100"
                           title="Clear sec type filter"
+                          aria-label="Clear sec type filter"
                         >
-                          x
+                          ×
                         </button>
                       ) : null}
                     </div>
@@ -508,8 +540,9 @@ export default function PositionsTable() {
                           }}
                           className="rounded border border-gray-300 px-1 text-xs text-gray-600 hover:bg-gray-100"
                           title="Clear DTE filters"
+                          aria-label="Clear DTE filters"
                         >
-                          x
+                          ×
                         </button>
                       ) : null}
                     </div>
