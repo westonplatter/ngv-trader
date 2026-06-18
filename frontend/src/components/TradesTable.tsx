@@ -125,6 +125,12 @@ function TagGroupCell({
     flipUp: boolean;
   } | null>(null);
   const [highlightedIndex, setHighlightedIndex] = useState(0);
+  // Optimistic override applied as soon as the user picks/clears a group, before
+  // the backend confirms. `id === null` represents an optimistic unassign.
+  const [optimisticOverride, setOptimisticOverride] = useState<{
+    id: number | null;
+    label: string | null;
+  } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -239,9 +245,30 @@ function TagGroupCell({
     itemRefs.current[highlightedIndex]?.scrollIntoView({ block: "nearest" });
   }, [highlightedIndex]);
 
-  const assignToGroup = async (groupId: number) => {
-    setAssigning(true);
+  // Once the backend-confirmed prop catches up to (or matches) the optimistic
+  // target, drop the override so we render the authoritative server state.
+  useEffect(() => {
+    if (optimisticOverride && assignedTradeGroupId === optimisticOverride.id) {
+      setOptimisticOverride(null);
+    }
+  }, [assignedTradeGroupId, optimisticOverride]);
+
+  // The group currently shown to the user: the optimistic value when one is
+  // pending, otherwise the backend-confirmed prop.
+  const effectiveGroupId = optimisticOverride
+    ? optimisticOverride.id
+    : assignedTradeGroupId;
+  const effectiveLabel = optimisticOverride
+    ? optimisticOverride.label
+    : groupLabel;
+
+  const assignToGroup = async (group: TradeGroupResult) => {
+    const previousOverride = optimisticOverride;
+    // Apply the label immediately and close the dropdown so the UI feels instant.
+    setOptimisticOverride({ id: group.id, label: tradeGroupLabel(group) });
     setError(null);
+    closeSearch();
+    setAssigning(true);
     try {
       const execResponse = await fetch(
         `${API_BASE_URL}/trades/${tradeId}/executions`,
@@ -258,7 +285,7 @@ function TagGroupCell({
       }
 
       const assignResponse = await fetch(
-        `${API_BASE_URL}/trade-groups/${groupId}/executions:assign`,
+        `${API_BASE_URL}/trade-groups/${group.id}/executions:assign`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -277,9 +304,12 @@ function TagGroupCell({
         );
       }
 
-      closeSearch();
+      // Confirmed — refresh parent data. The clear-override effect drops the
+      // optimistic value once the prop reflects the assignment.
       onAssigned();
     } catch (err) {
+      // Revert to whatever was shown before this attempt and surface the error.
+      setOptimisticOverride(previousOverride);
       setError(err instanceof Error ? err.message : "Assignment failed");
     } finally {
       setAssigning(false);
@@ -287,9 +317,13 @@ function TagGroupCell({
   };
 
   const unassignFromGroup = async () => {
-    if (!assignedTradeGroupId) return;
-    setAssigning(true);
+    if (!effectiveGroupId) return;
+    const groupId = effectiveGroupId;
+    const previousOverride = optimisticOverride;
+    // Optimistically clear the label, reverting if the request fails.
+    setOptimisticOverride({ id: null, label: null });
     setError(null);
+    setAssigning(true);
     try {
       const execResponse = await fetch(
         `${API_BASE_URL}/trades/${tradeId}/executions`,
@@ -303,7 +337,7 @@ function TagGroupCell({
       const executionIds = tradeExecutions.map((ex) => ex.id);
 
       const unassignResponse = await fetch(
-        `${API_BASE_URL}/trade-groups/${assignedTradeGroupId}/executions:unassign`,
+        `${API_BASE_URL}/trade-groups/${groupId}/executions:unassign`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -323,6 +357,7 @@ function TagGroupCell({
 
       onAssigned();
     } catch (err) {
+      setOptimisticOverride(previousOverride);
       setError(err instanceof Error ? err.message : "Unassign failed");
     } finally {
       setAssigning(false);
@@ -330,25 +365,25 @@ function TagGroupCell({
   };
 
   if (mode === "display") {
-    if (assignedTradeGroupId) {
+    if (effectiveGroupId) {
       return (
         <div className="flex items-center gap-1">
           <span
-            className="rounded bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-800 cursor-pointer hover:bg-blue-200"
+            className={`rounded bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-800 cursor-pointer hover:bg-blue-200 ${
+              assigning ? "opacity-60" : ""
+            }`}
             onClick={(e) => {
               e.stopPropagation();
               openSearch();
             }}
-            title="Click to reassign"
+            title={assigning ? "Saving…" : "Click to reassign"}
           >
-            {groupLabel ?? `Group #${assignedTradeGroupId}`}
+            {effectiveLabel ?? `Group #${effectiveGroupId}`}
           </span>
           <button
             onClick={(e) => {
               e.stopPropagation();
-              if (
-                window.confirm(`Unassign from group #${assignedTradeGroupId}?`)
-              ) {
+              if (window.confirm(`Unassign from group #${effectiveGroupId}?`)) {
                 void unassignFromGroup();
               }
             }}
@@ -368,15 +403,22 @@ function TagGroupCell({
     }
 
     return (
-      <button
-        onClick={(e) => {
-          e.stopPropagation();
-          openSearch();
-        }}
-        className="rounded border border-dashed border-gray-300 px-2 py-0.5 text-xs text-gray-400 hover:border-blue-300 hover:text-blue-600"
-      >
-        + Assign
-      </button>
+      <div className="flex items-center gap-1">
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            openSearch();
+          }}
+          className="rounded border border-dashed border-gray-300 px-2 py-0.5 text-xs text-gray-400 hover:border-blue-300 hover:text-blue-600"
+        >
+          + Assign
+        </button>
+        {error && (
+          <span className="rounded bg-red-50 px-1.5 py-0.5 text-xs text-red-600">
+            {error}
+          </span>
+        )}
+      </div>
     );
   }
 
@@ -407,7 +449,7 @@ function TagGroupCell({
             const group = results[highlightedIndex];
             if (group && !assigning) {
               e.preventDefault();
-              void assignToGroup(group.id);
+              void assignToGroup(group);
             }
           }
         }}
@@ -458,7 +500,7 @@ function TagGroupCell({
                 }}
                 onMouseEnter={() => setHighlightedIndex(index)}
                 onClick={() => {
-                  void assignToGroup(group.id);
+                  void assignToGroup(group);
                 }}
                 disabled={assigning}
                 className={`flex w-full items-center gap-2 px-3 py-2 text-left text-xs disabled:opacity-50 ${
