@@ -52,6 +52,7 @@ _SYSTEM_PROMPT = (
     "When a user asks for current state, call read tools first. "
     "You can enqueue positions sync jobs, contracts sync jobs, and order fetch/sync jobs. "
     "For informational queries about contracts (front month, available months, contract details), use lookup_contract. "
+    "To see which products are actively maintained in the security master and their exchanges, use list_activated_products. "
     "lookup_contract checks the database first; if no contracts exist, it automatically fetches from IBKR and stores them. "
     "For options (FOP/OPT), use contract_expiry (YYYY-MM-DD) to find a specific weekly expiry rather than contract_month. "
     "When the user says 'next Friday' or a specific date, convert it to contract_expiry format. "
@@ -296,6 +297,23 @@ _TOOL_SPECS: list[dict[str, Any]] = [
                     },
                 },
                 "required": ["symbol", "sec_type"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_activated_products",
+            "description": (
+                "List the futures products actively maintained in the security master "
+                "(e.g. CL, NG, ZB, ZN, ES, NQ), with their discovered exchange, discovery "
+                "status, and how many active contracts are in the database. Use this to see "
+                "the tradable universe before looking up specific contract months."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {},
                 "additionalProperties": False,
             },
         },
@@ -948,6 +966,37 @@ def _tool_lookup_contract(session: Session, _: str, args: dict[str, Any]) -> dic
     }
 
 
+def _tool_list_activated_products(session: Session, _: str, args: dict[str, Any]) -> dict[str, Any]:
+    if args:
+        raise ValueError("list_activated_products does not take arguments.")
+    from src.models import ActivatedProduct, ContractRef
+
+    products = session.execute(select(ActivatedProduct).order_by(ActivatedProduct.symbol.asc())).scalars().all()
+
+    count_rows = session.execute(
+        select(ContractRef.symbol, ContractRef.sec_type, func.count(ContractRef.id))
+        .where(ContractRef.is_active.is_(True))
+        .group_by(ContractRef.symbol, ContractRef.sec_type)
+    ).all()
+    counts = {(symbol, sec_type): count for symbol, sec_type, count in count_rows}
+
+    return {
+        "products": [
+            {
+                "symbol": p.symbol,
+                "sec_type": p.sec_type,
+                "exchange": p.exchange,
+                "discovery_status": p.discovery_status,
+                "months_ahead": p.months_ahead,
+                "security_master_count": counts.get((p.symbol, p.sec_type), 0),
+                "last_synced_at": _iso(p.last_synced_at),
+                "is_active": p.is_active,
+            }
+            for p in products
+        ]
+    }
+
+
 def _tool_list_watch_lists(session: Session, _: str, args: dict[str, Any]) -> dict[str, Any]:
     count_subq = select(func.count(WatchListInstrument.id)).where(WatchListInstrument.watch_list_id == WatchList.id).correlate(WatchList).scalar_subquery()
     stmt = select(WatchList, count_subq).order_by(WatchList.created_at.desc())
@@ -1185,6 +1234,7 @@ _TOOL_HANDLERS = {
     "enqueue_order_fetch_sync_job": _tool_enqueue_order_fetch_sync_job,
     "enqueue_contracts_sync_job": _tool_enqueue_contracts_sync_job,
     "lookup_contract": _tool_lookup_contract,
+    "list_activated_products": _tool_list_activated_products,
     "list_watch_lists": _tool_list_watch_lists,
     "create_watch_list": _tool_create_watch_list,
     "get_watch_list": _tool_get_watch_list,

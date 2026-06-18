@@ -26,10 +26,32 @@ const STATUS_CLASS: Record<string, string> = {
 const MARKET_DATA_JOB_TYPES = [
   "contracts.chain_sync",
   "contracts.qualify_and_snapshot",
+  "contracts.sync_activated",
   "market_data.futures_prices",
   "market_data.futures_options",
   "market_data.snapshot",
 ];
+
+interface ActivatedProduct {
+  id: number;
+  symbol: string;
+  sec_type: string;
+  exchange: string | null;
+  multiplier: string | null;
+  discovery_status: string;
+  months_ahead: number;
+  security_master_count: number;
+  is_active: boolean;
+  last_synced_at: string | null;
+  last_error: string | null;
+}
+
+const PRODUCT_STATUS_CLASS: Record<string, string> = {
+  active: "text-green-700 bg-green-100",
+  pending: "text-yellow-700 bg-yellow-100",
+  needs_disambiguation: "text-orange-700 bg-orange-100",
+  unknown_symbol: "text-red-700 bg-red-100",
+};
 
 interface JobPreset {
   label: string;
@@ -139,6 +161,7 @@ function StepperField({
 
 export default function MarketDataPage() {
   const [jobs, setJobs] = useState<Job[]>([]);
+  const [products, setProducts] = useState<ActivatedProduct[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -171,14 +194,32 @@ export default function MarketDataPage() {
       .catch((err: Error) => setError(err.message));
   }, []);
 
+  const loadProducts = useCallback(() => {
+    fetch(`${API_BASE_URL}/activated-products`)
+      .then((res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.json();
+      })
+      .then((rows: ActivatedProduct[]) => setProducts(rows))
+      .catch((err: Error) => setError(err.message));
+  }, []);
+
   // Initial fetch on mount.
   useEffect(() => {
     loadJobs();
-  }, [loadJobs]);
+    loadProducts();
+  }, [loadJobs, loadProducts]);
 
   // Merge SSE job events (only for market-data job types).
-  const handleJobEvent = useCallback((payload: Job, eventType: string) => {
+  const handleJobEvent = useCallback(
+    (payload: Job, eventType: string) => {
     if (!MARKET_DATA_JOB_TYPES.includes(payload.job_type)) return;
+    if (
+      payload.job_type === "contracts.sync_activated" &&
+      payload.status === "completed"
+    ) {
+      loadProducts();
+    }
     if (eventType === "job.archived") {
       setJobs((prev) => prev.filter((j) => j.id !== payload.id));
       return;
@@ -192,7 +233,9 @@ export default function MarketDataPage() {
       }
       return [payload, ...prev];
     });
-  }, []);
+    },
+    [loadProducts],
+  );
 
   const sseStatus = useSSE<Job>("jobs", handleJobEvent);
 
@@ -360,6 +403,14 @@ export default function MarketDataPage() {
           Quick Actions
         </h2>
         <div className="flex flex-wrap gap-2 items-center">
+          {/* Activated products security-master sync */}
+          <button
+            onClick={() => enqueueJob("contracts.sync_activated", {})}
+            disabled={submitting !== null || pendingFilter !== null}
+            className="rounded border border-indigo-300 bg-indigo-50 px-3 py-1.5 text-xs font-medium text-indigo-700 hover:bg-indigo-100 disabled:opacity-50"
+          >
+            Sync activated products
+          </button>
           {/* Chain sync */}
           {CHAIN_SYNC_PRESETS.map((preset) => (
             <button
@@ -388,6 +439,77 @@ export default function MarketDataPage() {
             </button>
           ))}
         </div>
+      </section>
+
+      {/* Active products in the security master */}
+      <section className="rounded border border-gray-200 bg-white p-4">
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-gray-800">
+            Active Products
+          </h2>
+          <button
+            onClick={loadProducts}
+            className="text-xs text-gray-500 underline hover:text-gray-700"
+          >
+            refresh
+          </button>
+        </div>
+        {products.length === 0 ? (
+          <p className="text-xs text-gray-500">
+            No activated products. Run “Sync activated products” to discover and
+            populate them.
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-left text-xs">
+              <thead>
+                <tr className="border-b border-gray-200 text-gray-500">
+                  <th className="py-1.5 pr-4 font-medium">Symbol</th>
+                  <th className="py-1.5 pr-4 font-medium">Type</th>
+                  <th className="py-1.5 pr-4 font-medium">Exchange</th>
+                  <th className="py-1.5 pr-4 font-medium">Status</th>
+                  <th className="py-1.5 pr-4 font-medium">Months</th>
+                  <th className="py-1.5 pr-4 font-medium">Contracts</th>
+                  <th className="py-1.5 pr-4 font-medium">Multiplier</th>
+                  <th className="py-1.5 pr-4 font-medium">Last synced</th>
+                </tr>
+              </thead>
+              <tbody>
+                {products.map((p) => (
+                  <tr
+                    key={p.id}
+                    className="border-b border-gray-100 text-gray-700"
+                  >
+                    <td className="py-1.5 pr-4 font-medium">{p.symbol}</td>
+                    <td className="py-1.5 pr-4">{p.sec_type}</td>
+                    <td className="py-1.5 pr-4">
+                      {p.exchange ?? (
+                        <span className="italic text-gray-400">discovering…</span>
+                      )}
+                    </td>
+                    <td className="py-1.5 pr-4">
+                      <span
+                        className={`rounded px-1.5 py-0.5 ${
+                          PRODUCT_STATUS_CLASS[p.discovery_status] ??
+                          "text-gray-700 bg-gray-100"
+                        }`}
+                        title={p.last_error ?? undefined}
+                      >
+                        {p.discovery_status}
+                      </span>
+                    </td>
+                    <td className="py-1.5 pr-4">{p.months_ahead}</td>
+                    <td className="py-1.5 pr-4">{p.security_master_count}</td>
+                    <td className="py-1.5 pr-4">{p.multiplier ?? "—"}</td>
+                    <td className="py-1.5 pr-4 text-gray-500">
+                      {p.last_synced_at ? formatAge(p.last_synced_at) : "never"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </section>
 
       {/* Confirm filtered job */}

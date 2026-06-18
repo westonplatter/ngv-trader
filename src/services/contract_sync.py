@@ -2,20 +2,29 @@
 
 from __future__ import annotations
 
+import datetime as dt
 import logging
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
-from ib_async import IB, Contract
+from ib_async import IB, Contract, Future
 from ib_async import Index as IbIndex
-from sqlalchemy import Engine
+from sqlalchemy import Engine, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
-from src.models import ContractRef
+from src.models import (
+    PRODUCT_DISCOVERY_ACTIVE,
+    PRODUCT_DISCOVERY_NEEDS_DISAMBIGUATION,
+    PRODUCT_DISCOVERY_UNKNOWN_SYMBOL,
+    ActivatedProduct,
+    ContractRef,
+)
 from src.services.cl_contracts import (
     format_contract_month_from_expiry,
     infer_contract_month_from_local_symbol,
+    parse_contract_expiry,
 )
 
 logger = logging.getLogger(__name__)
@@ -492,4 +501,289 @@ def sync_futures_chain(
         return {"symbol": symbol, **counts}
     finally:
         if owns_ib and ib.isConnected():
+            ib.disconnect()
+
+
+# ---------------------------------------------------------------------------
+# Activated products: discover exchange/metadata from IBKR by symbol alone,
+# then maintain the next N calendar months of FUT contracts in the security
+# master.
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class ProductDiscovery:
+    """Result of discovering a futures product from IBKR by symbol alone."""
+
+    symbol: str
+    sec_type: str
+    currency: str
+    exchanges: list[str] = field(default_factory=list)
+    exchange: str | None = None
+    valid_exchanges: str | None = None
+    multiplier: str | None = None
+    trading_class: str | None = None
+    long_name: str | None = None
+    min_tick: float | None = None
+    details: list[Any] = field(default_factory=list)
+    status: str = PRODUCT_DISCOVERY_UNKNOWN_SYMBOL
+    error: str | None = None
+
+
+def discover_product_metadata(
+    ib: IB,
+    symbol: str,
+    sec_type: str = "FUT",
+    currency: str = "USD",
+) -> ProductDiscovery:
+    """Discover a futures product's exchange and metadata from IBKR.
+
+    Builds a ``Future`` spec with no exchange and calls ``reqContractDetails``,
+    which IBKR treats as a wildcard across venues. The returned contract details
+    carry the listing exchange plus contract metadata, and they double as the
+    list of contracts to upsert into the security master.
+
+    Resolution rules:
+      - exactly one distinct exchange -> ``active`` with that exchange
+      - more than one distinct exchange -> ``needs_disambiguation`` (no guess)
+      - zero results -> ``unknown_symbol``
+    """
+    sec_type = (sec_type or "FUT").upper()
+    spec = Future(symbol, currency=currency) if sec_type == "FUT" else Contract(symbol=symbol, secType=sec_type, currency=currency)
+
+    discovery = ProductDiscovery(symbol=symbol, sec_type=sec_type, currency=currency)
+
+    try:
+        details = ib.reqContractDetails(spec)
+    except Exception as exc:  # noqa: BLE001
+        discovery.status = PRODUCT_DISCOVERY_UNKNOWN_SYMBOL
+        discovery.error = f"reqContractDetails failed for {symbol}: {exc}"
+        return discovery
+
+    details = [d for d in (details or []) if getattr(d, "contract", None) is not None and d.contract.conId]
+    discovery.details = details
+
+    if not details:
+        discovery.status = PRODUCT_DISCOVERY_UNKNOWN_SYMBOL
+        discovery.error = f"IBKR returned no contracts for symbol '{symbol}' (sec_type={sec_type})."
+        return discovery
+
+    # Collect distinct listing exchanges across the returned contracts.
+    exchanges = sorted({(d.contract.exchange or "").strip() for d in details if (d.contract.exchange or "").strip()})
+    discovery.exchanges = exchanges
+
+    # Metadata from the first detail (shared across a product's contracts).
+    first = details[0]
+    first_contract = first.contract
+    discovery.multiplier = (first_contract.multiplier or None) or None
+    discovery.trading_class = (first_contract.tradingClass or None) or None
+    discovery.long_name = (getattr(first, "longName", None) or None) or None
+    valid_exchanges = (getattr(first, "validExchanges", None) or "").strip() or None
+    discovery.valid_exchanges = valid_exchanges
+    min_tick_raw = getattr(first, "minTick", None)
+    try:
+        discovery.min_tick = float(min_tick_raw) if min_tick_raw not in (None, 0, 0.0) else None
+    except (TypeError, ValueError):
+        discovery.min_tick = None
+
+    if len(exchanges) == 1:
+        discovery.exchange = exchanges[0]
+        discovery.status = PRODUCT_DISCOVERY_ACTIVE
+    elif len(exchanges) > 1:
+        discovery.status = PRODUCT_DISCOVERY_NEEDS_DISAMBIGUATION
+        discovery.error = f"Symbol '{symbol}' resolves to multiple exchanges: {', '.join(exchanges)}. Set exchange explicitly."
+    else:
+        discovery.status = PRODUCT_DISCOVERY_UNKNOWN_SYMBOL
+        discovery.error = f"IBKR returned contracts for '{symbol}' but none carried an exchange."
+
+    return discovery
+
+
+def _add_months(start: dt.date, months: int) -> dt.date:
+    """Return ``start`` advanced by ``months`` calendar months (clamped day)."""
+    month_index = start.month - 1 + months
+    year = start.year + month_index // 12
+    month = month_index % 12 + 1
+    # Clamp the day to the last valid day of the target month.
+    if month == 12:
+        next_month_first = dt.date(year + 1, 1, 1)
+    else:
+        next_month_first = dt.date(year, month + 1, 1)
+    last_day = (next_month_first - dt.timedelta(days=1)).day
+    return dt.date(year, month, min(start.day, last_day))
+
+
+def _is_within_window(contract_expiry: str | None, today: dt.date, cutoff: dt.date) -> bool:
+    """True if the contract expires on or after today and on or before cutoff."""
+    if not contract_expiry:
+        return False
+    expiry = parse_contract_expiry(contract_expiry)
+    if expiry is None:
+        return False
+    return today <= expiry <= cutoff
+
+
+def _sync_one_product(
+    session: Session,
+    ib: IB,
+    product: ActivatedProduct,
+    now: datetime,
+) -> dict:
+    """Discover (if needed) and sync the next-N-months FUT contracts for one product."""
+    symbol = product.symbol
+    sec_type = (product.sec_type or "FUT").upper()
+    currency = product.currency or "USD"
+    months_ahead = product.months_ahead or 12
+
+    discovery = discover_product_metadata(ib, symbol, sec_type, currency)
+
+    # Persist discovered metadata regardless of outcome.
+    product.valid_exchanges = discovery.valid_exchanges or product.valid_exchanges
+    product.multiplier = discovery.multiplier or product.multiplier
+    product.trading_class = discovery.trading_class or product.trading_class
+    product.long_name = discovery.long_name or product.long_name
+    product.min_tick = discovery.min_tick if discovery.min_tick is not None else product.min_tick
+    product.updated_at = now
+
+    # Choose the exchange: an operator-set value wins; otherwise use discovery.
+    exchange = (product.exchange or "").strip() or discovery.exchange
+
+    if discovery.status != PRODUCT_DISCOVERY_ACTIVE and not exchange:
+        product.discovery_status = discovery.status
+        product.last_error = discovery.error
+        return {
+            "symbol": symbol,
+            "status": discovery.status,
+            "error": discovery.error,
+            "upserted": 0,
+            "deactivated": 0,
+        }
+
+    product.exchange = exchange
+
+    today = now.date()
+    cutoff = _add_months(today, months_ahead)
+
+    synced_con_ids: set[int] = set()
+    upserted = 0
+    for detail in discovery.details:
+        contract = detail.contract
+        if (contract.exchange or "").strip() != exchange:
+            # Skip contracts from a different venue than the chosen exchange.
+            continue
+        if not _is_within_window(contract.lastTradeDateOrContractMonth, today, cutoff):
+            continue
+        cid = _upsert_contract(
+            session,
+            detail,
+            symbol,
+            sec_type,
+            exchange,
+            currency,
+            underlying_con_id=None,
+            now=now,
+        )
+        if cid:
+            synced_con_ids.add(cid)
+            upserted += 1
+
+    # Deactivate this product's in-DB contracts that fell outside the window.
+    deactivated = 0
+    if synced_con_ids:
+        result = session.execute(
+            update(ContractRef)
+            .where(
+                ContractRef.symbol == symbol,
+                ContractRef.sec_type == sec_type,
+                ContractRef.is_active.is_(True),
+                ContractRef.con_id.not_in(synced_con_ids),
+            )
+            .values(is_active=False, updated_at=now)
+        )
+        deactivated = result.rowcount or 0
+
+    product.discovery_status = PRODUCT_DISCOVERY_ACTIVE
+    product.last_error = None
+    product.last_synced_at = now
+
+    logger.info(
+        "Activated product %s synced on %s: upserted=%d deactivated=%d window=%s..%s",
+        symbol,
+        exchange,
+        upserted,
+        deactivated,
+        today.isoformat(),
+        cutoff.isoformat(),
+    )
+
+    return {
+        "symbol": symbol,
+        "status": PRODUCT_DISCOVERY_ACTIVE,
+        "exchange": exchange,
+        "upserted": upserted,
+        "deactivated": deactivated,
+    }
+
+
+def sync_activated_products_with_ib(
+    engine: Engine,
+    *,
+    ib: IB,
+    symbols: list[str] | None = None,
+) -> dict:
+    """Discover + sync the next-N-calendar-month FUT contracts for activated products.
+
+    Reads active rows from ``activated_products`` (optionally filtered to
+    ``symbols``), discovers each product's exchange/metadata from IBKR when
+    missing, upserts the in-window contracts into the ``contracts`` security
+    master, and deactivates out-of-window rows. The caller owns the IB session.
+    """
+    now = _now_utc()
+    stmt = select(ActivatedProduct).where(ActivatedProduct.is_active.is_(True)).order_by(ActivatedProduct.symbol.asc())
+    if symbols:
+        wanted = [s.strip().upper() for s in symbols if s.strip()]
+        stmt = stmt.where(ActivatedProduct.symbol.in_(wanted))
+
+    results: list[dict] = []
+    with Session(engine) as session:
+        products = session.execute(stmt).scalars().all()
+        for product in products:
+            try:
+                results.append(_sync_one_product(session, ib, product, now))
+            except Exception as exc:  # noqa: BLE001
+                logger.exception("Activated product sync failed for %s", product.symbol)
+                product.discovery_status = PRODUCT_DISCOVERY_UNKNOWN_SYMBOL
+                product.last_error = str(exc)
+                product.updated_at = now
+                results.append({"symbol": product.symbol, "status": "error", "error": str(exc)})
+        session.commit()
+
+    return {
+        "products": results,
+        "products_count": len(results),
+        "active_count": sum(1 for r in results if r.get("status") == PRODUCT_DISCOVERY_ACTIVE),
+        "total_upserted": sum(int(r.get("upserted", 0)) for r in results),
+    }
+
+
+def sync_activated_products(
+    engine: Engine,
+    host: str,
+    port: int,
+    client_id: int,
+    connect_timeout_seconds: float = 20.0,
+    symbols: list[str] | None = None,
+) -> dict:
+    """Connect to IBKR and sync activated products (standalone entrypoint)."""
+    ib = IB()
+    try:
+        try:
+            ib.connect(host, port, clientId=client_id, timeout=connect_timeout_seconds)
+        except TimeoutError as exc:
+            raise RuntimeError(
+                f"Timed out connecting to TWS/Gateway for activated-products sync " f"(host={host}, port={port}, client_id={client_id})."
+            ) from exc
+        return sync_activated_products_with_ib(engine=engine, ib=ib, symbols=symbols)
+    finally:
+        if ib.isConnected():
             ib.disconnect()
