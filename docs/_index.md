@@ -49,4 +49,5 @@ Each carries a status banner; none is fully shipped.
 | [spec-first-class-realized-pnl-on-trades.md](spec-first-class-realized-pnl-on-trades.md) | Not implemented — PnL computed on read from `raw` |
 | [spec-tradebot-contract-metadata-autofetch.md](spec-tradebot-contract-metadata-autofetch.md) | Partial — on-demand fetch works; order-flow + background freshness pending |
 | [spec-worker-order-recovery.md](spec-worker-order-recovery.md) | Partial scaffold — submission disabled; crash-safety fields pending |
+| [spec-activated-products-security-master.md](spec-activated-products-security-master.md) | Proposed — activated-products table, IBKR exchange discovery, 12-month sync |
 
