@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { API_BASE_URL } from "../config";
 
 type TradeGroup = {
@@ -111,14 +112,24 @@ function statusClassName(status: TradeGroup["status"]): string {
 
 const GROUP_STATUSES: TradeGroup["status"][] = ["open", "closed", "archived"];
 
+function parseIdParam(value: string | null): number | null {
+  if (!value) return null;
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 export default function TradeTaggingPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
+
   const [strategies, setStrategies] = useState<Tag[]>([]);
   const [selectedStrategyId, setSelectedStrategyId] = useState<number | null>(
-    null,
+    () => parseIdParam(searchParams.get("strategy_id")),
   );
 
   const [groups, setGroups] = useState<TradeGroup[]>([]);
-  const [selectedGroupId, setSelectedGroupId] = useState<number | null>(null);
+  const [selectedGroupId, setSelectedGroupId] = useState<number | null>(() =>
+    parseIdParam(searchParams.get("trade_group_id")),
+  );
   const [groupDetail, setGroupDetail] = useState<TradeGroupDetail | null>(null);
   const [executions, setExecutions] = useState<GroupExecution[]>([]);
   const [totalRealizedPnl, setTotalRealizedPnl] = useState<number | null>(null);
@@ -246,6 +257,29 @@ export default function TradeTaggingPage() {
       active = false;
     };
   }, [loadStrategies]);
+
+  // Keep the URL query params in sync with the current selection so the page
+  // is shareable/bookmarkable. Use replace so clicking around doesn't pile up
+  // browser history entries.
+  useEffect(() => {
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        if (selectedStrategyId != null) {
+          next.set("strategy_id", String(selectedStrategyId));
+        } else {
+          next.delete("strategy_id");
+        }
+        if (selectedGroupId != null) {
+          next.set("trade_group_id", String(selectedGroupId));
+        } else {
+          next.delete("trade_group_id");
+        }
+        return next;
+      },
+      { replace: true },
+    );
+  }, [selectedStrategyId, selectedGroupId, setSearchParams]);
 
   useEffect(() => {
     let active = true;
