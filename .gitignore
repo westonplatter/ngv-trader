@@ -12,7 +12,10 @@ scripts/data/
 # APS (Agentic Prompt Sync)
 .aps-backups/
 
-.claude
+.claude/*
+!.claude/settings.json
+!.claude/hooks/
+.claude/settings.local.json
 
 # ----------------- standard python ignores -----------------
 
@@ -35,6 +38,7 @@ downloads/
 eggs/
 .eggs/
 lib/
+!frontend/src/lib/
 lib64/
 parts/
 sdist/

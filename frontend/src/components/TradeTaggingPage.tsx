@@ -512,7 +512,7 @@ export default function TradeTaggingPage() {
   };
 
   return (
-    <div className="space-y-4">
+    <div className="flex min-h-0 flex-1 flex-col space-y-4">
       <div>
         <h2 className="text-lg font-semibold text-gray-900">Trade Tagging</h2>
         <p className="text-xs text-gray-500">
@@ -531,9 +531,9 @@ export default function TradeTaggingPage() {
       {error && <p className="text-sm text-red-600">{error}</p>}
       {message && <p className="text-sm text-green-700">{message}</p>}
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(220px,25%)_1fr]">
+      <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-[minmax(220px,25%)_1fr]">
         {/* Column 1: Strategies */}
-        <section className="rounded border border-gray-200 bg-white p-3">
+        <section className="flex min-h-0 flex-col rounded border border-gray-200 bg-white p-3">
           <div className="mb-3 flex items-center justify-between">
             <h3 className="text-sm font-semibold">Strategies</h3>
             <div className="flex items-center gap-2">
@@ -592,10 +592,7 @@ export default function TradeTaggingPage() {
             </div>
           )}
 
-          <ul
-            className="space-y-1 overflow-y-auto pr-1"
-            style={{ maxHeight: "calc(100vh - 280px)" }}
-          >
+          <ul className="min-h-0 flex-1 space-y-1 overflow-y-auto pr-1">
             {strategies.map((strategy) => {
               const isArchived = strategy.archived_at !== null;
               return (
@@ -647,8 +644,15 @@ export default function TradeTaggingPage() {
         </section>
 
         {/* Column 2: Trade Groups + Detail */}
-        <section className="rounded border border-gray-200 bg-white p-3">
-          <div className="mb-2 flex items-center justify-between">
+        <section className="flex min-h-0 flex-col rounded border border-gray-200 bg-white p-3">
+          <div className="mb-2 flex items-center gap-2">
+            <button
+              onClick={() => setShowNewGroup(!showNewGroup)}
+              disabled={!selectedStrategy}
+              className="rounded border border-gray-300 px-2 py-0.5 text-xs text-gray-600 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {showNewGroup ? "Cancel" : "+ New"}
+            </button>
             <h3 className="text-sm font-semibold">
               Trade Groups
               {selectedStrategy && (
@@ -657,13 +661,6 @@ export default function TradeTaggingPage() {
                 </span>
               )}
             </h3>
-            <button
-              onClick={() => setShowNewGroup(!showNewGroup)}
-              disabled={!selectedStrategy}
-              className="rounded border border-gray-300 px-2 py-0.5 text-xs text-gray-600 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {showNewGroup ? "Cancel" : "+ New"}
-            </button>
           </div>
 
           {showNewGroup && selectedStrategy && (
@@ -714,13 +711,10 @@ export default function TradeTaggingPage() {
             </div>
           )}
 
-          <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(280px,35%)_1fr]">
+          <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 xl:grid-cols-[minmax(280px,35%)_1fr]">
             {/* Group list */}
-            <div>
-              <ul
-                className="space-y-1 overflow-y-auto pr-1"
-                style={{ maxHeight: "calc(100vh - 300px)" }}
-              >
+            <div className="flex min-h-0 flex-col">
+              <ul className="min-h-0 flex-1 space-y-1 overflow-y-auto pr-1">
                 {loadingGroups && (
                   <li className="text-xs text-gray-500">
                     Loading trade groups...
@@ -765,7 +759,7 @@ export default function TradeTaggingPage() {
             </div>
 
             {/* Group detail */}
-            <div>
+            <div className="min-h-0 overflow-y-auto">
               {!groupDetail && selectedGroupId == null && (
                 <div className="flex h-full items-center justify-center text-sm text-gray-400">
                   Select a trade group to view details.

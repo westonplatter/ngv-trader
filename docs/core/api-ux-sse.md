@@ -195,7 +195,7 @@ All events use a consistent envelope:
 | `src/services/order_sync_tws.py`   | Publishes `order.created` / `order.updated` after broker sync commit             |
 | `src/services/worker_heartbeat.py` | Publishes `worker.heartbeat` after each heartbeat upsert                         |
 | `scripts/work_jobs.py`             | Calls `POST /events/notify-job` after job state transitions                      |
-| `frontend/src/lib/events.ts`       | Shared EventSource client with `useSSE` React hook (**file missing** — components import from this path but the file does not exist on disk; needs to be created) |
+| `frontend/src/lib/events.ts`       | Shared EventSource client with `useSSE` React hook                                                                                                               |
 
 ## Resilience
 
@@ -207,5 +207,5 @@ All events use a consistent envelope:
 ## Future Considerations
 
 - **Multi-process deployment**: Replace the in-memory broadcaster with Redis pub/sub or Postgres LISTEN/NOTIFY.
-- **Additional topics**: Trades, positions, and watchlists could be added as new SSE topics using the same infrastructure.
+- **Additional topics**: Watchlists could be added as a new SSE topic using the same infrastructure.
 - **Event replay**: Add `Last-Event-ID` support with a short event log if missed-update problems emerge.
