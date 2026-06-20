@@ -645,37 +645,60 @@ export default function TradeTaggingPage() {
 
         {/* Column 2: Trade Groups + Detail */}
         <section className="flex min-h-0 flex-col rounded border border-gray-200 bg-white p-3">
-          <div className="mb-2 flex items-center justify-between gap-2">
-            <h3 className="text-sm font-semibold">
-              Trade Groups
-              {selectedStrategy && (
-                <span className="ml-1 font-normal text-gray-500">
-                  ({selectedStrategy.value})
-                </span>
-              )}
-            </h3>
-            <button
-              onClick={() => setShowNewGroup(!showNewGroup)}
-              disabled={!selectedStrategy}
-              className="rounded border border-gray-300 px-2 py-0.5 text-xs text-gray-600 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {showNewGroup ? "Cancel" : "+ New"}
-            </button>
-          </div>
+          <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 xl:grid-cols-[minmax(280px,35%)_1fr]">
+            {/* Group list */}
+            <div className="flex min-h-0 flex-col">
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <h3 className="text-sm font-semibold">
+                  Trade Groups
+                  {selectedStrategy && (
+                    <span className="ml-1 font-normal text-gray-500">
+                      ({selectedStrategy.value})
+                    </span>
+                  )}
+                </h3>
+                <button
+                  onClick={() => setShowNewGroup(!showNewGroup)}
+                  disabled={!selectedStrategy}
+                  className="rounded border border-gray-300 px-2 py-0.5 text-xs text-gray-600 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {showNewGroup ? "Cancel" : "+ New"}
+                </button>
+              </div>
 
-          {showNewGroup && selectedStrategy && (
-            <div className="mb-3 space-y-2 rounded border border-dashed border-gray-300 p-2">
-              <div className="flex items-center gap-2">
-                <span className="shrink-0 rounded bg-gray-100 px-2 py-1 text-xs text-gray-600">
-                  {selectedStrategy.value}
-                </span>
-                <input
-                  value={newGroupName}
-                  onChange={(event) => setNewGroupName(event.target.value)}
-                  className="flex-1 rounded border border-gray-300 px-2 py-1 text-sm"
-                  placeholder="Trade group name"
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
+              {showNewGroup && selectedStrategy && (
+                <div className="mb-3 space-y-2 rounded border border-dashed border-gray-300 p-2">
+                  <div className="flex items-center gap-2">
+                    <span className="shrink-0 rounded bg-gray-100 px-2 py-1 text-xs text-gray-600">
+                      {selectedStrategy.value}
+                    </span>
+                    <input
+                      value={newGroupName}
+                      onChange={(event) => setNewGroupName(event.target.value)}
+                      className="flex-1 rounded border border-gray-300 px-2 py-1 text-sm"
+                      placeholder="Trade group name"
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          void createGroup().catch((err: unknown) => {
+                            setError(
+                              err instanceof Error
+                                ? err.message
+                                : "Failed to create trade group.",
+                            );
+                          });
+                        }
+                      }}
+                    />
+                  </div>
+                  <textarea
+                    value={newGroupNotes}
+                    onChange={(event) => setNewGroupNotes(event.target.value)}
+                    className="w-full rounded border border-gray-300 px-2 py-1 text-sm"
+                    placeholder="Optional notes"
+                    rows={1}
+                  />
+                  <button
+                    onClick={() => {
                       void createGroup().catch((err: unknown) => {
                         setError(
                           err instanceof Error
@@ -683,37 +706,14 @@ export default function TradeTaggingPage() {
                             : "Failed to create trade group.",
                         );
                       });
-                    }
-                  }}
-                />
-              </div>
-              <textarea
-                value={newGroupNotes}
-                onChange={(event) => setNewGroupNotes(event.target.value)}
-                className="w-full rounded border border-gray-300 px-2 py-1 text-sm"
-                placeholder="Optional notes"
-                rows={1}
-              />
-              <button
-                onClick={() => {
-                  void createGroup().catch((err: unknown) => {
-                    setError(
-                      err instanceof Error
-                        ? err.message
-                        : "Failed to create trade group.",
-                    );
-                  });
-                }}
-                className="w-full rounded border border-blue-300 px-3 py-1 text-sm text-blue-700 hover:bg-blue-50"
-              >
-                Create Trade Group
-              </button>
-            </div>
-          )}
+                    }}
+                    className="w-full rounded border border-blue-300 px-3 py-1 text-sm text-blue-700 hover:bg-blue-50"
+                  >
+                    Create Trade Group
+                  </button>
+                </div>
+              )}
 
-          <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 xl:grid-cols-[minmax(280px,35%)_1fr]">
-            {/* Group list */}
-            <div className="flex min-h-0 flex-col">
               <ul className="min-h-0 flex-1 space-y-1 overflow-y-auto pr-1">
                 {loadingGroups && (
                   <li className="text-xs text-gray-500">
