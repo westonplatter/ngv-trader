@@ -54,10 +54,13 @@ function PrivacyToggle() {
 function App() {
   const location = useLocation();
   const isTradebotPage = location.pathname === "/tradebot";
+  const isTaggingPage = location.pathname === "/tagging";
   const horizontalPaddingClass = isTradebotPage ? "px-2 md:px-3" : "px-6";
   const contentClass = isTradebotPage
     ? `${horizontalPaddingClass} py-3 flex-1 min-h-0 overflow-y-auto lg:overflow-hidden`
-    : `${horizontalPaddingClass} py-6`;
+    : isTaggingPage
+      ? `${horizontalPaddingClass} py-6 flex-1 min-h-0 flex flex-col`
+      : `${horizontalPaddingClass} py-6`;
 
   return (
     <div className="w-full min-h-screen flex flex-col">
