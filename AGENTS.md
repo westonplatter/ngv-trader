@@ -200,6 +200,14 @@ Examples: `feat(trades): add sync-since-last-trade button`, `fix(workers): recov
 
 ## Pull Requests
 
+### Pull Request Title
+
+The PR title becomes the squash-merge commit subject, so it must be a Conventional Commit (see **Commits** above): `<type>(<scope>): <imperative description>`. release-please parses it to version and changelog the release.
+
+- Use a valid type (`feat`, `fix`, `docs`, `refactor`, `chore`, `perf`, `test`, `ci`, `build`, `style`); optional scope.
+- Lowercase type/scope, imperative mood, no capital after the colon, subject under ~70 chars.
+- Examples: `feat(frontend): move Trade Groups New button to left side`, `fix(tagging): allow groups across multiple accounts`.
+
 ### Pull Request Description
 
 When opening or updating pull requests, include the following write-up in the PR body.
