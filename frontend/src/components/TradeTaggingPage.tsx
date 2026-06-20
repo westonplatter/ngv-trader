@@ -614,7 +614,14 @@ export default function TradeTaggingPage() {
 
         {/* Column 2: Trade Groups + Detail */}
         <section className="rounded border border-gray-200 bg-white p-3">
-          <div className="mb-2 flex items-center justify-between">
+          <div className="mb-2 flex items-center gap-2">
+            <button
+              onClick={() => setShowNewGroup(!showNewGroup)}
+              disabled={!selectedStrategy}
+              className="rounded border border-gray-300 px-2 py-0.5 text-xs text-gray-600 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {showNewGroup ? "Cancel" : "+ New"}
+            </button>
             <h3 className="text-sm font-semibold">
               Trade Groups
               {selectedStrategy && (
@@ -623,13 +630,6 @@ export default function TradeTaggingPage() {
                 </span>
               )}
             </h3>
-            <button
-              onClick={() => setShowNewGroup(!showNewGroup)}
-              disabled={!selectedStrategy}
-              className="rounded border border-gray-300 px-2 py-0.5 text-xs text-gray-600 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {showNewGroup ? "Cancel" : "+ New"}
-            </button>
           </div>
 
           {showNewGroup && selectedStrategy && (
