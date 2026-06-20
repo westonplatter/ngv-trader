@@ -334,7 +334,7 @@ function TagGroupCell({
       return (
         <div className="flex items-center gap-1">
           <span
-            className="rounded bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-800 cursor-pointer hover:bg-blue-200"
+            className="whitespace-nowrap rounded bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-800 cursor-pointer hover:bg-blue-200"
             onClick={(e) => {
               e.stopPropagation();
               openSearch();
@@ -822,7 +822,7 @@ export default function TradesTable() {
               <th className="w-16 whitespace-nowrap px-2 py-2 font-semibold text-gray-700">
                 Action
               </th>
-              <th className="w-10 whitespace-nowrap px-2 py-2 font-semibold text-gray-700">
+              <th className="w-8 whitespace-nowrap px-1 py-2 font-semibold text-gray-700">
                 Type
               </th>
               <th className="w-10 whitespace-nowrap px-2 py-2 font-semibold text-gray-700">
@@ -843,17 +843,17 @@ export default function TradesTable() {
               <th className="whitespace-nowrap px-3 py-2 font-semibold text-gray-700">
                 Status
               </th>
-              <th className="whitespace-nowrap px-3 py-2 font-semibold text-gray-700">
+              <th className="w-48 min-w-[12rem] whitespace-nowrap px-3 py-2 font-semibold text-gray-700">
                 Tag Group
-              </th>
-              <th className="whitespace-nowrap px-3 py-2 font-semibold text-gray-700">
-                Exec ID
               </th>
               <th className="whitespace-nowrap px-3 py-2 font-semibold text-gray-700">
                 Parent Exec ID
               </th>
               <th className="whitespace-nowrap px-3 py-2 font-semibold text-gray-700">
                 Order Ref
+              </th>
+              <th className="whitespace-nowrap px-3 py-2 font-semibold text-gray-700">
+                Exec ID
               </th>
             </tr>
           </thead>
@@ -922,7 +922,7 @@ export default function TradesTable() {
                       <span className="text-gray-400">—</span>
                     )}
                   </td>
-                  <td className="whitespace-nowrap px-2 py-2 text-xs text-gray-700">
+                  <td className="whitespace-nowrap px-1 py-2 text-xs text-gray-700">
                     {row.sec_type ?? "-"}
                   </td>
                   <td className="whitespace-nowrap px-2 py-2 text-xs text-gray-700">
@@ -968,9 +968,6 @@ export default function TradesTable() {
                       />
                     ) : null}
                   </td>
-                  <td className="max-w-[200px] truncate whitespace-nowrap px-3 py-2 font-mono text-xs text-gray-600">
-                    {privacyMode ? PRIVACY_MASK : row.ib_exec_id}
-                  </td>
                   <td className="max-w-[200px] truncate whitespace-nowrap px-3 py-2 font-mono text-xs">
                     {(() => {
                       const isParentRow = row.exec_role === "combo_summary";
@@ -1006,6 +1003,9 @@ export default function TradesTable() {
                   </td>
                   <td className="max-w-[160px] truncate whitespace-nowrap px-3 py-2 text-xs text-gray-600">
                     {row.trade_order_ref ?? "-"}
+                  </td>
+                  <td className="max-w-[200px] truncate whitespace-nowrap px-3 py-2 font-mono text-xs text-gray-600">
+                    {privacyMode ? PRIVACY_MASK : row.ib_exec_id}
                   </td>
                 </tr>
               );
