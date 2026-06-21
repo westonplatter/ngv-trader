@@ -112,6 +112,15 @@ function statusClassName(status: TradeGroup["status"]): string {
 
 const GROUP_STATUSES: TradeGroup["status"][] = ["open", "closed", "archived"];
 
+type GroupFilter = "active" | "closed" | "archived" | "all";
+
+const GROUP_FILTERS: { value: GroupFilter; label: string }[] = [
+  { value: "active", label: "Active" },
+  { value: "closed", label: "Closed" },
+  { value: "archived", label: "Archived" },
+  { value: "all", label: "All" },
+];
+
 function parseIdParam(value: string | null): number | null {
   if (!value) return null;
   const parsed = Number.parseInt(value, 10);
@@ -144,6 +153,7 @@ export default function TradeTaggingPage() {
   const [showNewGroup, setShowNewGroup] = useState(false);
   const [newGroupName, setNewGroupName] = useState("");
   const [newGroupNotes, setNewGroupNotes] = useState("");
+  const [groupFilter, setGroupFilter] = useState<GroupFilter>("active");
 
   const [editingGroup, setEditingGroup] = useState(false);
   const [editName, setEditName] = useState("");
@@ -160,6 +170,13 @@ export default function TradeTaggingPage() {
       strategies.find((strategy) => strategy.id === selectedStrategyId) ?? null,
     [selectedStrategyId, strategies],
   );
+
+  const visibleGroups = useMemo(() => {
+    if (groupFilter === "all") return groups;
+    const status: TradeGroup["status"] =
+      groupFilter === "active" ? "open" : groupFilter;
+    return groups.filter((group) => group.status === status);
+  }, [groups, groupFilter]);
 
   const loadStrategies = useCallback(async () => {
     const params = new URLSearchParams({ limit: "200" });
@@ -657,13 +674,30 @@ export default function TradeTaggingPage() {
                     </span>
                   )}
                 </h3>
-                <button
-                  onClick={() => setShowNewGroup(!showNewGroup)}
-                  disabled={!selectedStrategy}
-                  className="rounded border border-gray-300 px-2 py-0.5 text-xs text-gray-600 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {showNewGroup ? "Cancel" : "+ New"}
-                </button>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={() => setShowNewGroup(!showNewGroup)}
+                    disabled={!selectedStrategy}
+                    className="rounded border border-gray-300 px-2 py-0.5 text-xs text-gray-600 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {showNewGroup ? "Cancel" : "+ New"}
+                  </button>
+                  <select
+                    value={groupFilter}
+                    onChange={(event) =>
+                      setGroupFilter(event.target.value as GroupFilter)
+                    }
+                    aria-label="Filter trade groups by status"
+                    title="Filter trade groups by status"
+                    className="rounded border border-gray-300 bg-white px-1.5 py-0.5 text-xs text-gray-600 hover:bg-gray-50"
+                  >
+                    {GROUP_FILTERS.map((filter) => (
+                      <option key={filter.value} value={filter.value}>
+                        {filter.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
 
               {showNewGroup && selectedStrategy && (
@@ -721,7 +755,7 @@ export default function TradeTaggingPage() {
                   </li>
                 )}
                 {!loadingGroups &&
-                  groups.map((group) => (
+                  visibleGroups.map((group) => (
                     <li key={group.id}>
                       <button
                         type="button"
@@ -748,11 +782,13 @@ export default function TradeTaggingPage() {
                       </button>
                     </li>
                   ))}
-                {!loadingGroups && groups.length === 0 && (
+                {!loadingGroups && visibleGroups.length === 0 && (
                   <li className="rounded border border-dashed border-gray-300 px-2 py-3 text-xs text-gray-500">
-                    {selectedStrategy
-                      ? "No trade groups for this strategy yet."
-                      : "Select a strategy to view trade groups."}
+                    {!selectedStrategy
+                      ? "Select a strategy to view trade groups."
+                      : groups.length === 0
+                        ? "No trade groups for this strategy yet."
+                        : `No ${groupFilter === "all" ? "" : groupFilter + " "}trade groups for this strategy.`}
                   </li>
                 )}
               </ul>
