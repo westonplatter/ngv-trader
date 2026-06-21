@@ -60,7 +60,6 @@ function expiryForPosition(pos: Position): string {
 
 const COLUMNS: { key: keyof Position; label: string }[] = [
   { key: "account_alias", label: "Account" },
-  { key: "con_id", label: "Con ID" },
   { key: "symbol", label: "Symbol" },
   { key: "sec_type", label: "Sec Type" },
   { key: "contract_display_name", label: "Contract" },
@@ -76,6 +75,7 @@ const COLUMNS: { key: keyof Position; label: string }[] = [
   { key: "mark_price", label: "Mark" },
   { key: "position_value", label: "Value" },
   { key: "fifo_pnl_unrealized", label: "Unrealized PnL" },
+  { key: "con_id", label: "Con ID" },
 ];
 
 function regexMatch(
