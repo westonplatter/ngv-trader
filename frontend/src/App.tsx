@@ -68,9 +68,9 @@ function App() {
   return (
     <div className="w-full min-h-screen flex flex-col">
       {DEMO_MODE && (
-        <div className="flex items-center justify-center gap-2 bg-amber-400 px-3 py-1 text-xs font-semibold text-amber-950">
+        <div className="flex items-center justify-center gap-2 border-b border-gray-200 bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-600">
           <span>● DEMO MODE</span>
-          <span className="font-normal">
+          <span className="font-normal text-gray-500">
             Showing sample data — no live backend connected.
           </span>
         </div>
