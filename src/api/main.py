@@ -11,6 +11,7 @@ from sqlalchemy import text
 
 from src.api.routers import (
     accounts,
+    activated_products,
     admin,
     events,
     futures,
@@ -86,6 +87,7 @@ app.include_router(jobs.router, prefix="/api/v1", tags=["Jobs"])
 app.include_router(workers.router, prefix="/api/v1", tags=["Workers"])
 app.include_router(tradebot.router, prefix="/api/v1", tags=["Tradebot"])
 app.include_router(futures.router, prefix="/api/v1", tags=["Futures"])
+app.include_router(activated_products.router, prefix="/api/v1", tags=["Activated Products"])
 app.include_router(user_preferences.router, prefix="/api/v1", tags=["User Preferences"])
 app.include_router(structures.router, prefix="/api/v1", tags=["Structures"])
 app.include_router(events.router, prefix="/api/v1", tags=["Events"])
