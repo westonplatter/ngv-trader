@@ -63,7 +63,6 @@ const COLUMNS: { key: keyof Position; label: string }[] = [
   { key: "con_id", label: "Con ID" },
   { key: "symbol", label: "Symbol" },
   { key: "sec_type", label: "Sec Type" },
-  { key: "currency", label: "Currency" },
   { key: "contract_display_name", label: "Contract" },
   { key: "local_symbol", label: "Local Symbol" },
   { key: "last_trade_date", label: "Last Trade Date" },
