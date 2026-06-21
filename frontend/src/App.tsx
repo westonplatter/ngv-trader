@@ -16,6 +16,9 @@ import TradesTable from "./components/TradesTable";
 import WatchListsPage from "./components/WatchListsPage";
 import WorkerStatusLights from "./components/WorkerStatusLights";
 import { PrivacyProvider, usePrivacy } from "./contexts/PrivacyContext";
+import { isDemoMode } from "./lib/demoMode";
+
+const DEMO_MODE = isDemoMode();
 
 const NAV_ITEMS = [
   { label: "Accounts", path: "/accounts" },
@@ -64,6 +67,14 @@ function App() {
 
   return (
     <div className="w-full min-h-screen flex flex-col">
+      {DEMO_MODE && (
+        <div className="flex items-center justify-center gap-2 bg-amber-400 px-3 py-1 text-xs font-semibold text-amber-950">
+          <span>● DEMO MODE</span>
+          <span className="font-normal">
+            Showing sample data — no live backend connected.
+          </span>
+        </div>
+      )}
       <nav
         className={`flex items-center gap-6 ${horizontalPaddingClass} py-3 border-b border-gray-200 bg-white`}
       >

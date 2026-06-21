@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { API_BASE_URL } from "../config";
 
-type TradeGroup = {
+export type TradeGroup = {
   id: number;
   account_id: number | null;
   name: string;
@@ -14,12 +14,12 @@ type TradeGroup = {
   closed_by: string | null;
 };
 
-type TradeGroupDetail = TradeGroup & {
+export type TradeGroupDetail = TradeGroup & {
   tags: TagLink[];
   execution_count: number;
 };
 
-type TagLink = {
+export type TagLink = {
   id: number;
   entity_type: string;
   entity_id: number;
@@ -30,7 +30,7 @@ type TagLink = {
   created_by: string;
 };
 
-type GroupExecution = {
+export type GroupExecution = {
   id: number;
   trade_id: number;
   account_id: number;
@@ -47,7 +47,7 @@ type GroupExecution = {
   data_source: string;
 };
 
-type GroupOpenPosition = {
+export type GroupOpenPosition = {
   account_id: number;
   account_alias: string | null;
   con_id: number;
@@ -64,7 +64,7 @@ type GroupOpenPosition = {
   as_of_date: string | null;
 };
 
-type GroupExecutionsResponse = {
+export type GroupExecutionsResponse = {
   trade_group_id: number;
   total_realized_pnl: number | null;
   total_unrealized_pnl: number | null;
@@ -72,7 +72,7 @@ type GroupExecutionsResponse = {
   open_positions: GroupOpenPosition[];
 };
 
-type Tag = {
+export type Tag = {
   id: number;
   tag_type: string;
   value: string;

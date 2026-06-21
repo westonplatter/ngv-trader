@@ -5,15 +5,13 @@ import { usePrivacy } from "../contexts/PrivacyContext";
 import { PRIVACY_MASK } from "../utils/privacy";
 import { API_BASE_URL } from "../config";
 import { useSSE } from "../lib/events";
-import { isDemoMode } from "../lib/demoMode";
-import { DEMO_POSITIONS } from "../lib/demoData";
 
-interface TradeGroupRef {
+export interface TradeGroupRef {
   id: number;
   name: string;
 }
 
-interface Position {
+export interface Position {
   id: number;
   account_alias: string;
   contract_display_name: string;
@@ -103,7 +101,6 @@ function regexMatch(
 
 export default function PositionsTable() {
   const { privacyMode } = usePrivacy();
-  const demoMode = useMemo(() => isDemoMode(), []);
   const [positions, setPositions] = useState<Position[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -232,12 +229,6 @@ export default function PositionsTable() {
   }, [sortedPositions]);
 
   const loadPositions = () => {
-    if (demoMode) {
-      setPositions(DEMO_POSITIONS);
-      setError(null);
-      setLoading(false);
-      return;
-    }
     fetch(`${API_BASE_URL}/positions`)
       .then((res) => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -252,9 +243,8 @@ export default function PositionsTable() {
     loadPositions();
   }, []);
 
-  // In demo mode there is no backend to stream from, so skip the SSE refresh.
   useSSE<Record<string, unknown>>("positions", () => {
-    if (!demoMode) loadPositions();
+    loadPositions();
   });
 
   const kickOffPositionSync = async () => {
