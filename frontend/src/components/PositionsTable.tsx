@@ -35,7 +35,6 @@ type SortDirection = "none" | "desc" | "asc";
 type SortColumn =
   | "symbol"
   | "local_symbol"
-  | "trading_class"
   | "option_expiry_date"
   | "dte";
 
@@ -67,7 +66,6 @@ const COLUMNS: { key: keyof Position; label: string }[] = [
   { key: "currency", label: "Currency" },
   { key: "contract_display_name", label: "Contract" },
   { key: "local_symbol", label: "Local Symbol" },
-  { key: "trading_class", label: "Trading Class" },
   { key: "last_trade_date", label: "Last Trade Date" },
   { key: "option_expiry_date", label: "Expiry" },
   { key: "dte", label: "DTE" },
@@ -160,8 +158,6 @@ export default function PositionsTable() {
       if (column === "symbol") return p.symbol ? p.symbol.toUpperCase() : null;
       if (column === "local_symbol")
         return p.local_symbol ? p.local_symbol.toUpperCase() : null;
-      if (column === "trading_class")
-        return p.trading_class ? p.trading_class.toUpperCase() : null;
       if (column === "option_expiry_date") return expirySortValue(p);
       return p.dte;
     };
@@ -300,7 +296,6 @@ export default function PositionsTable() {
   const SORTABLE_KEYS: SortColumn[] = [
     "symbol",
     "local_symbol",
-    "trading_class",
     "option_expiry_date",
     "dte",
   ];
@@ -419,7 +414,6 @@ export default function PositionsTable() {
                 >
                   {col.key === "symbol" ||
                   col.key === "local_symbol" ||
-                  col.key === "trading_class" ||
                   col.key === "option_expiry_date" ||
                   col.key === "dte" ? (
                     <button
