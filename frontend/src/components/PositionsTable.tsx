@@ -1,15 +1,22 @@
 import type React from "react";
 import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { usePrivacy } from "../contexts/PrivacyContext";
 import { PRIVACY_MASK } from "../utils/privacy";
 import { API_BASE_URL } from "../config";
 import { useSSE } from "../lib/events";
+
+interface TradeGroupRef {
+  id: number;
+  name: string;
+}
 
 interface Position {
   id: number;
   account_alias: string;
   contract_display_name: string;
   con_id: number;
+  trade_groups: TradeGroupRef[];
   symbol: string | null;
   sec_type: string | null;
   exchange: string | null;
@@ -60,6 +67,7 @@ function expiryForPosition(pos: Position): string {
 
 const COLUMNS: { key: keyof Position; label: string }[] = [
   { key: "account_alias", label: "Account" },
+  { key: "trade_groups", label: "Trade Group" },
   { key: "symbol", label: "Symbol" },
   { key: "sec_type", label: "Sec Type" },
   { key: "contract_display_name", label: "Contract" },
@@ -566,7 +574,26 @@ export default function PositionsTable() {
                   ): React.ReactNode => (val == null ? "—" : val.toFixed(2));
                   let content: React.ReactNode;
                   let extraClass = "";
-                  if (col.key === "position" && privacyMode) {
+                  if (col.key === "trade_groups") {
+                    content =
+                      pos.trade_groups.length === 0 ? (
+                        "—"
+                      ) : (
+                        <span className="inline-flex flex-wrap gap-x-1">
+                          {pos.trade_groups.map((group, idx) => (
+                            <span key={group.id}>
+                              <Link
+                                to={`/tagging?trade_group_id=${group.id}`}
+                                className="text-blue-600 hover:underline"
+                              >
+                                {group.name}
+                              </Link>
+                              {idx < pos.trade_groups.length - 1 ? "," : ""}
+                            </span>
+                          ))}
+                        </span>
+                      );
+                  } else if (col.key === "position" && privacyMode) {
                     content = PRIVACY_MASK;
                   } else if (col.key === "last_trade_date") {
                     content = formatExpiry(pos[col.key] as string | null);
