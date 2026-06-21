@@ -36,6 +36,7 @@ banner at the top.
 
 | Doc | What it covers |
 | --- | --- |
+| [db-snapshots.md](db-snapshots.md) | Postgres snapshot/verify/restore before hard-to-reverse DB changes |
 | [planning-spec-format.md](planning-spec-format.md) | Template and conventions for writing a new `spec-*.md` |
 | [planning-agents-quorum.md](planning-agents-quorum.md) | Agent quorum roles used to shape trade-tagging requirements |
 | [doc-review.md](doc-review.md) | Checklist and conventions for reviewing and refining project docs |

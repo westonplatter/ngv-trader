@@ -21,6 +21,10 @@ When writing documentation or summaries, default to high-level overviews that po
 
 Do NOT make changes beyond what was explicitly requested. Do not proactively remove, move, or restructure columns, fields, or UI elements unless specifically asked. When in doubt, do less.
 
+## Database Changes
+
+Before any hard-to-reverse DB change (destructive/data-mutating migration, backfill, prod `downgrade`, bulk delete), take a Postgres snapshot first. See [docs/db-snapshots.md](docs/db-snapshots.md) for the snapshot/verify/restore commands and the recommended flow.
+
 ## Code Validation
 
 Always use `uv run python scripts/check.py <module>` to verify imports. Never use `uv run python -c` for import checks.
