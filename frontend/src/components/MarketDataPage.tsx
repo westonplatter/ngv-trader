@@ -213,26 +213,26 @@ export default function MarketDataPage() {
   // Merge SSE job events (only for market-data job types).
   const handleJobEvent = useCallback(
     (payload: Job, eventType: string) => {
-    if (!MARKET_DATA_JOB_TYPES.includes(payload.job_type)) return;
-    if (
-      payload.job_type === "contracts.sync_activated" &&
-      payload.status === "completed"
-    ) {
-      loadProducts();
-    }
-    if (eventType === "job.archived") {
-      setJobs((prev) => prev.filter((j) => j.id !== payload.id));
-      return;
-    }
-    setJobs((prev) => {
-      const idx = prev.findIndex((j) => j.id === payload.id);
-      if (idx >= 0) {
-        const next = [...prev];
-        next[idx] = payload;
-        return next;
+      if (!MARKET_DATA_JOB_TYPES.includes(payload.job_type)) return;
+      if (
+        payload.job_type === "contracts.sync_activated" &&
+        payload.status === "completed"
+      ) {
+        loadProducts();
       }
-      return [payload, ...prev];
-    });
+      if (eventType === "job.archived") {
+        setJobs((prev) => prev.filter((j) => j.id !== payload.id));
+        return;
+      }
+      setJobs((prev) => {
+        const idx = prev.findIndex((j) => j.id === payload.id);
+        if (idx >= 0) {
+          const next = [...prev];
+          next[idx] = payload;
+          return next;
+        }
+        return [payload, ...prev];
+      });
     },
     [loadProducts],
   );
@@ -484,7 +484,9 @@ export default function MarketDataPage() {
                     <td className="py-1.5 pr-4">{p.sec_type}</td>
                     <td className="py-1.5 pr-4">
                       {p.exchange ?? (
-                        <span className="italic text-gray-400">discovering…</span>
+                        <span className="italic text-gray-400">
+                          discovering…
+                        </span>
                       )}
                     </td>
                     <td className="py-1.5 pr-4">
