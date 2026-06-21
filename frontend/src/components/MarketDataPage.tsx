@@ -104,7 +104,6 @@ function StepperField({
   step: number;
   onChange: (v: number | null) => void;
 }) {
-  const display = value != null ? String(value) : "—";
   return (
     <div className="flex items-center gap-1">
       <span className="mr-1 text-xs font-medium text-blue-800">{label}</span>
