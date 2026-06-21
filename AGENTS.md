@@ -218,3 +218,20 @@ When opening or updating pull requests, include the following write-up in the PR
 - Fixes (optional). Bullet list of bugs corrected/remediation, or "N/A".
 - Documentation (required if behavior changed)
 - Additional notes (when applicable). Link issue(s) or external resources.
+
+### UI Change Screenshots
+
+Any PR that changes the frontend UI must include a screenshot of the net result, captured with the built-in **demo data** (no live backend required).
+
+**Demo mode.** Enable with the `?demo=1` URL query param (e.g. `/positions?demo=1`) or `VITE_DEMO_MODE=1` in `frontend/.env`. When on, `frontend/src/lib/demoApi.ts` intercepts `fetch` and answers every backend call from the fixtures in `frontend/src/lib/demoData.ts` — so all pages render without a backend and components need no demo-specific code. A "DEMO MODE" banner is shown so screenshots are unambiguous.
+
+**Capturing.** With the dev server running (`task frontend`):
+
+```bash
+cd frontend
+node scripts/screenshot.mjs "/positions?demo=1" ../docs/screenshots/<name>.png [width] [height]
+```
+
+The script uses a preinstalled Chromium (Playwright's browser CDN is blocked by the web egress policy — do **not** run `playwright install`). Commit the image under `docs/screenshots/` and embed it in the PR body via its raw URL on the PR branch.
+
+**Extending coverage.** If a changed view reads an endpoint the demo doesn't cover yet, add a fixture to `demoData.ts` and a route to `routeGet` (or a write handler) in `demoApi.ts` so the screenshot shows real content. Reuse the component/API types in fixtures so they can't drift.

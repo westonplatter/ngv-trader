@@ -8,7 +8,7 @@ import { API_BASE_URL } from "../config";
 
 export type ConnectionStatus = "connecting" | "connected" | "disconnected";
 
-type Callback<T = unknown> = (payload: T) => void;
+type Callback<T = unknown> = (payload: T, eventType: string) => void;
 
 // SSE event envelope emitted by the backend (src/services/ui_events.py UIEvent).
 interface SSEEnvelope {
@@ -51,7 +51,9 @@ function notifyStatus(s: ConnectionStatus): void {
 function handleEnvelope(data: string): void {
   try {
     const envelope = JSON.parse(data) as SSEEnvelope;
-    subscribers.get(envelope.topic)?.forEach((cb) => cb(envelope.payload));
+    subscribers
+      .get(envelope.topic)
+      ?.forEach((cb) => cb(envelope.payload, envelope.event));
   } catch {
     // ignore malformed event data
   }
@@ -121,7 +123,7 @@ function unsubscribeCallback<T>(topic: string, cb: Callback<T>): void {
 
 export function useSSE<T>(
   topic: string,
-  onEvent: (payload: T) => void,
+  onEvent: (payload: T, eventType: string) => void,
 ): ConnectionStatus {
   const [status, setStatus] = useState<ConnectionStatus>(currentStatus);
   const onEventRef = useRef(onEvent);
@@ -132,7 +134,8 @@ export function useSSE<T>(
     statusListeners.add(statusListener);
 
     // Stable wrapper so subscribe and unsubscribe use the same reference.
-    const cb: Callback = (payload) => onEventRef.current(payload as T);
+    const cb: Callback = (payload, eventType) =>
+      onEventRef.current(payload as T, eventType);
     subscribeCallback<T>(topic, cb as Callback<T>);
 
     return () => {

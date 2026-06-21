@@ -834,9 +834,9 @@ export default function PricingPage() {
           <Plot
             data={plotTraces.data}
             layout={{
-              title: "Expected PnL Over Time",
-              xaxis: { title: "Spot Price" },
-              yaxis: { title: "PnL" },
+              title: { text: "Expected PnL Over Time" },
+              xaxis: { title: { text: "Spot Price" } },
+              yaxis: { title: { text: "PnL" } },
               height: 500,
               margin: { t: 40, r: 120, b: 50, l: 60 },
               showlegend: true,

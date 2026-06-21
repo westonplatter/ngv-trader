@@ -1,25 +1,26 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { API_BASE_URL } from "../config";
 
-type TradeGroup = {
+export type TradeGroup = {
   id: number;
   account_id: number | null;
   name: string;
   notes: string | null;
   status: "open" | "closed" | "archived";
+  primary_strategy_value: string | null;
   opened_at: string;
   closed_at: string | null;
   opened_by: string | null;
   closed_by: string | null;
 };
 
-type TradeGroupDetail = TradeGroup & {
+export type TradeGroupDetail = TradeGroup & {
   tags: TagLink[];
   execution_count: number;
 };
 
-type TagLink = {
+export type TagLink = {
   id: number;
   entity_type: string;
   entity_id: number;
@@ -30,7 +31,7 @@ type TagLink = {
   created_by: string;
 };
 
-type GroupExecution = {
+export type GroupExecution = {
   id: number;
   trade_id: number;
   account_id: number;
@@ -47,7 +48,7 @@ type GroupExecution = {
   data_source: string;
 };
 
-type GroupOpenPosition = {
+export type GroupOpenPosition = {
   account_id: number;
   account_alias: string | null;
   con_id: number;
@@ -64,7 +65,7 @@ type GroupOpenPosition = {
   as_of_date: string | null;
 };
 
-type GroupExecutionsResponse = {
+export type GroupExecutionsResponse = {
   trade_group_id: number;
   total_realized_pnl: number | null;
   total_unrealized_pnl: number | null;
@@ -72,7 +73,7 @@ type GroupExecutionsResponse = {
   open_positions: GroupOpenPosition[];
 };
 
-type Tag = {
+export type Tag = {
   id: number;
   tag_type: string;
   value: string;
@@ -102,6 +103,22 @@ async function readErrorMessage(
     // no-op
   }
   return `${fallback} (${response.status})`;
+}
+
+// Resolve which strategy owns a trade group, so a deep link that only carries
+// a trade_group_id can select the right parent strategy. Returns the strategy
+// tag value, or null if it can't be determined.
+async function fetchGroupStrategyValue(
+  groupId: number,
+): Promise<string | null> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/trade-groups/${groupId}`);
+    if (!response.ok) return null;
+    const detail: TradeGroupDetail = await response.json();
+    return detail.primary_strategy_value;
+  } catch {
+    return null;
+  }
 }
 
 function statusClassName(status: TradeGroup["status"]): string {
@@ -139,6 +156,17 @@ export default function TradeTaggingPage() {
   const [selectedGroupId, setSelectedGroupId] = useState<number | null>(() =>
     parseIdParam(searchParams.get("trade_group_id")),
   );
+
+  // Captured once at mount. Used to resolve the parent strategy for a trade
+  // group deep link (?trade_group_id=N) exactly once, without re-running when
+  // the URL is later kept in sync with the current selection.
+  const initialGroupIdRef = useRef(
+    parseIdParam(searchParams.get("trade_group_id")),
+  );
+  const initialStrategyIdRef = useRef(
+    parseIdParam(searchParams.get("strategy_id")),
+  );
+  const deepLinkResolvedRef = useRef(false);
   const [groupDetail, setGroupDetail] = useState<TradeGroupDetail | null>(null);
   const [executions, setExecutions] = useState<GroupExecution[]>([]);
   const [totalRealizedPnl, setTotalRealizedPnl] = useState<number | null>(null);
@@ -197,6 +225,7 @@ export default function TradeTaggingPage() {
         return current;
       return data[0].id;
     });
+    return data;
   }, [showArchivedStrategies]);
 
   const loadGroups = useCallback(async (strategyValue: string | null) => {
@@ -257,18 +286,46 @@ export default function TradeTaggingPage() {
   useEffect(() => {
     let active = true;
 
-    loadStrategies()
-      .catch((loadError: unknown) => {
+    void (async () => {
+      try {
+        const data = await loadStrategies();
+        if (!active) return;
+
+        // A trade group is nested under a strategy. When the page is opened
+        // with only a trade_group_id (e.g. a Trade Group link from the
+        // Positions page), look up that group's parent strategy and select it
+        // so the page lands on the group instead of falling back to the first
+        // strategy's first group. Runs once.
+        if (!deepLinkResolvedRef.current) {
+          deepLinkResolvedRef.current = true;
+          const groupId = initialGroupIdRef.current;
+          const strategyId = initialStrategyIdRef.current;
+          const strategyParamValid =
+            strategyId != null &&
+            data.some((strategy) => strategy.id === strategyId);
+          if (groupId != null && !strategyParamValid) {
+            const ownerValue = await fetchGroupStrategyValue(groupId);
+            if (!active) return;
+            const owner = ownerValue
+              ? data.find((strategy) => strategy.value === ownerValue)
+              : undefined;
+            if (owner) {
+              setSelectedStrategyId(owner.id);
+              setSelectedGroupId(groupId);
+            }
+          }
+        }
+      } catch (loadError: unknown) {
         if (!active) return;
         const nextMessage =
           loadError instanceof Error
             ? loadError.message
             : "Failed to load trade tagging workspace.";
         setError(nextMessage);
-      })
-      .finally(() => {
+      } finally {
         if (active) setLoading(false);
-      });
+      }
+    })();
 
     return () => {
       active = false;
@@ -301,6 +358,11 @@ export default function TradeTaggingPage() {
   useEffect(() => {
     let active = true;
 
+    // Wait for the initial strategy resolution to finish before loading groups,
+    // so a deep-linked trade group isn't cleared while strategies are still
+    // loading (selectedStrategy is briefly null on first mount).
+    if (loading) return;
+
     if (!selectedStrategy) {
       setGroups([]);
       setSelectedGroupId(null);
@@ -324,7 +386,7 @@ export default function TradeTaggingPage() {
     return () => {
       active = false;
     };
-  }, [loadGroups, selectedStrategy]);
+  }, [loadGroups, selectedStrategy, loading]);
 
   useEffect(() => {
     if (selectedGroupId == null) {

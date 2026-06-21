@@ -6,12 +6,12 @@ import { PRIVACY_MASK } from "../utils/privacy";
 import { API_BASE_URL } from "../config";
 import { useSSE } from "../lib/events";
 
-interface TradeGroupRef {
+export interface TradeGroupRef {
   id: number;
   name: string;
 }
 
-interface Position {
+export interface Position {
   id: number;
   account_alias: string;
   contract_display_name: string;
