@@ -8,7 +8,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from src.api.deps import get_db
-from src.models import Account, Position
+from src.models import (
+    Account,
+    Position,
+    TradeExecution,
+    TradeGroup,
+    TradeGroupExecution,
+)
 from src.services.cl_contracts import infer_contract_month_from_local_symbol
 from src.services.jobs import (
     JOB_TYPE_POSITIONS_SYNC_FLEXQUERY,
@@ -21,6 +27,13 @@ router = APIRouter()
 DB_SESSION_DEPENDENCY = Depends(get_db)
 
 
+class TradeGroupRef(BaseModel):
+    model_config = {"from_attributes": True}
+
+    id: int
+    name: str
+
+
 class PositionResponse(BaseModel):
     model_config = {"from_attributes": True}
 
@@ -28,6 +41,7 @@ class PositionResponse(BaseModel):
     account_alias: str
     contract_display_name: str
     con_id: int
+    trade_groups: list[TradeGroupRef]
     symbol: str | None
     sec_type: str | None
     exchange: str | None
@@ -100,6 +114,29 @@ def _derive_option_expiry_and_dte(position: Position) -> tuple[str | None, int |
 def list_positions(db: Session = DB_SESSION_DEPENDENCY):
     stmt = select(Position, Account).outerjoin(Account, Position.account_id == Account.id)
     rows = db.execute(stmt).all()
+
+    # Map each (account_id, con_id) to the trade group(s) it's associated with,
+    # via the executions assigned to those groups. Not all positions will have a
+    # matching trade group.
+    trade_group_map: dict[tuple[int, int], list[TradeGroupRef]] = {}
+    group_rows = db.execute(
+        select(
+            TradeExecution.account_id,
+            TradeExecution.con_id,
+            TradeGroup.id,
+            TradeGroup.name,
+        )
+        .join(TradeGroupExecution, TradeGroupExecution.trade_execution_id == TradeExecution.id)
+        .join(TradeGroup, TradeGroup.id == TradeGroupExecution.trade_group_id)
+        .where(TradeExecution.con_id.is_not(None))
+        .distinct()
+        .order_by(TradeGroup.id.asc())
+    ).all()
+    for account_id, con_id, group_id, group_name in group_rows:
+        trade_group_map.setdefault((account_id, con_id), []).append(
+            TradeGroupRef(id=group_id, name=group_name)
+        )
+
     results = []
     for pos, acct in rows:
         if acct:
@@ -129,6 +166,7 @@ def list_positions(db: Session = DB_SESSION_DEPENDENCY):
                 account_alias=alias,
                 contract_display_name=display_name,
                 con_id=pos.con_id,
+                trade_groups=trade_group_map.get((pos.account_id, pos.con_id), []),
                 symbol=pos.symbol,
                 sec_type=pos.sec_type,
                 exchange=pos.exchange,

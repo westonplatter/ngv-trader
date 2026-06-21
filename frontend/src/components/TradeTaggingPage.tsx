@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { API_BASE_URL } from "../config";
 
 type TradeGroup = {
@@ -111,14 +112,33 @@ function statusClassName(status: TradeGroup["status"]): string {
 
 const GROUP_STATUSES: TradeGroup["status"][] = ["open", "closed", "archived"];
 
+type GroupFilter = "active" | "closed" | "archived" | "all";
+
+const GROUP_FILTERS: { value: GroupFilter; label: string }[] = [
+  { value: "active", label: "Active" },
+  { value: "closed", label: "Closed" },
+  { value: "archived", label: "Archived" },
+  { value: "all", label: "All" },
+];
+
+function parseIdParam(value: string | null): number | null {
+  if (!value) return null;
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 export default function TradeTaggingPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
+
   const [strategies, setStrategies] = useState<Tag[]>([]);
   const [selectedStrategyId, setSelectedStrategyId] = useState<number | null>(
-    null,
+    () => parseIdParam(searchParams.get("strategy_id")),
   );
 
   const [groups, setGroups] = useState<TradeGroup[]>([]);
-  const [selectedGroupId, setSelectedGroupId] = useState<number | null>(null);
+  const [selectedGroupId, setSelectedGroupId] = useState<number | null>(() =>
+    parseIdParam(searchParams.get("trade_group_id")),
+  );
   const [groupDetail, setGroupDetail] = useState<TradeGroupDetail | null>(null);
   const [executions, setExecutions] = useState<GroupExecution[]>([]);
   const [totalRealizedPnl, setTotalRealizedPnl] = useState<number | null>(null);
@@ -133,6 +153,7 @@ export default function TradeTaggingPage() {
   const [showNewGroup, setShowNewGroup] = useState(false);
   const [newGroupName, setNewGroupName] = useState("");
   const [newGroupNotes, setNewGroupNotes] = useState("");
+  const [groupFilter, setGroupFilter] = useState<GroupFilter>("active");
 
   const [editingGroup, setEditingGroup] = useState(false);
   const [editName, setEditName] = useState("");
@@ -149,6 +170,13 @@ export default function TradeTaggingPage() {
       strategies.find((strategy) => strategy.id === selectedStrategyId) ?? null,
     [selectedStrategyId, strategies],
   );
+
+  const visibleGroups = useMemo(() => {
+    if (groupFilter === "all") return groups;
+    const status: TradeGroup["status"] =
+      groupFilter === "active" ? "open" : groupFilter;
+    return groups.filter((group) => group.status === status);
+  }, [groups, groupFilter]);
 
   const loadStrategies = useCallback(async () => {
     const params = new URLSearchParams({ limit: "200" });
@@ -246,6 +274,29 @@ export default function TradeTaggingPage() {
       active = false;
     };
   }, [loadStrategies]);
+
+  // Keep the URL query params in sync with the current selection so the page
+  // is shareable/bookmarkable. Use replace so clicking around doesn't pile up
+  // browser history entries.
+  useEffect(() => {
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        if (selectedStrategyId != null) {
+          next.set("strategy_id", String(selectedStrategyId));
+        } else {
+          next.delete("strategy_id");
+        }
+        if (selectedGroupId != null) {
+          next.set("trade_group_id", String(selectedGroupId));
+        } else {
+          next.delete("trade_group_id");
+        }
+        return next;
+      },
+      { replace: true },
+    );
+  }, [selectedStrategyId, selectedGroupId, setSearchParams]);
 
   useEffect(() => {
     let active = true;
@@ -478,7 +529,7 @@ export default function TradeTaggingPage() {
   };
 
   return (
-    <div className="space-y-4">
+    <div className="flex min-h-0 flex-1 flex-col space-y-4">
       <div>
         <h2 className="text-lg font-semibold text-gray-900">Trade Tagging</h2>
         <p className="text-xs text-gray-500">
@@ -497,9 +548,9 @@ export default function TradeTaggingPage() {
       {error && <p className="text-sm text-red-600">{error}</p>}
       {message && <p className="text-sm text-green-700">{message}</p>}
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(220px,25%)_1fr]">
+      <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-[minmax(220px,25%)_1fr]">
         {/* Column 1: Strategies */}
-        <section className="rounded border border-gray-200 bg-white p-3">
+        <section className="flex min-h-0 flex-col rounded border border-gray-200 bg-white p-3">
           <div className="mb-3 flex items-center justify-between">
             <h3 className="text-sm font-semibold">Strategies</h3>
             <div className="flex items-center gap-2">
@@ -558,10 +609,7 @@ export default function TradeTaggingPage() {
             </div>
           )}
 
-          <ul
-            className="space-y-1 overflow-y-auto pr-1"
-            style={{ maxHeight: "calc(100vh - 280px)" }}
-          >
+          <ul className="min-h-0 flex-1 space-y-1 overflow-y-auto pr-1">
             {strategies.map((strategy) => {
               const isArchived = strategy.archived_at !== null;
               return (
@@ -613,38 +661,78 @@ export default function TradeTaggingPage() {
         </section>
 
         {/* Column 2: Trade Groups + Detail */}
-        <section className="rounded border border-gray-200 bg-white p-3">
-          <div className="mb-2 flex items-center justify-between">
-            <h3 className="text-sm font-semibold">
-              Trade Groups
-              {selectedStrategy && (
-                <span className="ml-1 font-normal text-gray-500">
-                  ({selectedStrategy.value})
-                </span>
-              )}
-            </h3>
-            <button
-              onClick={() => setShowNewGroup(!showNewGroup)}
-              disabled={!selectedStrategy}
-              className="rounded border border-gray-300 px-2 py-0.5 text-xs text-gray-600 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {showNewGroup ? "Cancel" : "+ New"}
-            </button>
-          </div>
+        <section className="flex min-h-0 flex-col rounded border border-gray-200 bg-white p-3">
+          <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 xl:grid-cols-[minmax(280px,35%)_1fr]">
+            {/* Group list */}
+            <div className="flex min-h-0 flex-col">
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <h3 className="text-sm font-semibold">
+                  Trade Groups
+                  {selectedStrategy && (
+                    <span className="ml-1 font-normal text-gray-500">
+                      ({selectedStrategy.value})
+                    </span>
+                  )}
+                </h3>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={() => setShowNewGroup(!showNewGroup)}
+                    disabled={!selectedStrategy}
+                    className="rounded border border-gray-300 px-2 py-0.5 text-xs text-gray-600 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {showNewGroup ? "Cancel" : "+ New"}
+                  </button>
+                  <select
+                    value={groupFilter}
+                    onChange={(event) =>
+                      setGroupFilter(event.target.value as GroupFilter)
+                    }
+                    aria-label="Filter trade groups by status"
+                    title="Filter trade groups by status"
+                    className="rounded border border-gray-300 bg-white px-1.5 py-0.5 text-xs text-gray-600 hover:bg-gray-50"
+                  >
+                    {GROUP_FILTERS.map((filter) => (
+                      <option key={filter.value} value={filter.value}>
+                        {filter.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
 
-          {showNewGroup && selectedStrategy && (
-            <div className="mb-3 space-y-2 rounded border border-dashed border-gray-300 p-2">
-              <div className="flex items-center gap-2">
-                <span className="shrink-0 rounded bg-gray-100 px-2 py-1 text-xs text-gray-600">
-                  {selectedStrategy.value}
-                </span>
-                <input
-                  value={newGroupName}
-                  onChange={(event) => setNewGroupName(event.target.value)}
-                  className="flex-1 rounded border border-gray-300 px-2 py-1 text-sm"
-                  placeholder="Trade group name"
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
+              {showNewGroup && selectedStrategy && (
+                <div className="mb-3 space-y-2 rounded border border-dashed border-gray-300 p-2">
+                  <div className="flex items-center gap-2">
+                    <span className="shrink-0 rounded bg-gray-100 px-2 py-1 text-xs text-gray-600">
+                      {selectedStrategy.value}
+                    </span>
+                    <input
+                      value={newGroupName}
+                      onChange={(event) => setNewGroupName(event.target.value)}
+                      className="flex-1 rounded border border-gray-300 px-2 py-1 text-sm"
+                      placeholder="Trade group name"
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          void createGroup().catch((err: unknown) => {
+                            setError(
+                              err instanceof Error
+                                ? err.message
+                                : "Failed to create trade group.",
+                            );
+                          });
+                        }
+                      }}
+                    />
+                  </div>
+                  <textarea
+                    value={newGroupNotes}
+                    onChange={(event) => setNewGroupNotes(event.target.value)}
+                    className="w-full rounded border border-gray-300 px-2 py-1 text-sm"
+                    placeholder="Optional notes"
+                    rows={1}
+                  />
+                  <button
+                    onClick={() => {
                       void createGroup().catch((err: unknown) => {
                         setError(
                           err instanceof Error
@@ -652,48 +740,22 @@ export default function TradeTaggingPage() {
                             : "Failed to create trade group.",
                         );
                       });
-                    }
-                  }}
-                />
-              </div>
-              <textarea
-                value={newGroupNotes}
-                onChange={(event) => setNewGroupNotes(event.target.value)}
-                className="w-full rounded border border-gray-300 px-2 py-1 text-sm"
-                placeholder="Optional notes"
-                rows={1}
-              />
-              <button
-                onClick={() => {
-                  void createGroup().catch((err: unknown) => {
-                    setError(
-                      err instanceof Error
-                        ? err.message
-                        : "Failed to create trade group.",
-                    );
-                  });
-                }}
-                className="w-full rounded border border-blue-300 px-3 py-1 text-sm text-blue-700 hover:bg-blue-50"
-              >
-                Create Trade Group
-              </button>
-            </div>
-          )}
+                    }}
+                    className="w-full rounded border border-blue-300 px-3 py-1 text-sm text-blue-700 hover:bg-blue-50"
+                  >
+                    Create Trade Group
+                  </button>
+                </div>
+              )}
 
-          <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(280px,35%)_1fr]">
-            {/* Group list */}
-            <div>
-              <ul
-                className="space-y-1 overflow-y-auto pr-1"
-                style={{ maxHeight: "calc(100vh - 300px)" }}
-              >
+              <ul className="min-h-0 flex-1 space-y-1 overflow-y-auto pr-1">
                 {loadingGroups && (
                   <li className="text-xs text-gray-500">
                     Loading trade groups...
                   </li>
                 )}
                 {!loadingGroups &&
-                  groups.map((group) => (
+                  visibleGroups.map((group) => (
                     <li key={group.id}>
                       <button
                         type="button"
@@ -720,18 +782,20 @@ export default function TradeTaggingPage() {
                       </button>
                     </li>
                   ))}
-                {!loadingGroups && groups.length === 0 && (
+                {!loadingGroups && visibleGroups.length === 0 && (
                   <li className="rounded border border-dashed border-gray-300 px-2 py-3 text-xs text-gray-500">
-                    {selectedStrategy
-                      ? "No trade groups for this strategy yet."
-                      : "Select a strategy to view trade groups."}
+                    {!selectedStrategy
+                      ? "Select a strategy to view trade groups."
+                      : groups.length === 0
+                        ? "No trade groups for this strategy yet."
+                        : `No ${groupFilter === "all" ? "" : groupFilter + " "}trade groups for this strategy.`}
                   </li>
                 )}
               </ul>
             </div>
 
             {/* Group detail */}
-            <div>
+            <div className="min-h-0 overflow-y-auto">
               {!groupDetail && selectedGroupId == null && (
                 <div className="flex h-full items-center justify-center text-sm text-gray-400">
                   Select a trade group to view details.

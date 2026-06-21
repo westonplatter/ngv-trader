@@ -369,7 +369,7 @@ function TagGroupCell({
       return (
         <div className="flex items-center gap-1">
           <span
-            className={`rounded bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-800 cursor-pointer hover:bg-blue-200 ${
+            className={`whitespace-nowrap rounded bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-800 cursor-pointer hover:bg-blue-200 ${
               assigning ? "opacity-60" : ""
             }`}
             onClick={(e) => {
@@ -536,6 +536,9 @@ export default function TradesTable() {
   const [accountFilter, setAccountFilter] = useState<string>("all");
   const [timeRange, setTimeRange] = useState<string>("all");
   const [highlightedTradeId, setHighlightedTradeId] = useState<number | null>(
+    null,
+  );
+  const [highlightedSymbol, setHighlightedSymbol] = useState<string | null>(
     null,
   );
   const [allTradeGroups, setAllTradeGroups] = useState<TradeGroupResult[]>([]);
@@ -722,6 +725,11 @@ export default function TradesTable() {
     setHighlightedTradeId((current) => (current === tradeId ? null : tradeId));
   };
 
+  const toggleSymbolHighlight = (symbol: string | null) => {
+    if (!symbol || symbol === "-") return;
+    setHighlightedSymbol((current) => (current === symbol ? null : symbol));
+  };
+
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
@@ -856,7 +864,7 @@ export default function TradesTable() {
               <th className="w-16 whitespace-nowrap px-2 py-2 font-semibold text-gray-700">
                 Action
               </th>
-              <th className="w-10 whitespace-nowrap px-2 py-2 font-semibold text-gray-700">
+              <th className="w-8 whitespace-nowrap px-1 py-2 font-semibold text-gray-700">
                 Type
               </th>
               <th className="w-10 whitespace-nowrap px-2 py-2 font-semibold text-gray-700">
@@ -877,17 +885,17 @@ export default function TradesTable() {
               <th className="whitespace-nowrap px-3 py-2 font-semibold text-gray-700">
                 Status
               </th>
-              <th className="whitespace-nowrap px-3 py-2 font-semibold text-gray-700">
+              <th className="w-48 min-w-[12rem] whitespace-nowrap px-3 py-2 font-semibold text-gray-700">
                 Tag Group
-              </th>
-              <th className="whitespace-nowrap px-3 py-2 font-semibold text-gray-700">
-                Exec ID
               </th>
               <th className="whitespace-nowrap px-3 py-2 font-semibold text-gray-700">
                 Parent Exec ID
               </th>
               <th className="whitespace-nowrap px-3 py-2 font-semibold text-gray-700">
                 Order Ref
+              </th>
+              <th className="whitespace-nowrap px-3 py-2 font-semibold text-gray-700">
+                Exec ID
               </th>
             </tr>
           </thead>
@@ -906,6 +914,10 @@ export default function TradesTable() {
               const ownsTagCell =
                 tagGroupRowIdByTradeId.get(row.trade_id) === row.id;
               const isHighlighted = highlightedTradeId === row.trade_id;
+              const symbol =
+                row.contract_display ?? row.trade_contract_display_name ?? "-";
+              const isSymbolHighlighted =
+                highlightedSymbol !== null && symbol === highlightedSymbol;
               const role = execRoleBadge(row.exec_role);
               return (
                 <tr
@@ -917,10 +929,16 @@ export default function TradesTable() {
                   <td className="whitespace-nowrap px-3 py-2 text-gray-700">
                     {formatDateTime(row.executed_at)}
                   </td>
-                  <td className="whitespace-nowrap px-3 py-2 font-medium text-gray-800">
-                    {row.contract_display ??
-                      row.trade_contract_display_name ??
-                      "-"}
+                  <td
+                    onDoubleClick={() => toggleSymbolHighlight(symbol)}
+                    title="Double-click to highlight matching contracts"
+                    className={`cursor-pointer select-none whitespace-nowrap px-3 py-2 font-medium ${
+                      isSymbolHighlighted
+                        ? "bg-red-200 text-red-900"
+                        : "text-gray-800"
+                    }`}
+                  >
+                    {symbol}
                   </td>
                   <td className="whitespace-nowrap px-2 py-2 text-xs">
                     <span
@@ -946,7 +964,7 @@ export default function TradesTable() {
                       <span className="text-gray-400">—</span>
                     )}
                   </td>
-                  <td className="whitespace-nowrap px-2 py-2 text-xs text-gray-700">
+                  <td className="whitespace-nowrap px-1 py-2 text-xs text-gray-700">
                     {row.sec_type ?? "-"}
                   </td>
                   <td className="whitespace-nowrap px-2 py-2 text-xs text-gray-700">
@@ -992,9 +1010,6 @@ export default function TradesTable() {
                       />
                     ) : null}
                   </td>
-                  <td className="max-w-[200px] truncate whitespace-nowrap px-3 py-2 font-mono text-xs text-gray-600">
-                    {privacyMode ? PRIVACY_MASK : row.ib_exec_id}
-                  </td>
                   <td className="max-w-[200px] truncate whitespace-nowrap px-3 py-2 font-mono text-xs">
                     {(() => {
                       const isParentRow = row.exec_role === "combo_summary";
@@ -1030,6 +1045,9 @@ export default function TradesTable() {
                   </td>
                   <td className="max-w-[160px] truncate whitespace-nowrap px-3 py-2 text-xs text-gray-600">
                     {row.trade_order_ref ?? "-"}
+                  </td>
+                  <td className="max-w-[200px] truncate whitespace-nowrap px-3 py-2 font-mono text-xs text-gray-600">
+                    {privacyMode ? PRIVACY_MASK : row.ib_exec_id}
                   </td>
                 </tr>
               );

@@ -102,12 +102,23 @@ Exits 1 on failure.
 
 ### Package Installation Cooldown
 
-Before installing any new package with `uv add`, observe a **14-day cooldown**:
+A **14-day cooldown** applies to all new dependencies (Python and JS) to avoid
+ingesting freshly-published, potentially-compromised versions.
 
-1. Check when the package was last released (PyPI release date).
-2. If the release is fewer than 14 days old, do not install it — wait for the cooldown to pass.
-3. Applies to direct dependencies only; transitive upgrades pulled in by `uv sync` are exempt.
-4. Note the cooldown and the release date in the PR description when adding a new package.
+**Python (uv):** enforce the cutoff at add time:
+
+```bash
+uv add <pkg> --exclude-newer "$(date -u -d '14 days ago' +%Y-%m-%d)"
+```
+
+1. Applies to direct dependencies only; transitive upgrades pulled in by `uv sync` are exempt.
+2. Note the cooldown and the release date in the PR description when adding a new package.
+
+**Frontend (bun):** enforced mechanically — `frontend/bunfig.toml` sets
+`minimumReleaseAge = 1209600` (14 days), so `bun add`/`bun install` refuse any
+version published less than 14 days ago. No manual step needed. To intentionally
+allow a fresh package, add it to `minimumReleaseAgeExcludes` in `bunfig.toml` and
+note it in the PR.
 
 This prevents ingesting packages with undetected supply-chain issues or breaking changes in the days immediately after release.
 
@@ -175,7 +186,27 @@ Compact, high signal to noise write descriptions optimized for an engineer-to-en
 - State assumptions explicitly when needed.
 - Avoid redundancy.
 
+## Commits
+
+Write every commit as a Conventional Commit so release-please can version and changelog it. Format: `<type>(<scope>): <imperative description>`.
+
+Types (must match `release-please-config.json` `changelog-sections`): `feat`, `fix`, `docs`, `refactor`, `chore`, `perf`, `test`, `ci`, `build`, `style`.
+
+Scope is optional — a short area word like `trades`, `orders`, `api`, `db`, `ux`, `workers`, `deps`. Use `BREAKING CHANGE:` in the body (or `!` after type/scope) for breaking changes.
+
+Rules: lowercase type/scope, imperative mood, no capital after the colon, keep the subject under ~70 chars. Apply this to **each** commit, not just PR titles.
+
+Examples: `feat(trades): add sync-since-last-trade button`, `fix(workers): recover orphaned order jobs`, `docs: cross-check docs against codebase`.
+
 ## Pull Requests
+
+### Pull Request Title
+
+The PR title becomes the squash-merge commit subject, so it must be a Conventional Commit (see **Commits** above): `<type>(<scope>): <imperative description>`. release-please parses it to version and changelog the release.
+
+- Use a valid type (`feat`, `fix`, `docs`, `refactor`, `chore`, `perf`, `test`, `ci`, `build`, `style`); optional scope.
+- Lowercase type/scope, imperative mood, no capital after the colon, subject under ~70 chars.
+- Examples: `feat(frontend): move Trade Groups New button to left side`, `fix(tagging): allow groups across multiple accounts`.
 
 ### Pull Request Description
 

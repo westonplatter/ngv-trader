@@ -160,10 +160,20 @@ def _resolve_or_create_flex_trade(
 
 
 def _combo_groups(rows: list[pd.Series]) -> dict[str, list[int]]:
-    """Group EXECUTION rows by brokerageOrderID. Return only multi-leg groups (≥2).
+    """Group EXECUTION rows by brokerageOrderID. Return only genuine multi-leg combos.
 
     Returns {brokerageOrderID: [row_index_in_rows_list]}.
     Rows with empty/blank brokerageOrderID are skipped (treated as solo).
+
+    A shared brokerageOrderID alone is NOT enough to call a group a combo: a single
+    single-instrument order frequently fills in several executions (e.g. 10 shares as
+    9 + 1). Those are partial fills of one contract, not legs of a spread, and must not
+    get a synthetic combo_summary — that row's `signed_cash / gcd(qty)` price degrades to
+    raw notional (10 × 400 = 4000) instead of a per-unit price.
+
+    A real combo spans ≥2 distinct contracts, so require ≥2 distinct (non-null) conids.
+    Flex always reports conid; if a group's conids are all missing we can't distinguish a
+    spread from partial fills, so we conservatively do NOT treat it as a combo.
     """
     groups: dict[str, list[int]] = {}
     for idx, row in enumerate(rows):
@@ -171,7 +181,15 @@ def _combo_groups(rows: list[pd.Series]) -> dict[str, list[int]]:
         if not bid:
             continue
         groups.setdefault(bid, []).append(idx)
-    return {bid: idxs for bid, idxs in groups.items() if len(idxs) >= 2}
+
+    def _is_multi_leg(idxs: list[int]) -> bool:
+        if len(idxs) < 2:
+            return False
+        conids = {_safe_int(rows[i].get("conid")) for i in idxs}
+        conids.discard(None)
+        return len(conids) >= 2
+
+    return {bid: idxs for bid, idxs in groups.items() if _is_multi_leg(idxs)}
 
 
 def _row_raw(row: pd.Series) -> dict[str, Any]:
