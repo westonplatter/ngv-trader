@@ -13,6 +13,9 @@ from src.api.routers.trades import _contract_display_from_raw, _execution_realiz
 from src.models import (
     Account,
     ContractRef,
+    LatestQuote,
+    LiveExecution,
+    LivePosition,
     Position,
     Tag,
     TagLink,
@@ -24,6 +27,12 @@ from src.models import (
     TradeGroupLink,
 )
 from src.services.cl_contracts import infer_contract_month_from_local_symbol
+from src.services.intraday_overlay import (
+    dedupe_live_realized,
+    intraday_unrealized_total,
+    marks_as_of,
+    merge_positions,
+)
 from src.services.ui_events import TOPIC_TRADES, broadcaster, make_coarse_event
 from src.utils.contract_display import contract_display_name
 
@@ -654,6 +663,11 @@ class TradeGroupOpenPositionItem(BaseModel):
     position_value: float | None
     fifo_pnl_unrealized: float | None
     as_of_date: date | None
+    # Intraday overlay (additive): live current-state fields.
+    source: str = "settled"  # "live" | "settled"
+    mark: float | None = None
+    mark_ts: datetime | None = None
+    live_unrealized: float | None = None
 
 
 class TradeGroupExecutionsResponse(BaseModel):
@@ -662,6 +676,136 @@ class TradeGroupExecutionsResponse(BaseModel):
     total_unrealized_pnl: float | None
     executions: list[TradeGroupExecutionItem]
     open_positions: list[TradeGroupOpenPositionItem]
+    # Intraday overlay (additive): settled fields above stay unchanged.
+    intraday_unrealized_pnl: float | None = None
+    intraday_realized_pnl: float | None = None
+    intraday_total_pnl: float | None = None
+    marks_as_of: datetime | None = None
+
+
+class _OpenPositionsOverlay(BaseModel):
+    open_positions: list[TradeGroupOpenPositionItem]
+    total_unrealized: float | None
+    intraday_unrealized: float | None
+    intraday_realized: float | None
+    intraday_total: float | None
+    marks_as_of: datetime | None
+
+
+def _build_open_positions_overlay(
+    db: Session,
+    account_con_pairs: set[tuple[int, int]],
+    settled_exec_ids: set[str],
+    total_pnl: float | None,
+) -> _OpenPositionsOverlay:
+    """Merge the live TWS overlay onto the settled snapshot for a group's pairs.
+
+    Settled totals stay backward-compatible; intraday fields are additive.
+    """
+    empty = _OpenPositionsOverlay(
+        open_positions=[],
+        total_unrealized=None,
+        intraday_unrealized=None,
+        intraday_realized=None,
+        intraday_total=None,
+        marks_as_of=None,
+    )
+    if not account_con_pairs:
+        return empty
+
+    from sqlalchemy import tuple_ as sa_tuple
+
+    pairs = list(account_con_pairs)
+
+    # Settled snapshot rows (FlexQuery) — base layer, non-zero qty.
+    flex_rows = list(
+        db.execute(
+            select(Position)
+            .where(sa_tuple(Position.account_id, Position.con_id).in_(pairs), Position.position != 0)
+            .order_by(Position.account_id.asc(), Position.con_id.asc())
+        )
+        .scalars()
+        .all()
+    )
+    # Settled unrealized total stays exactly as before (backward-compatible).
+    settled_vals = [p.fifo_pnl_unrealized for p in flex_rows if p.fifo_pnl_unrealized is not None]
+    total_unrealized = sum(settled_vals) if settled_vals else None
+
+    # Live overlay rows for the same pairs.
+    live_rows = list(
+        db.execute(select(LivePosition).where(sa_tuple(LivePosition.account_id, LivePosition.con_id).in_(pairs), LivePosition.position != 0)).scalars().all()
+    )
+    overlay_con_ids = {p.con_id for p in flex_rows} | {p.con_id for p in live_rows}
+    quotes = {}
+    if overlay_con_ids:
+        quotes = {q.con_id: q for q in db.execute(select(LatestQuote).where(LatestQuote.con_id.in_(list(overlay_con_ids)))).scalars().all()}
+    live_execs = list(db.execute(select(LiveExecution).where(sa_tuple(LiveExecution.account_id, LiveExecution.con_id).in_(pairs))).scalars().all())
+
+    views = merge_positions(flex_rows, live_rows, quotes)
+
+    view_account_ids = {v.account_id for v in views}
+    alias_by_id = {}
+    if view_account_ids:
+        alias_by_id = {a.id: a for a in db.execute(select(Account).where(Account.id.in_(list(view_account_ids)))).scalars().all()}
+    flex_by_key = {(p.account_id, p.con_id): p for p in flex_rows}
+
+    open_positions = [_view_to_open_position(view, flex_by_key.get((view.account_id, view.con_id)), alias_by_id.get(view.account_id)) for view in views]
+
+    intraday_unrealized = intraday_unrealized_total(views)
+    _, live_realized = dedupe_live_realized(settled_exec_ids, live_execs)
+    intraday_realized = (total_pnl or 0.0) + live_realized if (total_pnl is not None or live_realized) else None
+    intraday_total = None
+    if intraday_unrealized is not None or intraday_realized is not None:
+        intraday_total = (intraday_unrealized or 0.0) + (intraday_realized or 0.0)
+
+    return _OpenPositionsOverlay(
+        open_positions=open_positions,
+        total_unrealized=total_unrealized,
+        intraday_unrealized=intraday_unrealized,
+        intraday_realized=intraday_realized,
+        intraday_total=intraday_total,
+        marks_as_of=marks_as_of(views),
+    )
+
+
+def _view_to_open_position(view, flex, account) -> TradeGroupOpenPositionItem:
+    """Map a unified PositionView to the response item (settled fields kept additive)."""
+    inferred_month = infer_contract_month_from_local_symbol(
+        local_symbol=view.local_symbol,
+        contract_expiry=flex.last_trade_date if flex else None,
+        sec_type=view.sec_type,
+    )
+    display_name = contract_display_name(
+        symbol=view.symbol,
+        sec_type=view.sec_type,
+        local_symbol=view.local_symbol,
+        right=view.right,
+        strike=view.strike,
+        contract_expiry=flex.last_trade_date if flex else None,
+        contract_month=inferred_month,
+        exchange=flex.exchange if flex else None,
+        trading_class=flex.trading_class if flex else None,
+    )
+    return TradeGroupOpenPositionItem(
+        account_id=view.account_id,
+        account_alias=(account.alias if account else None) or (account.account if account else None),
+        con_id=view.con_id,
+        symbol=view.symbol,
+        local_symbol=view.local_symbol,
+        contract_display=display_name,
+        sec_type=view.sec_type,
+        position=view.position,
+        avg_cost=view.avg_cost,
+        multiplier=view.multiplier,
+        mark_price=view.settled_mark_price,
+        position_value=view.settled_position_value,
+        fifo_pnl_unrealized=view.settled_unrealized,
+        as_of_date=view.as_of_date,
+        source=view.source,
+        mark=view.mark,
+        mark_ts=view.mark_ts,
+        live_unrealized=view.live_unrealized,
+    )
 
 
 @router.get("/trade-groups/{trade_group_id}/executions", response_model=TradeGroupExecutionsResponse)
@@ -725,68 +869,21 @@ def trade_group_executions(trade_group_id: int, db: Session = DB_SESSION_DEPENDE
         total_pnl = sum(pnl_values) if pnl_values else None
 
     # Open positions linked to this group: match on (account_id, con_id) pairs
-    # that appear in any of the group's executions and that still have non-zero
-    # position quantity.
+    # that appear in any of the group's executions. The settled snapshot
+    # (FlexQuery `positions`) is the base; the live TWS overlay (`live_positions`
+    # + `latest_quote` + `live_executions`) is merged on top at read time.
     account_con_pairs = {(execution.account_id, execution.con_id) for execution, _ref, _trade, _account in rows if execution.con_id is not None}
-    open_positions: list[TradeGroupOpenPositionItem] = []
-    total_unrealized: float | None = None
-    if account_con_pairs:
-        from sqlalchemy import tuple_ as sa_tuple
-
-        position_rows = db.execute(
-            select(Position, Account)
-            .outerjoin(Account, Account.id == Position.account_id)
-            .where(
-                sa_tuple(Position.account_id, Position.con_id).in_(list(account_con_pairs)),
-                Position.position != 0,
-            )
-            .order_by(Position.account_id.asc(), Position.con_id.asc())
-        ).all()
-        unrealized_values: list[float] = []
-        for position, account in position_rows:
-            if position.fifo_pnl_unrealized is not None:
-                unrealized_values.append(position.fifo_pnl_unrealized)
-            inferred_month = infer_contract_month_from_local_symbol(
-                local_symbol=position.local_symbol,
-                contract_expiry=position.last_trade_date,
-                sec_type=position.sec_type,
-            )
-            display_name = contract_display_name(
-                symbol=position.symbol,
-                sec_type=position.sec_type,
-                local_symbol=position.local_symbol,
-                right=position.right,
-                strike=position.strike,
-                contract_expiry=position.last_trade_date,
-                contract_month=inferred_month,
-                exchange=position.exchange,
-                trading_class=position.trading_class,
-            )
-            open_positions.append(
-                TradeGroupOpenPositionItem(
-                    account_id=position.account_id,
-                    account_alias=(account.alias if account else None) or (account.account if account else None),
-                    con_id=position.con_id,
-                    symbol=position.symbol,
-                    local_symbol=position.local_symbol,
-                    contract_display=display_name,
-                    sec_type=position.sec_type,
-                    position=position.position,
-                    avg_cost=position.avg_cost,
-                    multiplier=position.multiplier,
-                    mark_price=position.mark_price,
-                    position_value=position.position_value,
-                    fifo_pnl_unrealized=position.fifo_pnl_unrealized,
-                    as_of_date=position.as_of_date,
-                )
-            )
-        if unrealized_values:
-            total_unrealized = sum(unrealized_values)
+    settled_exec_ids = {execution.ib_exec_id for execution, _ref, _trade, _account in rows if execution.ib_exec_id}
+    overlay = _build_open_positions_overlay(db, account_con_pairs, settled_exec_ids, total_pnl)
 
     return TradeGroupExecutionsResponse(
         trade_group_id=trade_group_id,
         total_realized_pnl=total_pnl,
-        total_unrealized_pnl=total_unrealized,
+        total_unrealized_pnl=overlay.total_unrealized,
         executions=items,
-        open_positions=open_positions,
+        open_positions=overlay.open_positions,
+        intraday_unrealized_pnl=overlay.intraday_unrealized,
+        intraday_realized_pnl=overlay.intraday_realized,
+        intraday_total_pnl=overlay.intraday_total,
+        marks_as_of=overlay.marks_as_of,
     )
