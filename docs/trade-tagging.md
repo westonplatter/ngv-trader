@@ -15,6 +15,13 @@ Today the live system supports:
 5. assignment history and a timeline view
 6. trades-page assignment into groups
 
+> The TradeGroup executions view also supports an optional **intraday TWS
+> overlay**: a "Refresh Live (TWS)" button surfaces live current-state P&L
+> (live qty/mark/unrealized + intraday totals) alongside the settled snapshot,
+> with a freshness indicator. The overlay is additive and degrades to settled
+> values when no live data is present. See
+> [core/intraday-tws-overlay.md](core/intraday-tws-overlay.md).
+
 ## Core Data Model
 
 ### `trade_groups`

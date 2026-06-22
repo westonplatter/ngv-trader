@@ -12,6 +12,12 @@ The system keeps contract metadata and market data in Postgres so the app can:
 
 The current implementation is futures-focused. The main paths in use are for `FUT` and `FOP` contracts.
 
+> The intraday TWS overlay adds a separate, sec-type-agnostic live-quote table,
+> `latest_quote` (keyed by `con_id`, covering FUT/FOP/STK/OPT). It is distinct
+> from the futures-only `latest_futures*` tables described here and is written
+> only by the manual intraday sync. See
+> [core/intraday-tws-overlay.md](core/intraday-tws-overlay.md).
+
 ## Main Components
 
 ### Contract metadata

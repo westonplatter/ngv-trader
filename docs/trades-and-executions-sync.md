@@ -19,6 +19,11 @@ Two ingestion paths exist. Both write the same tables and are distinguished by a
 Shared helpers (id parsing, account upsert, canonical flags, aggregates) live in
 `src/services/sync_common.py`.
 
+> Separately, the **intraday TWS overlay** writes today's fills to its own
+> `live_executions` table (not `trade_executions`) for live realized P&L. Settled
+> FlexQuery stays canonical: live fills are deduped/purged by `ib_exec_id` once
+> they settle. See [core/intraday-tws-overlay.md](core/intraday-tws-overlay.md).
+
 ## Model overview
 
 - `trade_executions` is the source of truth (one row per fill).
