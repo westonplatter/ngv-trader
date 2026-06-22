@@ -100,6 +100,36 @@ def _fill_realized_pnl(fill: Any) -> float | None:
     return _safe_float(getattr(report, "realizedPNL", None))
 
 
+# Sec types that route market data through SMART when no exchange is set.
+SMART_ROUTED_SEC_TYPES = {"STK", "OPT", "CASH", "IND", "CFD"}
+
+
+def _ensure_market_data_exchange(ib: IB, contracts: list) -> list:
+    """Populate a usable ``exchange`` on held contracts before ``reqTickers``.
+
+    ``ib.positions()`` returns contracts with a ``conId`` but a blank
+    ``exchange``, which ``reqTickers`` rejects (IB warning 321). ``qualifyContracts``
+    round-trips the conId to fill the correct exchange — futures get their real
+    exchange (NYMEX/CME/CFE/…), index options get CBOE, etc. Any contract still
+    missing an exchange falls back to SMART (equity-style) or its primary
+    exchange.
+    """
+    if not contracts:
+        return []
+    qualified: list = []
+    for i in range(0, len(contracts), BATCH_SIZE):
+        batch = contracts[i : i + BATCH_SIZE]
+        try:
+            qualified.extend(ib.qualifyContracts(*batch))
+        except Exception:
+            logger.exception("qualifyContracts failed for a batch of %d held contracts", len(batch))
+            qualified.extend(batch)
+    for c in qualified:
+        if not getattr(c, "exchange", None):
+            c.exchange = "SMART" if c.secType in SMART_ROUTED_SEC_TYPES else getattr(c, "primaryExchange", None)
+    return qualified
+
+
 def _fetch_tickers(ib: IB, contracts: list) -> dict[int, Any]:
     """Request snapshot tickers in batches; return mapping con_id → ticker."""
     total = len(contracts)
@@ -256,12 +286,14 @@ def run_intraday_sync(engine: Engine, ib: IB) -> dict:
     now = _now_utc()
     window_start = session_start_utc(now)
 
-    # Current positions = authoritative current state. ib.positions() returns
-    # qualified contracts (with conId) for every held instrument including ones
-    # opened today, so reqTickers directly — no ContractRef-cache dependency.
+    # Current positions = authoritative current state, covering every held
+    # instrument including ones opened today — no ContractRef-cache dependency.
+    # ib.positions() contracts carry a conId but no exchange, so qualify them to
+    # fill the exchange before requesting market data.
     positions = ib.positions()
     position_accounts = {p.account for p in positions if getattr(p, "account", None)}
     held_contracts = [p.contract for p in positions if getattr(p.contract, "conId", None)]
+    held_contracts = _ensure_market_data_exchange(ib, held_contracts)
     tickers_by_con_id = _fetch_tickers(ib, held_contracts)
     fills = ib.fills()
 
