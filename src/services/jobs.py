@@ -30,6 +30,7 @@ JOB_TYPE_MARKET_DATA_FUTURES_OPTIONS = "market_data.futures_options"
 JOB_TYPE_MARKET_DATA_SNAPSHOT = "market_data.snapshot"
 JOB_TYPE_CONTRACTS_QUALIFY_AND_SNAPSHOT = "contracts.qualify_and_snapshot"
 JOB_TYPE_INTRADAY_SYNC_TWS = "intraday.sync.tws"
+JOB_TYPE_CONTRACTS_SYNC_ACTIVATED = "contracts.sync_activated"
 
 
 def now_utc() -> datetime:

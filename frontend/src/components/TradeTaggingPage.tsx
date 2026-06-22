@@ -1,25 +1,26 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { API_BASE_URL } from "../config";
 
-type TradeGroup = {
+export type TradeGroup = {
   id: number;
   account_id: number | null;
   name: string;
   notes: string | null;
   status: "open" | "closed" | "archived";
+  primary_strategy_value: string | null;
   opened_at: string;
   closed_at: string | null;
   opened_by: string | null;
   closed_by: string | null;
 };
 
-type TradeGroupDetail = TradeGroup & {
+export type TradeGroupDetail = TradeGroup & {
   tags: TagLink[];
   execution_count: number;
 };
 
-type TagLink = {
+export type TagLink = {
   id: number;
   entity_type: string;
   entity_id: number;
@@ -30,7 +31,7 @@ type TagLink = {
   created_by: string;
 };
 
-type GroupExecution = {
+export type GroupExecution = {
   id: number;
   trade_id: number;
   account_id: number;
@@ -47,7 +48,7 @@ type GroupExecution = {
   data_source: string;
 };
 
-type GroupOpenPosition = {
+export type GroupOpenPosition = {
   account_id: number;
   account_alias: string | null;
   con_id: number;
@@ -69,7 +70,7 @@ type GroupOpenPosition = {
   live_unrealized: number | null;
 };
 
-type GroupExecutionsResponse = {
+export type GroupExecutionsResponse = {
   trade_group_id: number;
   total_realized_pnl: number | null;
   total_unrealized_pnl: number | null;
@@ -82,7 +83,7 @@ type GroupExecutionsResponse = {
   marks_as_of: string | null;
 };
 
-type Tag = {
+export type Tag = {
   id: number;
   tag_type: string;
   value: string;
@@ -124,6 +125,22 @@ async function readErrorMessage(
   return `${fallback} (${response.status})`;
 }
 
+// Resolve which strategy owns a trade group, so a deep link that only carries
+// a trade_group_id can select the right parent strategy. Returns the strategy
+// tag value, or null if it can't be determined.
+async function fetchGroupStrategyValue(
+  groupId: number,
+): Promise<string | null> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/trade-groups/${groupId}`);
+    if (!response.ok) return null;
+    const detail: TradeGroupDetail = await response.json();
+    return detail.primary_strategy_value;
+  } catch {
+    return null;
+  }
+}
+
 function statusClassName(status: TradeGroup["status"]): string {
   if (status === "open") return "bg-emerald-100 text-emerald-800";
   if (status === "closed") return "bg-gray-100 text-gray-700";
@@ -131,6 +148,15 @@ function statusClassName(status: TradeGroup["status"]): string {
 }
 
 const GROUP_STATUSES: TradeGroup["status"][] = ["open", "closed", "archived"];
+
+type GroupFilter = "active" | "closed" | "archived" | "all";
+
+const GROUP_FILTERS: { value: GroupFilter; label: string }[] = [
+  { value: "active", label: "Active" },
+  { value: "closed", label: "Closed" },
+  { value: "archived", label: "Archived" },
+  { value: "all", label: "All" },
+];
 
 function parseIdParam(value: string | null): number | null {
   if (!value) return null;
@@ -150,6 +176,17 @@ export default function TradeTaggingPage() {
   const [selectedGroupId, setSelectedGroupId] = useState<number | null>(() =>
     parseIdParam(searchParams.get("trade_group_id")),
   );
+
+  // Captured once at mount. Used to resolve the parent strategy for a trade
+  // group deep link (?trade_group_id=N) exactly once, without re-running when
+  // the URL is later kept in sync with the current selection.
+  const initialGroupIdRef = useRef(
+    parseIdParam(searchParams.get("trade_group_id")),
+  );
+  const initialStrategyIdRef = useRef(
+    parseIdParam(searchParams.get("strategy_id")),
+  );
+  const deepLinkResolvedRef = useRef(false);
   const [groupDetail, setGroupDetail] = useState<TradeGroupDetail | null>(null);
   const [executions, setExecutions] = useState<GroupExecution[]>([]);
   const [totalRealizedPnl, setTotalRealizedPnl] = useState<number | null>(null);
@@ -174,6 +211,7 @@ export default function TradeTaggingPage() {
   const [showNewGroup, setShowNewGroup] = useState(false);
   const [newGroupName, setNewGroupName] = useState("");
   const [newGroupNotes, setNewGroupNotes] = useState("");
+  const [groupFilter, setGroupFilter] = useState<GroupFilter>("active");
 
   const [editingGroup, setEditingGroup] = useState(false);
   const [editName, setEditName] = useState("");
@@ -190,6 +228,13 @@ export default function TradeTaggingPage() {
       strategies.find((strategy) => strategy.id === selectedStrategyId) ?? null,
     [selectedStrategyId, strategies],
   );
+
+  const visibleGroups = useMemo(() => {
+    if (groupFilter === "all") return groups;
+    const status: TradeGroup["status"] =
+      groupFilter === "active" ? "open" : groupFilter;
+    return groups.filter((group) => group.status === status);
+  }, [groups, groupFilter]);
 
   const loadStrategies = useCallback(async () => {
     const params = new URLSearchParams({ limit: "200" });
@@ -210,6 +255,7 @@ export default function TradeTaggingPage() {
         return current;
       return data[0].id;
     });
+    return data;
   }, [showArchivedStrategies]);
 
   const loadGroups = useCallback(async (strategyValue: string | null) => {
@@ -274,18 +320,46 @@ export default function TradeTaggingPage() {
   useEffect(() => {
     let active = true;
 
-    loadStrategies()
-      .catch((loadError: unknown) => {
+    void (async () => {
+      try {
+        const data = await loadStrategies();
+        if (!active) return;
+
+        // A trade group is nested under a strategy. When the page is opened
+        // with only a trade_group_id (e.g. a Trade Group link from the
+        // Positions page), look up that group's parent strategy and select it
+        // so the page lands on the group instead of falling back to the first
+        // strategy's first group. Runs once.
+        if (!deepLinkResolvedRef.current) {
+          deepLinkResolvedRef.current = true;
+          const groupId = initialGroupIdRef.current;
+          const strategyId = initialStrategyIdRef.current;
+          const strategyParamValid =
+            strategyId != null &&
+            data.some((strategy) => strategy.id === strategyId);
+          if (groupId != null && !strategyParamValid) {
+            const ownerValue = await fetchGroupStrategyValue(groupId);
+            if (!active) return;
+            const owner = ownerValue
+              ? data.find((strategy) => strategy.value === ownerValue)
+              : undefined;
+            if (owner) {
+              setSelectedStrategyId(owner.id);
+              setSelectedGroupId(groupId);
+            }
+          }
+        }
+      } catch (loadError: unknown) {
         if (!active) return;
         const nextMessage =
           loadError instanceof Error
             ? loadError.message
             : "Failed to load trade tagging workspace.";
         setError(nextMessage);
-      })
-      .finally(() => {
+      } finally {
         if (active) setLoading(false);
-      });
+      }
+    })();
 
     return () => {
       active = false;
@@ -318,6 +392,11 @@ export default function TradeTaggingPage() {
   useEffect(() => {
     let active = true;
 
+    // Wait for the initial strategy resolution to finish before loading groups,
+    // so a deep-linked trade group isn't cleared while strategies are still
+    // loading (selectedStrategy is briefly null on first mount).
+    if (loading) return;
+
     if (!selectedStrategy) {
       setGroups([]);
       setSelectedGroupId(null);
@@ -341,7 +420,7 @@ export default function TradeTaggingPage() {
     return () => {
       active = false;
     };
-  }, [loadGroups, selectedStrategy]);
+  }, [loadGroups, selectedStrategy, loading]);
 
   useEffect(() => {
     if (selectedGroupId == null) {
@@ -730,13 +809,30 @@ export default function TradeTaggingPage() {
                     </span>
                   )}
                 </h3>
-                <button
-                  onClick={() => setShowNewGroup(!showNewGroup)}
-                  disabled={!selectedStrategy}
-                  className="rounded border border-gray-300 px-2 py-0.5 text-xs text-gray-600 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {showNewGroup ? "Cancel" : "+ New"}
-                </button>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={() => setShowNewGroup(!showNewGroup)}
+                    disabled={!selectedStrategy}
+                    className="rounded border border-gray-300 px-2 py-0.5 text-xs text-gray-600 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {showNewGroup ? "Cancel" : "+ New"}
+                  </button>
+                  <select
+                    value={groupFilter}
+                    onChange={(event) =>
+                      setGroupFilter(event.target.value as GroupFilter)
+                    }
+                    aria-label="Filter trade groups by status"
+                    title="Filter trade groups by status"
+                    className="rounded border border-gray-300 bg-white px-1.5 py-0.5 text-xs text-gray-600 hover:bg-gray-50"
+                  >
+                    {GROUP_FILTERS.map((filter) => (
+                      <option key={filter.value} value={filter.value}>
+                        {filter.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
 
               {showNewGroup && selectedStrategy && (
@@ -794,7 +890,7 @@ export default function TradeTaggingPage() {
                   </li>
                 )}
                 {!loadingGroups &&
-                  groups.map((group) => (
+                  visibleGroups.map((group) => (
                     <li key={group.id}>
                       <button
                         type="button"
@@ -821,11 +917,13 @@ export default function TradeTaggingPage() {
                       </button>
                     </li>
                   ))}
-                {!loadingGroups && groups.length === 0 && (
+                {!loadingGroups && visibleGroups.length === 0 && (
                   <li className="rounded border border-dashed border-gray-300 px-2 py-3 text-xs text-gray-500">
-                    {selectedStrategy
-                      ? "No trade groups for this strategy yet."
-                      : "Select a strategy to view trade groups."}
+                    {!selectedStrategy
+                      ? "Select a strategy to view trade groups."
+                      : groups.length === 0
+                        ? "No trade groups for this strategy yet."
+                        : `No ${groupFilter === "all" ? "" : groupFilter + " "}trade groups for this strategy.`}
                   </li>
                 )}
               </ul>
