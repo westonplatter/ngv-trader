@@ -159,9 +159,7 @@ def list_positions(db: Session = DB_SESSION_DEPENDENCY):
         .order_by(TradeGroup.id.asc())
     ).all()
     for account_id, con_id, group_id, group_name in group_rows:
-        trade_group_map.setdefault((account_id, con_id), []).append(
-            TradeGroupRef(id=group_id, name=group_name)
-        )
+        trade_group_map.setdefault((account_id, con_id), []).append(TradeGroupRef(id=group_id, name=group_name))
 
     results: list[PositionResponse] = []
     flex_keys: set[tuple[int, int]] = set()
@@ -195,9 +193,12 @@ def list_positions(db: Session = DB_SESSION_DEPENDENCY):
         if live is not None:
             quote = quotes.get(pos.con_id)
             mark = getattr(quote, "mark", None) if quote is not None else None
-            if mark is None:
-                mark = pos.mark_price
-            mark_ts = getattr(quote, "market_ts", None) if quote is not None else None
+            # Reject the IBKR no-data sentinel; leave the live mark null when
+            # there's no usable live price (no settled-mark fallback in the
+            # live-specific column).
+            if mark is not None and mark <= 0:
+                mark = None
+            mark_ts = getattr(quote, "market_ts", None) if (quote is not None and mark is not None) else None
             position_qty = live.position
             avg_cost = live.avg_cost
             source = "live"
@@ -243,7 +244,9 @@ def list_positions(db: Session = DB_SESSION_DEPENDENCY):
             continue
         quote = quotes.get(con_id)
         mark = getattr(quote, "mark", None) if quote is not None else None
-        mark_ts = getattr(quote, "market_ts", None) if quote is not None else None
+        if mark is not None and mark <= 0:
+            mark = None
+        mark_ts = getattr(quote, "market_ts", None) if (quote is not None and mark is not None) else None
         display_name = contract_display_name(
             symbol=live.symbol,
             sec_type=live.sec_type,

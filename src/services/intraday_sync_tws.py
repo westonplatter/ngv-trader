@@ -65,9 +65,17 @@ def select_mark(bid: float | None, ask: float | None, last: float | None, close:
     """Mark-selection rule, defined once and reused.
 
     ``last`` if present; else midpoint ``(bid+ask)/2`` when both sides exist;
-    else ``close``. Returns ``None`` when no usable price exists (the read-time
-    merge then degrades to the FlexQuery snapshot mark).
+    else ``close``. Returns ``None`` when no usable price exists.
+
+    IBKR returns ``-1`` (and sometimes ``0``) as a "no market data" sentinel for
+    bid/ask/last/close — common after the close or without a data subscription.
+    Any non-positive value is treated as missing so a position is never marked
+    off the sentinel.
     """
+    last = last if (last is not None and last > 0) else None
+    bid = bid if (bid is not None and bid > 0) else None
+    ask = ask if (ask is not None and ask > 0) else None
+    close = close if (close is not None and close > 0) else None
     if last is not None:
         return last
     if bid is not None and ask is not None:

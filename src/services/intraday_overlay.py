@@ -105,10 +105,14 @@ def merge_positions(flex_rows: list[Any], live_rows: list[Any], quotes: dict[int
         quote = quotes.get(live.con_id)
         mult = parse_multiplier(live.multiplier)
         mark = getattr(quote, "mark", None) if quote is not None else None
-        mark_ts = getattr(quote, "market_ts", None) if quote is not None else None
-        if mark is None and flex is not None:
-            mark = flex.mark_price  # degrade to settled snapshot mark
-            mark_ts = None
+        # Reject the IBKR "no data" sentinel (-1, and any non-positive price) so
+        # we never compute a live PnL off a fake mark.
+        if mark is not None and mark <= 0:
+            mark = None
+        # When there is no usable live mark, leave the live-specific fields null
+        # (the UI shows "—" and intraday totals fall back to settled per row) —
+        # do NOT mirror the settled mark into the live column.
+        mark_ts = getattr(quote, "market_ts", None) if (quote is not None and mark is not None) else None
         views.append(
             PositionView(
                 account_id=live.account_id,
