@@ -1,8 +1,6 @@
 # Spec: Activated Products & Security Master Sync
 
-> **Status: Proposed — not yet implemented.** This spec describes future-state
-> work. Implementation tracked on branch
-> `claude/futures-security-master-fmzbsx`.
+> **Status: IMPLEMENTED (as of 2026-06-18).** Migration (`20260618130000_add_activated_products`), API router (`src/api/routers/activated_products.py`), job handler (`contracts.sync_activated`), agent tool (`list_activated_products`), and frontend UI (`MarketDataPage`) are all in place.
 
 ## Complexity: 3
 

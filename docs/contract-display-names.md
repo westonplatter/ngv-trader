@@ -80,7 +80,7 @@ if the local symbol pattern doesn't match.
 
 ## Where Display Names Are Built
 
-### Positions (`src/api/routers/positions.py:115`)
+### Positions (`src/api/routers/positions.py:152`)
 
 Uses `contract_display_name()` with full field set from the `Position` model:
 

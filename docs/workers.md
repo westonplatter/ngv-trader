@@ -39,6 +39,7 @@ retries up to `max_attempts`. Queue primitive: `src/services/jobs.py`.
 | `market_data.futures_prices` | `handle_market_data_futures_prices` | See [security-data.md](security-data.md) |
 | `market_data.futures_options` | `handle_market_data_futures_options` | See [security-data.md](security-data.md) |
 | `market_data.snapshot` | `handle_market_data_snapshot` | Targeted price snapshot |
+| `contracts.sync_activated` | `handle_contracts_sync_activated` | Discover exchange + sync 12-month FUT window for activated products |
 
 ### Defined but NOT registered (dormant)
 
