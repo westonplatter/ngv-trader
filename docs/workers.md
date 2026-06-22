@@ -39,6 +39,7 @@ retries up to `max_attempts`. Queue primitive: `src/services/jobs.py`.
 | `market_data.futures_prices` | `handle_market_data_futures_prices` | See [security-data.md](security-data.md) |
 | `market_data.futures_options` | `handle_market_data_futures_options` | See [security-data.md](security-data.md) |
 | `market_data.snapshot` | `handle_market_data_snapshot` | Targeted price snapshot |
+| `intraday.sync.tws` | `handle_intraday_sync_tws` | Live intraday overlay: `ib.positions()` + marks + today's fills → `live_positions`/`latest_quote`/`live_executions` (read-time merge in the TradeGroup view). Requires a TWS/Gateway session during market hours; if unavailable, the overlay simply shows no live data and the view degrades to settled FlexQuery values. |
 
 ### Defined but NOT registered (dormant)
 
