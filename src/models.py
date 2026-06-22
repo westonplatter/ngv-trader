@@ -701,3 +701,92 @@ class WorkerHeartbeat(Base):
         nullable=False,
         default=lambda: datetime.now(timezone.utc),
     )
+
+
+class LivePosition(Base):
+    """Live current-state position from TWS ``ib.positions()``.
+
+    Separate from the FlexQuery ``positions`` table so settled data is never
+    touched. Carries no mark — marks live in ``latest_quote`` and join at read
+    time. ``position``/``avg_cost`` come straight from TWS (signed qty, blended
+    average cost), so all four intraday mutation cases (open/add/reduce/close)
+    fall out without lot arithmetic.
+    """
+
+    __tablename__ = "live_positions"
+    __table_args__ = (UniqueConstraint("account_id", "con_id", name="uq_live_positions_account_id_con_id"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    account_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    con_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    symbol: Mapped[str | None] = mapped_column(String)
+    sec_type: Mapped[str | None] = mapped_column(String)
+    local_symbol: Mapped[str | None] = mapped_column(String)
+    multiplier: Mapped[str | None] = mapped_column(String)
+    right: Mapped[str | None] = mapped_column(String)
+    strike: Mapped[float | None] = mapped_column(Float, nullable=True)
+    position: Mapped[float] = mapped_column(Float, nullable=False)
+    avg_cost: Mapped[float] = mapped_column(Float, nullable=False)
+    fetched_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+
+
+class LatestQuote(Base):
+    """Unified live mark for any sec type, keyed by ``con_id``.
+
+    Sec-type-agnostic (FUT/FOP/STK/OPT) — intentionally not FK'd to the
+    futures-only ``contracts`` table. ``mark`` is the selected price per the
+    rule: ``last`` if present, else midpoint when both sides exist, else
+    ``close``; null when no usable price (degrades to the snapshot mark).
+    """
+
+    __tablename__ = "latest_quote"
+
+    con_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
+    bid: Mapped[float | None] = mapped_column(Float, nullable=True)
+    ask: Mapped[float | None] = mapped_column(Float, nullable=True)
+    last: Mapped[float | None] = mapped_column(Float, nullable=True)
+    close: Mapped[float | None] = mapped_column(Float, nullable=True)
+    mark: Mapped[float | None] = mapped_column(Float, nullable=True)
+    market_ts: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    ingested_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+
+
+class LiveExecution(Base):
+    """Today's TWS fills for intraday realized P&L.
+
+    Deduped against settled FlexQuery ``trade_executions`` by ``ib_exec_id``
+    (unique on both tables). Settled wins: live rows whose ``ib_exec_id`` has
+    since settled are purged on the next intraday sync.
+    """
+
+    __tablename__ = "live_executions"
+    __table_args__ = (Index("ix_live_executions_account_id_con_id", "account_id", "con_id"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    ib_exec_id: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    account_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    con_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    symbol: Mapped[str | None] = mapped_column(String)
+    sec_type: Mapped[str | None] = mapped_column(String)
+    local_symbol: Mapped[str | None] = mapped_column(String)
+    multiplier: Mapped[str | None] = mapped_column(String)
+    right: Mapped[str | None] = mapped_column(String)
+    strike: Mapped[float | None] = mapped_column(Float, nullable=True)
+    side: Mapped[str | None] = mapped_column(Text, nullable=True)
+    quantity: Mapped[float] = mapped_column(Float, nullable=False)
+    price: Mapped[float] = mapped_column(Float, nullable=False)
+    realized_pnl: Mapped[float | None] = mapped_column(Float, nullable=True)
+    exec_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    fetched_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
