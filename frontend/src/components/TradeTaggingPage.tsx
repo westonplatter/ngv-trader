@@ -1042,25 +1042,21 @@ export default function TradeTaggingPage() {
                     if (openPositions.length > 0) {
                       let optionsSum = 0;
                       let equitySum = 0;
-                      let allHaveMultiplier = true;
                       for (const pos of openPositions) {
-                        const mult =
-                          pos.multiplier != null
-                            ? Number.parseFloat(pos.multiplier)
-                            : NaN;
-                        if (!Number.isFinite(mult) || mult <= 0) {
-                          allHaveMultiplier = false;
-                          break;
-                        }
-                        const posCapital =
-                          Math.abs(pos.avg_cost * pos.position) * mult;
+                        // IBKR avg_cost is already multiplier-inclusive (per-contract
+                        // for options/futures, per-share for stocks), so the capital
+                        // is |avg_cost * position| — multiplying by the contract
+                        // multiplier again would over-count ~100x for options.
+                        const posCapital = Math.abs(
+                          pos.avg_cost * pos.position,
+                        );
                         if (pos.sec_type === "OPT" || pos.sec_type === "FOP") {
                           optionsSum += posCapital;
                         } else {
                           equitySum += posCapital;
                         }
                       }
-                      if (allHaveMultiplier && optionsSum + equitySum > 0) {
+                      if (optionsSum + equitySum > 0) {
                         optionsCapital = optionsSum;
                         equityCapital = equitySum;
                         capital = optionsSum + equitySum;
