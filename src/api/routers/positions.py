@@ -16,6 +16,7 @@ from src.models import (
     TradeExecution,
     TradeGroup,
     TradeGroupExecution,
+    TradeGroupPosition,
 )
 from src.services.cl_contracts import infer_contract_month_from_local_symbol
 from src.services.intraday_overlay import compute_unrealized, parse_multiplier
@@ -36,12 +37,16 @@ class TradeGroupRef(BaseModel):
 
     id: int
     name: str
+    # True when the link was created by a direct manual assignment (and can be
+    # unassigned inline); False when derived from the group's executions.
+    manual: bool = False
 
 
 class PositionResponse(BaseModel):
     model_config = {"from_attributes": True}
 
     id: int
+    account_id: int
     account_alias: str
     contract_display_name: str
     con_id: int
@@ -141,10 +146,14 @@ def list_positions(db: Session = DB_SESSION_DEPENDENCY):
     quotes = {q.con_id: q for q in db.execute(select(LatestQuote)).scalars().all()}
     accounts_by_id = {a.id: a for a in db.execute(select(Account)).scalars().all()}
 
-    # Map each (account_id, con_id) to the trade group(s) it's associated with,
-    # via the executions assigned to those groups. Not all positions will have a
-    # matching trade group.
-    trade_group_map: dict[tuple[int, int], list[TradeGroupRef]] = {}
+    # Map each (account_id, con_id) to the trade group(s) it's associated with.
+    # Two sources are merged: (1) execution-derived links, via the executions
+    # assigned to a group; (2) direct manual links (TradeGroupPosition), which
+    # let real-time TWS positions be pinned to a group before any settled
+    # execution exists. Manual links are flagged so the UI can unassign them.
+    # Keyed by group id per position to dedupe; a manual link wins so the row
+    # stays removable. Not all positions will have a matching trade group.
+    trade_group_acc: dict[tuple[int, int], dict[int, TradeGroupRef]] = {}
     group_rows = db.execute(
         select(
             TradeExecution.account_id,
@@ -159,7 +168,27 @@ def list_positions(db: Session = DB_SESSION_DEPENDENCY):
         .order_by(TradeGroup.id.asc())
     ).all()
     for account_id, con_id, group_id, group_name in group_rows:
-        trade_group_map.setdefault((account_id, con_id), []).append(TradeGroupRef(id=group_id, name=group_name))
+        trade_group_acc.setdefault((account_id, con_id), {}).setdefault(
+            group_id, TradeGroupRef(id=group_id, name=group_name, manual=False)
+        )
+
+    manual_rows = db.execute(
+        select(
+            TradeGroupPosition.account_id,
+            TradeGroupPosition.con_id,
+            TradeGroup.id,
+            TradeGroup.name,
+        )
+        .join(TradeGroup, TradeGroup.id == TradeGroupPosition.trade_group_id)
+        .order_by(TradeGroup.id.asc())
+    ).all()
+    for account_id, con_id, group_id, group_name in manual_rows:
+        groups = trade_group_acc.setdefault((account_id, con_id), {})
+        groups[group_id] = TradeGroupRef(id=group_id, name=group_name, manual=True)
+
+    trade_group_map: dict[tuple[int, int], list[TradeGroupRef]] = {
+        key: sorted(groups.values(), key=lambda g: g.id) for key, groups in trade_group_acc.items()
+    }
 
     results: list[PositionResponse] = []
     flex_keys: set[tuple[int, int]] = set()
@@ -206,6 +235,7 @@ def list_positions(db: Session = DB_SESSION_DEPENDENCY):
         results.append(
             PositionResponse(
                 id=pos.id,
+                account_id=pos.account_id,
                 account_alias=_account_alias(acct, pos.account_id),
                 contract_display_name=display_name,
                 con_id=pos.con_id,
@@ -261,6 +291,7 @@ def list_positions(db: Session = DB_SESSION_DEPENDENCY):
         results.append(
             PositionResponse(
                 id=-con_id,  # synthetic id for a live-only row (no Position PK yet)
+                account_id=account_id,
                 account_alias=_account_alias(accounts_by_id.get(account_id), account_id),
                 contract_display_name=display_name,
                 con_id=con_id,

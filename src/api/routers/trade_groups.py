@@ -25,6 +25,7 @@ from src.models import (
     TradeGroupExecution,
     TradeGroupExecutionEvent,
     TradeGroupLink,
+    TradeGroupPosition,
 )
 from src.services.cl_contracts import infer_contract_month_from_local_symbol
 from src.services.intraday_overlay import (
@@ -33,7 +34,7 @@ from src.services.intraday_overlay import (
     marks_as_of,
     merge_positions,
 )
-from src.services.ui_events import TOPIC_TRADES, broadcaster, make_coarse_event
+from src.services.ui_events import TOPIC_POSITIONS, TOPIC_TRADES, broadcaster, make_coarse_event
 from src.utils.contract_display import contract_display_name
 
 router = APIRouter()
@@ -115,6 +116,30 @@ class ExecutionReassignRequest(BaseModel):
     source: str
     created_by: str
     confidence: float | None = None
+    reason: str | None = None
+
+
+class PositionKey(BaseModel):
+    account_id: int
+    con_id: int
+    # Optional descriptive snapshot, stored for display/audit durability.
+    symbol: str | None = None
+    sec_type: str | None = None
+    local_symbol: str | None = None
+
+
+class PositionAssignRequest(BaseModel):
+    positions: list[PositionKey] = Field(min_length=1)
+    source: str
+    created_by: str
+    confidence: float | None = None
+    reason: str | None = None
+
+
+class PositionUnassignRequest(BaseModel):
+    positions: list[PositionKey] = Field(min_length=1)
+    source: str
+    created_by: str
     reason: str | None = None
 
 
@@ -492,6 +517,93 @@ def unassign_executions(
 
     db.commit()
     broadcaster.publish(make_coarse_event(TOPIC_TRADES, "trades.changed"))
+
+
+@router.post("/trade-groups/{trade_group_id}/positions:assign", status_code=204)
+def assign_positions(
+    trade_group_id: int,
+    body: PositionAssignRequest,
+    db: Session = DB_SESSION_DEPENDENCY,
+):
+    """Directly pin live/settled positions (by account_id + con_id) to a group.
+
+    Unlike execution assignment, this does not require any settled executions —
+    a real-time TWS position can be associated immediately. One manual group per
+    position: assigning a position already pinned elsewhere moves it here.
+    """
+    if body.source not in ASSIGNMENT_SOURCES:
+        raise HTTPException(status_code=400, detail="Invalid source")
+
+    trade_group = _ensure_group(db, trade_group_id)
+
+    # Auto-populate account_id from the first assigned position when not yet set.
+    if trade_group.account_id is None and body.positions:
+        trade_group.account_id = body.positions[0].account_id
+        trade_group.updated_at = _now_utc()
+
+    for pos in body.positions:
+        existing = db.execute(
+            select(TradeGroupPosition).where(
+                and_(
+                    TradeGroupPosition.account_id == pos.account_id,
+                    TradeGroupPosition.con_id == pos.con_id,
+                )
+            )
+        ).scalar_one_or_none()
+        if existing is not None:
+            existing.trade_group_id = trade_group_id
+            existing.symbol = pos.symbol
+            existing.sec_type = pos.sec_type
+            existing.local_symbol = pos.local_symbol
+            existing.source = body.source
+            existing.created_by = body.created_by
+            existing.confidence = body.confidence
+            existing.assigned_at = _now_utc()
+        else:
+            db.add(
+                TradeGroupPosition(
+                    trade_group_id=trade_group_id,
+                    account_id=pos.account_id,
+                    con_id=pos.con_id,
+                    symbol=pos.symbol,
+                    sec_type=pos.sec_type,
+                    local_symbol=pos.local_symbol,
+                    source=body.source,
+                    created_by=body.created_by,
+                    confidence=body.confidence,
+                    assigned_at=_now_utc(),
+                )
+            )
+
+    db.commit()
+    broadcaster.publish(make_coarse_event(TOPIC_POSITIONS, "positions.changed"))
+
+
+@router.post("/trade-groups/{trade_group_id}/positions:unassign", status_code=204)
+def unassign_positions(
+    trade_group_id: int,
+    body: PositionUnassignRequest,
+    db: Session = DB_SESSION_DEPENDENCY,
+):
+    if body.source not in ASSIGNMENT_SOURCES:
+        raise HTTPException(status_code=400, detail="Invalid source")
+
+    _ensure_group(db, trade_group_id)
+    for pos in body.positions:
+        link = db.execute(
+            select(TradeGroupPosition).where(
+                and_(
+                    TradeGroupPosition.trade_group_id == trade_group_id,
+                    TradeGroupPosition.account_id == pos.account_id,
+                    TradeGroupPosition.con_id == pos.con_id,
+                )
+            )
+        ).scalar_one_or_none()
+        if link is not None:
+            db.delete(link)
+
+    db.commit()
+    broadcaster.publish(make_coarse_event(TOPIC_POSITIONS, "positions.changed"))
 
 
 @router.post("/trade-executions/{execution_id}/trade-group:reassign", status_code=204)

@@ -508,6 +508,52 @@ class TradeGroupExecutionEvent(Base):
     )
 
 
+class TradeGroupPosition(Base):
+    """Direct manual association of a live/settled position to a trade group.
+
+    Positions are normally linked to a trade group *indirectly*, via the
+    executions assigned to that group (``TradeGroupExecution``). But real-time
+    TWS positions (``LivePosition``) can exist before any settled execution
+    rows do, so there is no execution to ride on. This table lets a user pin a
+    position directly to a trade group.
+
+    Keyed by ``(account_id, con_id)`` — the same natural key the positions read
+    path uses. ``con_id`` is IBKR's canonical contract id (it already encodes
+    symbol/sec_type/expiry/strike/right), so it is the most precise key
+    available; the denormalized ``symbol``/``sec_type``/``local_symbol`` columns
+    are descriptive snapshots kept for display and audit durability even if the
+    position later disappears. The unique constraint enforces one manual group
+    per position; reassigning replaces the prior link.
+    """
+
+    __tablename__ = "trade_group_positions"
+    __table_args__ = (
+        UniqueConstraint("account_id", "con_id", name="uq_trade_group_positions_account_con"),
+        Index("ix_trade_group_positions_group", "trade_group_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    trade_group_id: Mapped[int] = mapped_column(Integer, ForeignKey("trade_groups.id", ondelete="CASCADE"), nullable=False)
+    account_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    con_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    symbol: Mapped[str | None] = mapped_column(Text, nullable=True)
+    sec_type: Mapped[str | None] = mapped_column(Text, nullable=True)
+    local_symbol: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source: Mapped[str] = mapped_column(Text, nullable=False)
+    created_by: Mapped[str | None] = mapped_column(Text, nullable=True)
+    confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    assigned_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+
+
 class Tag(Base):
     __tablename__ = "tags"
     __table_args__ = (
