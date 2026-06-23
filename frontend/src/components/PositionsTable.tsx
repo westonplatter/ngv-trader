@@ -9,9 +9,6 @@ import { useSSE } from "../lib/events";
 export interface TradeGroupRef {
   id: number;
   name: string;
-  // True when this link was created by a direct manual assignment (removable
-  // inline); false when derived from the group's executions.
-  manual?: boolean;
 }
 
 export interface Position {
@@ -322,15 +319,7 @@ export default function PositionsTable() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            positions: [
-              {
-                account_id: pos.account_id,
-                con_id: pos.con_id,
-                symbol: pos.symbol,
-                sec_type: pos.sec_type,
-                local_symbol: pos.local_symbol,
-              },
-            ],
+            positions: [{ account_id: pos.account_id, con_id: pos.con_id }],
             source: "manual",
             created_by: "positions-ui",
           }),
@@ -781,19 +770,22 @@ export default function PositionsTable() {
                             >
                               {group.name}
                             </Link>
-                            {group.manual ? (
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  unassignFromTradeGroup(pos, group.id)
-                                }
-                                className="text-gray-400 hover:text-red-600"
-                                title="Remove from trade group"
-                                aria-label={`Remove from ${group.name}`}
-                              >
-                                ×
-                              </button>
-                            ) : null}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (
+                                  window.confirm(
+                                    `Remove all fills of this position from "${group.name}"?`,
+                                  )
+                                )
+                                  unassignFromTradeGroup(pos, group.id);
+                              }}
+                              className="text-gray-400 hover:text-red-600"
+                              title="Remove position's fills from this trade group"
+                              aria-label={`Remove from ${group.name}`}
+                            >
+                              ×
+                            </button>
                           </span>
                         ))}
                         <select

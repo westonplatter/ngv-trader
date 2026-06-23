@@ -25,7 +25,7 @@ from src.models import (
     TradeGroupExecution,
     TradeGroupExecutionEvent,
     TradeGroupLink,
-    TradeGroupPosition,
+    TradeGroupLiveExecution,
 )
 from src.services.cl_contracts import infer_contract_month_from_local_symbol
 from src.services.intraday_overlay import (
@@ -122,10 +122,6 @@ class ExecutionReassignRequest(BaseModel):
 class PositionKey(BaseModel):
     account_id: int
     con_id: int
-    # Optional descriptive snapshot, stored for display/audit durability.
-    symbol: str | None = None
-    sec_type: str | None = None
-    local_symbol: str | None = None
 
 
 class PositionAssignRequest(BaseModel):
@@ -519,17 +515,77 @@ def unassign_executions(
     broadcaster.publish(make_coarse_event(TOPIC_TRADES, "trades.changed"))
 
 
+def _upsert_settled_execution_link(  # noqa: PLR0913
+    db: Session,
+    *,
+    trade_execution_id: int,
+    trade_group_id: int,
+    source: str,
+    created_by: str,
+    confidence: float | None,
+    reason: str | None,
+) -> None:
+    """Assign (or move) a settled execution to a group, idempotently.
+
+    Mirrors ``assign_executions`` but never raises on an existing assignment —
+    a fan-out from a position should just move the fill to the target group.
+    """
+    existing = db.execute(
+        select(TradeGroupExecution).where(TradeGroupExecution.trade_execution_id == trade_execution_id)
+    ).scalar_one_or_none()
+    if existing is not None and existing.trade_group_id == trade_group_id:
+        return
+    if existing is not None:
+        previous_group_id = existing.trade_group_id
+        existing.trade_group_id = trade_group_id
+        existing.source = source
+        existing.created_by = created_by
+        existing.confidence = confidence
+        existing.assigned_at = _now_utc()
+        event_type = "reassigned"
+    else:
+        db.add(
+            TradeGroupExecution(
+                trade_group_id=trade_group_id,
+                trade_execution_id=trade_execution_id,
+                source=source,
+                created_by=created_by,
+                confidence=confidence,
+                assigned_at=_now_utc(),
+            )
+        )
+        previous_group_id = None
+        event_type = "assigned"
+    db.add(
+        TradeGroupExecutionEvent(
+            trade_execution_id=trade_execution_id,
+            from_trade_group_id=previous_group_id,
+            to_trade_group_id=trade_group_id,
+            event_type=event_type,
+            source=source,
+            created_by=created_by,
+            confidence=confidence,
+            reason=reason,
+            event_at=_now_utc(),
+        )
+    )
+
+
 @router.post("/trade-groups/{trade_group_id}/positions:assign", status_code=204)
 def assign_positions(
     trade_group_id: int,
     body: PositionAssignRequest,
     db: Session = DB_SESSION_DEPENDENCY,
 ):
-    """Directly pin live/settled positions (by account_id + con_id) to a group.
+    """Assign a whole position (by account_id + con_id) to a group.
 
-    Unlike execution assignment, this does not require any settled executions —
-    a real-time TWS position can be associated immediately. One manual group per
-    position: assigning a position already pinned elsewhere moves it here.
+    A position is just a rollup of fills, so this fans out to the position's
+    constituent *executions* — uniform with FlexQuery — rather than tagging the
+    net instrument. Two execution layers are covered:
+      - settled fills (``TradeExecution``) -> ``TradeGroupExecution``;
+      - live, not-yet-settled fills (``LiveExecution``) -> ``TradeGroupLiveExecution``,
+        keyed by ib_exec_id so a real-time TWS position can be grouped immediately.
+    For partial (per-fill) assignment, use the per-execution tagging flow.
     """
     if body.source not in ASSIGNMENT_SOURCES:
         raise HTTPException(status_code=400, detail="Invalid source")
@@ -542,41 +598,62 @@ def assign_positions(
         trade_group.updated_at = _now_utc()
 
     for pos in body.positions:
-        existing = db.execute(
-            select(TradeGroupPosition).where(
+        settled = db.execute(
+            select(TradeExecution.id).where(
                 and_(
-                    TradeGroupPosition.account_id == pos.account_id,
-                    TradeGroupPosition.con_id == pos.con_id,
+                    TradeExecution.account_id == pos.account_id,
+                    TradeExecution.con_id == pos.con_id,
                 )
             )
-        ).scalar_one_or_none()
-        if existing is not None:
-            existing.trade_group_id = trade_group_id
-            existing.symbol = pos.symbol
-            existing.sec_type = pos.sec_type
-            existing.local_symbol = pos.local_symbol
-            existing.source = body.source
-            existing.created_by = body.created_by
-            existing.confidence = body.confidence
-            existing.assigned_at = _now_utc()
-        else:
-            db.add(
-                TradeGroupPosition(
-                    trade_group_id=trade_group_id,
-                    account_id=pos.account_id,
-                    con_id=pos.con_id,
-                    symbol=pos.symbol,
-                    sec_type=pos.sec_type,
-                    local_symbol=pos.local_symbol,
-                    source=body.source,
-                    created_by=body.created_by,
-                    confidence=body.confidence,
-                    assigned_at=_now_utc(),
+        ).scalars().all()
+        for execution_id in settled:
+            _upsert_settled_execution_link(
+                db,
+                trade_execution_id=execution_id,
+                trade_group_id=trade_group_id,
+                source=body.source,
+                created_by=body.created_by,
+                confidence=body.confidence,
+                reason=body.reason,
+            )
+
+        live = db.execute(
+            select(LiveExecution).where(
+                and_(
+                    LiveExecution.account_id == pos.account_id,
+                    LiveExecution.con_id == pos.con_id,
                 )
             )
+        ).scalars().all()
+        for live_exec in live:
+            existing = db.execute(
+                select(TradeGroupLiveExecution).where(TradeGroupLiveExecution.ib_exec_id == live_exec.ib_exec_id)
+            ).scalar_one_or_none()
+            if existing is not None:
+                existing.trade_group_id = trade_group_id
+                existing.account_id = live_exec.account_id
+                existing.con_id = live_exec.con_id
+                existing.source = body.source
+                existing.created_by = body.created_by
+                existing.confidence = body.confidence
+                existing.assigned_at = _now_utc()
+            else:
+                db.add(
+                    TradeGroupLiveExecution(
+                        trade_group_id=trade_group_id,
+                        ib_exec_id=live_exec.ib_exec_id,
+                        account_id=live_exec.account_id,
+                        con_id=live_exec.con_id,
+                        source=body.source,
+                        created_by=body.created_by,
+                        confidence=body.confidence,
+                        assigned_at=_now_utc(),
+                    )
+                )
 
     db.commit()
     broadcaster.publish(make_coarse_event(TOPIC_POSITIONS, "positions.changed"))
+    broadcaster.publish(make_coarse_event(TOPIC_TRADES, "trades.changed"))
 
 
 @router.post("/trade-groups/{trade_group_id}/positions:unassign", status_code=204)
@@ -585,25 +662,53 @@ def unassign_positions(
     body: PositionUnassignRequest,
     db: Session = DB_SESSION_DEPENDENCY,
 ):
+    """Remove a whole position from a group by unassigning all its fills."""
     if body.source not in ASSIGNMENT_SOURCES:
         raise HTTPException(status_code=400, detail="Invalid source")
 
     _ensure_group(db, trade_group_id)
     for pos in body.positions:
-        link = db.execute(
-            select(TradeGroupPosition).where(
+        settled_links = db.execute(
+            select(TradeGroupExecution)
+            .join(TradeExecution, TradeExecution.id == TradeGroupExecution.trade_execution_id)
+            .where(
                 and_(
-                    TradeGroupPosition.trade_group_id == trade_group_id,
-                    TradeGroupPosition.account_id == pos.account_id,
-                    TradeGroupPosition.con_id == pos.con_id,
+                    TradeGroupExecution.trade_group_id == trade_group_id,
+                    TradeExecution.account_id == pos.account_id,
+                    TradeExecution.con_id == pos.con_id,
                 )
             )
-        ).scalar_one_or_none()
-        if link is not None:
+        ).scalars().all()
+        for link in settled_links:
+            db.add(
+                TradeGroupExecutionEvent(
+                    trade_execution_id=link.trade_execution_id,
+                    from_trade_group_id=trade_group_id,
+                    to_trade_group_id=None,
+                    event_type="unassigned",
+                    source=body.source,
+                    created_by=body.created_by,
+                    reason=body.reason,
+                    event_at=_now_utc(),
+                )
+            )
+            db.delete(link)
+
+        live_links = db.execute(
+            select(TradeGroupLiveExecution).where(
+                and_(
+                    TradeGroupLiveExecution.trade_group_id == trade_group_id,
+                    TradeGroupLiveExecution.account_id == pos.account_id,
+                    TradeGroupLiveExecution.con_id == pos.con_id,
+                )
+            )
+        ).scalars().all()
+        for link in live_links:
             db.delete(link)
 
     db.commit()
     broadcaster.publish(make_coarse_event(TOPIC_POSITIONS, "positions.changed"))
+    broadcaster.publish(make_coarse_event(TOPIC_TRADES, "trades.changed"))
 
 
 @router.post("/trade-executions/{execution_id}/trade-group:reassign", status_code=204)

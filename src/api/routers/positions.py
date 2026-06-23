@@ -16,7 +16,7 @@ from src.models import (
     TradeExecution,
     TradeGroup,
     TradeGroupExecution,
-    TradeGroupPosition,
+    TradeGroupLiveExecution,
 )
 from src.services.cl_contracts import infer_contract_month_from_local_symbol
 from src.services.intraday_overlay import compute_unrealized, parse_multiplier
@@ -37,9 +37,6 @@ class TradeGroupRef(BaseModel):
 
     id: int
     name: str
-    # True when the link was created by a direct manual assignment (and can be
-    # unassigned inline); False when derived from the group's executions.
-    manual: bool = False
 
 
 class PositionResponse(BaseModel):
@@ -147,14 +144,17 @@ def list_positions(db: Session = DB_SESSION_DEPENDENCY):
     accounts_by_id = {a.id: a for a in db.execute(select(Account)).scalars().all()}
 
     # Map each (account_id, con_id) to the trade group(s) it's associated with.
-    # Two sources are merged: (1) execution-derived links, via the executions
-    # assigned to a group; (2) direct manual links (TradeGroupPosition), which
-    # let real-time TWS positions be pinned to a group before any settled
-    # execution exists. Manual links are flagged so the UI can unassign them.
-    # Keyed by group id per position to dedupe; a manual link wins so the row
-    # stays removable. Not all positions will have a matching trade group.
+    # Association is always at the *execution* (fill) level — uniform across
+    # FlexQuery and TWS — and rolled up here to a position. Two execution sources
+    # are unioned:
+    #   (1) settled fills: TradeExecution -> TradeGroupExecution (covers both
+    #       FlexQuery fills and TWS fills that have settled via the trade sync);
+    #   (2) live fills: LiveExecution -> TradeGroupLiveExecution, keyed by
+    #       ib_exec_id, so a TWS fill is groupable intraday before it settles.
+    # On settlement the live link is carried over into TradeGroupExecution, so a
+    # fill is never counted from both sources. Not all positions have a group.
     trade_group_acc: dict[tuple[int, int], dict[int, TradeGroupRef]] = {}
-    group_rows = db.execute(
+    settled_rows = db.execute(
         select(
             TradeExecution.account_id,
             TradeExecution.con_id,
@@ -167,24 +167,22 @@ def list_positions(db: Session = DB_SESSION_DEPENDENCY):
         .distinct()
         .order_by(TradeGroup.id.asc())
     ).all()
-    for account_id, con_id, group_id, group_name in group_rows:
-        trade_group_acc.setdefault((account_id, con_id), {}).setdefault(
-            group_id, TradeGroupRef(id=group_id, name=group_name, manual=False)
-        )
-
-    manual_rows = db.execute(
+    live_rows = db.execute(
         select(
-            TradeGroupPosition.account_id,
-            TradeGroupPosition.con_id,
+            TradeGroupLiveExecution.account_id,
+            TradeGroupLiveExecution.con_id,
             TradeGroup.id,
             TradeGroup.name,
         )
-        .join(TradeGroup, TradeGroup.id == TradeGroupPosition.trade_group_id)
+        .join(TradeGroup, TradeGroup.id == TradeGroupLiveExecution.trade_group_id)
+        .where(TradeGroupLiveExecution.con_id.is_not(None))
+        .distinct()
         .order_by(TradeGroup.id.asc())
     ).all()
-    for account_id, con_id, group_id, group_name in manual_rows:
-        groups = trade_group_acc.setdefault((account_id, con_id), {})
-        groups[group_id] = TradeGroupRef(id=group_id, name=group_name, manual=True)
+    for account_id, con_id, group_id, group_name in [*settled_rows, *live_rows]:
+        trade_group_acc.setdefault((account_id, con_id), {}).setdefault(
+            group_id, TradeGroupRef(id=group_id, name=group_name)
+        )
 
     trade_group_map: dict[tuple[int, int], list[TradeGroupRef]] = {
         key: sorted(groups.values(), key=lambda g: g.id) for key, groups in trade_group_acc.items()
