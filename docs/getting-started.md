@@ -26,7 +26,7 @@ ngv-trader has four main components that work together:
 | **Backend**            | FastAPI REST API serving data from Postgres and proxying LLM chat                            |
 | **Workers**            | Background processes that sync data (positions, contracts, quotes) with IBKR                 |
 | **PostgreSQL**         | Stores accounts, positions, orders, trades, contracts, watchlists, and jobs                  |
-| **IBKR TWS / Gateway** | Interactive Brokers connection for live market data                                          |
+| **IBKR TWS / Gateway** | Interactive Brokers connection for live market data (required only for the optional [intraday TWS overlay](core/intraday-tws-overlay.md); FlexQuery sync needs no session) |
 
 ## Prerequisites
 

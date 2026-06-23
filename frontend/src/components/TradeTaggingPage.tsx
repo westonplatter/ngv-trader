@@ -63,6 +63,11 @@ export type GroupOpenPosition = {
   position_value: number | null;
   fifo_pnl_unrealized: number | null;
   as_of_date: string | null;
+  // Intraday overlay (additive): live current-state fields.
+  source: string;
+  mark: number | null;
+  mark_ts: string | null;
+  live_unrealized: number | null;
 };
 
 export type GroupExecutionsResponse = {
@@ -71,6 +76,11 @@ export type GroupExecutionsResponse = {
   total_unrealized_pnl: number | null;
   executions: GroupExecution[];
   open_positions: GroupOpenPosition[];
+  // Intraday overlay (additive).
+  intraday_unrealized_pnl: number | null;
+  intraday_realized_pnl: number | null;
+  intraday_total_pnl: number | null;
+  marks_as_of: string | null;
 };
 
 export type Tag = {
@@ -88,6 +98,16 @@ function formatDate(value: string | null): string {
   const parsed = Date.parse(value);
   if (Number.isNaN(parsed)) return "-";
   return new Date(parsed).toLocaleString();
+}
+
+function formatMarkTime(value: string | null | undefined): string {
+  if (!value) return "";
+  const parsed = Date.parse(value);
+  if (Number.isNaN(parsed)) return "";
+  return new Date(parsed).toLocaleTimeString(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 async function readErrorMessage(
@@ -174,6 +194,16 @@ export default function TradeTaggingPage() {
   const [totalUnrealizedPnl, setTotalUnrealizedPnl] = useState<number | null>(
     null,
   );
+  const [intradayUnrealizedPnl, setIntradayUnrealizedPnl] = useState<
+    number | null
+  >(null);
+  const [intradayRealizedPnl, setIntradayRealizedPnl] = useState<number | null>(
+    null,
+  );
+  const [intradayTotalPnl, setIntradayTotalPnl] = useState<number | null>(null);
+  const [marksAsOf, setMarksAsOf] = useState<string | null>(null);
+  const [liveSyncing, setLiveSyncing] = useState(false);
+  const [liveSyncMessage, setLiveSyncMessage] = useState<string | null>(null);
 
   const [showNewStrategy, setShowNewStrategy] = useState(false);
   const [newStrategyValue, setNewStrategyValue] = useState("");
@@ -281,6 +311,10 @@ export default function TradeTaggingPage() {
     setTotalRealizedPnl(data.total_realized_pnl);
     setOpenPositions(data.open_positions ?? []);
     setTotalUnrealizedPnl(data.total_unrealized_pnl);
+    setIntradayUnrealizedPnl(data.intraday_unrealized_pnl);
+    setIntradayRealizedPnl(data.intraday_realized_pnl);
+    setIntradayTotalPnl(data.intraday_total_pnl);
+    setMarksAsOf(data.marks_as_of);
   }, []);
 
   useEffect(() => {
@@ -395,6 +429,10 @@ export default function TradeTaggingPage() {
       setTotalRealizedPnl(null);
       setOpenPositions([]);
       setTotalUnrealizedPnl(null);
+      setIntradayUnrealizedPnl(null);
+      setIntradayRealizedPnl(null);
+      setIntradayTotalPnl(null);
+      setMarksAsOf(null);
       setEditingGroup(false);
       return;
     }
@@ -414,6 +452,41 @@ export default function TradeTaggingPage() {
       setError(nextMessage);
     });
   }, [loadGroupDetail, loadExecutions, selectedGroupId]);
+
+  const kickOffIntradaySync = async () => {
+    setLiveSyncing(true);
+    setLiveSyncMessage(null);
+    try {
+      const res = await fetch(`${API_BASE_URL}/positions/sync/intraday-tws`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          source: "manual-ui",
+          request_text: "Refresh live intraday overlay from trade group view.",
+          max_attempts: 3,
+        }),
+      });
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+      const data: { job_id: number; status: string } = await res.json();
+      setLiveSyncMessage(
+        `Queued intraday TWS sync job #${data.job_id} (${data.status}). Refreshing shortly…`,
+      );
+      // TWS session + reqTickers take longer than a flex enqueue; poll a couple times.
+      const refresh = () => {
+        if (selectedGroupId != null) void loadExecutions(selectedGroupId);
+      };
+      window.setTimeout(refresh, 3000);
+      window.setTimeout(refresh, 8000);
+    } catch (err) {
+      setLiveSyncMessage(
+        err instanceof Error ? err.message : "Unknown sync error",
+      );
+    } finally {
+      setLiveSyncing(false);
+    }
+  };
 
   const createStrategy = async () => {
     if (!newStrategyValue.trim()) {
@@ -941,7 +1014,21 @@ export default function TradeTaggingPage() {
                     >
                       Delete
                     </button>
+                    <button
+                      onClick={() => {
+                        void kickOffIntradaySync();
+                      }}
+                      disabled={liveSyncing}
+                      className="rounded border border-emerald-300 px-3 py-1 text-xs text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
+                    >
+                      {liveSyncing ? "Queueing…" : "Refresh Live (TWS)"}
+                    </button>
                   </div>
+                  {liveSyncMessage && (
+                    <p className="text-xs text-emerald-700">
+                      {liveSyncMessage}
+                    </p>
+                  )}
 
                   {/* PnL Summary */}
                   {(() => {
@@ -955,25 +1042,21 @@ export default function TradeTaggingPage() {
                     if (openPositions.length > 0) {
                       let optionsSum = 0;
                       let equitySum = 0;
-                      let allHaveMultiplier = true;
                       for (const pos of openPositions) {
-                        const mult =
-                          pos.multiplier != null
-                            ? Number.parseFloat(pos.multiplier)
-                            : NaN;
-                        if (!Number.isFinite(mult) || mult <= 0) {
-                          allHaveMultiplier = false;
-                          break;
-                        }
-                        const posCapital =
-                          Math.abs(pos.avg_cost * pos.position) * mult;
+                        // IBKR avg_cost is already multiplier-inclusive (per-contract
+                        // for options/futures, per-share for stocks), so the capital
+                        // is |avg_cost * position| — multiplying by the contract
+                        // multiplier again would over-count ~100x for options.
+                        const posCapital = Math.abs(
+                          pos.avg_cost * pos.position,
+                        );
                         if (pos.sec_type === "OPT" || pos.sec_type === "FOP") {
                           optionsSum += posCapital;
                         } else {
                           equitySum += posCapital;
                         }
                       }
-                      if (allHaveMultiplier && optionsSum + equitySum > 0) {
+                      if (optionsSum + equitySum > 0) {
                         optionsCapital = optionsSum;
                         equityCapital = equitySum;
                         capital = optionsSum + equitySum;
@@ -1033,6 +1116,25 @@ export default function TradeTaggingPage() {
                         {row("Total PnL", totalPnl, true, true)}
                         {row("Unrealized PnL", totalUnrealizedPnl, true, true)}
                         {row("Realized PnL", totalRealizedPnl, true, true)}
+                        <div className="my-1 border-t border-gray-200" />
+                        <div className="flex items-baseline justify-between">
+                          <span className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+                            Intraday (live)
+                          </span>
+                          <span className="text-[11px] text-gray-400">
+                            {marksAsOf
+                              ? `live as of ${formatMarkTime(marksAsOf)}`
+                              : "settled — no live data"}
+                          </span>
+                        </div>
+                        {row("Total PnL", intradayTotalPnl, true, true)}
+                        {row(
+                          "Unrealized PnL",
+                          intradayUnrealizedPnl,
+                          true,
+                          true,
+                        )}
+                        {row("Realized PnL", intradayRealizedPnl, true, true)}
                       </div>
                     );
                   })()}
@@ -1087,12 +1189,19 @@ export default function TradeTaggingPage() {
                                 Mark
                               </th>
                               <th className="px-2 py-1 text-right font-medium">
+                                Live Mark
+                              </th>
+                              <th className="px-2 py-1 text-right font-medium">
                                 Value
                               </th>
                               <th className="px-2 py-1 text-right font-medium">
                                 Unrealized
                               </th>
+                              <th className="px-2 py-1 text-right font-medium">
+                                Live Unrealized
+                              </th>
                               <th className="px-2 py-1 font-medium">As of</th>
+                              <th className="px-2 py-1 font-medium">Source</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -1107,6 +1216,12 @@ export default function TradeTaggingPage() {
                                 pos.fifo_pnl_unrealized == null
                                   ? "text-gray-400"
                                   : pos.fifo_pnl_unrealized >= 0
+                                    ? "text-emerald-700"
+                                    : "text-red-700";
+                              const livePnlClass =
+                                pos.live_unrealized == null
+                                  ? "text-gray-400"
+                                  : pos.live_unrealized >= 0
                                     ? "text-emerald-700"
                                     : "text-red-700";
                               return (
@@ -1138,6 +1253,11 @@ export default function TradeTaggingPage() {
                                       : pos.mark_price.toFixed(2)}
                                   </td>
                                   <td className="px-2 py-1 text-right font-mono text-gray-700">
+                                    {pos.mark == null
+                                      ? "—"
+                                      : pos.mark.toFixed(2)}
+                                  </td>
+                                  <td className="px-2 py-1 text-right font-mono text-gray-700">
                                     {pos.position_value == null
                                       ? "—"
                                       : pos.position_value.toFixed(2)}
@@ -1149,8 +1269,29 @@ export default function TradeTaggingPage() {
                                       ? "—"
                                       : pos.fifo_pnl_unrealized.toFixed(2)}
                                   </td>
+                                  <td
+                                    className={`px-2 py-1 text-right font-mono ${livePnlClass}`}
+                                  >
+                                    {pos.live_unrealized == null
+                                      ? "—"
+                                      : pos.live_unrealized.toFixed(2)}
+                                  </td>
                                   <td className="px-2 py-1 text-gray-500">
                                     {pos.as_of_date ?? "—"}
+                                  </td>
+                                  <td className="px-2 py-1">
+                                    {pos.source === "live" ? (
+                                      <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[11px] font-medium text-emerald-800">
+                                        live
+                                        {pos.mark_ts
+                                          ? ` ${formatMarkTime(pos.mark_ts)}`
+                                          : ""}
+                                      </span>
+                                    ) : (
+                                      <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[11px] font-medium text-gray-600">
+                                        settled
+                                      </span>
+                                    )}
                                   </td>
                                 </tr>
                               );

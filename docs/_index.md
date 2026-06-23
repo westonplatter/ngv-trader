@@ -26,16 +26,18 @@ banner at the top.
 
 ## Core UX & platform patterns
 
-| Doc                                      | What it covers                                                                      |
-| ---------------------------------------- | ----------------------------------------------------------------------------------- |
-| [core/api-ux-sse.md](core/api-ux-sse.md) | Real-time UI via Server-Sent Events: broadcaster, notify endpoints, event envelope  |
-| [core/ux-actions.md](core/ux-actions.md) | Reusable action patterns: destructive confirmation, save feedback, state model      |
-| [core/ux-pricing.md](core/ux-pricing.md) | Pricing page: two-tier contract catalog, on-demand qualification, expected-PnL flow |
+| Doc                                                          | What it covers                                                                                                                                            |
+| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [core/intraday-tws-overlay.md](core/intraday-tws-overlay.md) | Optional live current-state P&L overlay from TWS (`live_positions`/`latest_quote`/`live_executions`), read-time merge over the settled FlexQuery snapshot |
+| [core/api-ux-sse.md](core/api-ux-sse.md)                     | Real-time UI via Server-Sent Events: broadcaster, notify endpoints, event envelope                                                                      |
+| [core/ux-actions.md](core/ux-actions.md)                     | Reusable action patterns: destructive confirmation, save feedback, state model                                                                          |
+| [core/ux-pricing.md](core/ux-pricing.md)                     | Pricing page: two-tier contract catalog, on-demand qualification, expected-PnL flow                                                                     |
 
 ## Planning & process
 
-| Doc                                                    | What it covers                                                    |
+| Doc                                                    | What it covers                                                     |
 | ------------------------------------------------------ | ----------------------------------------------------------------- |
+| [db-snapshots.md](db-snapshots.md)                     | Postgres snapshot/verify/restore before hard-to-reverse DB changes |
 | [planning-spec-format.md](planning-spec-format.md)     | Template and conventions for writing a new `spec-*.md`            |
 | [planning-agents-quorum.md](planning-agents-quorum.md) | Agent quorum roles used to shape trade-tagging requirements       |
 | [doc-review.md](doc-review.md)                         | Checklist and conventions for reviewing and refining project docs |

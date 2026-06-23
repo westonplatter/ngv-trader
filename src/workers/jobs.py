@@ -22,6 +22,7 @@ from src.services.jobs import (
     JOB_TYPE_CONTRACTS_QUALIFY_AND_SNAPSHOT,
     JOB_TYPE_CONTRACTS_SYNC,
     JOB_TYPE_CONTRACTS_SYNC_ACTIVATED,
+    JOB_TYPE_INTRADAY_SYNC_TWS,
     JOB_TYPE_MARKET_DATA_FUTURES_OPTIONS,
     JOB_TYPE_MARKET_DATA_FUTURES_PRICES,
     JOB_TYPE_MARKET_DATA_SNAPSHOT,
@@ -633,6 +634,16 @@ def handle_contracts_sync_activated(job: Job, engine: Engine, ib_pool: IBSession
     return sync_activated_products_with_ib(engine=engine, ib=ib, symbols=symbols)
 
 
+def handle_intraday_sync_tws(job: Job, engine: Engine, ib_pool: IBSessionPool) -> dict:
+    """Run the intraday TWS overlay sync: positions + marks + today's fills."""
+    from src.services.intraday_sync_tws import run_intraday_sync
+
+    payload = job.payload or {}
+    host, port, client_id, connect_timeout_seconds = resolve_tws_connection(payload, default_client_id=40)
+    ib = ib_pool.get(host=host, port=port, client_id=client_id, connect_timeout_seconds=connect_timeout_seconds)
+    return run_intraday_sync(engine=engine, ib=ib)
+
+
 def get_handler(job_type: str) -> Callable[[Job, Engine, IBSessionPool], dict] | None:
     # TWS sync entries (JOB_TYPE_POSITIONS_SYNC_TWS, JOB_TYPE_TRADES_SYNC_TWS) are
     # intentionally not registered while Flex Query is the active path. The
@@ -651,5 +662,6 @@ def get_handler(job_type: str) -> Callable[[Job, Engine, IBSessionPool], dict] |
         JOB_TYPE_MARKET_DATA_SNAPSHOT: handle_market_data_snapshot,
         JOB_TYPE_CONTRACTS_QUALIFY_AND_SNAPSHOT: handle_contracts_qualify_and_snapshot,
         JOB_TYPE_CONTRACTS_SYNC_ACTIVATED: handle_contracts_sync_activated,
+        JOB_TYPE_INTRADAY_SYNC_TWS: handle_intraday_sync_tws,
     }
     return handlers.get(job_type)

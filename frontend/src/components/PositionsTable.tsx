@@ -36,6 +36,21 @@ export interface Position {
   position_value: number | null;
   fifo_pnl_unrealized: number | null;
   fetched_at: string;
+  // Intraday overlay (additive): live current-state fields.
+  source: string;
+  mark: number | null;
+  mark_ts: string | null;
+  live_unrealized: number | null;
+}
+
+function formatMarkTime(value: string | null | undefined): string {
+  if (!value) return "";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleTimeString(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 type SortDirection = "none" | "desc" | "asc";
@@ -83,6 +98,9 @@ const COLUMNS: { key: keyof Position; label: string }[] = [
   { key: "mark_price", label: "Mark" },
   { key: "position_value", label: "Value" },
   { key: "fifo_pnl_unrealized", label: "Unrealized PnL" },
+  { key: "mark", label: "Live Mark" },
+  { key: "live_unrealized", label: "Live Unrealized" },
+  { key: "source", label: "Freshness" },
   { key: "con_id", label: "Con ID" },
 ];
 
@@ -107,6 +125,7 @@ export default function PositionsTable() {
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
   const [syncError, setSyncError] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
+  const [liveSyncing, setLiveSyncing] = useState(false);
   const [accountFilter, setAccountFilter] = useState<string>("all");
   const [symbolFilter, setSymbolFilter] = useState("");
   const [localSymbolFilter, setLocalSymbolFilter] = useState("");
@@ -228,6 +247,34 @@ export default function PositionsTable() {
     return any ? total : null;
   }, [sortedPositions]);
 
+  const totalLiveUnrealized = useMemo(() => {
+    let total = 0;
+    let any = false;
+    for (const p of sortedPositions) {
+      const val =
+        p.source === "live" ? p.live_unrealized : p.fifo_pnl_unrealized;
+      if (val != null) {
+        total += val;
+        any = true;
+      }
+    }
+    return any ? total : null;
+  }, [sortedPositions]);
+
+  const newestMarkTs = useMemo(() => {
+    let newest: string | null = null;
+    for (const p of sortedPositions) {
+      if (
+        p.source === "live" &&
+        p.mark_ts &&
+        (newest == null || p.mark_ts > newest)
+      ) {
+        newest = p.mark_ts;
+      }
+    }
+    return newest;
+  }, [sortedPositions]);
+
   const loadPositions = () => {
     fetch(`${API_BASE_URL}/positions`)
       .then((res) => {
@@ -275,6 +322,38 @@ export default function PositionsTable() {
       setSyncError(message);
     } finally {
       setSyncing(false);
+    }
+  };
+
+  const kickOffIntradaySync = async () => {
+    setLiveSyncing(true);
+    setSyncError(null);
+    setSyncMessage(null);
+    try {
+      const res = await fetch(`${API_BASE_URL}/positions/sync/intraday-tws`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          source: "manual-ui",
+          request_text: "Refresh live intraday overlay from Positions page.",
+          max_attempts: 3,
+        }),
+      });
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+      const data: { job_id: number; status: string } = await res.json();
+      setSyncMessage(
+        `Queued intraday TWS sync job #${data.job_id} (${data.status}). Refreshing shortly…`,
+      );
+      // The TWS session + reqTickers take longer than a flex enqueue; poll a few times.
+      window.setTimeout(() => loadPositions(), 3000);
+      window.setTimeout(() => loadPositions(), 8000);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unknown sync error";
+      setSyncError(message);
+    } finally {
+      setLiveSyncing(false);
     }
   };
 
@@ -364,6 +443,32 @@ export default function PositionsTable() {
                     })}
             </span>
           </span>
+          <span className="text-sm text-gray-600">
+            Live PnL:{" "}
+            <span
+              className={
+                totalLiveUnrealized == null
+                  ? "text-gray-500"
+                  : totalLiveUnrealized >= 0
+                    ? "font-semibold text-emerald-700"
+                    : "font-semibold text-red-700"
+              }
+            >
+              {privacyMode
+                ? PRIVACY_MASK
+                : totalLiveUnrealized == null
+                  ? "—"
+                  : totalLiveUnrealized.toLocaleString(undefined, {
+                      style: "currency",
+                      currency: "USD",
+                    })}
+            </span>
+            {newestMarkTs && (
+              <span className="ml-1 text-xs text-gray-400">
+                (live as of {formatMarkTime(newestMarkTs)})
+              </span>
+            )}
+          </span>
           <button
             onClick={() => {
               void kickOffPositionSync();
@@ -372,6 +477,15 @@ export default function PositionsTable() {
             className="rounded border border-blue-300 px-3 py-1 text-sm text-blue-700 hover:bg-blue-50 disabled:opacity-50"
           >
             {syncing ? "Queueing..." : "Kick Off Position Sync"}
+          </button>
+          <button
+            onClick={() => {
+              void kickOffIntradaySync();
+            }}
+            disabled={liveSyncing}
+            className="rounded border border-emerald-300 px-3 py-1 text-sm text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
+          >
+            {liveSyncing ? "Queueing..." : "Refresh Live (TWS)"}
           </button>
         </div>
       </div>
@@ -616,6 +730,35 @@ export default function PositionsTable() {
                             ? "text-emerald-700 font-medium"
                             : "text-red-700 font-medium";
                       }
+                    }
+                  } else if (col.key === "mark") {
+                    content = renderNumeric(pos.mark);
+                  } else if (col.key === "live_unrealized") {
+                    if (privacyMode) {
+                      content = PRIVACY_MASK;
+                    } else {
+                      content = renderNumeric(pos.live_unrealized);
+                      if (pos.live_unrealized != null) {
+                        extraClass =
+                          pos.live_unrealized >= 0
+                            ? "text-emerald-700 font-medium"
+                            : "text-red-700 font-medium";
+                      }
+                    }
+                  } else if (col.key === "source") {
+                    if (pos.source === "live") {
+                      const ts = formatMarkTime(pos.mark_ts);
+                      content = (
+                        <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-xs font-medium text-emerald-800">
+                          live{ts ? ` ${ts}` : ""}
+                        </span>
+                      );
+                    } else {
+                      content = (
+                        <span className="rounded bg-gray-100 px-1.5 py-0.5 text-xs font-medium text-gray-600">
+                          settled
+                        </span>
+                      );
                     }
                   } else {
                     content = pos[col.key] ?? "—";
