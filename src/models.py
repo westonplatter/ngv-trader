@@ -508,6 +508,50 @@ class TradeGroupExecutionEvent(Base):
     )
 
 
+class TradeGroupLiveExecution(Base):
+    """Trade-group assignment for an *unsettled* TWS fill, keyed by ``ib_exec_id``.
+
+    Settled fills are grouped via ``TradeGroupExecution`` (keyed by the
+    ``trade_executions.id`` FK). But a TWS fill first appears only in
+    ``live_executions`` and has no ``trade_executions`` row yet, so it cannot be
+    grouped that way intraday. This table lets a live fill be assigned to a group
+    immediately, keyed by the stable ``ib_exec_id`` it shares with the eventual
+    settled row.
+
+    On settlement (the fill lands in ``trade_executions``), the intraday sync
+    carries the assignment over into ``TradeGroupExecution`` and drops the live
+    link — so grouping survives the live→settled handoff with no gap and no
+    double-count. ``account_id``/``con_id`` are denormalized from
+    ``live_executions`` so the positions read can roll fills up to a position.
+    """
+
+    __tablename__ = "trade_group_live_executions"
+    __table_args__ = (
+        UniqueConstraint("ib_exec_id", name="uq_trade_group_live_executions_ib_exec_id"),
+        Index("ix_trade_group_live_executions_group", "trade_group_id"),
+        Index("ix_trade_group_live_executions_account_con", "account_id", "con_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    trade_group_id: Mapped[int] = mapped_column(Integer, ForeignKey("trade_groups.id", ondelete="CASCADE"), nullable=False)
+    ib_exec_id: Mapped[str] = mapped_column(Text, nullable=False)
+    account_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    con_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    source: Mapped[str] = mapped_column(Text, nullable=False)
+    created_by: Mapped[str | None] = mapped_column(Text, nullable=True)
+    confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    assigned_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+
+
 class Tag(Base):
     __tablename__ = "tags"
     __table_args__ = (
