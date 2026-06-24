@@ -535,6 +535,9 @@ export default function TradesTable() {
   const [symbolFilter, setSymbolFilter] = useState("");
   const [accountFilter, setAccountFilter] = useState<string>("all");
   const [timeRange, setTimeRange] = useState<string>("all");
+  const [tagStatus, setTagStatus] = useState<"all" | "tagged" | "untagged">(
+    "all",
+  );
   const [highlightedTradeId, setHighlightedTradeId] = useState<number | null>(
     null,
   );
@@ -640,8 +643,15 @@ export default function TradesTable() {
         next = next.filter((row) => Date.parse(row.executed_at) >= cutoff);
       }
     }
+    if (tagStatus !== "all") {
+      next = next.filter((row) =>
+        tagStatus === "tagged"
+          ? row.trade_assigned_trade_group_id !== null
+          : row.trade_assigned_trade_group_id === null,
+      );
+    }
     return next;
-  }, [executions, accountFilter, symbolRegex, timeRange]);
+  }, [executions, accountFilter, symbolRegex, timeRange, tagStatus]);
 
   // For each trade_id, the row that owns the Tag Group cell.
   // Prefer combo_summary; otherwise the earliest row in the filtered view.
@@ -886,7 +896,30 @@ export default function TradesTable() {
                 Status
               </th>
               <th className="w-48 min-w-[12rem] whitespace-nowrap px-3 py-2 font-semibold text-gray-700">
-                Tag Group
+                <div className="space-y-1">
+                  <div className="flex items-center gap-1">
+                    {[
+                      { id: "all", label: "All" },
+                      { id: "tagged", label: "Tagged" },
+                      { id: "untagged", label: "Untagged" },
+                    ].map((opt) => (
+                      <button
+                        key={opt.id}
+                        onClick={() =>
+                          setTagStatus(opt.id as "all" | "tagged" | "untagged")
+                        }
+                        className={`rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide ${
+                          tagStatus === opt.id
+                            ? "bg-gray-900 text-white"
+                            : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                  <div>Tag Group</div>
+                </div>
               </th>
               <th className="whitespace-nowrap px-3 py-2 font-semibold text-gray-700">
                 Parent Exec ID

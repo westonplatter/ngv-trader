@@ -7,6 +7,7 @@
     "dev": "bunx --bun vite",
     "build": "bunx --bun tsc -b && bunx --bun vite build",
     "lint": "bunx eslint .",
+    "typecheck": "bunx --bun tsc --noEmit",
     "preview": "bunx --bun vite preview"
   },
   "dependencies": {
