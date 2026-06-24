@@ -59,6 +59,11 @@ export const DEMO_POSITIONS: Position[] = [
     position_value: 1320615.0,
     fifo_pnl_unrealized: 9615.0,
     fetched_at: FETCHED_AT,
+    account_id: ACCOUNT_ID,
+    source: "settled",
+    mark: null,
+    mark_ts: null,
+    live_unrealized: null,
   },
 
   // ── Long ES future-option call diagonal (long near + far calls) ─────────────
@@ -87,6 +92,11 @@ export const DEMO_POSITIONS: Position[] = [
     position_value: 9250.0,
     fifo_pnl_unrealized: 1000.0,
     fetched_at: FETCHED_AT,
+    account_id: ACCOUNT_ID,
+    source: "settled",
+    mark: null,
+    mark_ts: null,
+    live_unrealized: null,
   },
   {
     id: 3,
@@ -113,6 +123,11 @@ export const DEMO_POSITIONS: Position[] = [
     position_value: 16875.0,
     fifo_pnl_unrealized: 1175.0,
     fetched_at: FETCHED_AT,
+    account_id: ACCOUNT_ID,
+    source: "settled",
+    mark: null,
+    mark_ts: null,
+    live_unrealized: null,
   },
 
   // ── Long 200 GLD shares ─────────────────────────────────────────────────────
@@ -141,6 +156,11 @@ export const DEMO_POSITIONS: Position[] = [
     position_value: 62240.0,
     fifo_pnl_unrealized: 2560.0,
     fetched_at: FETCHED_AT,
+    account_id: ACCOUNT_ID,
+    source: "settled",
+    mark: null,
+    mark_ts: null,
+    live_unrealized: null,
   },
 
   // ── Short 3 calls on GLD: ATM, OTM +2%, OTM +4% (covered by the shares) ──────
@@ -169,6 +189,11 @@ export const DEMO_POSITIONS: Position[] = [
     position_value: -685.0,
     fifo_pnl_unrealized: -73.0,
     fetched_at: FETCHED_AT,
+    account_id: ACCOUNT_ID,
+    source: "settled",
+    mark: null,
+    mark_ts: null,
+    live_unrealized: null,
   },
   {
     id: 6,
@@ -195,6 +220,11 @@ export const DEMO_POSITIONS: Position[] = [
     position_value: -340.0,
     fifo_pnl_unrealized: 44.0,
     fetched_at: FETCHED_AT,
+    account_id: ACCOUNT_ID,
+    source: "settled",
+    mark: null,
+    mark_ts: null,
+    live_unrealized: null,
   },
   {
     id: 7,
@@ -221,6 +251,45 @@ export const DEMO_POSITIONS: Position[] = [
     position_value: -155.0,
     fifo_pnl_unrealized: 41.0,
     fetched_at: FETCHED_AT,
+    account_id: ACCOUNT_ID,
+    source: "settled",
+    mark: null,
+    mark_ts: null,
+    live_unrealized: null,
+  },
+  // ── Live TWS position opened intraday, not yet assigned to a trade group ─────
+  // Demonstrates the inline "Trade Group" picker on the Positions page: a
+  // real-time fill from TWS shows source="live" with no group until assigned.
+  {
+    id: 8,
+    account_id: ACCOUNT_ID,
+    account_alias: ACCOUNT_ALIAS,
+    contract_display_name: "CL Sep'26 Future",
+    con_id: 689918823,
+    trade_groups: [],
+    symbol: "CL",
+    sec_type: "FUT",
+    exchange: "NYMEX",
+    primary_exchange: null,
+    currency: "USD",
+    local_symbol: "CLU6",
+    trading_class: "CL",
+    last_trade_date: "20260820",
+    option_expiry_date: null,
+    dte: 57,
+    strike: null,
+    right: null,
+    multiplier: "1000",
+    position: 2,
+    avg_cost: 71.4,
+    mark_price: null,
+    position_value: null,
+    fifo_pnl_unrealized: null,
+    fetched_at: FETCHED_AT,
+    source: "live",
+    mark: 72.18,
+    mark_ts: "2026-06-21T14:29:55Z",
+    live_unrealized: 1560.0,
   },
 ];
 
@@ -302,6 +371,10 @@ function toOpenPosition(pos: Position): GroupOpenPosition {
     position_value: pos.position_value,
     fifo_pnl_unrealized: pos.fifo_pnl_unrealized,
     as_of_date: AS_OF,
+    source: pos.source,
+    mark: pos.mark,
+    mark_ts: pos.mark_ts,
+    live_unrealized: pos.live_unrealized,
   };
 }
 
@@ -368,5 +441,9 @@ export function demoGroupExecutions(
     total_unrealized_pnl: totalUnrealized,
     executions: positions.map((p, i) => openingExecution(p, i)),
     open_positions: positions.map(toOpenPosition),
+    intraday_unrealized_pnl: totalUnrealized,
+    intraday_realized_pnl: 0,
+    intraday_total_pnl: totalUnrealized,
+    marks_as_of: AS_OF,
   };
 }
