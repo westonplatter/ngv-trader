@@ -139,6 +139,21 @@ class PositionUnassignRequest(BaseModel):
     reason: str | None = None
 
 
+class LiveExecutionAssignRequest(BaseModel):
+    ib_exec_ids: list[str] = Field(min_length=1)
+    source: str
+    created_by: str
+    confidence: float | None = None
+    reason: str | None = None
+
+
+class LiveExecutionUnassignRequest(BaseModel):
+    ib_exec_ids: list[str] = Field(min_length=1)
+    source: str
+    created_by: str
+    reason: str | None = None
+
+
 class TimelineEventResponse(BaseModel):
     event_id: str
     event_type: str
@@ -711,6 +726,94 @@ def unassign_positions(
     broadcaster.publish(make_coarse_event(TOPIC_TRADES, "trades.changed"))
 
 
+@router.post("/trade-groups/{trade_group_id}/live-executions:assign", status_code=204)
+def assign_live_executions(
+    trade_group_id: int,
+    body: LiveExecutionAssignRequest,
+    db: Session = DB_SESSION_DEPENDENCY,
+):
+    """Preemptively tag unsettled TWS fills (by ib_exec_id) to a group.
+
+    Lets the desk assign a live fill to a trade group before it settles into
+    ``trade_executions``. The link is keyed by ``ib_exec_id``; when FlexQuery (or
+    the intraday purge) settles the fill, the carry-over folds it into the
+    canonical ``TradeGroupExecution``. One group per live fill — assigning a fill
+    already tagged elsewhere moves it here.
+    """
+    if body.source not in ASSIGNMENT_SOURCES:
+        raise HTTPException(status_code=400, detail="Invalid source")
+
+    trade_group = _ensure_group(db, trade_group_id)
+    live_by_exec_id = {
+        le.ib_exec_id: le
+        for le in db.execute(select(LiveExecution).where(LiveExecution.ib_exec_id.in_(body.ib_exec_ids))).scalars().all()
+    }
+    missing = [eid for eid in body.ib_exec_ids if eid not in live_by_exec_id]
+    if missing:
+        raise HTTPException(status_code=404, detail=f"Unknown live execution(s): {', '.join(missing)}")
+
+    if trade_group.account_id is None and live_by_exec_id:
+        trade_group.account_id = next(iter(live_by_exec_id.values())).account_id
+        trade_group.updated_at = _now_utc()
+
+    for ib_exec_id, live_exec in live_by_exec_id.items():
+        existing = db.execute(
+            select(TradeGroupLiveExecution).where(TradeGroupLiveExecution.ib_exec_id == ib_exec_id)
+        ).scalar_one_or_none()
+        if existing is not None:
+            existing.trade_group_id = trade_group_id
+            existing.account_id = live_exec.account_id
+            existing.con_id = live_exec.con_id
+            existing.source = body.source
+            existing.created_by = body.created_by
+            existing.confidence = body.confidence
+            existing.assigned_at = _now_utc()
+        else:
+            db.add(
+                TradeGroupLiveExecution(
+                    trade_group_id=trade_group_id,
+                    ib_exec_id=ib_exec_id,
+                    account_id=live_exec.account_id,
+                    con_id=live_exec.con_id,
+                    source=body.source,
+                    created_by=body.created_by,
+                    confidence=body.confidence,
+                    assigned_at=_now_utc(),
+                )
+            )
+
+    db.commit()
+    broadcaster.publish(make_coarse_event(TOPIC_TRADES, "trades.changed"))
+    broadcaster.publish(make_coarse_event(TOPIC_POSITIONS, "positions.changed"))
+
+
+@router.post("/trade-groups/{trade_group_id}/live-executions:unassign", status_code=204)
+def unassign_live_executions(
+    trade_group_id: int,
+    body: LiveExecutionUnassignRequest,
+    db: Session = DB_SESSION_DEPENDENCY,
+):
+    """Remove preemptive live-fill tags (by ib_exec_id) from a group."""
+    if body.source not in ASSIGNMENT_SOURCES:
+        raise HTTPException(status_code=400, detail="Invalid source")
+
+    _ensure_group(db, trade_group_id)
+    links = db.execute(
+        select(TradeGroupLiveExecution).where(
+            and_(
+                TradeGroupLiveExecution.trade_group_id == trade_group_id,
+                TradeGroupLiveExecution.ib_exec_id.in_(body.ib_exec_ids),
+            )
+        )
+    ).scalars().all()
+    for link in links:
+        db.delete(link)
+
+    db.commit()
+    broadcaster.publish(make_coarse_event(TOPIC_TRADES, "trades.changed"))
+    broadcaster.publish(make_coarse_event(TOPIC_POSITIONS, "positions.changed"))
+
+
 @router.post("/trade-executions/{execution_id}/trade-group:reassign", status_code=204)
 def reassign_execution(
     execution_id: int,
@@ -850,7 +953,7 @@ def trade_group_timeline(trade_group_id: int, db: Session = DB_SESSION_DEPENDENC
 
 class TradeGroupExecutionItem(BaseModel):
     id: int
-    trade_id: int
+    trade_id: int | None
     account_id: int
     account_alias: str | None
     executed_at: datetime
@@ -863,6 +966,9 @@ class TradeGroupExecutionItem(BaseModel):
     sec_type: str | None
     contract_display: str | None
     data_source: str
+    # False for preemptively-tagged live fills not yet settled.
+    settled: bool = True
+    ib_exec_id: str | None = None
 
 
 class TradeGroupOpenPositionItem(BaseModel):
@@ -1064,6 +1170,53 @@ def trade_group_executions(trade_group_id: int, db: Session = DB_SESSION_DEPENDE
                 sec_type=execution.sec_type,
                 contract_display=_contract_display_from_raw(execution.raw, contract_ref),
                 data_source=execution.data_source,
+                settled=True,
+                ib_exec_id=execution.ib_exec_id,
+            )
+        )
+
+    # Preemptively-tagged unsettled live fills assigned to this group (keyed by
+    # ib_exec_id). Excluded once settled — by then the carry-over has folded them
+    # into trade_group_executions and they appear as settled rows above.
+    live_rows = db.execute(
+        select(LiveExecution, Account)
+        .join(TradeGroupLiveExecution, TradeGroupLiveExecution.ib_exec_id == LiveExecution.ib_exec_id)
+        .outerjoin(Account, Account.id == LiveExecution.account_id)
+        .where(
+            TradeGroupLiveExecution.trade_group_id == trade_group_id,
+            LiveExecution.ib_exec_id.not_in(select(TradeExecution.ib_exec_id)),
+        )
+        .order_by(LiveExecution.exec_time.asc(), LiveExecution.id.asc())
+    ).all()
+    for live_exec, account in live_rows:
+        items.append(
+            TradeGroupExecutionItem(
+                id=-live_exec.id,
+                trade_id=None,
+                account_id=live_exec.account_id,
+                account_alias=account.alias if account else None,
+                executed_at=live_exec.exec_time,
+                side=live_exec.side,
+                quantity=live_exec.quantity,
+                price=live_exec.price,
+                commission=None,
+                realized_pnl=live_exec.realized_pnl,
+                exec_role="standalone",
+                sec_type=live_exec.sec_type,
+                contract_display=contract_display_name(
+                    symbol=live_exec.symbol,
+                    sec_type=live_exec.sec_type,
+                    local_symbol=live_exec.local_symbol,
+                    right=live_exec.right,
+                    strike=live_exec.strike,
+                    contract_expiry=None,
+                    contract_month=None,
+                    exchange=None,
+                    trading_class=None,
+                ),
+                data_source="tws-live",
+                settled=False,
+                ib_exec_id=live_exec.ib_exec_id,
             )
         )
 

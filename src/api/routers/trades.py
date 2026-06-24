@@ -9,7 +9,15 @@ from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
 from src.api.deps import get_db
-from src.models import Account, ContractRef, Trade, TradeExecution, TradeGroupExecution
+from src.models import (
+    Account,
+    ContractRef,
+    LiveExecution,
+    Trade,
+    TradeExecution,
+    TradeGroupExecution,
+    TradeGroupLiveExecution,
+)
 from src.services.cl_contracts import infer_contract_month_from_local_symbol
 from src.services.jobs import (
     JOB_TYPE_TRADES_SYNC_FLEXQUERY,
@@ -350,7 +358,7 @@ class TradeExecutionListItem(BaseModel):
     model_config = {"from_attributes": True}
 
     id: int
-    trade_id: int
+    trade_id: int | None
     account_id: int
     account_alias: str | None
     ib_exec_id: str
@@ -376,6 +384,10 @@ class TradeExecutionListItem(BaseModel):
     trade_assigned_trade_group_id: int | None
     trade_first_executed_at: datetime | None
     trade_last_executed_at: datetime | None
+    # Unsettled TWS overlay: false for live fills not yet in trade_executions.
+    settled: bool = True
+    # Group membership for an unsettled live fill (keyed by ib_exec_id).
+    live_trade_group_id: int | None = None
 
 
 class TradeSyncRequest(BaseModel):
@@ -796,9 +808,104 @@ def list_all_trade_executions(  # noqa: C901, PLR0912, PLR0915
                 trade_assigned_trade_group_id=assigned_group_by_trade_id.get(ex.trade_id),
                 trade_first_executed_at=trade.first_executed_at if trade else None,
                 trade_last_executed_at=trade.last_executed_at if trade else None,
+                settled=True,
+                live_trade_group_id=None,
             )
         )
+
+    results.extend(_unsettled_live_executions(db, account_id=account_id, symbol=symbol, lookback_days=lookback_days))
     return results
+
+
+def _unsettled_live_executions(
+    db: Session,
+    *,
+    account_id: int | None,
+    symbol: str | None,
+    lookback_days: int | None,
+) -> list[TradeExecutionListItem]:
+    """Today's TWS fills not yet settled into ``trade_executions``.
+
+    Surfaced alongside settled executions so the desk can preemptively tag a
+    live fill to a trade group. Deduped against settled rows by ``ib_exec_id``
+    (settled wins); membership comes from ``trade_group_live_executions``.
+    """
+    settled_subq = select(TradeExecution.ib_exec_id)
+    stmt = select(LiveExecution).where(LiveExecution.ib_exec_id.not_in(settled_subq))
+    if account_id is not None:
+        stmt = stmt.where(LiveExecution.account_id == account_id)
+    if symbol is not None:
+        stmt = stmt.where(func.upper(LiveExecution.symbol) == symbol.upper())
+    if lookback_days is not None:
+        cutoff = datetime.now(timezone.utc) - timedelta(days=lookback_days)
+        stmt = stmt.where(LiveExecution.exec_time >= cutoff)
+    stmt = stmt.order_by(LiveExecution.exec_time.desc(), LiveExecution.id.desc())
+    live_rows = db.execute(stmt).scalars().all()
+    if not live_rows:
+        return []
+
+    ib_exec_ids = [le.ib_exec_id for le in live_rows]
+    group_by_exec_id: dict[str, int] = dict(
+        db.execute(
+            select(TradeGroupLiveExecution.ib_exec_id, TradeGroupLiveExecution.trade_group_id).where(
+                TradeGroupLiveExecution.ib_exec_id.in_(ib_exec_ids)
+            )
+        ).all()
+    )
+    account_by_id: dict[int, Account] = {
+        a.id: a
+        for a in db.execute(select(Account).where(Account.id.in_({le.account_id for le in live_rows}))).scalars().all()
+    }
+
+    items: list[TradeExecutionListItem] = []
+    for le in live_rows:
+        acct = account_by_id.get(le.account_id)
+        alias = (acct.alias if acct.alias else acct.account) if acct else None
+        display = contract_display_name(
+            symbol=le.symbol,
+            sec_type=le.sec_type,
+            local_symbol=le.local_symbol,
+            right=le.right,
+            strike=le.strike,
+            contract_expiry=None,
+            contract_month=None,
+            exchange=None,
+            trading_class=None,
+        )
+        items.append(
+            TradeExecutionListItem(
+                id=-le.id,  # negative id space so it can't collide with settled rows
+                trade_id=None,
+                account_id=le.account_id,
+                account_alias=alias,
+                ib_exec_id=le.ib_exec_id,
+                exec_role="standalone",
+                sec_type=le.sec_type,
+                executed_at=le.exec_time,
+                quantity=le.quantity,
+                price=le.price,
+                side=le.side,
+                exchange=None,
+                commission=None,
+                realized_pnl=le.realized_pnl,
+                is_canonical=True,
+                contract_display=display,
+                parent_ib_exec_id=None,
+                data_source="tws-live",
+                trade_ib_perm_id=None,
+                trade_order_ref=None,
+                trade_status="unsettled",
+                trade_lifecycle=None,
+                trade_contract_display_name=display,
+                trade_realized_pnl=None,
+                trade_assigned_trade_group_id=None,
+                trade_first_executed_at=None,
+                trade_last_executed_at=None,
+                settled=False,
+                live_trade_group_id=group_by_exec_id.get(le.ib_exec_id),
+            )
+        )
+    return items
 
 
 @router.post("/trades/sync/tws", response_model=TradeSyncResponse, status_code=status.HTTP_202_ACCEPTED)

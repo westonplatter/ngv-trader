@@ -6,7 +6,7 @@ import { useSSE } from "../lib/events";
 
 interface TradeExecutionRow {
   id: number;
-  trade_id: number;
+  trade_id: number | null;
   account_id: number;
   account_alias: string | null;
   ib_exec_id: string;
@@ -22,6 +22,7 @@ interface TradeExecutionRow {
   is_canonical: boolean;
   contract_display: string | null;
   parent_ib_exec_id: string | null;
+  data_source?: string;
   trade_ib_perm_id: number | null;
   trade_order_ref: string | null;
   trade_status: string;
@@ -31,6 +32,9 @@ interface TradeExecutionRow {
   trade_assigned_trade_group_id: number | null;
   trade_first_executed_at: string | null;
   trade_last_executed_at: string | null;
+  // Unsettled TWS overlay: false for live fills not yet settled.
+  settled?: boolean;
+  live_trade_group_id?: number | null;
 }
 
 interface TradeGroupResult {
@@ -46,7 +50,16 @@ const STATUS_CLASS: Record<string, string> = {
   partial: "bg-blue-100 text-blue-800",
   cancelled: "bg-zinc-200 text-zinc-800",
   unknown: "bg-gray-100 text-gray-800",
+  unsettled: "bg-amber-100 text-amber-800",
 };
+
+// Effective trade-group membership for a row. Settled rows carry trade-level
+// membership; unsettled live fills carry their own per-fill membership.
+function rowGroupId(row: TradeExecutionRow): number | null {
+  return row.settled === false
+    ? (row.live_trade_group_id ?? null)
+    : row.trade_assigned_trade_group_id;
+}
 
 function formatDateTime(value: string | null | undefined): string {
   if (!value) return "-";
@@ -105,13 +118,18 @@ function TagGroupCell({
   assignedTradeGroupId,
   groupLabel,
   onAssigned,
+  unsettled = false,
+  ibExecId = null,
 }: {
-  tradeId: number;
+  tradeId: number | null;
   accountId: number;
   contractDisplayName: string | null;
   assignedTradeGroupId: number | null;
   groupLabel: string | null;
   onAssigned: () => void;
+  // Unsettled live fills tag per-fill by ib_exec_id, not via the trade fan-out.
+  unsettled?: boolean;
+  ibExecId?: string | null;
 }) {
   const [mode, setMode] = useState<"display" | "search">("display");
   const [query, setQuery] = useState("");
@@ -270,6 +288,30 @@ function TagGroupCell({
     closeSearch();
     setAssigning(true);
     try {
+      if (unsettled) {
+        if (!ibExecId) throw new Error("Missing live execution id.");
+        const assignResponse = await fetch(
+          `${API_BASE_URL}/trade-groups/${group.id}/live-executions:assign`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              ib_exec_ids: [ibExecId],
+              source: "manual",
+              created_by: "ui-trader",
+              reason: `live fill ${ibExecId} assigned from trades page`,
+            }),
+          },
+        );
+        if (!assignResponse.ok) {
+          throw new Error(
+            await readErrorMessage(assignResponse, "Unable to assign fill"),
+          );
+        }
+        onAssigned();
+        return;
+      }
+
       const execResponse = await fetch(
         `${API_BASE_URL}/trades/${tradeId}/executions`,
       );
@@ -325,6 +367,30 @@ function TagGroupCell({
     setError(null);
     setAssigning(true);
     try {
+      if (unsettled) {
+        if (!ibExecId) throw new Error("Missing live execution id.");
+        const unassignResponse = await fetch(
+          `${API_BASE_URL}/trade-groups/${groupId}/live-executions:unassign`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              ib_exec_ids: [ibExecId],
+              source: "manual",
+              created_by: "ui-trader",
+              reason: `live fill ${ibExecId} unassigned from trades page`,
+            }),
+          },
+        );
+        if (!unassignResponse.ok) {
+          throw new Error(
+            await readErrorMessage(unassignResponse, "Unable to unassign fill"),
+          );
+        }
+        onAssigned();
+        return;
+      }
+
       const execResponse = await fetch(
         `${API_BASE_URL}/trades/${tradeId}/executions`,
       );
@@ -646,8 +712,8 @@ export default function TradesTable() {
     if (tagStatus !== "all") {
       next = next.filter((row) =>
         tagStatus === "tagged"
-          ? row.trade_assigned_trade_group_id !== null
-          : row.trade_assigned_trade_group_id === null,
+          ? rowGroupId(row) !== null
+          : rowGroupId(row) === null,
       );
     }
     return next;
@@ -658,11 +724,14 @@ export default function TradesTable() {
   const tagGroupRowIdByTradeId = useMemo(() => {
     const map = new Map<number, number>();
     for (const row of filteredRows) {
+      // Live fills have no parent trade; each owns its own tag cell (below).
+      if (row.trade_id === null) continue;
       if (row.exec_role === "combo_summary") {
         map.set(row.trade_id, row.id);
       }
     }
     for (const row of filteredRows) {
+      if (row.trade_id === null) continue;
       if (!map.has(row.trade_id)) {
         map.set(row.trade_id, row.id);
       } else {
@@ -945,8 +1014,11 @@ export default function TradesTable() {
             )}
             {filteredRows.map((row) => {
               const ownsTagCell =
-                tagGroupRowIdByTradeId.get(row.trade_id) === row.id;
-              const isHighlighted = highlightedTradeId === row.trade_id;
+                row.settled === false ||
+                (row.trade_id !== null &&
+                  tagGroupRowIdByTradeId.get(row.trade_id) === row.id);
+              const isHighlighted =
+                row.trade_id !== null && highlightedTradeId === row.trade_id;
               const symbol =
                 row.contract_display ?? row.trade_contract_display_name ?? "-";
               const isSymbolHighlighted =
@@ -1031,15 +1103,15 @@ export default function TradesTable() {
                           row.trade_contract_display_name ??
                           row.contract_display
                         }
-                        assignedTradeGroupId={row.trade_assigned_trade_group_id}
+                        assignedTradeGroupId={rowGroupId(row)}
                         groupLabel={
-                          row.trade_assigned_trade_group_id
-                            ? (groupLabelById.get(
-                                row.trade_assigned_trade_group_id,
-                              ) ?? null)
+                          rowGroupId(row) !== null
+                            ? (groupLabelById.get(rowGroupId(row)!) ?? null)
                             : null
                         }
                         onAssigned={handleTradeAssigned}
+                        unsettled={row.settled === false}
+                        ibExecId={row.ib_exec_id}
                       />
                     ) : null}
                   </td>
@@ -1058,7 +1130,10 @@ export default function TradesTable() {
                           : "text-blue-600 hover:text-blue-800";
                       return (
                         <button
-                          onClick={() => toggleHighlight(row.trade_id)}
+                          onClick={() =>
+                            row.trade_id !== null &&
+                            toggleHighlight(row.trade_id)
+                          }
                           className={`rounded px-1.5 py-0.5 hover:bg-yellow-100 ${baseClass}`}
                           title={
                             isParentRow

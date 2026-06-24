@@ -25,6 +25,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from src.models import FlexSyncLog, Trade, TradeExecution
+from src.services.group_link_carryover import carry_over_settled_group_links
 from src.services.sync_common import (
     _enforce_canonical_flags,
     _ensure_account,
@@ -545,6 +546,11 @@ def sync_flex_trades(
             for trade_id in touched_trade_ids:
                 _recompute_trade_aggregates(session, trade_id, now)
 
+        # Transition any preemptive live trade-group tags onto the fills that
+        # just settled (keyed by ib_exec_id), so grouping survives the
+        # live→settled handoff even when the intraday overlay isn't running.
+        carried_group_links = carry_over_settled_group_links(session)
+
         log_row = session.get(FlexSyncLog, log_id)
         if log_row is not None:
             log_row.status = "success"
@@ -558,6 +564,7 @@ def sync_flex_trades(
         "combo_summaries_count": combo_count,
         "touched_trade_ids": sorted(touched_trade_ids),
         "touched_trades_count": len(touched_trade_ids),
+        "carried_group_links_count": carried_group_links,
         "start_date": start_date.isoformat(),
         "end_date": end_date.isoformat(),
         "flex_sync_log_id": log_id,
