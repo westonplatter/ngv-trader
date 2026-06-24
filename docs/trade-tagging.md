@@ -58,6 +58,16 @@ Properties:
 2. stores `source`, `created_by`, `confidence`, and `assigned_at`
 3. is the source of truth for current membership
 
+### `trade_group_live_executions`
+
+Provisional membership for **unsettled TWS fills**, keyed by `ib_exec_id` (the
+stable id shared with the eventual settled `trade_executions` row). Lets the desk
+preemptively tag a live fill to a group before it settles. On settlement the
+carry-over (`src/services/group_link_carryover.py`) folds the link into
+`trade_group_executions` and drops the live row; it runs in both the intraday
+purge and the FlexQuery trade sync. See
+[core/intraday-tws-overlay.md](core/intraday-tws-overlay.md).
+
 ### `trade_group_execution_events`
 
 Assignment history table.
