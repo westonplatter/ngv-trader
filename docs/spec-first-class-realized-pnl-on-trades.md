@@ -33,7 +33,7 @@ Make IBKR realized PnL a first-class field on both `trade_executions` and `trade
 
 ## Current State
 
-- `src/services/trade_sync.py` stores `commissionReport.realizedPNL` only inside `trade_executions.raw`.
+- `src/services/trade_sync_flexquery.py` (active path) stores `commissionReport.realizedPNL` only inside `trade_executions.raw`; `src/services/trade_sync_tws.py` (dormant) follows the same pattern.
 - `src/api/routers/trades.py` extracts execution-level realized PnL from raw JSON and sums it for trade-level responses.
 - `trade_executions` is the source of truth for fills and correction revisions.
 - `trades` is already a derived aggregate over canonical executions for quantity, average price, and execution timestamps.
@@ -86,7 +86,7 @@ Make IBKR realized PnL a first-class field on both `trade_executions` and `trade
 
 ## API / Worker / Service Changes
 
-- `src/services/trade_sync.py`
+- `src/services/trade_sync_flexquery.py`
   - persist `trade_executions.realized_pnl`
   - recompute `trades.realized_pnl` inside `_recompute_trade_aggregates`
 - `src/api/routers/trades.py`
@@ -140,7 +140,7 @@ Make IBKR realized PnL a first-class field on both `trade_executions` and `trade
 
 ## Related Files
 
-- `src/services/trade_sync.py`
+- `src/services/trade_sync_flexquery.py`, `src/services/trade_sync_tws.py`
 - `src/api/routers/trades.py`
 - `src/models.py`
 - `alembic/versions/20260227000000_add_trades_and_trade_executions.py`
