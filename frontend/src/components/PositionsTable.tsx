@@ -13,6 +13,7 @@ export interface TradeGroupRef {
 
 export interface Position {
   id: number;
+  account_id: number;
   account_alias: string;
   contract_display_name: string;
   con_id: number;
@@ -126,6 +127,8 @@ export default function PositionsTable() {
   const [syncError, setSyncError] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [liveSyncing, setLiveSyncing] = useState(false);
+  const [tradeGroups, setTradeGroups] = useState<TradeGroupRef[]>([]);
+  const [assignError, setAssignError] = useState<string | null>(null);
   const [accountFilter, setAccountFilter] = useState<string>("all");
   const [symbolFilter, setSymbolFilter] = useState("");
   const [localSymbolFilter, setLocalSymbolFilter] = useState("");
@@ -293,6 +296,63 @@ export default function PositionsTable() {
   useSSE<Record<string, unknown>>("positions", () => {
     loadPositions();
   });
+
+  const loadTradeGroups = () => {
+    fetch(`${API_BASE_URL}/trade-groups?status=open`)
+      .then((res) => (res.ok ? res.json() : []))
+      .then((data: { id: number; name: string }[]) =>
+        setTradeGroups(data.map((g) => ({ id: g.id, name: g.name }))),
+      )
+      .catch(() => setTradeGroups([]));
+  };
+
+  useEffect(() => {
+    loadTradeGroups();
+  }, []);
+
+  const assignToTradeGroup = async (pos: Position, groupId: number) => {
+    setAssignError(null);
+    try {
+      const res = await fetch(
+        `${API_BASE_URL}/trade-groups/${groupId}/positions:assign`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            positions: [{ account_id: pos.account_id, con_id: pos.con_id }],
+            source: "manual",
+            created_by: "positions-ui",
+          }),
+        },
+      );
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      loadPositions();
+    } catch (err) {
+      setAssignError(err instanceof Error ? err.message : "Assign failed");
+    }
+  };
+
+  const unassignFromTradeGroup = async (pos: Position, groupId: number) => {
+    setAssignError(null);
+    try {
+      const res = await fetch(
+        `${API_BASE_URL}/trade-groups/${groupId}/positions:unassign`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            positions: [{ account_id: pos.account_id, con_id: pos.con_id }],
+            source: "manual",
+            created_by: "positions-ui",
+          }),
+        },
+      );
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      loadPositions();
+    } catch (err) {
+      setAssignError(err instanceof Error ? err.message : "Unassign failed");
+    }
+  };
 
   const kickOffPositionSync = async () => {
     setSyncing(true);
@@ -522,6 +582,11 @@ export default function PositionsTable() {
       {syncError && (
         <p className="text-sm text-red-600">Sync error: {syncError}</p>
       )}
+      {assignError && (
+        <p className="text-sm text-red-600">
+          Trade group assignment error: {assignError}
+        </p>
+      )}
 
       <div className="overflow-x-auto">
         <table className="min-w-full border-collapse text-sm">
@@ -689,24 +754,63 @@ export default function PositionsTable() {
                   let content: React.ReactNode;
                   let extraClass = "";
                   if (col.key === "trade_groups") {
-                    content =
-                      pos.trade_groups.length === 0 ? (
-                        "—"
-                      ) : (
-                        <span className="inline-flex flex-wrap gap-x-1">
-                          {pos.trade_groups.map((group, idx) => (
-                            <span key={group.id}>
-                              <Link
-                                to={`/tagging?trade_group_id=${group.id}`}
-                                className="text-blue-600 hover:underline"
-                              >
-                                {group.name}
-                              </Link>
-                              {idx < pos.trade_groups.length - 1 ? "," : ""}
-                            </span>
-                          ))}
-                        </span>
-                      );
+                    const assignedIds = new Set(
+                      pos.trade_groups.map((g) => g.id),
+                    );
+                    content = (
+                      <span className="inline-flex flex-wrap items-center gap-1">
+                        {pos.trade_groups.map((group) => (
+                          <span
+                            key={group.id}
+                            className="inline-flex items-center gap-0.5 rounded bg-gray-100 px-1.5 py-0.5"
+                          >
+                            <Link
+                              to={`/tagging?trade_group_id=${group.id}`}
+                              className="text-blue-600 hover:underline"
+                            >
+                              {group.name}
+                            </Link>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (
+                                  window.confirm(
+                                    `Remove all fills of this position from "${group.name}"?`,
+                                  )
+                                )
+                                  unassignFromTradeGroup(pos, group.id);
+                              }}
+                              className="text-gray-400 hover:text-red-600"
+                              title="Remove position's fills from this trade group"
+                              aria-label={`Remove from ${group.name}`}
+                            >
+                              ×
+                            </button>
+                          </span>
+                        ))}
+                        <select
+                          value=""
+                          onChange={(e) => {
+                            const id = Number(e.target.value);
+                            if (id) assignToTradeGroup(pos, id);
+                          }}
+                          className="rounded border border-gray-300 px-1 py-0.5 text-xs text-gray-600"
+                          title="Assign to trade group"
+                          aria-label="Assign to trade group"
+                        >
+                          <option value="">
+                            {pos.trade_groups.length === 0 ? "+ Assign…" : "+"}
+                          </option>
+                          {tradeGroups
+                            .filter((g) => !assignedIds.has(g.id))
+                            .map((g) => (
+                              <option key={g.id} value={g.id}>
+                                {g.name}
+                              </option>
+                            ))}
+                        </select>
+                      </span>
+                    );
                   } else if (col.key === "position" && privacyMode) {
                     content = PRIVACY_MASK;
                   } else if (col.key === "last_trade_date") {

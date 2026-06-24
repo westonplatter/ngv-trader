@@ -24,7 +24,14 @@ from sqlalchemy import Engine, delete, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
-from src.models import LatestQuote, LiveExecution, LivePosition, TradeExecution
+from src.models import (
+    LatestQuote,
+    LiveExecution,
+    LivePosition,
+    TradeExecution,
+    TradeGroupExecution,
+    TradeGroupLiveExecution,
+)
 from src.services.sync_common import get_or_create_accounts
 
 logger = logging.getLogger(__name__)
@@ -276,11 +283,64 @@ def _write_fills(session: Session, fills: list, account_lookup: dict[str, int], 
     return written
 
 
+def _carry_over_group_links(session: Session, settled_ids: set[str]) -> int:
+    """Migrate live trade-group assignments onto their now-settled executions.
+
+    A live fill may have been assigned to a trade group via
+    ``TradeGroupLiveExecution`` (keyed by ib_exec_id). When the fill settles into
+    ``trade_executions``, fold that assignment into the canonical
+    ``TradeGroupExecution`` (keyed by the settled row's id), then drop the live
+    link. This keeps grouping intact across the live→settled handoff with no gap.
+    """
+    if not settled_ids:
+        return 0
+    links = (
+        session.execute(select(TradeGroupLiveExecution).where(TradeGroupLiveExecution.ib_exec_id.in_(settled_ids)))
+        .scalars()
+        .all()
+    )
+    if not links:
+        return 0
+    exec_id_by_ib = dict(
+        session.execute(
+            select(TradeExecution.ib_exec_id, TradeExecution.id).where(
+                TradeExecution.ib_exec_id.in_([link.ib_exec_id for link in links])
+            )
+        ).all()
+    )
+    carried = 0
+    for link in links:
+        trade_execution_id = exec_id_by_ib.get(link.ib_exec_id)
+        if trade_execution_id is None:
+            continue
+        already = session.execute(
+            select(TradeGroupExecution).where(TradeGroupExecution.trade_execution_id == trade_execution_id)
+        ).scalar_one_or_none()
+        if already is None:
+            session.add(
+                TradeGroupExecution(
+                    trade_group_id=link.trade_group_id,
+                    trade_execution_id=trade_execution_id,
+                    source=link.source,
+                    created_by=link.created_by,
+                    confidence=link.confidence,
+                    assigned_at=link.assigned_at,
+                )
+            )
+            carried += 1
+        session.delete(link)
+    return carried
+
+
 def _purge_settled(session: Session) -> int:
-    """Drop live fills whose ib_exec_id has since settled (settled wins)."""
+    """Drop live fills whose ib_exec_id has since settled (settled wins).
+
+    Carries any live trade-group assignment over to the settled execution first.
+    """
     settled_ids = set(session.execute(select(TradeExecution.ib_exec_id).where(TradeExecution.ib_exec_id.in_(select(LiveExecution.ib_exec_id)))).scalars())
     if not settled_ids:
         return 0
+    _carry_over_group_links(session, settled_ids)
     return session.execute(delete(LiveExecution).where(LiveExecution.ib_exec_id.in_(settled_ids))).rowcount or 0
 
 
