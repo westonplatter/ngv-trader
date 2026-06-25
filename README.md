@@ -8,9 +8,9 @@ New to the project? Follow the [Getting Started guide](docs/getting-started.md) 
 
 ## License
 
-This project is source-available under a proprietary license with a free tier:
+This project offers two license options:
 
-- **Personal Use (free):** individuals managing less than $1,000,000 USD in aggregate trading capital / AUM, for non-commercial use.
-- **Commercial License (extremely reasonable):** required for commercial use, third-party services, or AUM at or above $1,000,000 USD.
+- **Personal Use (free):** for an individual managing less than $1 million USD in AUM.
+- **Commercial (super reasonable):** for everything else — reach out to sales@nextgenvol.com.
 
 See [LICENSE](./LICENSE) for full terms.
