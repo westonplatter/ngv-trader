@@ -10,7 +10,7 @@ New to the project? Follow the [Getting Started guide](docs/getting-started.md) 
 
 This project offers two license options:
 
-- **Personal Use (free):** for an individual managing less than $1,000,000 USD in AUM.
+- **Personal Use (free):** for an individual managing less than $1 million USD in AUM.
 - **Commercial (super reasonable):** for everything else — reach out to sales@nextgenvol.com.
 
 See [LICENSE](./LICENSE) for full terms.
