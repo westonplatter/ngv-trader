@@ -55,11 +55,7 @@ function formatMarkTime(value: string | null | undefined): string {
 }
 
 type SortDirection = "none" | "desc" | "asc";
-type SortColumn =
-  | "symbol"
-  | "local_symbol"
-  | "option_expiry_date"
-  | "dte";
+type SortColumn = "symbol" | "local_symbol" | "option_expiry_date" | "dte";
 
 function formatExpiry(value: string | null | undefined): string {
   if (!value) return "\u2014";
@@ -864,6 +860,28 @@ export default function PositionsTable() {
                         </span>
                       );
                     }
+                  } else if (col.key === "contract_display_name") {
+                    content = (
+                      <Link
+                        to={`/trades?symbol=${encodeURIComponent(pos.contract_display_name)}`}
+                        className="text-blue-600 hover:underline"
+                        title="Search this contract in Trades"
+                      >
+                        {pos.contract_display_name}
+                      </Link>
+                    );
+                  } else if (col.key === "con_id") {
+                    content = pos.con_id ? (
+                      <Link
+                        to={`/trades?con_id=${pos.con_id}`}
+                        className="font-mono text-blue-600 hover:underline"
+                        title="Search all trades for this Contract ID (all time, all accounts)"
+                      >
+                        {pos.con_id}
+                      </Link>
+                    ) : (
+                      "—"
+                    );
                   } else {
                     content = pos[col.key] ?? "—";
                   }

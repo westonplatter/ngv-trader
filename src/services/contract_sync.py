@@ -107,6 +107,9 @@ def sync_contracts_with_ib(
                     "contract_month": contract_month,
                     "contract_expiry": raw_expiry,
                     "multiplier": contract.multiplier or None,
+                    # IBKR ContractDetails.priceMagnifier (1 for most products,
+                    # 100 for cents-quoted ones like grains). Authoritative source.
+                    "price_magnifier": int(getattr(detail, "priceMagnifier", None) or 1),
                     "strike": (contract.strike if contract.strike and contract.strike != 0.0 else None),
                     "right": (contract.right if contract.right and contract.right != "?" else None),
                     "primary_exchange": contract.primaryExchange or None,
@@ -192,6 +195,9 @@ def _upsert_contract(
         "contract_month": contract_month,
         "contract_expiry": raw_expiry,
         "multiplier": contract.multiplier or None,
+        # IBKR ContractDetails.priceMagnifier (1 for most products, 100 for
+        # cents-quoted ones like grains). Authoritative source.
+        "price_magnifier": int(getattr(detail, "priceMagnifier", None) or 1),
         "strike": (contract.strike if contract.strike and contract.strike != 0.0 else None),
         "right": (contract.right if contract.right and contract.right != "?" else None),
         "primary_exchange": contract.primaryExchange or None,

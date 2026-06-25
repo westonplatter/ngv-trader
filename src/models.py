@@ -57,6 +57,11 @@ class ContractRef(Base):
     contract_month: Mapped[str | None] = mapped_column(String, nullable=True)
     contract_expiry: Mapped[str | None] = mapped_column(String, nullable=True)
     multiplier: Mapped[str | None] = mapped_column(String, nullable=True)
+    # IBKR ContractDetails.priceMagnifier — divisor that converts the quoted
+    # market-data price into the price unit the multiplier expects (e.g. 100 for
+    # grain futures quoted in cents/bushel; 1 for most products). Treated as 1
+    # when null. See src/services/intraday_overlay.py for how it's applied.
+    price_magnifier: Mapped[int | None] = mapped_column(Integer, nullable=True)
     strike: Mapped[float | None] = mapped_column(Float, nullable=True)
     right: Mapped[str | None] = mapped_column(String, nullable=True)
     primary_exchange: Mapped[str | None] = mapped_column(String, nullable=True)

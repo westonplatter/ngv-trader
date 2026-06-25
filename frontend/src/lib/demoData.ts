@@ -445,5 +445,6 @@ export function demoGroupExecutions(
     intraday_realized_pnl: 0,
     intraday_total_pnl: totalUnrealized,
     marks_as_of: AS_OF,
+    by_account: [],
   };
 }

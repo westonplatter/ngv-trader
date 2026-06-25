@@ -70,6 +70,16 @@ export type GroupOpenPosition = {
   live_unrealized: number | null;
 };
 
+export type GroupAccountPnl = {
+  account_id: number;
+  account_alias: string | null;
+  realized_pnl: number | null;
+  unrealized_pnl: number | null;
+  intraday_unrealized_pnl: number | null;
+  intraday_realized_pnl: number | null;
+  intraday_total_pnl: number | null;
+};
+
 export type GroupExecutionsResponse = {
   trade_group_id: number;
   total_realized_pnl: number | null;
@@ -81,6 +91,8 @@ export type GroupExecutionsResponse = {
   intraday_realized_pnl: number | null;
   intraday_total_pnl: number | null;
   marks_as_of: string | null;
+  // Per-account breakdown (additive).
+  by_account: GroupAccountPnl[];
 };
 
 export type Tag = {
@@ -201,6 +213,9 @@ export default function TradeTaggingPage() {
     null,
   );
   const [intradayTotalPnl, setIntradayTotalPnl] = useState<number | null>(null);
+  const [byAccount, setByAccount] = useState<GroupAccountPnl[]>([]);
+  // Account filter for the Open Positions / Trades tables (null = all accounts).
+  const [accountFilter, setAccountFilter] = useState<number | null>(null);
   const [marksAsOf, setMarksAsOf] = useState<string | null>(null);
   const [liveSyncing, setLiveSyncing] = useState(false);
   const [liveSyncMessage, setLiveSyncMessage] = useState<string | null>(null);
@@ -314,6 +329,8 @@ export default function TradeTaggingPage() {
     setIntradayUnrealizedPnl(data.intraday_unrealized_pnl);
     setIntradayRealizedPnl(data.intraday_realized_pnl);
     setIntradayTotalPnl(data.intraday_total_pnl);
+    setByAccount(data.by_account ?? []);
+    setAccountFilter(null);
     setMarksAsOf(data.marks_as_of);
   }, []);
 
@@ -432,6 +449,8 @@ export default function TradeTaggingPage() {
       setIntradayUnrealizedPnl(null);
       setIntradayRealizedPnl(null);
       setIntradayTotalPnl(null);
+      setByAccount([]);
+      setAccountFilter(null);
       setMarksAsOf(null);
       setEditingGroup(false);
       return;
@@ -662,6 +681,16 @@ export default function TradeTaggingPage() {
     setSelectedGroupId(null);
     await loadGroups(selectedStrategy?.value ?? null);
   };
+
+  // Account-filtered views of the linked positions/trades (null = all accounts).
+  const visiblePositions =
+    accountFilter == null
+      ? openPositions
+      : openPositions.filter((p) => p.account_id === accountFilter);
+  const visibleExecutions =
+    accountFilter == null
+      ? executions
+      : executions.filter((e) => e.account_id === accountFilter);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col space-y-4">
@@ -1040,26 +1069,31 @@ export default function TradeTaggingPage() {
                     let optionsCapital: number | null = null;
                     let equityCapital: number | null = null;
                     if (openPositions.length > 0) {
+                      // IBKR avg_cost is already multiplier-inclusive (per-contract
+                      // for options/futures, per-share for stocks), so a leg's cost
+                      // basis is avg_cost * position. Accumulate the SIGNED basis so
+                      // long and short legs of a spread net out — a calendar/vertical
+                      // spread's real capital is the net debit, not the gross notional
+                      // of both legs (which over-counts ~2x+ for offsetting legs).
                       let optionsSum = 0;
                       let equitySum = 0;
                       for (const pos of openPositions) {
-                        // IBKR avg_cost is already multiplier-inclusive (per-contract
-                        // for options/futures, per-share for stocks), so the capital
-                        // is |avg_cost * position| — multiplying by the contract
-                        // multiplier again would over-count ~100x for options.
-                        const posCapital = Math.abs(
-                          pos.avg_cost * pos.position,
-                        );
+                        const posBasis = pos.avg_cost * pos.position;
                         if (pos.sec_type === "OPT" || pos.sec_type === "FOP") {
-                          optionsSum += posCapital;
+                          optionsSum += posBasis;
                         } else {
-                          equitySum += posCapital;
+                          equitySum += posBasis;
                         }
                       }
-                      if (optionsSum + equitySum > 0) {
-                        optionsCapital = optionsSum;
-                        equityCapital = equitySum;
-                        capital = optionsSum + equitySum;
+                      // Magnitude of each bucket's net basis: a net debit (capital
+                      // outlaid) and a net credit (premium received) both represent
+                      // capital committed, so report the absolute value per bucket.
+                      const optionsAbs = Math.abs(optionsSum);
+                      const equityAbs = Math.abs(equitySum);
+                      if (optionsAbs + equityAbs > 0) {
+                        optionsCapital = optionsAbs;
+                        equityCapital = equityAbs;
+                        capital = optionsAbs + equityAbs;
                       }
                     }
                     const fmt = (v: number | null) =>
@@ -1139,11 +1173,136 @@ export default function TradeTaggingPage() {
                     );
                   })()}
 
+                  {/* Per-account breakdown (only meaningful with >1 account) */}
+                  {byAccount.length > 1 &&
+                    (() => {
+                      const money = (v: number | null) =>
+                        v == null
+                          ? "—"
+                          : v.toLocaleString(undefined, {
+                              style: "currency",
+                              currency: "USD",
+                            });
+                      const cls = (v: number | null) =>
+                        v == null
+                          ? "text-gray-500"
+                          : v >= 0
+                            ? "font-semibold text-emerald-700"
+                            : "font-semibold text-red-700";
+                      // Per-account capital: net signed cost basis per bucket, then
+                      // magnitude — same convention as the group capital above so
+                      // spread legs net out rather than double-counting.
+                      const capitalFor = (accountId: number) => {
+                        let optionsSum = 0;
+                        let equitySum = 0;
+                        let any = false;
+                        for (const pos of openPositions) {
+                          if (pos.account_id !== accountId) continue;
+                          any = true;
+                          const basis = pos.avg_cost * pos.position;
+                          if (pos.sec_type === "OPT" || pos.sec_type === "FOP")
+                            optionsSum += basis;
+                          else equitySum += basis;
+                        }
+                        if (!any) return null;
+                        return Math.abs(optionsSum) + Math.abs(equitySum);
+                      };
+                      return (
+                        <div className="flex flex-col gap-1.5 rounded border border-gray-200 bg-white px-3 py-2 text-xs">
+                          <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+                            By account
+                          </div>
+                          {byAccount.map((acct) => {
+                            const total =
+                              acct.unrealized_pnl == null &&
+                              acct.realized_pnl == null
+                                ? null
+                                : (acct.unrealized_pnl ?? 0) +
+                                  (acct.realized_pnl ?? 0);
+                            const capital = capitalFor(acct.account_id);
+                            return (
+                              <div
+                                key={acct.account_id}
+                                className="grid grid-cols-[6rem_1fr_1fr_1fr] items-baseline gap-x-2"
+                              >
+                                <span className="font-medium text-gray-700">
+                                  {acct.account_alias ?? acct.account_id}
+                                </span>
+                                <span className="text-right text-gray-500">
+                                  Cap {money(capital)}
+                                </span>
+                                <span className={`text-right ${cls(total)}`}>
+                                  Tot {money(total)}
+                                </span>
+                                <span className="text-right text-gray-400">
+                                  R {money(acct.realized_pnl)} · U{" "}
+                                  {money(acct.unrealized_pnl)}
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })()}
+
+                  {/* Account filter — splits the tables below by account */}
+                  {(() => {
+                    const accounts = byAccount.length
+                      ? byAccount.map((a) => ({
+                          id: a.account_id,
+                          label: a.account_alias ?? `Account ${a.account_id}`,
+                        }))
+                      : [];
+                    if (accounts.length <= 1) return null;
+                    const chip = (
+                      active: boolean,
+                      label: string,
+                      onClick: () => void,
+                      key: string | number,
+                    ) => (
+                      <button
+                        key={key}
+                        type="button"
+                        onClick={onClick}
+                        className={`rounded-full border px-2.5 py-0.5 text-xs ${
+                          active
+                            ? "border-gray-800 bg-gray-800 text-white"
+                            : "border-gray-300 bg-white text-gray-600 hover:bg-gray-50"
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    );
+                    return (
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span className="text-xs text-gray-500">Account:</span>
+                        {chip(
+                          accountFilter == null,
+                          "All",
+                          () => setAccountFilter(null),
+                          "all",
+                        )}
+                        {accounts.map((a) =>
+                          chip(
+                            accountFilter === a.id,
+                            a.label,
+                            () => setAccountFilter(a.id),
+                            a.id,
+                          ),
+                        )}
+                      </div>
+                    );
+                  })()}
+
                   {/* Open Positions */}
                   <div>
                     <div className="mb-2 flex items-baseline justify-between">
                       <h5 className="text-xs font-semibold uppercase tracking-wide text-gray-600">
-                        Open Positions ({openPositions.length})
+                        Open Positions ({visiblePositions.length}
+                        {accountFilter != null
+                          ? ` of ${openPositions.length}`
+                          : ""}
+                        )
                       </h5>
                       <span className="text-xs text-gray-600">
                         Unrealized PnL:{" "}
@@ -1165,12 +1324,12 @@ export default function TradeTaggingPage() {
                         </span>
                       </span>
                     </div>
-                    {openPositions.length === 0 && (
+                    {visiblePositions.length === 0 && (
                       <p className="mb-3 text-xs text-gray-400">
                         No open positions linked to this group.
                       </p>
                     )}
-                    {openPositions.length > 0 && (
+                    {visiblePositions.length > 0 && (
                       <div className="mb-4 max-h-[260px] overflow-auto rounded border border-gray-200">
                         <table className="w-full text-left text-xs">
                           <thead className="sticky top-0 bg-gray-50 text-gray-600">
@@ -1205,7 +1364,7 @@ export default function TradeTaggingPage() {
                             </tr>
                           </thead>
                           <tbody>
-                            {openPositions.map((pos) => {
+                            {visiblePositions.map((pos) => {
                               const qtyClass =
                                 pos.position > 0
                                   ? "text-emerald-700"
@@ -1306,7 +1465,11 @@ export default function TradeTaggingPage() {
                   <div>
                     <div className="mb-2 flex items-baseline justify-between">
                       <h5 className="text-xs font-semibold uppercase tracking-wide text-gray-600">
-                        Trades ({executions.length})
+                        Trades ({visibleExecutions.length}
+                        {accountFilter != null
+                          ? ` of ${executions.length}`
+                          : ""}
+                        )
                       </h5>
                       <span className="text-xs text-gray-600">
                         Total realized PnL:{" "}
@@ -1328,12 +1491,12 @@ export default function TradeTaggingPage() {
                         </span>
                       </span>
                     </div>
-                    {executions.length === 0 && (
+                    {visibleExecutions.length === 0 && (
                       <p className="mb-3 text-xs text-gray-400">
                         No trades assigned to this group yet.
                       </p>
                     )}
-                    {executions.length > 0 && (
+                    {visibleExecutions.length > 0 && (
                       <div className="mb-4 max-h-[300px] overflow-auto rounded border border-gray-200">
                         <table className="w-full text-left text-xs">
                           <thead className="sticky top-0 bg-gray-50 text-gray-600">
@@ -1363,14 +1526,16 @@ export default function TradeTaggingPage() {
                           <tbody>
                             {(() => {
                               let running = 0;
-                              const withRunning = executions.map((ex) => {
-                                const counted =
-                                  ex.realized_pnl != null &&
-                                  ex.exec_role !== "combo_summary";
-                                if (counted)
-                                  running += ex.realized_pnl as number;
-                                return { ex, counted, running };
-                              });
+                              const withRunning = visibleExecutions.map(
+                                (ex) => {
+                                  const counted =
+                                    ex.realized_pnl != null &&
+                                    ex.exec_role !== "combo_summary";
+                                  if (counted)
+                                    running += ex.realized_pnl as number;
+                                  return { ex, counted, running };
+                                },
+                              );
                               return [...withRunning]
                                 .reverse()
                                 .map(({ ex, counted, running }) => {

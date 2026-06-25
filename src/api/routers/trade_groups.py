@@ -34,7 +34,12 @@ from src.services.intraday_overlay import (
     marks_as_of,
     merge_positions,
 )
-from src.services.ui_events import TOPIC_POSITIONS, TOPIC_TRADES, broadcaster, make_coarse_event
+from src.services.ui_events import (
+    TOPIC_POSITIONS,
+    TOPIC_TRADES,
+    broadcaster,
+    make_coarse_event,
+)
 from src.utils.contract_display import contract_display_name
 
 router = APIRouter()
@@ -530,9 +535,7 @@ def _upsert_settled_execution_link(  # noqa: PLR0913
     Mirrors ``assign_executions`` but never raises on an existing assignment —
     a fan-out from a position should just move the fill to the target group.
     """
-    existing = db.execute(
-        select(TradeGroupExecution).where(TradeGroupExecution.trade_execution_id == trade_execution_id)
-    ).scalar_one_or_none()
+    existing = db.execute(select(TradeGroupExecution).where(TradeGroupExecution.trade_execution_id == trade_execution_id)).scalar_one_or_none()
     if existing is not None and existing.trade_group_id == trade_group_id:
         return
     if existing is not None:
@@ -598,14 +601,18 @@ def assign_positions(
         trade_group.updated_at = _now_utc()
 
     for pos in body.positions:
-        settled = db.execute(
-            select(TradeExecution.id).where(
-                and_(
-                    TradeExecution.account_id == pos.account_id,
-                    TradeExecution.con_id == pos.con_id,
+        settled = (
+            db.execute(
+                select(TradeExecution.id).where(
+                    and_(
+                        TradeExecution.account_id == pos.account_id,
+                        TradeExecution.con_id == pos.con_id,
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         for execution_id in settled:
             _upsert_settled_execution_link(
                 db,
@@ -617,18 +624,20 @@ def assign_positions(
                 reason=body.reason,
             )
 
-        live = db.execute(
-            select(LiveExecution).where(
-                and_(
-                    LiveExecution.account_id == pos.account_id,
-                    LiveExecution.con_id == pos.con_id,
+        live = (
+            db.execute(
+                select(LiveExecution).where(
+                    and_(
+                        LiveExecution.account_id == pos.account_id,
+                        LiveExecution.con_id == pos.con_id,
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         for live_exec in live:
-            existing = db.execute(
-                select(TradeGroupLiveExecution).where(TradeGroupLiveExecution.ib_exec_id == live_exec.ib_exec_id)
-            ).scalar_one_or_none()
+            existing = db.execute(select(TradeGroupLiveExecution).where(TradeGroupLiveExecution.ib_exec_id == live_exec.ib_exec_id)).scalar_one_or_none()
             if existing is not None:
                 existing.trade_group_id = trade_group_id
                 existing.account_id = live_exec.account_id
@@ -668,17 +677,24 @@ def unassign_positions(
 
     _ensure_group(db, trade_group_id)
     for pos in body.positions:
-        settled_links = db.execute(
-            select(TradeGroupExecution)
-            .join(TradeExecution, TradeExecution.id == TradeGroupExecution.trade_execution_id)
-            .where(
-                and_(
-                    TradeGroupExecution.trade_group_id == trade_group_id,
-                    TradeExecution.account_id == pos.account_id,
-                    TradeExecution.con_id == pos.con_id,
+        settled_links = (
+            db.execute(
+                select(TradeGroupExecution)
+                .join(
+                    TradeExecution,
+                    TradeExecution.id == TradeGroupExecution.trade_execution_id,
+                )
+                .where(
+                    and_(
+                        TradeGroupExecution.trade_group_id == trade_group_id,
+                        TradeExecution.account_id == pos.account_id,
+                        TradeExecution.con_id == pos.con_id,
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         for link in settled_links:
             db.add(
                 TradeGroupExecutionEvent(
@@ -694,15 +710,19 @@ def unassign_positions(
             )
             db.delete(link)
 
-        live_links = db.execute(
-            select(TradeGroupLiveExecution).where(
-                and_(
-                    TradeGroupLiveExecution.trade_group_id == trade_group_id,
-                    TradeGroupLiveExecution.account_id == pos.account_id,
-                    TradeGroupLiveExecution.con_id == pos.con_id,
+        live_links = (
+            db.execute(
+                select(TradeGroupLiveExecution).where(
+                    and_(
+                        TradeGroupLiveExecution.trade_group_id == trade_group_id,
+                        TradeGroupLiveExecution.account_id == pos.account_id,
+                        TradeGroupLiveExecution.con_id == pos.con_id,
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         for link in live_links:
             db.delete(link)
 
@@ -887,6 +907,18 @@ class TradeGroupOpenPositionItem(BaseModel):
     live_unrealized: float | None = None
 
 
+class TradeGroupAccountPnl(BaseModel):
+    """Per-account rollup of a group's P&L. Sums reconcile to the group totals."""
+
+    account_id: int
+    account_alias: str | None
+    realized_pnl: float | None
+    unrealized_pnl: float | None  # settled
+    intraday_unrealized_pnl: float | None = None
+    intraday_realized_pnl: float | None = None
+    intraday_total_pnl: float | None = None
+
+
 class TradeGroupExecutionsResponse(BaseModel):
     trade_group_id: int
     total_realized_pnl: float | None
@@ -898,6 +930,15 @@ class TradeGroupExecutionsResponse(BaseModel):
     intraday_realized_pnl: float | None = None
     intraday_total_pnl: float | None = None
     marks_as_of: datetime | None = None
+    # Per-account breakdown (additive): empty when the group has no executions.
+    by_account: list[TradeGroupAccountPnl] = []
+
+
+class _AccountOverlay(BaseModel):
+    unrealized: float | None
+    intraday_unrealized: float | None
+    intraday_realized: float | None
+    intraday_total: float | None
 
 
 class _OpenPositionsOverlay(BaseModel):
@@ -907,6 +948,13 @@ class _OpenPositionsOverlay(BaseModel):
     intraday_realized: float | None
     intraday_total: float | None
     marks_as_of: datetime | None
+    by_account: dict[int, _AccountOverlay] = {}
+
+
+def _combine_intraday(unrealized: float | None, realized: float | None) -> float | None:
+    if unrealized is None and realized is None:
+        return None
+    return (unrealized or 0.0) + (realized or 0.0)
 
 
 def _build_open_positions_overlay(
@@ -914,6 +962,7 @@ def _build_open_positions_overlay(
     account_con_pairs: set[tuple[int, int]],
     settled_exec_ids: set[str],
     total_pnl: float | None,
+    realized_by_account: dict[int, float | None] | None = None,
 ) -> _OpenPositionsOverlay:
     """Merge the live TWS overlay onto the settled snapshot for a group's pairs.
 
@@ -938,7 +987,10 @@ def _build_open_positions_overlay(
     flex_rows = list(
         db.execute(
             select(Position)
-            .where(sa_tuple(Position.account_id, Position.con_id).in_(pairs), Position.position != 0)
+            .where(
+                sa_tuple(Position.account_id, Position.con_id).in_(pairs),
+                Position.position != 0,
+            )
             .order_by(Position.account_id.asc(), Position.con_id.asc())
         )
         .scalars()
@@ -950,15 +1002,24 @@ def _build_open_positions_overlay(
 
     # Live overlay rows for the same pairs.
     live_rows = list(
-        db.execute(select(LivePosition).where(sa_tuple(LivePosition.account_id, LivePosition.con_id).in_(pairs), LivePosition.position != 0)).scalars().all()
+        db.execute(
+            select(LivePosition).where(
+                sa_tuple(LivePosition.account_id, LivePosition.con_id).in_(pairs),
+                LivePosition.position != 0,
+            )
+        )
+        .scalars()
+        .all()
     )
     overlay_con_ids = {p.con_id for p in flex_rows} | {p.con_id for p in live_rows}
     quotes = {}
+    magnifiers: dict[int, int] = {}
     if overlay_con_ids:
         quotes = {q.con_id: q for q in db.execute(select(LatestQuote).where(LatestQuote.con_id.in_(list(overlay_con_ids)))).scalars().all()}
+        magnifiers = dict(db.execute(select(ContractRef.con_id, ContractRef.price_magnifier).where(ContractRef.con_id.in_(list(overlay_con_ids)))).all())
     live_execs = list(db.execute(select(LiveExecution).where(sa_tuple(LiveExecution.account_id, LiveExecution.con_id).in_(pairs))).scalars().all())
 
-    views = merge_positions(flex_rows, live_rows, quotes)
+    views = merge_positions(flex_rows, live_rows, quotes, magnifiers)
 
     view_account_ids = {v.account_id for v in views}
     alias_by_id = {}
@@ -966,14 +1027,45 @@ def _build_open_positions_overlay(
         alias_by_id = {a.id: a for a in db.execute(select(Account).where(Account.id.in_(list(view_account_ids)))).scalars().all()}
     flex_by_key = {(p.account_id, p.con_id): p for p in flex_rows}
 
-    open_positions = [_view_to_open_position(view, flex_by_key.get((view.account_id, view.con_id)), alias_by_id.get(view.account_id)) for view in views]
+    open_positions = [
+        _view_to_open_position(
+            view,
+            flex_by_key.get((view.account_id, view.con_id)),
+            alias_by_id.get(view.account_id),
+        )
+        for view in views
+    ]
 
     intraday_unrealized = intraday_unrealized_total(views)
     _, live_realized = dedupe_live_realized(settled_exec_ids, live_execs)
     intraday_realized = (total_pnl or 0.0) + live_realized if (total_pnl is not None or live_realized) else None
-    intraday_total = None
-    if intraday_unrealized is not None or intraday_realized is not None:
-        intraday_total = (intraday_unrealized or 0.0) + (intraday_realized or 0.0)
+    intraday_total = _combine_intraday(intraday_unrealized, intraday_realized)
+
+    # Per-account breakdown using the same partitioning as the totals above, so
+    # the per-account values reconcile to the group totals.
+    realized_by_account = realized_by_account or {}
+    views_by_account: dict[int, list] = {}
+    for view in views:
+        views_by_account.setdefault(view.account_id, []).append(view)
+    live_execs_by_account: dict[int, list] = {}
+    for ex in live_execs:
+        live_execs_by_account.setdefault(ex.account_id, []).append(ex)
+
+    by_account: dict[int, _AccountOverlay] = {}
+    for acct_id in set(views_by_account) | set(realized_by_account):
+        acct_views = views_by_account.get(acct_id, [])
+        acct_settled = [v.settled_unrealized for v in acct_views if v.settled_unrealized is not None]
+        acct_unrealized = sum(acct_settled) if acct_settled else None
+        acct_intraday_unrealized = intraday_unrealized_total(acct_views)
+        acct_realized = realized_by_account.get(acct_id)
+        _, acct_live_realized = dedupe_live_realized(settled_exec_ids, live_execs_by_account.get(acct_id, []))
+        acct_intraday_realized = (acct_realized or 0.0) + acct_live_realized if (acct_realized is not None or acct_live_realized) else None
+        by_account[acct_id] = _AccountOverlay(
+            unrealized=acct_unrealized,
+            intraday_unrealized=acct_intraday_unrealized,
+            intraday_realized=acct_intraday_realized,
+            intraday_total=_combine_intraday(acct_intraday_unrealized, acct_intraday_realized),
+        )
 
     return _OpenPositionsOverlay(
         open_positions=open_positions,
@@ -982,6 +1074,7 @@ def _build_open_positions_overlay(
         intraday_realized=intraday_realized,
         intraday_total=intraday_total,
         marks_as_of=marks_as_of(views),
+        by_account=by_account,
     )
 
 
@@ -1025,13 +1118,47 @@ def _view_to_open_position(view, flex, account) -> TradeGroupOpenPositionItem:
     )
 
 
-@router.get("/trade-groups/{trade_group_id}/executions", response_model=TradeGroupExecutionsResponse)
+def _realized_total(rows: list[tuple]) -> float | None:
+    """Sum realized P&L across a set of joined executions, handling combo dedup.
+
+    Each row is ``(execution, contract_ref, trade, account)``. When any
+    ``combo_summary`` row is present, IBKR has already rolled its legs' realized
+    P&L into that summary, so we sum the combo totals plus standalone (non-leg,
+    non-combo) realized values and ignore individual legs. Otherwise we sum every
+    non-combo-summary realized value. Returns None when nothing contributes.
+
+    Called once over all of a group's rows and once per account partition; using
+    the same logic for both guarantees the per-account totals reconcile to the
+    group total.
+    """
+    combo_totals = [
+        realized for execution, *_ in rows if execution.exec_role == "combo_summary" and (realized := _execution_realized_pnl(execution.raw)) is not None
+    ]
+    if combo_totals:
+        standalone = [
+            realized
+            for execution, *_ in rows
+            if execution.exec_role not in {"combo_summary", "leg"} and (realized := _execution_realized_pnl(execution.raw)) is not None
+        ]
+        return sum(combo_totals) + sum(standalone)
+
+    values = [realized for execution, *_ in rows if execution.exec_role != "combo_summary" and (realized := _execution_realized_pnl(execution.raw)) is not None]
+    return sum(values) if values else None
+
+
+@router.get(
+    "/trade-groups/{trade_group_id}/executions",
+    response_model=TradeGroupExecutionsResponse,
+)
 def trade_group_executions(trade_group_id: int, db: Session = DB_SESSION_DEPENDENCY):
     _ensure_group(db, trade_group_id)
 
     rows = db.execute(
         select(TradeExecution, ContractRef, Trade, Account)
-        .join(TradeGroupExecution, TradeGroupExecution.trade_execution_id == TradeExecution.id)
+        .join(
+            TradeGroupExecution,
+            TradeGroupExecution.trade_execution_id == TradeExecution.id,
+        )
         .join(Trade, Trade.id == TradeExecution.trade_id)
         .outerjoin(ContractRef, ContractRef.con_id == TradeExecution.con_id)
         .outerjoin(Account, Account.id == TradeExecution.account_id)
@@ -1040,14 +1167,12 @@ def trade_group_executions(trade_group_id: int, db: Session = DB_SESSION_DEPENDE
     ).all()
 
     items: list[TradeGroupExecutionItem] = []
-    pnl_values: list[float] = []
-    for execution, contract_ref, _trade, account in rows:
-        realized = _execution_realized_pnl(execution.raw)
-        if realized is not None and execution.exec_role != "combo_summary":
-            # Avoid double counting: when a combo_summary row carries the realized PnL,
-            # leg rows should not also be summed. Keep both displayed; only sum non-leg
-            # rows when no combo_summary is present for that trade.
-            pnl_values.append(realized)
+    rows_by_account: dict[int, list[tuple]] = {}
+    alias_by_account: dict[int, str | None] = {}
+    for row in rows:
+        execution, contract_ref, _trade, account = row
+        rows_by_account.setdefault(execution.account_id, []).append(row)
+        alias_by_account.setdefault(execution.account_id, account.alias if account else None)
         items.append(
             TradeGroupExecutionItem(
                 id=execution.id,
@@ -1059,7 +1184,7 @@ def trade_group_executions(trade_group_id: int, db: Session = DB_SESSION_DEPENDE
                 quantity=execution.quantity,
                 price=execution.price,
                 commission=execution.commission,
-                realized_pnl=realized,
+                realized_pnl=_execution_realized_pnl(execution.raw),
                 exec_role=execution.exec_role,
                 sec_type=execution.sec_type,
                 contract_display=_contract_display_from_raw(execution.raw, contract_ref),
@@ -1067,23 +1192,8 @@ def trade_group_executions(trade_group_id: int, db: Session = DB_SESSION_DEPENDE
             )
         )
 
-    # If any combo_summary rows are present in this group, prefer those for the total
-    # (combo_summary rolls up its leg PnL on IBKR side).
-    combo_totals = [
-        _execution_realized_pnl(execution.raw)
-        for execution, _ref, _trade, _account in rows
-        if execution.exec_role == "combo_summary" and _execution_realized_pnl(execution.raw) is not None
-    ]
-    if combo_totals:
-        # Sum combo totals plus any standalone (non-leg, non-combo) realized PnL values
-        standalone = [
-            _execution_realized_pnl(execution.raw)
-            for execution, _ref, _trade, _account in rows
-            if execution.exec_role not in {"combo_summary", "leg"} and _execution_realized_pnl(execution.raw) is not None
-        ]
-        total_pnl: float | None = sum(combo_totals) + sum(standalone)
-    else:
-        total_pnl = sum(pnl_values) if pnl_values else None
+    total_pnl = _realized_total(rows)
+    realized_by_account = {acct_id: _realized_total(acct_rows) for acct_id, acct_rows in rows_by_account.items()}
 
     # Open positions linked to this group: match on (account_id, con_id) pairs
     # that appear in any of the group's executions. The settled snapshot
@@ -1091,7 +1201,22 @@ def trade_group_executions(trade_group_id: int, db: Session = DB_SESSION_DEPENDE
     # + `latest_quote` + `live_executions`) is merged on top at read time.
     account_con_pairs = {(execution.account_id, execution.con_id) for execution, _ref, _trade, _account in rows if execution.con_id is not None}
     settled_exec_ids = {execution.ib_exec_id for execution, _ref, _trade, _account in rows if execution.ib_exec_id}
-    overlay = _build_open_positions_overlay(db, account_con_pairs, settled_exec_ids, total_pnl)
+    overlay = _build_open_positions_overlay(db, account_con_pairs, settled_exec_ids, total_pnl, realized_by_account)
+
+    # Assemble the per-account breakdown over the union of accounts that have
+    # realized PnL (from executions) and/or open positions (from the overlay).
+    by_account = [
+        TradeGroupAccountPnl(
+            account_id=acct_id,
+            account_alias=alias_by_account.get(acct_id),
+            realized_pnl=realized_by_account.get(acct_id),
+            unrealized_pnl=(ov.unrealized if (ov := overlay.by_account.get(acct_id)) else None),
+            intraday_unrealized_pnl=(ov.intraday_unrealized if ov else None),
+            intraday_realized_pnl=(ov.intraday_realized if ov else None),
+            intraday_total_pnl=(ov.intraday_total if ov else None),
+        )
+        for acct_id in sorted(set(realized_by_account) | set(overlay.by_account))
+    ]
 
     return TradeGroupExecutionsResponse(
         trade_group_id=trade_group_id,
@@ -1103,4 +1228,5 @@ def trade_group_executions(trade_group_id: int, db: Session = DB_SESSION_DEPENDE
         intraday_realized_pnl=overlay.intraday_realized,
         intraday_total_pnl=overlay.intraday_total,
         marks_as_of=overlay.marks_as_of,
+        by_account=by_account,
     )
