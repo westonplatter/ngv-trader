@@ -32,7 +32,7 @@ function CheckIcon() {
   );
 }
 
-function EyeIcon() {
+function EyeSlashIcon() {
   return (
     <svg
       xmlns="http://www.w3.org/2000/svg"
@@ -50,12 +50,32 @@ function EyeIcon() {
   );
 }
 
+function EyeIcon() {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 20 20"
+      fill="currentColor"
+      className="w-4 h-4"
+    >
+      <path d="M10 12.5a2.5 2.5 0 100-5 2.5 2.5 0 000 5z" />
+      <path
+        fillRule="evenodd"
+        d="M.664 10.59a1.651 1.651 0 010-1.186A10.004 10.004 0 0110 3c4.257 0 7.893 2.66 9.336 6.41.147.381.146.804 0 1.186A10.004 10.004 0 0110 17c-4.257 0-7.893-2.66-9.336-6.41zM14 10a4 4 0 11-8 0 4 4 0 018 0z"
+        clipRule="evenodd"
+      />
+    </svg>
+  );
+}
+
 interface Account {
   id: number;
   account: string;
   masked_account: string;
   alias: string | null;
 }
+
+type RevealMode = "hidden" | "partial" | "full";
 
 export default function AccountsTable() {
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -64,18 +84,19 @@ export default function AccountsTable() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editValue, setEditValue] = useState("");
   const [saving, setSaving] = useState(false);
-  const [revealedAccounts, setRevealedAccounts] = useState<Set<number>>(
-    new Set(),
+  const [revealModes, setRevealModes] = useState<Record<number, RevealMode>>(
+    {},
   );
   const [copiedId, setCopiedId] = useState<number | null>(null);
 
-  const toggleReveal = (id: number) => {
-    setRevealedAccounts((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
+  const getRevealMode = (id: number): RevealMode => revealModes[id] ?? "hidden";
+
+  // Clicking a mode's button toggles it on, or back to hidden if already active.
+  const toggleReveal = (id: number, mode: "partial" | "full") => {
+    setRevealModes((prev) => ({
+      ...prev,
+      [id]: (prev[id] ?? "hidden") === mode ? "hidden" : mode,
+    }));
   };
 
   const copyAccount = (account: Account) => {
@@ -159,17 +180,38 @@ export default function AccountsTable() {
               <td className="px-3 py-2">
                 <span className="inline-flex items-center gap-2">
                   <span className="font-mono">
-                    {revealedAccounts.has(account.id)
-                      ? account.masked_account
-                      : "*".repeat(account.masked_account.length)}
+                    {getRevealMode(account.id) === "full"
+                      ? account.account
+                      : getRevealMode(account.id) === "partial"
+                        ? account.masked_account
+                        : "*".repeat(account.masked_account.length)}
                   </span>
                   <button
-                    onClick={() => toggleReveal(account.id)}
-                    className="text-gray-400 hover:text-gray-700"
+                    onClick={() => toggleReveal(account.id, "partial")}
+                    className={
+                      getRevealMode(account.id) === "partial"
+                        ? "text-blue-600 hover:text-blue-800"
+                        : "text-gray-400 hover:text-gray-700"
+                    }
                     title={
-                      revealedAccounts.has(account.id)
-                        ? "Hide last 3 digits"
+                      getRevealMode(account.id) === "partial"
+                        ? "Hide account"
                         : "Reveal last 3 digits"
+                    }
+                  >
+                    <EyeSlashIcon />
+                  </button>
+                  <button
+                    onClick={() => toggleReveal(account.id, "full")}
+                    className={
+                      getRevealMode(account.id) === "full"
+                        ? "text-blue-600 hover:text-blue-800"
+                        : "text-gray-400 hover:text-gray-700"
+                    }
+                    title={
+                      getRevealMode(account.id) === "full"
+                        ? "Hide account"
+                        : "Reveal full account"
                     }
                   >
                     <EyeIcon />
