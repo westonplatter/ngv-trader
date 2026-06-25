@@ -889,27 +889,61 @@ export default function TradesTable() {
         </div>
       )}
 
-      <div className="flex items-center gap-2">
-        {[
-          { id: "all", label: "All" },
-          { id: "24h", label: "24h" },
-          { id: "3d", label: "3d" },
-          { id: "7d", label: "7d" },
-          { id: "30d", label: "30d" },
-          { id: "90d", label: "90d" },
-        ].map((opt) => (
-          <button
-            key={opt.id}
-            onClick={() => setTimeRange(opt.id)}
-            className={`rounded px-2.5 py-1 text-xs font-medium uppercase tracking-wide ${
-              timeRange === opt.id
-                ? "bg-gray-900 text-white"
-                : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-            }`}
-          >
-            {opt.label}
-          </button>
-        ))}
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">
+            Range
+          </span>
+          <div className="inline-flex items-center gap-0.5 rounded-md bg-gray-100 p-0.5">
+            {[
+              { id: "all", label: "All" },
+              { id: "24h", label: "24h" },
+              { id: "3d", label: "3d" },
+              { id: "7d", label: "7d" },
+              { id: "30d", label: "30d" },
+              { id: "90d", label: "90d" },
+            ].map((opt) => (
+              <button
+                key={opt.id}
+                onClick={() => setTimeRange(opt.id)}
+                className={`rounded px-2.5 py-1 text-xs font-medium uppercase tracking-wide ${
+                  timeRange === opt.id
+                    ? "bg-white text-gray-900 shadow-sm"
+                    : "text-gray-600 hover:text-gray-900"
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">
+            Tags
+          </span>
+          <div className="inline-flex items-center gap-0.5 rounded-md bg-gray-100 p-0.5">
+            {[
+              { id: "all", label: "All" },
+              { id: "tagged", label: "Tagged" },
+              { id: "untagged", label: "Untagged" },
+            ].map((opt) => (
+              <button
+                key={opt.id}
+                onClick={() =>
+                  setTagStatus(opt.id as "all" | "tagged" | "untagged")
+                }
+                className={`rounded px-2.5 py-1 text-xs font-medium uppercase tracking-wide ${
+                  tagStatus === opt.id
+                    ? "bg-white text-gray-900 shadow-sm"
+                    : "text-gray-600 hover:text-gray-900"
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
 
       {syncMessage && <p className="text-sm text-green-700">{syncMessage}</p>}
@@ -965,30 +999,7 @@ export default function TradesTable() {
                 Status
               </th>
               <th className="w-48 min-w-[12rem] whitespace-nowrap px-3 py-2 font-semibold text-gray-700">
-                <div className="space-y-1">
-                  <div className="flex items-center gap-1">
-                    {[
-                      { id: "all", label: "All" },
-                      { id: "tagged", label: "Tagged" },
-                      { id: "untagged", label: "Untagged" },
-                    ].map((opt) => (
-                      <button
-                        key={opt.id}
-                        onClick={() =>
-                          setTagStatus(opt.id as "all" | "tagged" | "untagged")
-                        }
-                        className={`rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide ${
-                          tagStatus === opt.id
-                            ? "bg-gray-900 text-white"
-                            : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                        }`}
-                      >
-                        {opt.label}
-                      </button>
-                    ))}
-                  </div>
-                  <div>Tag Group</div>
-                </div>
+                Tag Group
               </th>
               <th className="whitespace-nowrap px-3 py-2 font-semibold text-gray-700">
                 Parent Exec ID
