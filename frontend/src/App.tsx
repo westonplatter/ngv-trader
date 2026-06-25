@@ -37,7 +37,7 @@ function PrivacyToggle() {
   return (
     <button
       onClick={togglePrivacy}
-      className={`ml-auto flex items-center gap-1.5 rounded px-2.5 py-1 text-xs font-medium transition-colors ${
+      className={`flex items-center gap-1.5 rounded px-2.5 py-1 text-xs font-medium transition-colors ${
         privacyMode
           ? "bg-gray-900 text-white"
           : "bg-gray-100 text-gray-600 hover:bg-gray-200"
