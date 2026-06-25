@@ -1,216 +1,190 @@
-# Proprietary Software License Agreement
+# License
 
-**Effective Date:** April 28, 2026
-**Licensor:** Weston Platter
 **Software:** Next Gen Vol Trader ("ngv-trader")
+**Licensor:** Weston Platter
+**Effective Date:** April 28, 2026
+
+This software is licensed under the **PolyForm Noncommercial License 1.0.0**,
+reproduced verbatim in Part A below, together with the **Supplemental Terms**
+of the Licensor in Part B. Part B narrows free use of this software to
+**individual personal use**, explains when a Commercial License is required,
+and adds disclaimers specific to trading software. In the event of a direct
+conflict, Part B controls over Part A only to the extent Part B further
+restricts your rights or adds disclaimers; it does not grant you any rights
+beyond those in Part A.
+
+> Required Notice: Copyright (c) 2026 Weston Platter
+> Contact for Commercial Licenses: westonplatter [at] gmail [dot] com
 
 ---
 
-## 1. Grant of License
+# Part A — PolyForm Noncommercial License 1.0.0
 
-Subject to the terms of this Agreement, Licensor grants you a limited,
-non-exclusive, non-transferable, non-sublicensable, revocable license to:
+<https://polyformproject.org/licenses/noncommercial/1.0.0>
 
-- Access the private GitHub repository containing the Software;
-- Download and use the Software;
-- Run and modify the Software solely for your own internal personal use.
+## Acceptance
 
-All rights not expressly granted are reserved by Licensor.
+In order to get any license under these terms, you must agree to them as both strict obligations and conditions to all your licenses.
 
----
+## Copyright License
 
-## 2. License Types
+The licensor grants you a copyright license for the software to do everything you might do with the software that would otherwise infringe the licensor's copyright in it for any permitted purpose.  However, you may only distribute the software according to [Distribution License](#distribution-license) and make changes or new works based on the software according to [Changes and New Works License](#changes-and-new-works-license).
 
-### 2.1 Personal Use License (Free Tier)
+## Distribution License
 
-You may use the Software without payment provided that:
+The licensor grants you an additional copyright license to distribute copies of the software.  Your license to distribute covers distributing the software with changes and new works permitted by [Changes and New Works License](#changes-and-new-works-license).
 
-- You are an individual;
-- You are managing less than USD $1,000,000 in aggregate trading capital or
-  assets under management ("AUM");
-- You are not using the Software for commercial purposes;
-- You are not providing services to third parties using the Software.
+## Notices
 
-If you exceed the AUM threshold or engage in commercial use, you must obtain
-a Commercial License.
+You must ensure that anyone who gets a copy of any part of the software from you also gets a copy of these terms or the URL for them above, as well as copies of any plain-text lines beginning with `Required Notice:` that the licensor provided with the software.  For example:
 
-You are solely responsible for determining whether you qualify for the
-Personal Use License. Licensor reserves the right to request reasonable
-verification of AUM or commercial use status at any time.
+> Required Notice: Copyright Yoyodyne, Inc. (http://example.com)
 
-Licensor may modify or discontinue the free Personal Use License upon
-30 days written notice.
+## Changes and New Works License
 
----
+The licensor grants you an additional copyright license to make changes and new works based on the software for any permitted purpose.
 
-### 2.2 Commercial License
+## Patent License
 
-A paid Commercial License is required if:
+The licensor grants you a patent license for the software that covers patent claims the licensor can license, or becomes able to license, that you would infringe by using the software.
 
-- You use the Software in connection with any business, fund, advisory
-  service, or revenue-generating activity;
-- You manage or control $1,000,000 USD or more in AUM;
-- You provide trading, consulting, or advisory services to third parties
-  using the Software;
-- You integrate the Software into a commercial product or service;
-- You otherwise use the Software for commercial purposes.
+## Noncommercial Purposes
 
-Commercial License terms, pricing, and payment structure will be defined
-separately by Licensor. Contact: westonplatter [at] gmail [dot] com
+Any noncommercial purpose is a permitted purpose.
 
----
+## Personal Uses
 
-## 3. Restrictions
+Personal use for research, experiment, and testing for the benefit of public knowledge, personal study, private entertainment, hobby projects, amateur pursuits, or religious observance, without any anticipated commercial application, is use for a permitted purpose.
 
-You may NOT:
+## Noncommercial Organizations
 
-1. Redistribute the Software in any form, including source code or compiled
-   form;
-2. Publish the Software in any public repository;
-3. Share repository access with third parties;
-4. Sell, sublicense, lease, rent, or transfer the Software;
-5. Offer the Software as a hosted or SaaS service;
-6. Remove or alter copyright, license, or proprietary notices;
-7. Use the Software in violation of any applicable laws or regulations.
+Use by any charitable organization, educational institution, public research organization, public safety or health organization, environmental protection organization, or government institution is use for a permitted purpose regardless of the source of funding or obligations resulting from the funding.
 
----
+## Fair Use
 
-## 4. Ownership
+You may have "fair use" rights for the software under the law. These terms do not limit them.
 
-The Software, including all source code, algorithms, logic, structure,
-design, and documentation, is and remains the exclusive property of
-Licensor.
+## No Other Rights
 
-This Agreement does not grant you ownership of any intellectual property
-rights.
+These terms do not allow you to sublicense or transfer any of your licenses to anyone else, or prevent the licensor from granting licenses to anyone else.  These terms do not imply any other licenses.
+
+## Patent Defense
+
+If you make any written claim that the software infringes or contributes to infringement of any patent, your patent license for the software granted under these terms ends immediately. If your company makes such a claim, your patent license ends immediately for work on behalf of your company.
+
+## Violations
+
+The first time you are notified in writing that you have violated any of these terms, or done anything with the software not covered by your licenses, your licenses can nonetheless continue if you come into full compliance with these terms, and take practical steps to correct past violations, within 32 days of receiving notice.  Otherwise, all your licenses end immediately.
+
+## No Liability
+
+***As far as the law allows, the software comes as is, without any warranty or condition, and the licensor will not be liable to you for any damages arising out of these terms or the use or nature of the software, under any kind of legal claim.***
+
+## Definitions
+
+The **licensor** is the individual or entity offering these terms, and the **software** is the software the licensor makes available under these terms.
+
+**You** refers to the individual or entity agreeing to these terms.
+
+**Your company** is any legal entity, sole proprietorship, or other kind of organization that you work for, plus all organizations that have control over, are under the control of, or are under common control with that organization.  **Control** means ownership of substantially all the assets of an entity, or the power to direct its management and policies by vote, contract, or otherwise.  Control can be direct or indirect.
+
+**Your licenses** are all the licenses granted to you for the software under these terms.
+
+**Use** means anything you do with the software requiring one of your licenses.
 
 ---
 
-## 5. Modifications
+# Part B — Supplemental Terms (Licensor)
 
-You may modify the Software solely for your own internal use. You may not
-distribute modified versions.
+These Supplemental Terms are provided by the Licensor under the "Notices"
+section of Part A. They narrow the permitted purposes of the PolyForm
+Noncommercial License so that free use of this software is limited to
+**individual personal use**, and they add disclaimers specific to trading
+software.
 
-Licensor retains ownership of the original Software. You retain ownership
-of your original modifications, subject to the terms of this Agreement.
+## B.1 Permitted Personal Use (Free)
 
----
+Free use of the software is limited to **personal use by an individual natural
+person**. Your use is permitted without payment only if **all** of the
+following conditions are met:
 
-## 6. No Investment Advice
+- You are an individual natural person (not a company, partnership, LLC,
+  corporation, fund, trust, or any other entity or organization), using the
+  software for your own personal account; and
+- You are managing less than **USD $5,000,000** in aggregate trading capital
+  or assets under management ("AUM") across all accounts you trade with the
+  software; and
+- You are not providing trading, advisory, consulting, or other services to
+  any third party using the software.
 
-THE SOFTWARE IS PROVIDED FOR EDUCATIONAL AND INFORMATIONAL PURPOSES ONLY.
+This is the controlling condition for free use. The barrier is **personal
+use** — not merely "noncommercial" use.
 
-The Software:
+## B.2 Entity and Organizational Use Is Not Free
 
-- Does not constitute investment advice;
-- Does not constitute financial, legal, or tax advice;
-- Does not create a fiduciary relationship;
-- Does not act as a broker, dealer, or registered investment advisor.
+Notwithstanding the "Noncommercial Purposes," "Personal Uses," and
+"Noncommercial Organizations" provisions of Part A, **any use by or on behalf
+of an entity or organization is not permitted free of charge** and requires a
+separate Commercial License. This includes, without limitation, use by or for:
 
-You are solely responsible for all trading decisions and outcomes.
+- Any company, partnership, LLC, corporation, sole proprietorship, fund, or
+  trust — **including a small or two-person entity**; and
+- Any charitable organization, educational institution, public research
+  organization, public safety or health organization, environmental protection
+  organization, or government institution.
 
----
+If two or more people use the software together, or if anyone uses it on behalf
+of an entity, that use is beyond Personal Use and requires a Commercial
+License, regardless of whether the use is commercial.
 
-## 7. Assumption of Risk
+## B.3 Uses Requiring a Commercial License
 
-Trading and investing involve substantial risk, including the risk of
-complete loss of capital.
+A separate, paid **Commercial License** from the Licensor is required for any
+use that is not Permitted Personal Use under Section B.1, including:
 
-You acknowledge and agree:
+- Any use by or on behalf of an entity or organization (see Section B.2);
+- Managing or controlling **$5,000,000 USD or more** in AUM with the software;
+- Providing trading, consulting, or advisory services to third parties using
+  the software;
+- Integrating the software into a commercial product or service;
+- Any other use beyond individual personal use.
 
-- You use the Software entirely at your own risk;
-- Licensor is not responsible for any financial losses;
-- Market conditions, execution errors, data errors, or software bugs may
-  result in losses.
+Commercial License terms and pricing are defined separately by the Licensor.
+The Licensor intends commercial pricing to be reasonable. Contact:
+westonplatter [at] gmail [dot] com
 
----
+You are solely responsible for determining whether you qualify for free
+Personal Use. The Licensor may request reasonable verification of AUM,
+personal-use, or entity status at any time.
 
-## 8. Disclaimer of Warranties
+## B.4 No Investment Advice
 
-THE SOFTWARE IS PROVIDED "AS IS" AND "AS AVAILABLE."
+THE SOFTWARE IS PROVIDED FOR EDUCATIONAL AND INFORMATIONAL PURPOSES ONLY. The
+software does not constitute investment, financial, legal, or tax advice, does
+not create a fiduciary relationship, and does not act as a broker, dealer, or
+registered investment advisor. You are solely responsible for all trading
+decisions and outcomes.
 
-Licensor makes no warranties, express or implied, including:
+## B.5 Assumption of Risk
 
-- Merchantability
-- Fitness for a particular purpose
-- Non-infringement
-- Accuracy or reliability
+Trading and investing involve substantial risk, including the risk of complete
+loss of capital. You use the software entirely at your own risk. The Licensor
+is not responsible for any financial losses, including those arising from
+market conditions, execution errors, data errors, or software bugs.
 
-Licensor does not guarantee uninterrupted or error-free operation.
+## B.6 Indemnification
 
----
+You agree to indemnify and hold harmless the Licensor from any claims, damages,
+liabilities, or expenses arising from your use of the software, your trading
+activities, or your violation of these terms.
 
-## 9. Limitation of Liability
+## B.7 Governing Law
 
-To the maximum extent permitted by law:
-
-**Personal Use License (Free Tier).** Licensor shall not be liable for any
-damages of any kind arising from your use of the Software, including but
-not limited to direct, indirect, incidental, consequential, or special
-damages, loss of profits, loss of capital, trading losses, or business
-interruption. Your use of the Software under the free Personal Use License
-is entirely at your own risk.
-
-**Commercial License.** Licensor shall not be liable for any indirect,
-incidental, consequential, or special damages, loss of profits, loss of
-capital, trading losses, or business interruption. Licensor's total
-aggregate liability for direct damages shall not exceed the total amount
-paid by you to Licensor in the twelve (12) months preceding the claim.
-
----
-
-## 10. Indemnification
-
-You agree to indemnify and hold harmless Licensor from any claims, damages,
-liabilities, or expenses arising from:
-
-- Your use of the Software;
-- Your trading activities;
-- Your violation of this Agreement.
-
----
-
-## 11. Termination
-
-Upon the first breach of any provision of this Agreement, Licensor will
-provide written notice. You will have 30 days from receipt of notice to
-cure the breach. If the breach is not cured within 30 days, this License
-terminates immediately.
-
-Licensor may terminate this License immediately and without a cure period
-for violations of Section 3 (Restrictions), including unauthorized
-redistribution or publication of the Software.
-
-Upon termination, you must:
-
-- Cease using the Software;
-- Delete all copies of the Software in your possession.
-
-User-generated data — including trade logs, configuration files, and
-database records created by your use of the Software — remains your
-property and is not subject to deletion requirements.
-
-Licensor may revoke repository access at any time.
-
-Sections 4, 6, 7, 8, 9, 10, and this Section 11 survive termination.
+These Supplemental Terms are governed by the laws of the State of Colorado,
+without regard to conflict-of-law principles. Any disputes shall be resolved in
+the courts located in the State of Colorado.
 
 ---
 
-## 12. Governing Law
-
-This Agreement shall be governed by the laws of the State of Colorado,
-without regard to conflict of law principles.
-
-Any disputes shall be resolved in the courts located in the State of
-Colorado.
-
----
-
-## 13. Entire Agreement
-
-This Agreement constitutes the entire agreement between the parties
-regarding the Software and supersedes any prior agreements.
-
----
-
-(c) 2026 Weston Platter. All Rights Reserved.
+(c) 2026 Weston Platter. The PolyForm Noncommercial License 1.0.0 text in
+Part A is published by the Polyform Project and is reproduced verbatim.
