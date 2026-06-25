@@ -1,8 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { usePrivacy } from "../contexts/PrivacyContext";
 import { PRIVACY_MASK } from "../utils/privacy";
 import { API_BASE_URL } from "../config";
 import { useSSE } from "../lib/events";
+import { formatMoney } from "../utils/number";
+import TradeGroupSearchSelect from "./TradeGroupSearchSelect";
+import { type TradeGroupResult, tradeGroupLabel } from "../lib/tradeGroups";
 
 interface TradeExecutionRow {
   id: number;
@@ -37,14 +40,6 @@ interface TradeExecutionRow {
   live_trade_group_id?: number | null;
 }
 
-interface TradeGroupResult {
-  id: number;
-  account_id: number | null;
-  name: string;
-  status: string;
-  primary_strategy_value: string | null;
-}
-
 const STATUS_CLASS: Record<string, string> = {
   filled: "bg-emerald-100 text-emerald-800",
   partial: "bg-blue-100 text-blue-800",
@@ -73,14 +68,6 @@ function formatDateTime(value: string | null | undefined): string {
   })}`;
 }
 
-function formatPrice(value: number | null | undefined): string {
-  if (value == null) return "-";
-  return value.toLocaleString(undefined, {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 4,
-  });
-}
-
 async function readErrorMessage(
   response: Response,
   fallback: string,
@@ -94,11 +81,6 @@ async function readErrorMessage(
     // no-op
   }
   return `${fallback} (${response.status})`;
-}
-
-function tradeGroupLabel(group: TradeGroupResult): string {
-  const strategy = group.primary_strategy_value ?? "No Strategy";
-  return `${strategy} > ${group.name}`;
 }
 
 function execRoleBadge(role: string): { label: string; className: string } {
@@ -131,137 +113,14 @@ function TagGroupCell({
   unsettled?: boolean;
   ibExecId?: string | null;
 }) {
-  const [mode, setMode] = useState<"display" | "search">("display");
-  const [query, setQuery] = useState("");
-  const [results, setResults] = useState<TradeGroupResult[]>([]);
-  const [loading, setLoading] = useState(false);
   const [assigning, setAssigning] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [dropdownPos, setDropdownPos] = useState<{
-    top: number;
-    left: number;
-    flipUp: boolean;
-  } | null>(null);
-  const [highlightedIndex, setHighlightedIndex] = useState(0);
   // Optimistic override applied as soon as the user picks/clears a group, before
   // the backend confirms. `id === null` represents an optimistic unassign.
   const [optimisticOverride, setOptimisticOverride] = useState<{
     id: number | null;
     label: string | null;
   } | null>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const searchVersionRef = useRef(0);
-  const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
-
-  const updateDropdownPos = useCallback(() => {
-    if (!inputRef.current) return;
-    const rect = inputRef.current.getBoundingClientRect();
-    const spaceBelow = window.innerHeight - rect.bottom;
-    const flipUp = spaceBelow < 260;
-    setDropdownPos({
-      top: flipUp ? rect.top : rect.bottom + 4,
-      left: rect.left,
-      flipUp,
-    });
-  }, []);
-
-  const searchGroups = useCallback(async (searchQuery: string) => {
-    const params = new URLSearchParams({ limit: "20", status: "open" });
-    if (searchQuery.trim()) params.set("q", searchQuery.trim());
-    const response = await fetch(
-      `${API_BASE_URL}/trade-groups?${params.toString()}`,
-    );
-    if (!response.ok) {
-      throw new Error(
-        await readErrorMessage(response, "Unable to search trade groups"),
-      );
-    }
-    return (await response.json()) as TradeGroupResult[];
-  }, []);
-
-  const handleQueryChange = useCallback(
-    (value: string) => {
-      setQuery(value);
-      setError(null);
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-      const version = ++searchVersionRef.current;
-      debounceRef.current = setTimeout(() => {
-        setLoading(true);
-        void searchGroups(value)
-          .then((data) => {
-            if (searchVersionRef.current === version) setResults(data);
-          })
-          .catch(() => {
-            if (searchVersionRef.current === version) setResults([]);
-          })
-          .finally(() => {
-            if (searchVersionRef.current === version) setLoading(false);
-          });
-      }, 250);
-    },
-    [searchGroups],
-  );
-
-  const openSearch = useCallback(() => {
-    setMode("search");
-    setQuery("");
-    setError(null);
-    setLoading(true);
-    void searchGroups("")
-      .then((data) => setResults(data))
-      .catch(() => setResults([]))
-      .finally(() => setLoading(false));
-    setTimeout(() => {
-      inputRef.current?.focus({ preventScroll: true });
-      updateDropdownPos();
-    }, 0);
-  }, [searchGroups, updateDropdownPos]);
-
-  const closeSearch = useCallback(() => {
-    if (debounceRef.current) {
-      clearTimeout(debounceRef.current);
-      debounceRef.current = null;
-    }
-    searchVersionRef.current++;
-    setMode("display");
-    setQuery("");
-    setResults([]);
-    setError(null);
-  }, []);
-
-  useEffect(() => {
-    if (mode !== "search") return;
-    const handleOutsideClick = (event: MouseEvent) => {
-      if (
-        containerRef.current &&
-        !containerRef.current.contains(event.target as Node)
-      ) {
-        closeSearch();
-      }
-    };
-    document.addEventListener("mousedown", handleOutsideClick);
-    return () => {
-      document.removeEventListener("mousedown", handleOutsideClick);
-    };
-  }, [mode, closeSearch]);
-
-  useEffect(() => {
-    return () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-    };
-  }, []);
-
-  // Reset the highlighted option whenever the result set changes.
-  useEffect(() => {
-    setHighlightedIndex(0);
-  }, [results]);
-
-  // Keep the highlighted option scrolled into view.
-  useEffect(() => {
-    itemRefs.current[highlightedIndex]?.scrollIntoView({ block: "nearest" });
-  }, [highlightedIndex]);
 
   // Once the backend-confirmed prop catches up to (or matches) the optimistic
   // target, drop the override so we render the authoritative server state.
@@ -282,10 +141,10 @@ function TagGroupCell({
 
   const assignToGroup = async (group: TradeGroupResult) => {
     const previousOverride = optimisticOverride;
-    // Apply the label immediately and close the dropdown so the UI feels instant.
+    // Apply the label immediately so the UI feels instant. The search popover
+    // closes itself before invoking this handler.
     setOptimisticOverride({ id: group.id, label: tradeGroupLabel(group) });
     setError(null);
-    closeSearch();
     setAssigning(true);
     try {
       if (unsettled) {
@@ -430,161 +289,59 @@ function TagGroupCell({
     }
   };
 
-  if (mode === "display") {
-    if (effectiveGroupId) {
-      return (
-        <div className="flex items-center gap-1">
-          <span
-            className={`whitespace-nowrap rounded bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-800 cursor-pointer hover:bg-blue-200 ${
-              assigning ? "opacity-60" : ""
-            }`}
-            onClick={(e) => {
-              e.stopPropagation();
-              openSearch();
-            }}
-            title={assigning ? "Saving…" : "Click to reassign"}
-          >
-            {effectiveLabel ?? `Group #${effectiveGroupId}`}
-          </span>
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              if (window.confirm(`Unassign from group #${effectiveGroupId}?`)) {
-                void unassignFromGroup();
-              }
-            }}
-            disabled={assigning}
-            className="flex h-5 w-5 items-center justify-center rounded text-sm font-bold text-gray-400 hover:bg-red-100 hover:text-red-600 disabled:opacity-50"
-            title="Unassign from group"
-          >
-            ×
-          </button>
-          {error && (
-            <span className="rounded bg-red-50 px-1.5 py-0.5 text-xs text-red-600">
-              {error}
+  return (
+    <div className="flex items-center gap-1">
+      <TradeGroupSearchSelect
+        accountId={accountId}
+        contractDisplayName={contractDisplayName}
+        onSelect={assignToGroup}
+        disabled={assigning}
+        renderTrigger={(open) =>
+          effectiveGroupId ? (
+            <span
+              className={`whitespace-nowrap rounded bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-800 cursor-pointer hover:bg-blue-200 ${
+                assigning ? "opacity-60" : ""
+              }`}
+              onClick={(e) => {
+                e.stopPropagation();
+                open();
+              }}
+              title={assigning ? "Saving…" : "Click to reassign"}
+            >
+              {effectiveLabel ?? `Group #${effectiveGroupId}`}
             </span>
-          )}
-        </div>
-      );
-    }
-
-    return (
-      <div className="flex items-center gap-1">
+          ) : (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                open();
+              }}
+              className="rounded border border-dashed border-gray-300 px-2 py-0.5 text-xs text-gray-400 hover:border-blue-300 hover:text-blue-600"
+            >
+              + Assign
+            </button>
+          )
+        }
+      />
+      {effectiveGroupId && (
         <button
           onClick={(e) => {
             e.stopPropagation();
-            openSearch();
-          }}
-          className="rounded border border-dashed border-gray-300 px-2 py-0.5 text-xs text-gray-400 hover:border-blue-300 hover:text-blue-600"
-        >
-          + Assign
-        </button>
-        {error && (
-          <span className="rounded bg-red-50 px-1.5 py-0.5 text-xs text-red-600">
-            {error}
-          </span>
-        )}
-      </div>
-    );
-  }
-
-  return (
-    <div
-      ref={containerRef}
-      className="relative"
-      onClick={(e) => e.stopPropagation()}
-    >
-      <input
-        ref={inputRef}
-        value={query}
-        onChange={(e) => handleQueryChange(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Escape") {
-            closeSearch();
-          } else if (e.key === "ArrowDown") {
-            if (results.length === 0) return;
-            e.preventDefault();
-            setHighlightedIndex((prev) => (prev + 1) % results.length);
-          } else if (e.key === "ArrowUp") {
-            if (results.length === 0) return;
-            e.preventDefault();
-            setHighlightedIndex(
-              (prev) => (prev - 1 + results.length) % results.length,
-            );
-          } else if (e.key === "Enter") {
-            const group = results[highlightedIndex];
-            if (group && !assigning) {
-              e.preventDefault();
-              void assignToGroup(group);
+            if (window.confirm(`Unassign from group #${effectiveGroupId}?`)) {
+              void unassignFromGroup();
             }
-          }
-        }}
-        className="w-full min-w-[200px] rounded border border-blue-300 px-2 py-1 text-xs"
-        placeholder="Search trade groups..."
-        disabled={assigning}
-      />
-      {dropdownPos && (
-        <div
-          className="fixed z-50 max-h-[240px] w-[320px] overflow-y-auto rounded border border-gray-200 bg-white shadow-lg"
-          style={{
-            left: dropdownPos.left,
-            ...(dropdownPos.flipUp
-              ? { bottom: window.innerHeight - dropdownPos.top + 4 }
-              : { top: dropdownPos.top }),
           }}
+          disabled={assigning}
+          className="flex h-5 w-5 items-center justify-center rounded text-sm font-bold text-gray-400 hover:bg-red-100 hover:text-red-600 disabled:opacity-50"
+          title="Unassign from group"
         >
-          {loading && (
-            <div className="px-3 py-2 text-xs text-gray-500">Searching...</div>
-          )}
-          {!loading && results.length === 0 && (
-            <div className="px-3 py-2 text-xs text-gray-500">
-              No trade groups found.
-              <button
-                onClick={() => {
-                  const params = new URLSearchParams({
-                    account_id: String(accountId),
-                    prefill_group_name: `${contractDisplayName ?? "Trade"} Lifecycle Group`,
-                  });
-                  window.open(
-                    `/tagging?${params.toString()}`,
-                    "_blank",
-                    "noopener,noreferrer",
-                  );
-                }}
-                className="ml-1 text-blue-600 underline hover:text-blue-800"
-              >
-                Create one
-              </button>
-            </div>
-          )}
-          {!loading &&
-            results.map((group, index) => (
-              <button
-                key={group.id}
-                ref={(el) => {
-                  itemRefs.current[index] = el;
-                }}
-                onMouseEnter={() => setHighlightedIndex(index)}
-                onClick={() => {
-                  void assignToGroup(group);
-                }}
-                disabled={assigning}
-                className={`flex w-full items-center gap-2 px-3 py-2 text-left text-xs disabled:opacity-50 ${
-                  index === highlightedIndex ? "bg-blue-50" : "hover:bg-blue-50"
-                }`}
-              >
-                <span className="font-medium text-gray-800">
-                  {tradeGroupLabel(group)}
-                </span>
-                <span className="ml-auto text-gray-400">#{group.id}</span>
-              </button>
-            ))}
-          {error && (
-            <div className="border-t border-gray-100 px-3 py-2 text-xs text-red-600">
-              {error}
-            </div>
-          )}
-        </div>
+          ×
+        </button>
+      )}
+      {error && (
+        <span className="rounded bg-red-50 px-1.5 py-0.5 text-xs text-red-600">
+          {error}
+        </span>
       )}
     </div>
   );
@@ -1090,10 +847,12 @@ export default function TradesTable() {
                     {privacyMode ? PRIVACY_MASK : row.quantity}
                   </td>
                   <td className="whitespace-nowrap px-3 py-2 text-gray-700">
-                    {formatPrice(row.price)}
+                    {formatMoney(row.price, "-")}
                   </td>
                   <td className="whitespace-nowrap px-3 py-2 text-gray-700">
-                    {privacyMode ? PRIVACY_MASK : formatPrice(row.realized_pnl)}
+                    {privacyMode
+                      ? PRIVACY_MASK
+                      : formatMoney(row.realized_pnl, "-")}
                   </td>
                   <td className="whitespace-nowrap px-3 py-2 text-gray-800">
                     {row.account_alias ?? `Account ${row.account_id}`}
