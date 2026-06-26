@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 from dataclasses import dataclass
 from typing import Any, Sequence, TypedDict
@@ -42,8 +43,13 @@ from src.services.order_mutations import (
     OrderCreateInput,
     normalize_order_create_input,
 )
+from src.services.semantic.executor import run_metric_query
+from src.services.semantic.loader import get_model
+from src.services.semantic.resolver import ALLOWED_TIME_GRAINS, build_metric_query
 from src.utils.env_vars import get_int_env, get_str_env
 from src.utils.ibkr_account import mask_ibkr_account
+
+logger = logging.getLogger("tradebot_agent")
 
 _SYSTEM_PROMPT = (
     "You are Tradebot, an operations assistant for a live trading desk. "
@@ -61,6 +67,9 @@ _SYSTEM_PROMPT = (
     "You can also manage watch lists: create watch lists, add instruments to them, list them, and remove instruments. "
     "add_watch_list_instrument finds the contract in the DB (or fetches from IBKR), adds it to the watch list, "
     "and enqueues a market data job for latest prices. It returns immediately — no need to poll. "
+    "For analytics questions about realized PnL, win rate, or trade counts (e.g. 'PnL by symbol this quarter', "
+    "'win rate last month'), use query_metric: it runs business-analyst metric definitions from the semantic "
+    "model as read-only SQL. Pick a metric and dimensions by name — do not ask for raw SQL. "
     "Keep responses concise and operator-focused."
 )
 _MAX_MESSAGES = 16
@@ -463,6 +472,82 @@ _TOOL_SPECS: list[dict[str, Any]] = [
         },
     },
 ]
+
+
+_NUMERIC_FILTER_DIMS = {"account"}
+
+
+def _build_query_metric_spec() -> dict[str, Any]:
+    """Build the query_metric tool spec from the OSI semantic model.
+
+    The metric/dimension enums come straight from the model so the LLM can only
+    reference defined names — this is the safety boundary that replaces free-form
+    SQL. Raises if the model can't be loaded; the caller decides whether to skip
+    the tool rather than break the whole agent.
+    """
+    model = get_model()
+    metric_names = list(model.metrics)
+    dim_names = list(model.dimensions)
+    filter_props: dict[str, Any] = {}
+    for dim in model.dimensions.values():
+        if dim.is_time:
+            continue  # time dimension is filtered via start_date/end_date
+        filter_props[dim.name] = {"type": "integer" if dim.name in _NUMERIC_FILTER_DIMS else "string"}
+
+    metric_blurb = "; ".join((f"{m.name} ({m.description.strip()})" if m.description else m.name) for m in model.metrics.values())
+
+    return {
+        "type": "function",
+        "function": {
+            "name": "query_metric",
+            "description": (
+                "Run a business-analyst metric query over the trade database using the OSI semantic model. "
+                "You pick a metric and dimensions by name; the server compiles them into read-only SQL. "
+                "You cannot and need not write SQL. "
+                f"Metrics — {metric_blurb}. "
+                f"Group-by / filter dimensions — {', '.join(dim_names)}."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "metric": {"type": "string", "enum": metric_names},
+                    "group_by": {
+                        "type": "array",
+                        "items": {"type": "string", "enum": dim_names},
+                        "description": "Dimensions to group the metric by.",
+                    },
+                    "filters": {
+                        "type": "object",
+                        "properties": filter_props,
+                        "additionalProperties": False,
+                        "description": "Equality filters keyed by dimension name.",
+                    },
+                    "start_date": {
+                        "type": "string",
+                        "description": "ISO lower bound (inclusive) on executed_at, e.g. '2026-01-01'.",
+                    },
+                    "end_date": {
+                        "type": "string",
+                        "description": "ISO upper bound (inclusive) on executed_at.",
+                    },
+                    "time_grain": {
+                        "type": "string",
+                        "enum": list(ALLOWED_TIME_GRAINS),
+                        "description": "Bucket the executed_at time dimension when grouping by it.",
+                    },
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 500, "default": 50},
+                },
+                "required": ["metric"],
+                "additionalProperties": False,
+            },
+        },
+    }
+
+
+try:
+    _TOOL_SPECS.append(_build_query_metric_spec())
+except Exception as exc:  # noqa: BLE001 — a bad model file must not break the whole agent
+    logger.error("query_metric tool disabled: failed to load semantic model: %s", exc)
 
 
 @dataclass(frozen=True)
@@ -1224,8 +1309,49 @@ def _tool_remove_watch_list_instrument(session: Session, _: str, args: dict[str,
     return {"ok": True}
 
 
+def _tool_query_metric(session: Session, _: str, args: dict[str, Any]) -> dict[str, Any]:
+    model = get_model()
+
+    metric = args.get("metric")
+    if not isinstance(metric, str) or not metric.strip():
+        raise ValueError("'metric' is required.")
+
+    group_by = args.get("group_by") or []
+    if not isinstance(group_by, list) or not all(isinstance(item, str) for item in group_by):
+        raise ValueError("'group_by' must be a list of dimension names.")
+
+    filters_in = args.get("filters") or {}
+    if not isinstance(filters_in, dict):
+        raise ValueError("'filters' must be an object keyed by dimension name.")
+
+    date_start = _coerce_optional_str_arg(args, "start_date")
+    date_end = _coerce_optional_str_arg(args, "end_date")
+    time_grain = _coerce_optional_str_arg(args, "time_grain")
+    limit = _coerce_int_arg(args, "limit", 50, 1, 500)
+
+    query = build_metric_query(
+        model,
+        metric=metric,
+        group_by=group_by,
+        equality_filters=filters_in,
+        date_start=date_start,
+        date_end=date_end,
+        time_grain=time_grain,
+        limit=limit,
+    )
+    rows = run_metric_query(session.get_bind(), query)
+    return {
+        "metric": query.metric,
+        "group_by": list(query.group_by),
+        "row_count": len(rows),
+        "rows": rows,
+        "sql": query.sql,
+    }
+
+
 _TOOL_HANDLERS = {
     "list_accounts": _tool_list_accounts,
+    "query_metric": _tool_query_metric,
     "list_positions": _tool_list_positions,
     "list_jobs": _tool_list_jobs,
     "list_orders": _tool_list_orders,

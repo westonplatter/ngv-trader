@@ -1,0 +1,111 @@
+# Open Semantic Interchange (OSI) semantic model for ngv-trader.
+#
+# Vendor-neutral business definitions the tradebot's `query_metric` tool resolves
+# into read-only SQL. See docs/osi-semantic-layer.md.
+#
+# Spec: https://github.com/open-semantic-interchange/OSI
+#
+# Conventions for THIS model (consumed by src/services/semantic/loader.py):
+#   - A single dataset whose `source` is a read-only view/table.
+#   - Every field/metric expression is fully qualified with the dataset name so
+#     the resolver can emit it verbatim against `FROM <source> AS <dataset>`.
+#   - Dimensions are fields carrying a `dimension:` block (`is_time` marks the
+#     time dimension the resolver applies date_trunc / date-range filters to).
+#   - Only the ANSI_SQL dialect is provided (the backend is Postgres).
+version: "0.1.1"
+semantic_model:
+  - datasets:
+      - name: trade_realized_pnl
+        source: v_trade_realized_pnl
+        primary_key: [trade_id]
+        description: >
+          One row per settled trade with its realized PnL, derived from the
+          FlexQuery fifoPnlRealized field on canonical executions.
+        ai_context:
+          synonyms:
+            - "trade pnl"
+            - "realized pnl by trade"
+        fields:
+          - name: realized_pnl
+            description: Net realized PnL for the trade (USD).
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: trade_realized_pnl.realized_pnl
+          - name: symbol
+            description: Underlying ticker symbol (e.g. CL, ES, AAPL).
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms: ["ticker", "underlying"]
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: trade_realized_pnl.symbol
+          - name: sec_type
+            description: Security type (FUT, OPT, FOP, STK, BAG).
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms: ["security type", "asset class"]
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: trade_realized_pnl.sec_type
+          - name: account
+            description: Internal account id the trade belongs to.
+            dimension:
+              is_time: false
+            ai_context:
+              synonyms: ["account id", "account"]
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: trade_realized_pnl.account_id
+          - name: status
+            description: Trade lifecycle status (filled, partial, unknown).
+            dimension:
+              is_time: false
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: trade_realized_pnl.status
+          - name: executed_at
+            description: Time of the trade's last execution (the time axis).
+            dimension:
+              is_time: true
+            ai_context:
+              synonyms: ["date", "trade date", "time"]
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: trade_realized_pnl.last_executed_at
+    metrics:
+      - name: realized_pnl
+        description: Net realized PnL summed across trades (USD).
+        ai_context:
+          synonyms: ["realized profit", "booked pnl", "pnl", "profit"]
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: SUM(trade_realized_pnl.realized_pnl)
+      - name: trade_count
+        description: Number of trades.
+        ai_context:
+          synonyms: ["number of trades", "count of trades"]
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: COUNT(*)
+      - name: win_rate
+        description: >
+          Fraction of trades with positive realized PnL, among trades that have a
+          realized PnL value. Ranges 0..1 (null when no trade has realized PnL).
+        ai_context:
+          synonyms: ["hit rate", "percent winners", "win percentage"]
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: >
+                CAST(COUNT(*) FILTER (WHERE trade_realized_pnl.realized_pnl > 0) AS double precision)
+                / NULLIF(COUNT(*) FILTER (WHERE trade_realized_pnl.realized_pnl IS NOT NULL), 0)

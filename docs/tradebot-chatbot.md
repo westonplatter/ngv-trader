@@ -35,6 +35,10 @@ Read tools:
   `contract_expiry` (YYYY-MM-DD) for specific weekly option expiries
 - `list_watch_lists`, `get_watch_list`
 - `check_watchlist_job` — poll status of a queued watch-list job
+- `query_metric` — run business-analyst metrics (realized PnL, win rate, trade
+  count) from the OSI semantic model as read-only SQL, by metric/dimension name.
+  See [osi-semantic-layer.md](osi-semantic-layer.md). The agent picks names only;
+  it does not write SQL.
 
 Action tools:
 
@@ -65,4 +69,5 @@ error payload to the model; the DB session rolls back on tool exceptions.
 
 - `src/api/routers/tradebot.py`
 - `src/services/tradebot_agent.py`
+- `src/services/semantic/` + `osi/ngv_semantic_model.yaml` (the `query_metric` semantic layer)
 - `frontend/src/components/{TradebotChat,JobsTable,OrdersSideTable}.tsx`
