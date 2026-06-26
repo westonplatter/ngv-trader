@@ -39,6 +39,9 @@ Read tools:
   count) from the OSI semantic model as read-only SQL, by metric/dimension name.
   See [core/semantic-queries.md](core/semantic-queries.md). The agent picks names only;
   it does not write SQL.
+- `trade_group_pnl` — realized + settled/intraday unrealized PnL for one trade
+  group (the detail-view figures), reusing the live overlay. See
+  [core/semantic-queries.md](core/semantic-queries.md) §9.
 
 Action tools:
 

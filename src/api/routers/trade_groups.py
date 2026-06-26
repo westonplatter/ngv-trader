@@ -13,10 +13,7 @@ from src.api.routers.trades import _contract_display_from_raw, _execution_realiz
 from src.models import (
     Account,
     ContractRef,
-    LatestQuote,
     LiveExecution,
-    LivePosition,
-    Position,
     Tag,
     TagLink,
     Trade,
@@ -28,12 +25,8 @@ from src.models import (
     TradeGroupLiveExecution,
 )
 from src.services.cl_contracts import infer_contract_month_from_local_symbol
-from src.services.intraday_overlay import (
-    dedupe_live_realized,
-    intraday_unrealized_total,
-    marks_as_of,
-    merge_positions,
-)
+from src.services.intraday_overlay import merge_positions, overlay_totals
+from src.services.trade_group_pnl import load_overlay_inputs, trade_group_realized_pnl
 from src.services.ui_events import TOPIC_POSITIONS, TOPIC_TRADES, broadcaster, make_coarse_event
 from src.utils.contract_display import contract_display_name
 
@@ -1036,34 +1029,7 @@ def _build_open_positions_overlay(
     if not account_con_pairs:
         return empty
 
-    from sqlalchemy import tuple_ as sa_tuple
-
-    pairs = list(account_con_pairs)
-
-    # Settled snapshot rows (FlexQuery) — base layer, non-zero qty.
-    flex_rows = list(
-        db.execute(
-            select(Position)
-            .where(sa_tuple(Position.account_id, Position.con_id).in_(pairs), Position.position != 0)
-            .order_by(Position.account_id.asc(), Position.con_id.asc())
-        )
-        .scalars()
-        .all()
-    )
-    # Settled unrealized total stays exactly as before (backward-compatible).
-    settled_vals = [p.fifo_pnl_unrealized for p in flex_rows if p.fifo_pnl_unrealized is not None]
-    total_unrealized = sum(settled_vals) if settled_vals else None
-
-    # Live overlay rows for the same pairs.
-    live_rows = list(
-        db.execute(select(LivePosition).where(sa_tuple(LivePosition.account_id, LivePosition.con_id).in_(pairs), LivePosition.position != 0)).scalars().all()
-    )
-    overlay_con_ids = {p.con_id for p in flex_rows} | {p.con_id for p in live_rows}
-    quotes = {}
-    if overlay_con_ids:
-        quotes = {q.con_id: q for q in db.execute(select(LatestQuote).where(LatestQuote.con_id.in_(list(overlay_con_ids)))).scalars().all()}
-    live_execs = list(db.execute(select(LiveExecution).where(sa_tuple(LiveExecution.account_id, LiveExecution.con_id).in_(pairs))).scalars().all())
-
+    flex_rows, live_rows, quotes, live_execs = load_overlay_inputs(db, account_con_pairs)
     views = merge_positions(flex_rows, live_rows, quotes)
 
     view_account_ids = {v.account_id for v in views}
@@ -1074,20 +1040,15 @@ def _build_open_positions_overlay(
 
     open_positions = [_view_to_open_position(view, flex_by_key.get((view.account_id, view.con_id)), alias_by_id.get(view.account_id)) for view in views]
 
-    intraday_unrealized = intraday_unrealized_total(views)
-    _, live_realized = dedupe_live_realized(settled_exec_ids, live_execs)
-    intraday_realized = (total_pnl or 0.0) + live_realized if (total_pnl is not None or live_realized) else None
-    intraday_total = None
-    if intraday_unrealized is not None or intraday_realized is not None:
-        intraday_total = (intraday_unrealized or 0.0) + (intraday_realized or 0.0)
-
+    # Single source for the totals (shared with the trade_group_pnl tool).
+    totals = overlay_totals(flex_rows, views, live_execs, settled_exec_ids, total_pnl)
     return _OpenPositionsOverlay(
         open_positions=open_positions,
-        total_unrealized=total_unrealized,
-        intraday_unrealized=intraday_unrealized,
-        intraday_realized=intraday_realized,
-        intraday_total=intraday_total,
-        marks_as_of=marks_as_of(views),
+        total_unrealized=totals.settled_unrealized,
+        intraday_unrealized=totals.intraday_unrealized,
+        intraday_realized=totals.intraday_realized,
+        intraday_total=totals.intraday_total,
+        marks_as_of=totals.marks_as_of,
     )
 
 
@@ -1146,14 +1107,8 @@ def trade_group_executions(trade_group_id: int, db: Session = DB_SESSION_DEPENDE
     ).all()
 
     items: list[TradeGroupExecutionItem] = []
-    pnl_values: list[float] = []
     for execution, contract_ref, _trade, account in rows:
         realized = _execution_realized_pnl(execution.raw)
-        if realized is not None and execution.exec_role != "combo_summary":
-            # Avoid double counting: when a combo_summary row carries the realized PnL,
-            # leg rows should not also be summed. Keep both displayed; only sum non-leg
-            # rows when no combo_summary is present for that trade.
-            pnl_values.append(realized)
         items.append(
             TradeGroupExecutionItem(
                 id=execution.id,
@@ -1220,23 +1175,9 @@ def trade_group_executions(trade_group_id: int, db: Session = DB_SESSION_DEPENDE
             )
         )
 
-    # If any combo_summary rows are present in this group, prefer those for the total
-    # (combo_summary rolls up its leg PnL on IBKR side).
-    combo_totals = [
-        _execution_realized_pnl(execution.raw)
-        for execution, _ref, _trade, _account in rows
-        if execution.exec_role == "combo_summary" and _execution_realized_pnl(execution.raw) is not None
-    ]
-    if combo_totals:
-        # Sum combo totals plus any standalone (non-leg, non-combo) realized PnL values
-        standalone = [
-            _execution_realized_pnl(execution.raw)
-            for execution, _ref, _trade, _account in rows
-            if execution.exec_role not in {"combo_summary", "leg"} and _execution_realized_pnl(execution.raw) is not None
-        ]
-        total_pnl: float | None = sum(combo_totals) + sum(standalone)
-    else:
-        total_pnl = sum(pnl_values) if pnl_values else None
+    # Realized total via the shared combo-aware helper (also used by the
+    # trade_group_pnl tool, so the figures cannot diverge).
+    total_pnl = trade_group_realized_pnl([execution for execution, _ref, _trade, _account in rows])
 
     # Open positions linked to this group: match on (account_id, con_id) pairs
     # that appear in any of the group's executions. The settled snapshot

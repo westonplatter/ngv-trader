@@ -23,10 +23,12 @@ from typing import Any
 from mcp.server.fastmcp import FastMCP
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
+from sqlalchemy.orm import Session
 
 from src.services.semantic.loader import get_model
 from src.services.semantic.resolver import ALLOWED_TIME_GRAINS, build_metric_query
 from src.services.semantic.executor import run_metric_query
+from src.services.trade_group_pnl import compute_trade_group_pnl, resolve_trade_group
 
 mcp = FastMCP("ngv-semantic")
 
@@ -128,6 +130,26 @@ def query_metric(  # noqa: PLR0913 — tool params mirror the metric-query inter
         "rows": rows,
         "sql": query.sql,
     }
+
+
+@mcp.tool()
+def trade_group_pnl(group: str) -> dict[str, Any]:
+    """Realized + unrealized PnL for ONE trade group (the detail-view figures).
+
+    Args:
+        group: Trade group name, or its numeric id as a string.
+
+    Returns realized_pnl (settled), settled_unrealized_pnl, and the live-overlay
+    figures intraday_unrealized_pnl / intraday_realized_pnl / intraday_total_pnl
+    with marks_as_of. Intraday figures are 'as of the last live TWS refresh' (not
+    tick-live) and are a per-group attribution (not additive across groups). For
+    analytics across many groups, use query_metric (e.g. realized_pnl by tag).
+    """
+    text = group.strip()
+    handle: int | str = int(text) if text.lstrip("-").isdigit() else text
+    with Session(_get_engine()) as session:
+        resolved = resolve_trade_group(session, handle)
+        return compute_trade_group_pnl(session, resolved.id).as_dict()
 
 
 def main() -> None:

@@ -46,6 +46,7 @@ from src.services.order_mutations import (
 from src.services.semantic.executor import run_metric_query
 from src.services.semantic.loader import get_model
 from src.services.semantic.resolver import ALLOWED_TIME_GRAINS, build_metric_query
+from src.services.trade_group_pnl import compute_trade_group_pnl, resolve_trade_group
 from src.utils.env_vars import get_int_env, get_str_env
 from src.utils.ibkr_account import mask_ibkr_account
 
@@ -70,6 +71,8 @@ _SYSTEM_PROMPT = (
     "For analytics questions about realized PnL, win rate, or trade counts (e.g. 'PnL by symbol this quarter', "
     "'win rate last month'), use query_metric: it runs business-analyst metric definitions from the semantic "
     "model as read-only SQL. Pick a metric and dimensions by name — do not ask for raw SQL. "
+    "For the realized and unrealized PnL of one specific trade group (the trade group detail figures, including "
+    "live/intraday PnL), use trade_group_pnl with the group name or id. "
     "Keep responses concise and operator-focused."
 )
 _MAX_MESSAGES = 16
@@ -541,6 +544,35 @@ def _build_query_metric_spec() -> dict[str, Any]:
             },
         },
     }
+
+
+_TOOL_SPECS.append(
+    {
+        "type": "function",
+        "function": {
+            "name": "trade_group_pnl",
+            "description": (
+                "Realized + unrealized PnL for ONE trade group, matching the trade group detail view. "
+                "Returns realized_pnl (settled), settled_unrealized_pnl, and the live-overlay figures "
+                "intraday_unrealized_pnl / intraday_realized_pnl / intraday_total_pnl plus marks_as_of. "
+                "Intraday figures are 'as of the last live TWS refresh', not tick-live, and are a per-group "
+                "attribution (not additive across groups). For analytics across many groups use query_metric "
+                "(e.g. realized_pnl grouped by tag)."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "group": {
+                        "type": ["string", "integer"],
+                        "description": "Trade group name or numeric id.",
+                    },
+                },
+                "required": ["group"],
+                "additionalProperties": False,
+            },
+        },
+    }
+)
 
 
 try:
@@ -1348,9 +1380,20 @@ def _tool_query_metric(session: Session, _: str, args: dict[str, Any]) -> dict[s
     }
 
 
+def _tool_trade_group_pnl(session: Session, _: str, args: dict[str, Any]) -> dict[str, Any]:
+    group_raw = args.get("group")
+    if isinstance(group_raw, bool) or not isinstance(group_raw, (str, int)):
+        raise ValueError("'group' must be a trade group name (string) or numeric id (integer).")
+    if isinstance(group_raw, str) and not group_raw.strip():
+        raise ValueError("'group' (trade group name or id) is required.")
+    group = resolve_trade_group(session, group_raw)
+    return compute_trade_group_pnl(session, group.id).as_dict()
+
+
 _TOOL_HANDLERS = {
     "list_accounts": _tool_list_accounts,
     "query_metric": _tool_query_metric,
+    "trade_group_pnl": _tool_trade_group_pnl,
     "list_positions": _tool_list_positions,
     "list_jobs": _tool_list_jobs,
     "list_orders": _tool_list_orders,

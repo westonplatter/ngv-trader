@@ -71,8 +71,10 @@ is intentional — it prevents silently-wrong rollups.
 | `src/services/semantic/loader.py` | parse + validate the model; the **allow-list**; graph helpers |
 | `src/services/semantic/resolver.py` | `build_metric_query()` → one parameterized SELECT |
 | `src/services/semantic/executor.py` | run read-only (own `READ ONLY` tx + `statement_timeout`), JSON-safe rows |
-| `src/services/tradebot_agent.py` | `query_metric` tool (enums generated from the model) |
-| `src/mcp/semantic_server.py` | stdio MCP server: `describe_semantic_model` + `query_metric` |
+| `src/services/tradebot_agent.py` | `query_metric` + `trade_group_pnl` tools |
+| `src/mcp/semantic_server.py` | stdio MCP server: `describe_semantic_model` + `query_metric` + `trade_group_pnl` |
+| `src/services/trade_group_pnl.py` | trade-group realized + settled/intraday PnL (§9); shared by the API and the tool |
+| `src/services/intraday_overlay.py` | `overlay_totals()` + merge/PnL helpers — single source of the live-overlay math |
 
 ## 4. The resolver algorithm (`build_metric_query`)
 
@@ -150,8 +152,8 @@ Until a suite exists, validate with a `python -c` that calls `load_model()` +
 ## 8. Using it from an external LLM (Claude Code) over MCP
 
 `src/mcp/semantic_server.py` exposes `describe_semantic_model()` (discover
-metrics/dimensions/grain) and `query_metric(...)` (run by name; returns rows +
-the compiled SQL for auditing) over stdio.
+metrics/dimensions/grain), `query_metric(...)` (run by name; returns rows + the
+compiled SQL for auditing), and `trade_group_pnl(group)` (§9) over stdio.
 
 **Read-only role — the real boundary.** When the LLM holds DB credentials, the
 credentials *are* the boundary, not the prompt. Create a least-privilege role:
@@ -163,6 +165,9 @@ GRANT USAGE ON SCHEMA public TO ngv_analyst;
 -- the fact views + the conformed dimension tables they join to:
 GRANT SELECT ON v_execution_facts, v_trade_facts, accounts, contracts,
                 trade_group_executions, trade_groups TO ngv_analyst;
+-- plus the tables trade_group_pnl reads (the live overlay) — see §9:
+GRANT SELECT ON trades, trade_executions, positions, live_positions,
+                latest_quote, live_executions TO ngv_analyst;
 ALTER ROLE ngv_analyst SET default_transaction_read_only = on;
 ALTER ROLE ngv_analyst SET statement_timeout = '10s';
 ```
@@ -186,7 +191,41 @@ holds the connection string) and point the URL at `ngv_analyst`:
 }
 ```
 
-## 9. Deliberate v1 limitations (not bugs)
+## 9. Trade-group realized + unrealized PnL (a tool, not a SQL metric)
+
+The trade group detail view shows **realized** and **unrealized** PnL. These have
+different homes:
+
+- **Realized by group** *is* a pure SQL semantic metric: `realized_pnl` grouped or
+  filtered by `tag` (= trade group name). Use `query_metric` for cross-group
+  analytics ("realized PnL by strategy this quarter").
+- **Unrealized (settled + intraday) and intraday total** are **not** a SQL metric.
+  Intraday unrealized/realized are a read-time merge of live TWS state
+  (`live_positions` + `latest_quote` + `live_executions`) over the settled
+  FlexQuery snapshot, with a multiplier-inclusive cost-basis convention that is
+  **still pending live validation** (`intraday_overlay.py`). Re-encoding that in
+  SQL would fork an unvalidated formula, so it's exposed as a **tool** instead.
+
+**`trade_group_pnl(group)`** (tradebot + MCP) takes a group name or id and returns
+`realized_pnl`, `settled_unrealized_pnl`, `intraday_unrealized_pnl`,
+`intraday_realized_pnl`, `intraday_total_pnl`, and `marks_as_of` — the same numbers
+as the detail UI.
+
+Single source of truth: both the API endpoint (`GET /trade-groups/{id}/executions`)
+and the tool call `compute_trade_group_pnl()` →
+`intraday_overlay.overlay_totals()` + `trade_group_realized_pnl()`. There is one
+implementation of each formula; the tool and the UI cannot diverge.
+
+**Two properties to keep in mind:**
+- **Freshness:** intraday figures are "as of the last manual *Refresh Live (TWS)*"
+  (`marks_as_of`), not tick-live. The live data is in DB tables refreshed by the
+  `intraday.sync.tws` worker job — see [intraday-tws-overlay.md](intraday-tws-overlay.md).
+- **Attribution (matches the UI):** a position is attributed to a group when any of
+  the group's executions touched its `(account_id, con_id)`. So unrealized-by-group
+  is a **per-group** figure and is **not additive across groups** — a position
+  shared by two strategies counts in both. Query one group at a time.
+
+## 10. Deliberate v1 limitations (not bugs)
 
 - **One grain per query.** Mixing metrics from different facts (e.g. `win_rate` +
   `fill_count`) is not supported — multi-fact symmetric aggregation is out of
