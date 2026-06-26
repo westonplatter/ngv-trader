@@ -9,7 +9,7 @@ runs it read-only with a statement timeout.
 Run it:
     uv run --extra mcp python -m src.mcp.semantic_server
 
-Database connection (use a read-only role — see docs/osi-semantic-layer.md):
+Database connection (use a read-only role — see docs/core/semantic-queries.md):
     NGV_SEMANTIC_DATABASE_URL=postgresql://ngv_analyst:***@host:5432/ngtrader_prod
 If unset, falls back to the app's DB_* environment variables.
 """
@@ -24,7 +24,6 @@ from mcp.server.fastmcp import FastMCP
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 
-from src.db import get_database_url
 from src.services.semantic.loader import get_model
 from src.services.semantic.resolver import ALLOWED_TIME_GRAINS, build_metric_query
 from src.services.semantic.executor import run_metric_query
@@ -34,7 +33,12 @@ mcp = FastMCP("ngv-semantic")
 
 @lru_cache(maxsize=1)
 def _get_engine() -> Engine:
-    url = os.environ.get("NGV_SEMANTIC_DATABASE_URL") or get_database_url()
+    # Fail closed: require an explicit connection string so a misconfiguration
+    # can't silently fall back to the app's read-write role. Point this at the
+    # read-only ngv_analyst role (see docs/core/semantic-queries.md).
+    url = os.environ.get("NGV_SEMANTIC_DATABASE_URL")
+    if not url:
+        raise RuntimeError("NGV_SEMANTIC_DATABASE_URL is required (use the read-only ngv_analyst role).")
     # Small pool; every query also runs in its own READ ONLY tx (see executor).
     return create_engine(url, pool_pre_ping=True, pool_size=2, max_overflow=2)
 
@@ -43,28 +47,40 @@ def _get_engine() -> Engine:
 def describe_semantic_model() -> dict[str, Any]:
     """Describe the available metrics and dimensions.
 
-    Call this first to discover what you can query. Returns each metric and
-    dimension's name, description, and synonyms, plus the allowed time grains.
-    Use these exact names with ``query_metric``.
+    Call this first to discover what you can query. Each metric names the grain
+    ('fact') it lives on; a dimension is only valid for a metric if it is
+    reachable from that metric's fact (the tool errors otherwise and names the
+    valid options). Use these exact names with ``query_metric``.
     """
     model = get_model()
-    time_dim = model.time_dimension
-    return {
-        "metrics": [
-            {"name": m.name, "description": m.description, "synonyms": list(m.synonyms)} for m in model.metrics.values()
-        ],
-        "dimensions": [
+    metrics = []
+    for m in model.metrics.values():
+        valid_dims = sorted({name for ds in model.reachable(m.fact) for name in model.datasets[ds].dimensions})
+        metrics.append(
             {
-                "name": d.name,
-                "description": d.description,
-                "synonyms": list(d.synonyms),
-                "is_time": d.is_time,
+                "name": m.name,
+                "grain": m.fact,
+                "description": m.description,
+                "synonyms": list(m.synonyms),
+                "valid_dimensions": valid_dims,
             }
-            for d in model.dimensions.values()
-        ],
-        "time_dimension": time_dim.name if time_dim else None,
+        )
+    dimensions = [
+        {
+            "name": d.name,
+            "dataset": d.dataset,
+            "description": d.description,
+            "synonyms": list(d.synonyms),
+            "is_time": d.is_time,
+        }
+        for ds in model.datasets.values()
+        for d in ds.dimensions.values()
+    ]
+    return {
+        "metrics": metrics,
+        "dimensions": dimensions,
         "time_grains": list(ALLOWED_TIME_GRAINS),
-        "notes": "Filter by date range via start_date/end_date on the time dimension. You cannot write SQL; pick names only.",
+        "notes": "Filter by date range via start_date/end_date on the time axis. You cannot write SQL; pick names only.",
     }
 
 

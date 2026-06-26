@@ -474,7 +474,7 @@ _TOOL_SPECS: list[dict[str, Any]] = [
 ]
 
 
-_NUMERIC_FILTER_DIMS = {"account"}
+_NUMERIC_FILTER_DIMS = {"strike"}
 
 
 def _build_query_metric_spec() -> dict[str, Any]:
@@ -482,19 +482,17 @@ def _build_query_metric_spec() -> dict[str, Any]:
 
     The metric/dimension enums come straight from the model so the LLM can only
     reference defined names — this is the safety boundary that replaces free-form
-    SQL. Raises if the model can't be loaded; the caller decides whether to skip
-    the tool rather than break the whole agent.
+    SQL. Not every dimension is valid for every metric (grain rules): the
+    resolver rejects out-of-grain combinations with a message naming the valid
+    options, so the model self-corrects. Raises if the model can't be loaded; the
+    caller decides whether to skip the tool rather than break the whole agent.
     """
     model = get_model()
     metric_names = list(model.metrics)
-    dim_names = list(model.dimensions)
-    filter_props: dict[str, Any] = {}
-    for dim in model.dimensions.values():
-        if dim.is_time:
-            continue  # time dimension is filtered via start_date/end_date
-        filter_props[dim.name] = {"type": "integer" if dim.name in _NUMERIC_FILTER_DIMS else "string"}
+    dim_names = model.all_dimension_names()
+    filter_props: dict[str, Any] = {name: {"type": "number" if name in _NUMERIC_FILTER_DIMS else "string"} for name in model.filterable_dimension_names()}
 
-    metric_blurb = "; ".join((f"{m.name} ({m.description.strip()})" if m.description else m.name) for m in model.metrics.values())
+    metric_blurb = "; ".join((f"{m.name} [grain: {m.fact}]" + (f" — {m.description.strip()}" if m.description else "")) for m in model.metrics.values())
 
     return {
         "type": "function",
@@ -503,7 +501,8 @@ def _build_query_metric_spec() -> dict[str, Any]:
             "description": (
                 "Run a business-analyst metric query over the trade database using the OSI semantic model. "
                 "You pick a metric and dimensions by name; the server compiles them into read-only SQL. "
-                "You cannot and need not write SQL. "
+                "You cannot and need not write SQL. Not all dimensions apply to all metrics — if one is "
+                "out of grain the tool returns an error naming the valid options; retry with those. "
                 f"Metrics — {metric_blurb}. "
                 f"Group-by / filter dimensions — {', '.join(dim_names)}."
             ),

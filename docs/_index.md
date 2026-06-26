@@ -22,7 +22,7 @@ banner at the top.
 | [contract-display-names.md](contract-display-names.md)               | How human-readable contract labels are built across positions/orders/trades/watchlists                                  |
 | [trade-tagging.md](trade-tagging.md)                                 | Trade groups, tag catalogs, execution assignment, timeline, and tagging UI                                              |
 | [tradebot-chatbot.md](tradebot-chatbot.md)                           | LangGraph chat agent: tools, guardrails, env vars (no order submission)                                                 |
-| [osi-semantic-layer.md](osi-semantic-layer.md)                       | OSI semantic model + `query_metric` tool: tradebot analytics (realized PnL / win rate) as read-only SQL by metric name  |
+| [core/semantic-queries.md](core/semantic-queries.md)                 | OSI semantic layer: fact grains, relationships, `query_metric` tool + MCP server — analytics as read-only SQL by metric name |
 | [user-preferences-privacy-mode.md](user-preferences-privacy-mode.md) | Key-value user preferences and frontend privacy masking                                                                 |
 
 ## Core UX & platform patterns

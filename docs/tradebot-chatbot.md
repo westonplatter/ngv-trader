@@ -37,7 +37,7 @@ Read tools:
 - `check_watchlist_job` — poll status of a queued watch-list job
 - `query_metric` — run business-analyst metrics (realized PnL, win rate, trade
   count) from the OSI semantic model as read-only SQL, by metric/dimension name.
-  See [osi-semantic-layer.md](osi-semantic-layer.md). The agent picks names only;
+  See [core/semantic-queries.md](core/semantic-queries.md). The agent picks names only;
   it does not write SQL.
 
 Action tools:
