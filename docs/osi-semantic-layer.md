@@ -91,3 +91,56 @@ matching field/metric in the YAML.
 Realized PnL is sourced from the FlexQuery `fifoPnlRealized` field only (the
 active sync path). TWS-sourced executions — a dormant path — do not populate it,
 so they contribute `NULL`. The view assumes `fifoPnlRealized` is numeric-castable.
+
+## Using it from an external LLM (Claude Code) over MCP
+
+`src/mcp/semantic_server.py` is a stdio MCP server that exposes the same semantic
+layer to an external agent (e.g. Claude Code on a Mac). It serves two tools:
+
+- `describe_semantic_model()` — discover metrics/dimensions/synonyms.
+- `query_metric(metric, group_by, filters, start_date, end_date, time_grain, limit)`
+  — the same name-only interface as the in-app tool. Returns rows + compiled SQL.
+
+The agent picks names; the resolver writes the SQL. There is no raw-SQL path.
+
+### 1. Create a read-only Postgres role (the real boundary)
+
+When the LLM holds DB credentials, the credentials *are* the security boundary —
+not the prompt. Give it a least-privilege, read-only role:
+
+```sql
+CREATE ROLE ngv_analyst LOGIN PASSWORD '<choose-a-strong-password>';
+GRANT CONNECT ON DATABASE ngtrader_prod TO ngv_analyst;
+GRANT USAGE ON SCHEMA public TO ngv_analyst;
+GRANT SELECT ON v_trade_realized_pnl TO ngv_analyst;        -- only the fact view
+ALTER ROLE ngv_analyst SET default_transaction_read_only = on;
+ALTER ROLE ngv_analyst SET statement_timeout = '10s';
+```
+
+The server also runs every query in its own `READ ONLY` transaction with a
+timeout, so this is defense in depth — but the role is what makes leaked or
+injected instructions harmless.
+
+### 2. Point Claude Code at the server
+
+Copy `.mcp.json.example` to `.mcp.json` (gitignored — it holds the connection
+string) and set the URL to the `ngv_analyst` role:
+
+```json
+{
+  "mcpServers": {
+    "ngv-semantic": {
+      "command": "uv",
+      "args": ["run", "--extra", "mcp", "python", "-m", "src.mcp.semantic_server"],
+      "cwd": "/Users/you/code/ngv-trader",
+      "env": {
+        "NGV_SEMANTIC_DATABASE_URL": "postgresql://ngv_analyst:<password>@host:5432/ngtrader_prod"
+      }
+    }
+  }
+}
+```
+
+Then in Claude Code: *"what's my realized PnL by symbol this quarter?"* → it calls
+`describe_semantic_model` to learn the names, then `query_metric`. `NGV_SEMANTIC_DATABASE_URL`
+falls back to the app's `DB_*` vars if unset.

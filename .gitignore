@@ -133,3 +133,6 @@ cython_debug/
 # ignore private files
 .ipy*
 
+# local MCP config holds DB connection strings; commit only .mcp.json.example
+.mcp.json
+
