@@ -1247,10 +1247,21 @@ export default function TradeTaggingPage() {
                         if (!any) return null;
                         return Math.abs(optionsSum) + Math.abs(equitySum);
                       };
+                      const gridCols =
+                        "grid grid-cols-[6rem_1fr_1fr_1fr_1fr] items-baseline gap-x-2";
                       return (
-                        <div className="flex flex-col gap-1.5 rounded border border-gray-200 bg-white px-3 py-2 text-xs">
+                        <div className="flex flex-col gap-1 rounded border border-gray-200 bg-white px-3 py-2 text-xs">
                           <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">
                             By account
+                          </div>
+                          <div
+                            className={`${gridCols} border-b border-gray-100 pb-1 text-[11px] font-medium uppercase tracking-wide text-gray-400`}
+                          >
+                            <span>Account</span>
+                            <span className="text-right">Capital</span>
+                            <span className="text-right">Total</span>
+                            <span className="text-right">Realized</span>
+                            <span className="text-right">Unrealized</span>
                           </div>
                           {byAccount.map((acct) => {
                             const total =
@@ -1261,21 +1272,24 @@ export default function TradeTaggingPage() {
                                   (acct.realized_pnl ?? 0);
                             const capital = capitalFor(acct.account_id);
                             return (
-                              <div
-                                key={acct.account_id}
-                                className="grid grid-cols-[6rem_1fr_1fr_1fr] items-baseline gap-x-2"
-                              >
+                              <div key={acct.account_id} className={gridCols}>
                                 <span className="font-medium text-gray-700">
                                   {acct.account_alias ?? acct.account_id}
                                 </span>
                                 <span className="text-right text-gray-500">
-                                  Cap {money(capital)}
+                                  {money(capital)}
                                 </span>
                                 <span className={`text-right ${cls(total)}`}>
-                                  Tot {money(total)}
+                                  {money(total)}
                                 </span>
-                                <span className="text-right text-gray-400">
-                                  R {money(acct.realized_pnl)} · U{" "}
+                                <span
+                                  className={`text-right ${cls(acct.realized_pnl)}`}
+                                >
+                                  {money(acct.realized_pnl)}
+                                </span>
+                                <span
+                                  className={`text-right ${cls(acct.unrealized_pnl)}`}
+                                >
                                   {money(acct.unrealized_pnl)}
                                 </span>
                               </div>
