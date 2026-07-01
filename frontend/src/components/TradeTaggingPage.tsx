@@ -683,10 +683,50 @@ export default function TradeTaggingPage() {
   };
 
   // Account-filtered views of the linked positions/trades (null = all accounts).
-  const visiblePositions =
+  const positionAccountLabel = (p: GroupOpenPosition) =>
+    p.account_alias ?? `Account ${p.account_id}`;
+  const positionContractLabel = (p: GroupOpenPosition) =>
+    p.contract_display ?? p.local_symbol ?? p.symbol ?? `#${p.con_id}`;
+  // Option strike parsed from the display (e.g. "CL 70.5 CALL" -> 70.5), used to
+  // order strikes numerically instead of lexically. Null for non-options.
+  const positionStrike = (p: GroupOpenPosition): number | null => {
+    const m = /(-?\d+(?:\.\d+)?)\s+(?:CALL|PUT)/i.exec(
+      p.contract_display ?? "",
+    );
+    return m ? Number.parseFloat(m[1]) : null;
+  };
+  const visiblePositions = (
     accountFilter == null
       ? openPositions
-      : openPositions.filter((p) => p.account_id === accountFilter);
+      : openPositions.filter((p) => p.account_id === accountFilter)
+  )
+    .slice()
+    .sort((a, b) => {
+      // account, then symbol, then strike (high -> low), then natural-numeric
+      // fallback on the display for anything without a strike (e.g. futures).
+      const acct = positionAccountLabel(a).localeCompare(
+        positionAccountLabel(b),
+      );
+      if (acct !== 0) return acct;
+      const sym = (a.symbol ?? "").localeCompare(b.symbol ?? "");
+      if (sym !== 0) return sym;
+      const sa = positionStrike(a);
+      const sb = positionStrike(b);
+      if (sa != null && sb != null && sa !== sb) return sb - sa;
+      return positionContractLabel(a).localeCompare(
+        positionContractLabel(b),
+        undefined,
+        { numeric: true },
+      );
+    });
+  // Google-Sheets-style banding: each account group gets a subtle alternating
+  // background so rows read as grouped by account.
+  const positionAccountBand = new Map<number, number>();
+  for (const p of visiblePositions) {
+    if (!positionAccountBand.has(p.account_id)) {
+      positionAccountBand.set(p.account_id, positionAccountBand.size % 2);
+    }
+  }
   const visibleExecutions =
     accountFilter == null
       ? executions
@@ -1386,17 +1426,18 @@ export default function TradeTaggingPage() {
                               return (
                                 <tr
                                   key={`${pos.account_id}-${pos.con_id}`}
-                                  className="border-t border-gray-100"
+                                  className={`border-t border-gray-100 ${
+                                    positionAccountBand.get(pos.account_id) ===
+                                    1
+                                      ? "bg-gray-50"
+                                      : "bg-white"
+                                  }`}
                                 >
                                   <td className="px-2 py-1 text-gray-700">
-                                    {pos.account_alias ??
-                                      `Account ${pos.account_id}`}
+                                    {positionAccountLabel(pos)}
                                   </td>
                                   <td className="px-2 py-1 text-gray-800">
-                                    {pos.contract_display ??
-                                      pos.local_symbol ??
-                                      pos.symbol ??
-                                      `#${pos.con_id}`}
+                                    {positionContractLabel(pos)}
                                   </td>
                                   <td
                                     className={`px-2 py-1 text-right font-mono ${qtyClass}`}
