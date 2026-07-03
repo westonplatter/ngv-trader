@@ -32,9 +32,29 @@ This project uses **Alembic**, driven through the Taskfile. To run migrations, u
 
 "Run the migrations in prod" means `task migrate ENV=prod`. No `op run` wrapper is needed — the DB URL is built from plain `DB_HOST`/`DB_USER`/`DB_PASSWORD`, not `op://` secrets. Related: `task migrate:down` (downgrade one), `task migrate:new -- "desc"` (autogenerate), `task validate`.
 
+### Authoring Migrations
+
+Generate the file with `task migrate:new -- "<desc>"`, then edit only the docstring, mapping constants, and `upgrade()`/`downgrade()` bodies. Never hand-author a revision or touch the auto-assigned `revision`/`down_revision` — hand-picked IDs collide with existing ones.
+
 ### Snapshots
 
 Before any hard-to-reverse DB change (destructive/data-mutating migration, backfill, prod `downgrade`, bulk delete), take a Postgres snapshot first. See [docs/db-snapshots.md](docs/db-snapshots.md) for the snapshot/verify/restore commands and the recommended flow.
+
+## Secrets (1Password)
+
+`.env.*` files store secrets as 1Password URIs (`IB_JSON=op://ngtrader_pro/IB_JSON/value`). `load_dotenv` yields the literal string; only `op run` resolves it at exec time. Launch any script reading `IB_JSON`, `OPENAI_API_KEY`, or other `op://` secrets via:
+
+```bash
+op run --env-file=.env.<env> -- uv run python scripts/<script>.py
+```
+
+Covers `scripts/fetch_flex_trades.py`, the worker (`scripts/work_jobs.py`), and anything reading `IB_JSON`. A `JSONDecodeError` on `_resolve_flex_credentials` means "started without `op run`", not a code bug. Migrations are exempt (plain `DB_*` vars). See [docs/secrets-using-1password.md](docs/secrets-using-1password.md).
+
+## Sample Data (IBKR anonymization)
+
+This repo handles personal brokerage data. **Never commit real IBKR account IDs, conids, exec/transaction/order IDs, prices, or trading dates.** Any repo-bound example/fixture/doc must use the anonymized patterns in `prompts/prompt-ibkr-sample-data.md` — e.g. accounts `U1234567`, generic ID ranges (`1000000001`), `ibExecID` `0000abcd.12345678.01.01`, generic Jan 2025 dates. Keep real for shape: symbols, exchanges, sec types, realistic prices/quantities.
+
+`scripts/data/` is gitignored for ad-hoc real CSVs — never commit them. Before `git add`, scan staged additions for real-looking IDs (10-digit txn IDs, `U`-prefixed accounts, hex exec IDs).
 
 ## Code Validation
 
