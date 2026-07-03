@@ -109,10 +109,23 @@ present, else `settled`).
 - Worker uses delayed-frozen market data (`reqMarketDataType(3)`) so it returns
   marks when live data isn't entitled.
 
+## Preemptive tagging of unsettled fills
+
+Today's TWS fills in `live_executions` can be assigned to a trade group **before
+they settle**, keyed by `ib_exec_id` in `trade_group_live_executions`. The
+Trades page surfaces unsettled fills (flagged `settled:false`, `data_source =
+"tws-live"`) alongside settled executions and tags them per-fill via
+`POST /trade-groups/{id}/live-executions:assign|unassign`.
+
+On settlement, the shared carry-over (`src/services/group_link_carryover.py`)
+folds the live link into the canonical `trade_group_executions` and drops it —
+so grouping survives the live→settled handoff with no gap and no double-count.
+It runs in **both** sync paths: the intraday purge and, robustly, at the end of
+the FlexQuery trade sync (so a fill that settles overnight is reconciled even if
+no intraday sync runs).
+
 ## Known limitations (deferred)
 
-- A brand-new instrument opened today maps to no TradeGroup until tagged
-  post-settle (it does appear on the portfolio Positions page).
 - No greeks/IV on the live mark (mark price only).
 - No interval auto-refresh (manual button only); no historical intraday
   time-series (only the latest live state is stored).

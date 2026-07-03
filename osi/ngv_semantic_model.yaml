@@ -1,0 +1,201 @@
+# Open Semantic Interchange (OSI) semantic model for ngv-trader.
+#
+# Vendor-neutral business definitions the tradebot's `query_metric` tool and the
+# semantic MCP server resolve into read-only SQL. The agent picks metric and
+# dimension NAMES; the resolver compiles the join + aggregation. See the spec at
+# docs/core/semantic-queries.md.
+#
+# Shape (consumed by src/services/semantic/loader.py):
+#   - Multiple `datasets`, each a physical table/view with a primary_key and
+#     `fields`. Fields carrying a `dimension:` block are dimensions.
+#   - `relationships` form the join graph (directed: from a fact toward a
+#     dimension table). The resolver joins on demand by walking this graph.
+#   - `metrics` are aggregations; each names the `fact` dataset it lives on.
+#   - Every field/metric expression is fully qualified with its dataset name so
+#     the resolver can emit it verbatim against `FROM <source> AS <dataset>`.
+#   - One grain per query: the resolver routes a query to the metric's fact and
+#     only allows dimensions reachable from that fact (grain enforcement).
+version: "0.2.0"
+semantic_model:
+  - datasets:
+      # ---- Facts -----------------------------------------------------------
+      - name: execution_facts
+        source: v_execution_facts
+        primary_key: [execution_id]
+        description: One row per canonical execution (base grain). Additive measures.
+        fields:
+          - name: executed_at
+            description: Execution timestamp (the time axis at execution grain).
+            dimension: { is_time: true }
+            ai_context: { synonyms: ["date", "time", "fill time"] }
+            expression:
+              dialects: [{ dialect: ANSI_SQL, expression: execution_facts.executed_at }]
+          - name: exec_role
+            description: Execution role (standalone, leg, combo_summary).
+            dimension: { is_time: false }
+            expression:
+              dialects: [{ dialect: ANSI_SQL, expression: execution_facts.exec_role }]
+
+      - name: trade_facts
+        source: v_trade_facts
+        primary_key: [trade_id]
+        description: One row per trade (trade grain). Trade-grain metrics live here.
+        fields:
+          - name: executed_at
+            description: Trade's last execution time (the time axis at trade grain).
+            dimension: { is_time: true }
+            ai_context: { synonyms: ["date", "time", "trade date"] }
+            expression:
+              dialects: [{ dialect: ANSI_SQL, expression: trade_facts.last_executed_at }]
+          - name: status
+            description: Trade lifecycle status (filled, partial, unknown).
+            dimension: { is_time: false }
+            expression:
+              dialects: [{ dialect: ANSI_SQL, expression: trade_facts.status }]
+          - name: side
+            description: Trade side (BUY/SELL).
+            dimension: { is_time: false }
+            expression:
+              dialects: [{ dialect: ANSI_SQL, expression: trade_facts.side }]
+          - name: symbol
+            description: Underlying ticker symbol (trade grain).
+            dimension: { is_time: false }
+            ai_context: { synonyms: ["ticker", "underlying"] }
+            expression:
+              dialects: [{ dialect: ANSI_SQL, expression: trade_facts.symbol }]
+          - name: sec_type
+            description: Security type (trade grain).
+            dimension: { is_time: false }
+            expression:
+              dialects: [{ dialect: ANSI_SQL, expression: trade_facts.sec_type }]
+
+      # ---- Conformed dimensions -------------------------------------------
+      - name: accounts
+        source: accounts
+        primary_key: [id]
+        description: Brokerage accounts.
+        fields:
+          - name: account
+            description: Human account label (alias), never the raw account number.
+            dimension: { is_time: false }
+            ai_context: { synonyms: ["account name", "account alias"] }
+            expression:
+              dialects: [{ dialect: ANSI_SQL, expression: "COALESCE(accounts.alias, 'account_' || accounts.id)" }]
+
+      - name: contracts
+        source: contracts
+        primary_key: [con_id]
+        description: Security master (per-contract attributes).
+        fields:
+          - name: symbol
+            description: Underlying ticker symbol (execution grain, via con_id).
+            dimension: { is_time: false }
+            ai_context: { synonyms: ["ticker", "underlying"] }
+            expression:
+              dialects: [{ dialect: ANSI_SQL, expression: contracts.symbol }]
+          - name: sec_type
+            description: Security type (execution grain, via con_id).
+            dimension: { is_time: false }
+            expression:
+              dialects: [{ dialect: ANSI_SQL, expression: contracts.sec_type }]
+          - name: contract_month
+            description: Contract month (e.g. 2026-03) for futures/options.
+            dimension: { is_time: false }
+            expression:
+              dialects: [{ dialect: ANSI_SQL, expression: contracts.contract_month }]
+          - name: right
+            description: Option right (C/P).
+            dimension: { is_time: false }
+            ai_context: { synonyms: ["call or put", "put/call"] }
+            expression:
+              dialects: [{ dialect: ANSI_SQL, expression: 'contracts."right"' }]
+          - name: strike
+            description: Option strike price.
+            dimension: { is_time: false }
+            expression:
+              dialects: [{ dialect: ANSI_SQL, expression: contracts.strike }]
+          - name: exchange
+            description: Listing exchange.
+            dimension: { is_time: false }
+            expression:
+              dialects: [{ dialect: ANSI_SQL, expression: contracts.exchange }]
+
+      - name: trade_group_memberships
+        source: trade_group_executions
+        primary_key: [trade_execution_id]
+        description: Bridge — each execution belongs to at most one trade group (1:1).
+
+      - name: trade_groups
+        source: trade_groups
+        primary_key: [id]
+        description: Trade groups / tags / strategies.
+        fields:
+          - name: tag
+            description: Trade group name (strategy / tag).
+            dimension: { is_time: false }
+            ai_context: { synonyms: ["strategy", "trade group", "group"] }
+            expression:
+              dialects: [{ dialect: ANSI_SQL, expression: trade_groups.name }]
+
+    relationships:
+      - name: exec_to_account
+        from: { dataset: execution_facts, columns: [account_id] }
+        to: { dataset: accounts, columns: [id] }
+      - name: exec_to_contract
+        from: { dataset: execution_facts, columns: [con_id] }
+        to: { dataset: contracts, columns: [con_id] }
+      - name: exec_to_trade
+        from: { dataset: execution_facts, columns: [trade_id] }
+        to: { dataset: trade_facts, columns: [trade_id] }
+      - name: exec_to_membership
+        from: { dataset: execution_facts, columns: [execution_id] }
+        to: { dataset: trade_group_memberships, columns: [trade_execution_id] }
+      - name: membership_to_group
+        from: { dataset: trade_group_memberships, columns: [trade_group_id] }
+        to: { dataset: trade_groups, columns: [id] }
+      - name: trade_to_account
+        from: { dataset: trade_facts, columns: [account_id] }
+        to: { dataset: accounts, columns: [id] }
+
+    metrics:
+      - name: realized_pnl
+        fact: execution_facts
+        description: Net realized PnL summed across executions (USD).
+        ai_context: { synonyms: ["realized profit", "booked pnl", "pnl", "profit"] }
+        expression:
+          dialects: [{ dialect: ANSI_SQL, expression: SUM(execution_facts.realized_pnl) }]
+      - name: total_commissions
+        fact: execution_facts
+        description: Total commissions paid (USD). Excludes synthetic combo summaries.
+        ai_context: { synonyms: ["commissions", "fees"] }
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: "SUM(execution_facts.commission) FILTER (WHERE execution_facts.exec_role <> 'combo_summary')"
+      - name: fill_count
+        fact: execution_facts
+        description: Number of real fills (excludes synthetic combo summaries).
+        ai_context: { synonyms: ["fills", "number of fills", "executions"] }
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: "COUNT(*) FILTER (WHERE execution_facts.exec_role <> 'combo_summary')"
+      - name: trade_count
+        fact: trade_facts
+        description: Number of trades.
+        ai_context: { synonyms: ["number of trades", "count of trades"] }
+        expression:
+          dialects: [{ dialect: ANSI_SQL, expression: COUNT(*) }]
+      - name: win_rate
+        fact: trade_facts
+        description: >
+          Fraction of trades with positive realized PnL, among trades that have a
+          realized PnL value (i.e. that realized something). 0..1; breakeven (0)
+          counts as a non-win; trades with no realized PnL are excluded.
+        ai_context: { synonyms: ["hit rate", "percent winners", "win percentage"] }
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: >
+                CAST(COUNT(*) FILTER (WHERE trade_facts.realized_pnl > 0) AS double precision)
+                / NULLIF(COUNT(*) FILTER (WHERE trade_facts.realized_pnl IS NOT NULL), 0)

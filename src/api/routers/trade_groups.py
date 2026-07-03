@@ -13,10 +13,7 @@ from src.api.routers.trades import _contract_display_from_raw, _execution_realiz
 from src.models import (
     Account,
     ContractRef,
-    LatestQuote,
     LiveExecution,
-    LivePosition,
-    Position,
     Tag,
     TagLink,
     Trade,
@@ -31,15 +28,11 @@ from src.services.cl_contracts import infer_contract_month_from_local_symbol
 from src.services.intraday_overlay import (
     dedupe_live_realized,
     intraday_unrealized_total,
-    marks_as_of,
     merge_positions,
+    overlay_totals,
 )
-from src.services.ui_events import (
-    TOPIC_POSITIONS,
-    TOPIC_TRADES,
-    broadcaster,
-    make_coarse_event,
-)
+from src.services.trade_group_pnl import load_overlay_inputs, trade_group_realized_pnl
+from src.services.ui_events import TOPIC_POSITIONS, TOPIC_TRADES, broadcaster, make_coarse_event
 from src.utils.contract_display import contract_display_name
 
 router = APIRouter()
@@ -139,6 +132,21 @@ class PositionAssignRequest(BaseModel):
 
 class PositionUnassignRequest(BaseModel):
     positions: list[PositionKey] = Field(min_length=1)
+    source: str
+    created_by: str
+    reason: str | None = None
+
+
+class LiveExecutionAssignRequest(BaseModel):
+    ib_exec_ids: list[str] = Field(min_length=1)
+    source: str
+    created_by: str
+    confidence: float | None = None
+    reason: str | None = None
+
+
+class LiveExecutionUnassignRequest(BaseModel):
+    ib_exec_ids: list[str] = Field(min_length=1)
     source: str
     created_by: str
     reason: str | None = None
@@ -731,6 +739,94 @@ def unassign_positions(
     broadcaster.publish(make_coarse_event(TOPIC_TRADES, "trades.changed"))
 
 
+@router.post("/trade-groups/{trade_group_id}/live-executions:assign", status_code=204)
+def assign_live_executions(
+    trade_group_id: int,
+    body: LiveExecutionAssignRequest,
+    db: Session = DB_SESSION_DEPENDENCY,
+):
+    """Preemptively tag unsettled TWS fills (by ib_exec_id) to a group.
+
+    Lets the desk assign a live fill to a trade group before it settles into
+    ``trade_executions``. The link is keyed by ``ib_exec_id``; when FlexQuery (or
+    the intraday purge) settles the fill, the carry-over folds it into the
+    canonical ``TradeGroupExecution``. One group per live fill — assigning a fill
+    already tagged elsewhere moves it here.
+    """
+    if body.source not in ASSIGNMENT_SOURCES:
+        raise HTTPException(status_code=400, detail="Invalid source")
+
+    trade_group = _ensure_group(db, trade_group_id)
+    live_by_exec_id = {
+        le.ib_exec_id: le
+        for le in db.execute(select(LiveExecution).where(LiveExecution.ib_exec_id.in_(body.ib_exec_ids))).scalars().all()
+    }
+    missing = [eid for eid in body.ib_exec_ids if eid not in live_by_exec_id]
+    if missing:
+        raise HTTPException(status_code=404, detail=f"Unknown live execution(s): {', '.join(missing)}")
+
+    if trade_group.account_id is None and live_by_exec_id:
+        trade_group.account_id = next(iter(live_by_exec_id.values())).account_id
+        trade_group.updated_at = _now_utc()
+
+    for ib_exec_id, live_exec in live_by_exec_id.items():
+        existing = db.execute(
+            select(TradeGroupLiveExecution).where(TradeGroupLiveExecution.ib_exec_id == ib_exec_id)
+        ).scalar_one_or_none()
+        if existing is not None:
+            existing.trade_group_id = trade_group_id
+            existing.account_id = live_exec.account_id
+            existing.con_id = live_exec.con_id
+            existing.source = body.source
+            existing.created_by = body.created_by
+            existing.confidence = body.confidence
+            existing.assigned_at = _now_utc()
+        else:
+            db.add(
+                TradeGroupLiveExecution(
+                    trade_group_id=trade_group_id,
+                    ib_exec_id=ib_exec_id,
+                    account_id=live_exec.account_id,
+                    con_id=live_exec.con_id,
+                    source=body.source,
+                    created_by=body.created_by,
+                    confidence=body.confidence,
+                    assigned_at=_now_utc(),
+                )
+            )
+
+    db.commit()
+    broadcaster.publish(make_coarse_event(TOPIC_TRADES, "trades.changed"))
+    broadcaster.publish(make_coarse_event(TOPIC_POSITIONS, "positions.changed"))
+
+
+@router.post("/trade-groups/{trade_group_id}/live-executions:unassign", status_code=204)
+def unassign_live_executions(
+    trade_group_id: int,
+    body: LiveExecutionUnassignRequest,
+    db: Session = DB_SESSION_DEPENDENCY,
+):
+    """Remove preemptive live-fill tags (by ib_exec_id) from a group."""
+    if body.source not in ASSIGNMENT_SOURCES:
+        raise HTTPException(status_code=400, detail="Invalid source")
+
+    _ensure_group(db, trade_group_id)
+    links = db.execute(
+        select(TradeGroupLiveExecution).where(
+            and_(
+                TradeGroupLiveExecution.trade_group_id == trade_group_id,
+                TradeGroupLiveExecution.ib_exec_id.in_(body.ib_exec_ids),
+            )
+        )
+    ).scalars().all()
+    for link in links:
+        db.delete(link)
+
+    db.commit()
+    broadcaster.publish(make_coarse_event(TOPIC_TRADES, "trades.changed"))
+    broadcaster.publish(make_coarse_event(TOPIC_POSITIONS, "positions.changed"))
+
+
 @router.post("/trade-executions/{execution_id}/trade-group:reassign", status_code=204)
 def reassign_execution(
     execution_id: int,
@@ -870,7 +966,7 @@ def trade_group_timeline(trade_group_id: int, db: Session = DB_SESSION_DEPENDENC
 
 class TradeGroupExecutionItem(BaseModel):
     id: int
-    trade_id: int
+    trade_id: int | None
     account_id: int
     account_alias: str | None
     executed_at: datetime
@@ -883,6 +979,9 @@ class TradeGroupExecutionItem(BaseModel):
     sec_type: str | None
     contract_display: str | None
     data_source: str
+    # False for preemptively-tagged live fills not yet settled.
+    settled: bool = True
+    ib_exec_id: str | None = None
 
 
 class TradeGroupOpenPositionItem(BaseModel):
@@ -979,46 +1078,19 @@ def _build_open_positions_overlay(
     if not account_con_pairs:
         return empty
 
-    from sqlalchemy import tuple_ as sa_tuple
-
-    pairs = list(account_con_pairs)
-
-    # Settled snapshot rows (FlexQuery) — base layer, non-zero qty.
-    flex_rows = list(
-        db.execute(
-            select(Position)
-            .where(
-                sa_tuple(Position.account_id, Position.con_id).in_(pairs),
-                Position.position != 0,
-            )
-            .order_by(Position.account_id.asc(), Position.con_id.asc())
-        )
-        .scalars()
-        .all()
-    )
-    # Settled unrealized total stays exactly as before (backward-compatible).
-    settled_vals = [p.fifo_pnl_unrealized for p in flex_rows if p.fifo_pnl_unrealized is not None]
-    total_unrealized = sum(settled_vals) if settled_vals else None
-
-    # Live overlay rows for the same pairs.
-    live_rows = list(
-        db.execute(
-            select(LivePosition).where(
-                sa_tuple(LivePosition.account_id, LivePosition.con_id).in_(pairs),
-                LivePosition.position != 0,
-            )
-        )
-        .scalars()
-        .all()
-    )
+    flex_rows, live_rows, quotes, live_execs = load_overlay_inputs(db, account_con_pairs)
+    # Price magnifiers normalize cents-quoted marks (e.g. grain futures) into the
+    # multiplier's dollar unit before merge_positions computes live PnL.
     overlay_con_ids = {p.con_id for p in flex_rows} | {p.con_id for p in live_rows}
-    quotes = {}
     magnifiers: dict[int, int] = {}
     if overlay_con_ids:
-        quotes = {q.con_id: q for q in db.execute(select(LatestQuote).where(LatestQuote.con_id.in_(list(overlay_con_ids)))).scalars().all()}
-        magnifiers = dict(db.execute(select(ContractRef.con_id, ContractRef.price_magnifier).where(ContractRef.con_id.in_(list(overlay_con_ids)))).all())
-    live_execs = list(db.execute(select(LiveExecution).where(sa_tuple(LiveExecution.account_id, LiveExecution.con_id).in_(pairs))).scalars().all())
-
+        magnifiers = dict(
+            db.execute(
+                select(ContractRef.con_id, ContractRef.price_magnifier).where(
+                    ContractRef.con_id.in_(list(overlay_con_ids))
+                )
+            ).all()
+        )
     views = merge_positions(flex_rows, live_rows, quotes, magnifiers)
 
     view_account_ids = {v.account_id for v in views}
@@ -1036,10 +1108,8 @@ def _build_open_positions_overlay(
         for view in views
     ]
 
-    intraday_unrealized = intraday_unrealized_total(views)
-    _, live_realized = dedupe_live_realized(settled_exec_ids, live_execs)
-    intraday_realized = (total_pnl or 0.0) + live_realized if (total_pnl is not None or live_realized) else None
-    intraday_total = _combine_intraday(intraday_unrealized, intraday_realized)
+    # Single source for the group totals (shared with the trade_group_pnl tool).
+    totals = overlay_totals(flex_rows, views, live_execs, settled_exec_ids, total_pnl)
 
     # Per-account breakdown using the same partitioning as the totals above, so
     # the per-account values reconcile to the group totals.
@@ -1069,11 +1139,11 @@ def _build_open_positions_overlay(
 
     return _OpenPositionsOverlay(
         open_positions=open_positions,
-        total_unrealized=total_unrealized,
-        intraday_unrealized=intraday_unrealized,
-        intraday_realized=intraday_realized,
-        intraday_total=intraday_total,
-        marks_as_of=marks_as_of(views),
+        total_unrealized=totals.settled_unrealized,
+        intraday_unrealized=totals.intraday_unrealized,
+        intraday_realized=totals.intraday_realized,
+        intraday_total=totals.intraday_total,
+        marks_as_of=totals.marks_as_of,
         by_account=by_account,
     )
 
@@ -1116,34 +1186,6 @@ def _view_to_open_position(view, flex, account) -> TradeGroupOpenPositionItem:
         mark_ts=view.mark_ts,
         live_unrealized=view.live_unrealized,
     )
-
-
-def _realized_total(rows: list[tuple]) -> float | None:
-    """Sum realized P&L across a set of joined executions, handling combo dedup.
-
-    Each row is ``(execution, contract_ref, trade, account)``. When any
-    ``combo_summary`` row is present, IBKR has already rolled its legs' realized
-    P&L into that summary, so we sum the combo totals plus standalone (non-leg,
-    non-combo) realized values and ignore individual legs. Otherwise we sum every
-    non-combo-summary realized value. Returns None when nothing contributes.
-
-    Called once over all of a group's rows and once per account partition; using
-    the same logic for both guarantees the per-account totals reconcile to the
-    group total.
-    """
-    combo_totals = [
-        realized for execution, *_ in rows if execution.exec_role == "combo_summary" and (realized := _execution_realized_pnl(execution.raw)) is not None
-    ]
-    if combo_totals:
-        standalone = [
-            realized
-            for execution, *_ in rows
-            if execution.exec_role not in {"combo_summary", "leg"} and (realized := _execution_realized_pnl(execution.raw)) is not None
-        ]
-        return sum(combo_totals) + sum(standalone)
-
-    values = [realized for execution, *_ in rows if execution.exec_role != "combo_summary" and (realized := _execution_realized_pnl(execution.raw)) is not None]
-    return sum(values) if values else None
 
 
 @router.get(
@@ -1189,11 +1231,63 @@ def trade_group_executions(trade_group_id: int, db: Session = DB_SESSION_DEPENDE
                 sec_type=execution.sec_type,
                 contract_display=_contract_display_from_raw(execution.raw, contract_ref),
                 data_source=execution.data_source,
+                settled=True,
+                ib_exec_id=execution.ib_exec_id,
             )
         )
 
-    total_pnl = _realized_total(rows)
-    realized_by_account = {acct_id: _realized_total(acct_rows) for acct_id, acct_rows in rows_by_account.items()}
+    # Preemptively-tagged unsettled live fills assigned to this group (keyed by
+    # ib_exec_id). Excluded once settled — by then the carry-over has folded them
+    # into trade_group_executions and they appear as settled rows above.
+    live_rows = db.execute(
+        select(LiveExecution, Account)
+        .join(TradeGroupLiveExecution, TradeGroupLiveExecution.ib_exec_id == LiveExecution.ib_exec_id)
+        .outerjoin(Account, Account.id == LiveExecution.account_id)
+        .where(
+            TradeGroupLiveExecution.trade_group_id == trade_group_id,
+            LiveExecution.ib_exec_id.not_in(select(TradeExecution.ib_exec_id)),
+        )
+        .order_by(LiveExecution.exec_time.asc(), LiveExecution.id.asc())
+    ).all()
+    for live_exec, account in live_rows:
+        items.append(
+            TradeGroupExecutionItem(
+                id=-live_exec.id,
+                trade_id=None,
+                account_id=live_exec.account_id,
+                account_alias=account.alias if account else None,
+                executed_at=live_exec.exec_time,
+                side=live_exec.side,
+                quantity=live_exec.quantity,
+                price=live_exec.price,
+                commission=None,
+                realized_pnl=live_exec.realized_pnl,
+                exec_role="standalone",
+                sec_type=live_exec.sec_type,
+                contract_display=contract_display_name(
+                    symbol=live_exec.symbol,
+                    sec_type=live_exec.sec_type,
+                    local_symbol=live_exec.local_symbol,
+                    right=live_exec.right,
+                    strike=live_exec.strike,
+                    contract_expiry=None,
+                    contract_month=None,
+                    exchange=None,
+                    trading_class=None,
+                ),
+                data_source="tws-live",
+                settled=False,
+                ib_exec_id=live_exec.ib_exec_id,
+            )
+        )
+
+    # Realized total via the shared combo-aware helper (also used by the
+    # trade_group_pnl tool, so the figures cannot diverge). The same helper runs
+    # per account partition so the per-account totals reconcile to the group.
+    total_pnl = trade_group_realized_pnl([execution for execution, _ref, _trade, _account in rows])
+    realized_by_account = {
+        acct_id: trade_group_realized_pnl([execution for execution, *_ in acct_rows]) for acct_id, acct_rows in rows_by_account.items()
+    }
 
     # Open positions linked to this group: match on (account_id, con_id) pairs
     # that appear in any of the group's executions. The settled snapshot

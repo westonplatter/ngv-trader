@@ -5,6 +5,8 @@ import { usePrivacy } from "../contexts/PrivacyContext";
 import { PRIVACY_MASK } from "../utils/privacy";
 import { API_BASE_URL } from "../config";
 import { useSSE } from "../lib/events";
+import { formatMoney, formatMultiplier, formatStrike } from "../utils/number";
+import TradeGroupSearchSelect from "./TradeGroupSearchSelect";
 
 export interface TradeGroupRef {
   id: number;
@@ -123,7 +125,6 @@ export default function PositionsTable() {
   const [syncError, setSyncError] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [liveSyncing, setLiveSyncing] = useState(false);
-  const [tradeGroups, setTradeGroups] = useState<TradeGroupRef[]>([]);
   const [assignError, setAssignError] = useState<string | null>(null);
   const [accountFilter, setAccountFilter] = useState<string>("all");
   const [symbolFilter, setSymbolFilter] = useState("");
@@ -292,19 +293,6 @@ export default function PositionsTable() {
   useSSE<Record<string, unknown>>("positions", () => {
     loadPositions();
   });
-
-  const loadTradeGroups = () => {
-    fetch(`${API_BASE_URL}/trade-groups?status=open`)
-      .then((res) => (res.ok ? res.json() : []))
-      .then((data: { id: number; name: string }[]) =>
-        setTradeGroups(data.map((g) => ({ id: g.id, name: g.name }))),
-      )
-      .catch(() => setTradeGroups([]));
-  };
-
-  useEffect(() => {
-    loadTradeGroups();
-  }, []);
 
   const assignToTradeGroup = async (pos: Position, groupId: number) => {
     setAssignError(null);
@@ -746,15 +734,12 @@ export default function PositionsTable() {
                 {COLUMNS.map((col) => {
                   const renderNumeric = (
                     val: number | null,
-                  ): React.ReactNode => (val == null ? "—" : val.toFixed(2));
+                  ): React.ReactNode => formatMoney(val);
                   let content: React.ReactNode;
                   let extraClass = "";
                   if (col.key === "trade_groups") {
-                    const assignedIds = new Set(
-                      pos.trade_groups.map((g) => g.id),
-                    );
                     content = (
-                      <span className="inline-flex flex-wrap items-center gap-1">
+                      <span className="inline-flex items-center gap-1 whitespace-nowrap">
                         {pos.trade_groups.map((group) => (
                           <span
                             key={group.id}
@@ -784,27 +769,27 @@ export default function PositionsTable() {
                             </button>
                           </span>
                         ))}
-                        <select
-                          value=""
-                          onChange={(e) => {
-                            const id = Number(e.target.value);
-                            if (id) assignToTradeGroup(pos, id);
-                          }}
-                          className="rounded border border-gray-300 px-1 py-0.5 text-xs text-gray-600"
-                          title="Assign to trade group"
-                          aria-label="Assign to trade group"
-                        >
-                          <option value="">
-                            {pos.trade_groups.length === 0 ? "+ Assign…" : "+"}
-                          </option>
-                          {tradeGroups
-                            .filter((g) => !assignedIds.has(g.id))
-                            .map((g) => (
-                              <option key={g.id} value={g.id}>
-                                {g.name}
-                              </option>
-                            ))}
-                        </select>
+                        <TradeGroupSearchSelect
+                          accountId={pos.account_id}
+                          contractDisplayName={pos.contract_display_name}
+                          onSelect={(group) =>
+                            assignToTradeGroup(pos, group.id)
+                          }
+                          renderTrigger={(open) => (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                open();
+                              }}
+                              className="rounded border border-dashed border-gray-300 px-2 py-0.5 text-xs text-gray-400 hover:border-blue-300 hover:text-blue-600"
+                              title="Assign to trade group"
+                              aria-label="Assign to trade group"
+                            >
+                              {pos.trade_groups.length === 0 ? "+ Assign" : "+"}
+                            </button>
+                          )}
+                        />
                       </span>
                     );
                   } else if (col.key === "position" && privacyMode) {
@@ -815,6 +800,12 @@ export default function PositionsTable() {
                     content = expiryForPosition(pos);
                   } else if (col.key === "strike" && pos.sec_type === "FUT") {
                     content = "—";
+                  } else if (col.key === "strike") {
+                    content = formatStrike(pos.strike);
+                  } else if (col.key === "multiplier") {
+                    content = formatMultiplier(pos.multiplier);
+                  } else if (col.key === "avg_cost") {
+                    content = formatMoney(pos.avg_cost);
                   } else if (col.key === "mark_price") {
                     content = renderNumeric(pos.mark_price);
                   } else if (col.key === "position_value") {

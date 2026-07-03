@@ -234,3 +234,48 @@ def dedupe_live_realized(settled_exec_ids: set[str], live_execs: list[Any]) -> t
     included = [e for e in live_execs if e.ib_exec_id not in settled_exec_ids]
     realized_sum = sum(e.realized_pnl for e in included if e.realized_pnl is not None)
     return included, realized_sum
+
+
+@dataclass
+class OverlayTotals:
+    """Settled + intraday PnL totals for a set of positions."""
+
+    settled_unrealized: float | None
+    intraday_unrealized: float | None
+    intraday_realized: float | None
+    intraday_total: float | None
+    marks_as_of: datetime | None
+
+
+def overlay_totals(
+    flex_rows: list[Any],
+    views: list[PositionView],
+    live_execs: list[Any],
+    settled_exec_ids: set[str],
+    realized: float | None,
+) -> OverlayTotals:
+    """Compose the settled + intraday PnL totals from already-merged rows.
+
+    Single source for the trade-group / positions overlay numbers: the API
+    endpoint and the tradebot ``trade_group_pnl`` tool both call this, so the
+    live figures cannot diverge. ``realized`` is the settled realized PnL for the
+    scope (the intraday realized adds live, not-yet-settled fills on top).
+    """
+    settled_vals = [p.fifo_pnl_unrealized for p in flex_rows if p.fifo_pnl_unrealized is not None]
+    settled_unrealized = sum(settled_vals) if settled_vals else None
+
+    intraday_unrealized = intraday_unrealized_total(views)
+    _, live_realized = dedupe_live_realized(settled_exec_ids, live_execs)
+    intraday_realized = (realized or 0.0) + live_realized if (realized is not None or live_realized) else None
+
+    intraday_total = None
+    if intraday_unrealized is not None or intraday_realized is not None:
+        intraday_total = (intraday_unrealized or 0.0) + (intraday_realized or 0.0)
+
+    return OverlayTotals(
+        settled_unrealized=settled_unrealized,
+        intraday_unrealized=intraday_unrealized,
+        intraday_realized=intraday_realized,
+        intraday_total=intraday_total,
+        marks_as_of=marks_as_of(views),
+    )

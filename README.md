@@ -6,11 +6,29 @@ New to the project? Follow the [Getting Started guide](docs/getting-started.md) 
 
 **You assume all risk.**
 
+## Screenshots
+
+### Positions
+Track unrealized PnL across accounts, with positions grouped into trades.
+
+![Positions](docs/screenshots/positions-demo.png)
+
+### Trade Tagging
+Organize executions into strategies and trade groups, with realized/unrealized
+PnL rolled up per group.
+
+![Trade Tagging](docs/screenshots/tagging-demo.png)
+
+### Assigning Positions to Trade Groups
+Assign individual positions to trade groups directly from the Positions page.
+
+![Assign positions to trade groups](docs/screenshots/positions-trade-group-assign.png)
+
 ## License
 
-This project is source-available under a proprietary license with a free tier:
+This project offers two license options:
 
-- **Personal Use (free):** individuals managing less than $1,000,000 USD in aggregate trading capital / AUM, for non-commercial use.
-- **Commercial License (extremely reasonable):** required for commercial use, third-party services, or AUM at or above $1,000,000 USD.
+- **Personal Use (free):** for an individual managing less than $1 million USD in AUM.
+- **Commercial (super reasonable):** for everything else — reach out to sales@nextgenvol.com.
 
 See [LICENSE](./LICENSE) for full terms.

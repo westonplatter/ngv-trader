@@ -33,7 +33,7 @@ export type TagLink = {
 
 export type GroupExecution = {
   id: number;
-  trade_id: number;
+  trade_id: number | null;
   account_id: number;
   account_alias: string | null;
   executed_at: string;
@@ -46,6 +46,8 @@ export type GroupExecution = {
   sec_type: string | null;
   contract_display: string | null;
   data_source: string;
+  // False for preemptively-tagged live fills not yet settled.
+  settled?: boolean;
 };
 
 export type GroupOpenPosition = {
@@ -1620,10 +1622,17 @@ export default function TradeTaggingPage() {
                                       </td>
                                       <td className="px-2 py-1 text-gray-800">
                                         {ex.contract_display ??
-                                          `#${ex.trade_id}`}
+                                          (ex.trade_id != null
+                                            ? `#${ex.trade_id}`
+                                            : "—")}
                                         {ex.exec_role !== "standalone" && (
                                           <span className="ml-1 rounded bg-gray-100 px-1 py-0.5 text-[10px] uppercase text-gray-500">
                                             {ex.exec_role}
+                                          </span>
+                                        )}
+                                        {ex.settled === false && (
+                                          <span className="ml-1 rounded bg-amber-100 px-1 py-0.5 text-[10px] uppercase text-amber-800">
+                                            unsettled
                                           </span>
                                         )}
                                       </td>
