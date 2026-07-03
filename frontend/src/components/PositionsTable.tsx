@@ -132,8 +132,8 @@ export default function PositionsTable() {
   const [secTypeFilter, setSecTypeFilter] = useState("");
   const [dteMinFilter, setDteMinFilter] = useState("");
   const [dteMaxFilter, setDteMaxFilter] = useState("");
-  const [sortColumn, setSortColumn] = useState<SortColumn | null>(null);
-  const [sortDirection, setSortDirection] = useState<SortDirection>("none");
+  const [sortColumn, setSortColumn] = useState<SortColumn | null>("symbol");
+  const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
 
   const dteMin = useMemo(() => {
     if (!dteMinFilter.trim()) return null;
