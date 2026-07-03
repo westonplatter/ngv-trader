@@ -1,0 +1,13 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+#
+# CodeRabbit configuration.
+# Docs: https://docs.coderabbit.ai/configuration/auto-review
+#
+# Automatic reviews are disabled so we don't consume the PR review limit on
+# every pull request. Trigger a review on-demand by commenting on the PR:
+#   @coderabbitai review        # incremental review of new changes
+#   @coderabbitai full review    # review the PR from scratch
+reviews:
+  auto_review:
+    # Do not review PRs automatically; review only when explicitly requested.
+    enabled: false
