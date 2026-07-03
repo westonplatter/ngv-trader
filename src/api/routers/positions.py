@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from src.api.deps import get_db
 from src.models import (
     Account,
+    ContractRef,
     LatestQuote,
     LivePosition,
     Position,
@@ -19,7 +20,11 @@ from src.models import (
     TradeGroupLiveExecution,
 )
 from src.services.cl_contracts import infer_contract_month_from_local_symbol
-from src.services.intraday_overlay import compute_unrealized, parse_multiplier
+from src.services.intraday_overlay import (
+    compute_unrealized,
+    normalize_live_mark,
+    parse_multiplier,
+)
 from src.services.jobs import (
     JOB_TYPE_INTRADAY_SYNC_TWS,
     JOB_TYPE_POSITIONS_SYNC_FLEXQUERY,
@@ -141,6 +146,9 @@ def list_positions(db: Session = DB_SESSION_DEPENDENCY):
     # Portfolio-wide live overlay (not group-scoped): live current state + marks.
     live_by_key = {(p.account_id, p.con_id): p for p in db.execute(select(LivePosition)).scalars().all()}
     quotes = {q.con_id: q for q in db.execute(select(LatestQuote)).scalars().all()}
+    # price_magnifier per con_id normalizes quoted marks (e.g. cents → dollars
+    # for grain futures) into the multiplier's price unit. Missing → treated as 1.
+    magnifiers = dict(db.execute(select(ContractRef.con_id, ContractRef.price_magnifier)).all())
     accounts_by_id = {a.id: a for a in db.execute(select(Account)).scalars().all()}
 
     # Map each (account_id, con_id) to the trade group(s) it's associated with.
@@ -161,7 +169,10 @@ def list_positions(db: Session = DB_SESSION_DEPENDENCY):
             TradeGroup.id,
             TradeGroup.name,
         )
-        .join(TradeGroupExecution, TradeGroupExecution.trade_execution_id == TradeExecution.id)
+        .join(
+            TradeGroupExecution,
+            TradeGroupExecution.trade_execution_id == TradeExecution.id,
+        )
         .join(TradeGroup, TradeGroup.id == TradeGroupExecution.trade_group_id)
         .where(TradeExecution.con_id.is_not(None))
         .distinct()
@@ -180,13 +191,9 @@ def list_positions(db: Session = DB_SESSION_DEPENDENCY):
         .order_by(TradeGroup.id.asc())
     ).all()
     for account_id, con_id, group_id, group_name in [*settled_rows, *live_rows]:
-        trade_group_acc.setdefault((account_id, con_id), {}).setdefault(
-            group_id, TradeGroupRef(id=group_id, name=group_name)
-        )
+        trade_group_acc.setdefault((account_id, con_id), {}).setdefault(group_id, TradeGroupRef(id=group_id, name=group_name))
 
-    trade_group_map: dict[tuple[int, int], list[TradeGroupRef]] = {
-        key: sorted(groups.values(), key=lambda g: g.id) for key, groups in trade_group_acc.items()
-    }
+    trade_group_map: dict[tuple[int, int], list[TradeGroupRef]] = {key: sorted(groups.values(), key=lambda g: g.id) for key, groups in trade_group_acc.items()}
 
     results: list[PositionResponse] = []
     flex_keys: set[tuple[int, int]] = set()
@@ -225,6 +232,7 @@ def list_positions(db: Session = DB_SESSION_DEPENDENCY):
             # live-specific column).
             if mark is not None and mark <= 0:
                 mark = None
+            mark = normalize_live_mark(mark, magnifiers.get(pos.con_id))
             mark_ts = getattr(quote, "market_ts", None) if (quote is not None and mark is not None) else None
             position_qty = live.position
             avg_cost = live.avg_cost
@@ -274,6 +282,7 @@ def list_positions(db: Session = DB_SESSION_DEPENDENCY):
         mark = getattr(quote, "mark", None) if quote is not None else None
         if mark is not None and mark <= 0:
             mark = None
+        mark = normalize_live_mark(mark, magnifiers.get(con_id))
         mark_ts = getattr(quote, "market_ts", None) if (quote is not None and mark is not None) else None
         display_name = contract_display_name(
             symbol=live.symbol,
@@ -318,14 +327,23 @@ def list_positions(db: Session = DB_SESSION_DEPENDENCY):
                 source="live",
                 mark=mark,
                 mark_ts=mark_ts,
-                live_unrealized=compute_unrealized(live.position, live.avg_cost, mark, parse_multiplier(live.multiplier)),
+                live_unrealized=compute_unrealized(
+                    live.position,
+                    live.avg_cost,
+                    mark,
+                    parse_multiplier(live.multiplier),
+                ),
             )
         )
 
     return results
 
 
-@router.post("/positions/sync/tws", response_model=PositionSyncResponse, status_code=status.HTTP_202_ACCEPTED)
+@router.post(
+    "/positions/sync/tws",
+    response_model=PositionSyncResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
 def enqueue_positions_sync(
     body: PositionSyncRequest,
     db: Session = DB_SESSION_DEPENDENCY,
@@ -348,7 +366,11 @@ def enqueue_positions_sync(
     )
 
 
-@router.post("/positions/sync/intraday-tws", response_model=PositionSyncResponse, status_code=status.HTTP_202_ACCEPTED)
+@router.post(
+    "/positions/sync/intraday-tws",
+    response_model=PositionSyncResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
 def enqueue_intraday_sync(
     body: IntradaySyncRequest,
     db: Session = DB_SESSION_DEPENDENCY,
@@ -374,7 +396,11 @@ def enqueue_intraday_sync(
     )
 
 
-@router.post("/positions/sync/flex-query", response_model=PositionSyncResponse, status_code=status.HTTP_202_ACCEPTED)
+@router.post(
+    "/positions/sync/flex-query",
+    response_model=PositionSyncResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
 def enqueue_flex_positions_sync(
     body: FlexPositionSyncRequest,
     db: Session = DB_SESSION_DEPENDENCY,

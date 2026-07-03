@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import { usePrivacy } from "../contexts/PrivacyContext";
 import { PRIVACY_MASK } from "../utils/privacy";
 import { API_BASE_URL } from "../config";
@@ -23,6 +24,7 @@ interface TradeExecutionRow {
   commission: number | null;
   realized_pnl: number | null;
   is_canonical: boolean;
+  con_id: number | null;
   contract_display: string | null;
   parent_ib_exec_id: string | null;
   data_source?: string;
@@ -355,7 +357,12 @@ export default function TradesTable() {
   const [syncing, setSyncing] = useState(false);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
   const [syncError, setSyncError] = useState<string | null>(null);
-  const [symbolFilter, setSymbolFilter] = useState("");
+  const [rangeStart, setRangeStart] = useState("");
+  const [rangeEnd, setRangeEnd] = useState("");
+  const [searchParams] = useSearchParams();
+  const [symbolFilter, setSymbolFilter] = useState(
+    () => searchParams.get("symbol") ?? "",
+  );
   const [accountFilter, setAccountFilter] = useState<string>("all");
   const [timeRange, setTimeRange] = useState<string>("all");
   const [tagStatus, setTagStatus] = useState<"all" | "tagged" | "untagged">(
@@ -389,9 +396,19 @@ export default function TradesTable() {
     return /^[A-Za-z0-9]+$/.test(raw) ? raw.toUpperCase() : null;
   }, [symbolFilter]);
 
+  // When the page is opened via a Positions "Con ID" link (/trades?con_id=123),
+  // fetch every execution for that contract across all time and all accounts.
+  const conIdFilter = useMemo(() => {
+    const raw = searchParams.get("con_id");
+    if (!raw) return null;
+    const parsed = Number(raw);
+    return Number.isInteger(parsed) ? parsed : null;
+  }, [searchParams]);
+
   const loadExecutions = useCallback(async () => {
     const params = new URLSearchParams({ limit: "5000" });
-    if (serverSymbol) params.set("symbol", serverSymbol);
+    if (conIdFilter !== null) params.set("con_id", String(conIdFilter));
+    else if (serverSymbol) params.set("symbol", serverSymbol);
     const res = await fetch(
       `${API_BASE_URL}/trade-executions?${params.toString()}`,
     );
@@ -401,7 +418,7 @@ export default function TradesTable() {
     const data: TradeExecutionRow[] = await res.json();
     setExecutions(data);
     setError(null);
-  }, [serverSymbol]);
+  }, [serverSymbol, conIdFilter]);
 
   useEffect(() => {
     void loadExecutions()
@@ -508,7 +525,12 @@ export default function TradesTable() {
 
   const kickOffTradesSync = async (
     label: string,
-    options: { days?: number; sinceLastTrade?: boolean },
+    options: {
+      days?: number;
+      sinceLastTrade?: boolean;
+      startDate?: string;
+      endDate?: string;
+    },
   ) => {
     setSyncing(true);
     setSyncMessage(null);
@@ -523,6 +545,9 @@ export default function TradesTable() {
           max_attempts: 3,
           ...(options.days !== undefined ? { days: options.days } : {}),
           ...(options.sinceLastTrade ? { since_last_trade: true } : {}),
+          ...(options.startDate && options.endDate
+            ? { start_date: options.startDate, end_date: options.endDate }
+            : {}),
         }),
       });
       if (!res.ok) {
@@ -568,53 +593,90 @@ export default function TradesTable() {
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between">
+      <div className="flex items-start justify-between">
         <div>
           <h2 className="text-lg font-semibold text-gray-900">Trades</h2>
           <p className="text-xs text-gray-500">
             {filteredRows.length} execution(s)
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => {
-              void kickOffTradesSync("Quick sync", { days: 1 });
-            }}
-            disabled={syncing}
-            className="rounded border border-blue-300 px-3 py-1 text-sm text-blue-700 hover:bg-blue-50 disabled:opacity-50"
-          >
-            {syncing ? "Queueing..." : "Quick Sync (1d)"}
-          </button>
-          <button
-            onClick={() => {
-              void kickOffTradesSync("Full sync", { days: 7 });
-            }}
-            disabled={syncing}
-            className="rounded border border-blue-300 px-3 py-1 text-sm text-blue-700 hover:bg-blue-50 disabled:opacity-50"
-          >
-            {syncing ? "Queueing..." : "Full Sync (7d)"}
-          </button>
-          <button
-            onClick={() => {
-              void kickOffTradesSync("Extended sync", { days: 30 });
-            }}
-            disabled={syncing}
-            className="rounded border border-blue-300 px-3 py-1 text-sm text-blue-700 hover:bg-blue-50 disabled:opacity-50"
-          >
-            {syncing ? "Queueing..." : "Extended Sync (30d)"}
-          </button>
-          <button
-            onClick={() => {
-              void kickOffTradesSync("Sync since last trade", {
-                sinceLastTrade: true,
-              });
-            }}
-            disabled={syncing}
-            title="Sync from the most recent trade date across all accounts through today"
-            className="rounded border border-blue-300 px-3 py-1 text-sm text-blue-700 hover:bg-blue-50 disabled:opacity-50"
-          >
-            {syncing ? "Queueing..." : "Sync Since Last Trade"}
-          </button>
+        <div className="flex flex-col items-end gap-2">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => {
+                void kickOffTradesSync("Quick sync", { days: 1 });
+              }}
+              disabled={syncing}
+              className="rounded border border-blue-300 px-3 py-1 text-sm text-blue-700 hover:bg-blue-50 disabled:opacity-50"
+            >
+              {syncing ? "Queueing..." : "Quick Sync (1d)"}
+            </button>
+            <button
+              onClick={() => {
+                void kickOffTradesSync("Full sync", { days: 7 });
+              }}
+              disabled={syncing}
+              className="rounded border border-blue-300 px-3 py-1 text-sm text-blue-700 hover:bg-blue-50 disabled:opacity-50"
+            >
+              {syncing ? "Queueing..." : "Full Sync (7d)"}
+            </button>
+            <button
+              onClick={() => {
+                void kickOffTradesSync("Extended sync", { days: 30 });
+              }}
+              disabled={syncing}
+              className="rounded border border-blue-300 px-3 py-1 text-sm text-blue-700 hover:bg-blue-50 disabled:opacity-50"
+            >
+              {syncing ? "Queueing..." : "Extended Sync (30d)"}
+            </button>
+            <button
+              onClick={() => {
+                void kickOffTradesSync("Sync since last trade", {
+                  sinceLastTrade: true,
+                });
+              }}
+              disabled={syncing}
+              title="Sync from the most recent trade date across all accounts through today"
+              className="rounded border border-blue-300 px-3 py-1 text-sm text-blue-700 hover:bg-blue-50 disabled:opacity-50"
+            >
+              {syncing ? "Queueing..." : "Sync Since Last Trade"}
+            </button>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-medium text-gray-500">
+              Sync range:
+            </span>
+            <input
+              type="date"
+              value={rangeStart}
+              onChange={(event) => setRangeStart(event.target.value)}
+              className="rounded border border-gray-300 px-2 py-1 text-sm text-gray-700"
+              aria-label="Sync start date"
+            />
+            <span className="text-xs text-gray-400">→</span>
+            <input
+              type="date"
+              value={rangeEnd}
+              onChange={(event) => setRangeEnd(event.target.value)}
+              className="rounded border border-gray-300 px-2 py-1 text-sm text-gray-700"
+              aria-label="Sync end date"
+            />
+            <button
+              onClick={() => {
+                void kickOffTradesSync("Range sync", {
+                  startDate: rangeStart,
+                  endDate: rangeEnd,
+                });
+              }}
+              disabled={
+                syncing || !rangeStart || !rangeEnd || rangeStart > rangeEnd
+              }
+              title="Sync trades for an explicit date range (FlexQuery is T-1, so the end date must be the previous business day or earlier)"
+              className="rounded border border-blue-300 px-3 py-1 text-sm text-blue-700 hover:bg-blue-50 disabled:opacity-50"
+            >
+              {syncing ? "Queueing..." : "Sync Range"}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -703,6 +765,16 @@ export default function TradesTable() {
         </div>
       </div>
 
+      {conIdFilter !== null && (
+        <p className="text-sm text-gray-600">
+          Showing all executions for Contract ID{" "}
+          <span className="font-mono font-medium">{conIdFilter}</span> across
+          all time and accounts.{" "}
+          <Link to="/trades" className="text-blue-600 hover:underline">
+            Clear
+          </Link>
+        </p>
+      )}
       {syncMessage && <p className="text-sm text-green-700">{syncMessage}</p>}
       {syncError && (
         <p className="text-sm text-red-600">Sync error: {syncError}</p>
@@ -766,6 +838,9 @@ export default function TradesTable() {
               </th>
               <th className="whitespace-nowrap px-3 py-2 font-semibold text-gray-700">
                 Exec ID
+              </th>
+              <th className="whitespace-nowrap px-3 py-2 font-semibold text-gray-700">
+                Con ID
               </th>
             </tr>
           </thead>
@@ -926,6 +1001,9 @@ export default function TradesTable() {
                   </td>
                   <td className="max-w-[200px] truncate whitespace-nowrap px-3 py-2 font-mono text-xs text-gray-600">
                     {privacyMode ? PRIVACY_MASK : row.ib_exec_id}
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-2 font-mono text-xs text-gray-600">
+                    {row.con_id ?? "-"}
                   </td>
                 </tr>
               );

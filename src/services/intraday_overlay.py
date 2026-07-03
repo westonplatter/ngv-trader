@@ -79,12 +79,39 @@ def _key(account_id: int, con_id: int) -> tuple[int, int]:
     return (account_id, con_id)
 
 
-def merge_positions(flex_rows: list[Any], live_rows: list[Any], quotes: dict[int, Any]) -> list[PositionView]:
+def normalize_live_mark(mark: float | None, magnifier: Any) -> float | None:
+    """Convert a quoted market-data price into the multiplier's price unit.
+
+    IBKR quotes some products (e.g. grain futures) in cents while ``avg_cost``
+    and the contract ``multiplier`` work in dollars; ``ContractDetails``
+    ``priceMagnifier`` (100 for those, 1 otherwise) is the divisor that aligns
+    them. Defaults to 1 when missing/invalid so non-magnified products are
+    unchanged.
+    """
+    if mark is None:
+        return None
+    try:
+        mag = float(magnifier)
+    except (TypeError, ValueError):
+        mag = 1.0
+    if mag <= 0:
+        mag = 1.0
+    return mark / mag
+
+
+def merge_positions(
+    flex_rows: list[Any],
+    live_rows: list[Any],
+    quotes: dict[int, Any],
+    magnifiers: dict[int, Any] | None = None,
+) -> list[PositionView]:
     """Compose unified positions, preferring live state with FlexQuery fallback.
 
     - ``flex_rows``: FlexQuery ``Position`` rows (settled snapshot).
     - ``live_rows``: ``LivePosition`` rows (authoritative current state).
     - ``quotes``: ``{con_id: LatestQuote}`` live marks.
+    - ``magnifiers``: ``{con_id: price_magnifier}`` to normalize quoted marks
+      into the multiplier's price unit (defaults to 1 per con_id when absent).
 
     Reconciliation per ``(account, con_id)``:
       * live present  → live qty/cost, live mark (fallback settled mark), source=live.
@@ -94,6 +121,7 @@ def merge_positions(flex_rows: list[Any], live_rows: list[Any], quotes: dict[int
     """
     flex_by_key = {_key(r.account_id, r.con_id): r for r in flex_rows}
     live_accounts = {r.account_id for r in live_rows}
+    magnifiers = magnifiers or {}
     views: list[PositionView] = []
     seen: set[tuple[int, int]] = set()
 
@@ -109,6 +137,9 @@ def merge_positions(flex_rows: list[Any], live_rows: list[Any], quotes: dict[int
         # we never compute a live PnL off a fake mark.
         if mark is not None and mark <= 0:
             mark = None
+        # Normalize the quoted price into the multiplier's unit (e.g. cents →
+        # dollars for grain futures) before it feeds the mark/PnL columns.
+        mark = normalize_live_mark(mark, magnifiers.get(live.con_id))
         # When there is no usable live mark, leave the live-specific fields null
         # (the UI shows "—" and intraday totals fall back to settled per row) —
         # do NOT mirror the settled mark into the live column.

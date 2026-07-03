@@ -372,6 +372,7 @@ class TradeExecutionListItem(BaseModel):
     commission: float | None
     realized_pnl: float | None
     is_canonical: bool
+    con_id: int | None
     contract_display: str | None
     parent_ib_exec_id: str | None
     data_source: str
@@ -684,6 +685,7 @@ def list_trade_executions(trade_id: int, db: Session = DB_SESSION_DEPENDENCY):
 def list_all_trade_executions(  # noqa: C901, PLR0912, PLR0915
     account_id: int | None = Query(default=None),
     symbol: str | None = Query(default=None),
+    con_id: int | None = Query(default=None),
     lookback_days: int | None = Query(default=None, ge=1, le=365),
     limit: int = Query(default=500, ge=1, le=5000),
     db: Session = DB_SESSION_DEPENDENCY,
@@ -698,6 +700,8 @@ def list_all_trade_executions(  # noqa: C901, PLR0912, PLR0915
         stmt = stmt.where(TradeExecution.account_id == account_id)
     if symbol is not None:
         stmt = stmt.where(Trade.symbol == symbol.upper())
+    if con_id is not None:
+        stmt = stmt.where(TradeExecution.con_id == con_id)
     if lookback_days is not None:
         cutoff = datetime.now(timezone.utc) - timedelta(days=lookback_days)
         stmt = stmt.where(TradeExecution.executed_at >= cutoff)
@@ -794,6 +798,7 @@ def list_all_trade_executions(  # noqa: C901, PLR0912, PLR0915
                 commission=ex.commission,
                 realized_pnl=_execution_realized_pnl(ex.raw),
                 is_canonical=ex.is_canonical,
+                con_id=ex.con_id,
                 contract_display=_contract_display_from_raw(ex.raw, contract_ref),
                 parent_ib_exec_id=parent_ib_exec_id,
                 data_source=ex.data_source,

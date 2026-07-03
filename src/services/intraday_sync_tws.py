@@ -24,7 +24,14 @@ from sqlalchemy import Engine, delete, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
-from src.models import LatestQuote, LiveExecution, LivePosition, TradeExecution
+from src.models import (
+    ContractRef,
+    LatestQuote,
+    LiveExecution,
+    LivePosition,
+    TradeExecution,
+)
+from src.services.contract_sync import _upsert_contract
 from src.services.group_link_carryover import carry_over_settled_group_links
 from src.services.sync_common import get_or_create_accounts
 
@@ -160,6 +167,55 @@ def _fetch_tickers(ib: IB, contracts: list) -> dict[int, Any]:
     return by_con_id
 
 
+def _sync_held_contract_magnifiers(session: Session, ib: IB, held_contracts: list, now: datetime) -> int:
+    """Ensure every held instrument has a ``contracts`` row with a price magnifier.
+
+    ``ib.positions()`` returns plain contracts (no ``priceMagnifier``), and many
+    held con_ids — grains, livestock, etc. — are never touched by the per-symbol
+    contract-chain sync, so the overlay's magnifier lookup misses them and live
+    P&L is computed in the wrong price unit. Here we fetch ``reqContractDetails``
+    (which carries the authoritative ``priceMagnifier``) and upsert each into the
+    security master. Only con_ids that don't already have a magnifier are
+    fetched, so steady-state runs add zero IB round-trips. Returns the count
+    upserted.
+    """
+    held_by_con_id = {c.conId: c for c in held_contracts if getattr(c, "conId", None)}
+    if not held_by_con_id:
+        return 0
+    have = set(
+        session.execute(
+            select(ContractRef.con_id).where(
+                ContractRef.con_id.in_(list(held_by_con_id)),
+                ContractRef.price_magnifier.is_not(None),
+            )
+        )
+        .scalars()
+        .all()
+    )
+    needed = [c for con_id, c in held_by_con_id.items() if con_id not in have]
+    upserted = 0
+    for contract in needed:
+        try:
+            details = ib.reqContractDetails(contract)
+        except Exception:
+            logger.exception("reqContractDetails failed for held con_id %s", contract.conId)
+            continue
+        for detail in details:
+            cid = _upsert_contract(
+                session,
+                detail,
+                contract.symbol,
+                contract.secType,
+                contract.exchange,
+                contract.currency,
+                underlying_con_id=None,
+                now=now,
+            )
+            if cid is not None:
+                upserted += 1
+    return upserted
+
+
 def _write_live_positions(session: Session, positions: list, account_lookup: dict[str, int], now: datetime) -> int:
     """Replace live_positions for the fetched account scope with fresh rows.
 
@@ -247,7 +303,13 @@ def _live_execution_values(fill: Any, account_id: int, exec_time: datetime, now:
     }
 
 
-def _write_fills(session: Session, fills: list, account_lookup: dict[str, int], window_start: datetime, now: datetime) -> int:
+def _write_fills(
+    session: Session,
+    fills: list,
+    account_lookup: dict[str, int],
+    window_start: datetime,
+    now: datetime,
+) -> int:
     """Upsert today's fills into live_executions, keyed by ib_exec_id."""
     written = 0
     for fill in fills:
@@ -313,6 +375,7 @@ def run_intraday_sync(engine: Engine, ib: IB) -> dict:
     with Session(engine) as session:
         account_lookup = get_or_create_accounts(session, position_accounts) if position_accounts else {}
         counts = {
+            "contracts": _sync_held_contract_magnifiers(session, ib, held_contracts, now),
             "positions": _write_live_positions(session, positions, account_lookup, now),
             "quotes": _write_quotes(session, tickers_by_con_id, now),
             "fills": _write_fills(session, fills, account_lookup, window_start, now),
