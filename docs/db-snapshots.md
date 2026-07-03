@@ -5,7 +5,7 @@ data-mutating migrations, backfills, `alembic downgrade` on prod, or bulk
 deletes. Additive-only migrations (new tables/columns, nullable) generally don't
 need one, but snapshot anyway when unsure — it's cheap.
 
-`ENV=prod` (working DB `ngtrader_pro_prod`) is the default working environment
+`ENV=prod` (working DB `ngtrader_prod`) is the default working environment
 — see [project memory]. A separate dev DB (`ngtrader_dev`) also exists per
 [getting-started.md](getting-started.md); pass `ENV=dev` and adjust `DB_NAME`
 below to snapshot dev instead. Connection vars (`DB_HOST/PORT/USER/PASSWORD/NAME`)
@@ -15,10 +15,10 @@ resolve from `op://` references, so every command runs under `op run`.
 
 ```bash
 SNAP_DIR="$HOME/ngv-trader-db-snapshots"; mkdir -p "$SNAP_DIR"
-OUT="$SNAP_DIR/ngtrader_pro_prod-$(date +%Y%m%d-%H%M%S).dump"
+OUT="$SNAP_DIR/ngtrader_prod-$(date +%Y%m%d-%H%M%S).dump"
 ENV=prod op run --env-file=.env.prod -- bash -c '
   PGPASSWORD="$DB_PASSWORD" pg_dump -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" \
-    -d "${DB_NAME:-ngtrader_pro_prod}" -Fc -f "'"$OUT"'"'
+    -d "${DB_NAME:-ngtrader_prod}" -Fc -f "'"$OUT"'"'
 ```
 
 `-Fc` is the compressed custom format (restorable, selective). Snapshots live
