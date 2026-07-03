@@ -1,8 +1,12 @@
 # Spec: Activated Products & Security Master Sync
 
-> **Status: Proposed — not yet implemented.** This spec describes future-state
-> work. Implementation tracked on branch
-> `claude/futures-security-master-fmzbsx`.
+> **Status: Implemented (as of 2026-06-20).** `activated_products` table
+> (seeded CL/NG/ZB/ZN/ES/NQ), IBKR discovery + 12-month sync, the
+> `contracts.sync_activated` job, `GET /api/v1/activated-products`, the
+> `list_activated_products` agent tool, and the Active Products UI table are
+> all shipped. Remaining gap: `resolve_exchange()` in `src/data/exchanges.py`
+> still raises for unknown symbols instead of being demoted to a
+> non-raising hint (Functional Plan item 7).
 
 ## Complexity: 3
 
