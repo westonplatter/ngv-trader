@@ -65,6 +65,16 @@ Always use `uv run python scripts/check.py <module>` to verify imports. Never us
 
 Exits 1 on failure.
 
+## Doc Validation
+
+After any doc change, run `scripts/doc_check.py` to catch broken links, missing script paths, bad task commands, and missing spec banners.
+
+- All checks: `uv run python scripts/doc_check.py`
+- Include undocumented routes (informational): `uv run python scripts/doc_check.py --routes`
+- Specific check: `uv run python scripts/doc_check.py links`
+
+Exits 1 on hard failures (`FAIL`). Route warnings are `WARN` only — not blockers.
+
 ## Codebase Survey
 
 ### Repository Layout

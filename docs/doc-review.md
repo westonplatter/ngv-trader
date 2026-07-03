@@ -8,24 +8,41 @@ Review covers: `README.md`, `AGENTS.md`, and all files in `docs/`. Goal is to ke
 
 ## Steps
 
-### 1. Read every doc file
+### 1. Run the automated checks
 
-Read all files in scope before making any changes. Build a mental model of what each file claims before cross-checking.
+Run `scripts/doc_check.py` first. It handles the mechanical verifications:
 
-### 2. Cross-check against the codebase
+```bash
+uv run python scripts/doc_check.py          # links, scripts, tasks, spec banners
+uv run python scripts/doc_check.py --routes  # also show undocumented routes (informational)
+```
 
-For each doc, verify the following against actual code:
+Fix any hard failures (`FAIL`) before proceeding. Informational warnings (`WARN`, routes only) are inputs for the priority table, not blockers.
+
+### 2. Read every doc file and cross-check
+
+Read all files in scope. For each doc, verify the following against actual code — and record findings in a priority table as you go (see format below):
 
 | Check | How |
 | --- | --- |
-| **Routes** | For each router file referenced, extract every `@router.{method}(path)` decorator and compare to the endpoint list in the doc. |
+| **Routes** | For each router file referenced, compare its `@router.{method}(path)` decorators to the endpoint list in the doc. Use `--routes` output as a starting point. |
 | **Table names / columns** | Spot-check against `src/models.py` and `alembic/versions/`. |
-| **Scripts** | Verify each script path in `scripts/` exists with `ls scripts/`. |
 | **Key files sections** | For every "Key files" table or list in any doc, verify each path exists on disk. |
-| **Internal links** | Grep all `[text](relative/path)` references across every doc; confirm each target file exists. |
 | **Env vars** | Check that example values and var names match `.env.example`. |
 | **Spec status banners** | Confirm each `spec-*.md` has a status banner at the top and its `_index.md` entry reflects current status. |
-| **Task commands** | Verify each `task <name>` command exists in `Taskfile.yaml` with the documented behavior. |
+
+**Note on line numbers:** Do not cite specific line numbers in docs. They drift on every refactor. Reference function or method names instead — they are stable and searchable.
+
+**Priority guide** (fill the table as you read, not after):
+
+- **High** — incorrect or missing information that actively misleads a developer (wrong commands, missing routes, stale architecture description).
+- **Medium** — broken references, outdated details, contradictions between files.
+- **Low** — minor inconsistencies, style issues, nice-to-have clarifications.
+
+| Priority | File | Change |
+| --- | --- | --- |
+| High | `file.md` | Short description: what's wrong and what the fix is |
+| Medium | `docs/file.md` | ... |
 
 ### 3. Distinguish doc gaps from code gaps
 
@@ -34,29 +51,13 @@ For each doc, verify the following against actual code:
 
 Fix doc gaps in this PR. Flag code gaps in the PR description under a **Code gaps found** section so they get separate follow-up. Do not attempt to fix code gaps in a doc review pass.
 
-### 4. Compile a priority table
-
-Before editing anything, compile findings into a table:
-
-| Priority | File | Change |
-| --- | --- | --- |
-| High | `file.md` | Short description: what's wrong and what the fix is |
-| Medium | `docs/file.md` | ... |
-| Low | `docs/file.md` | ... |
-
-Priority guide:
-
-- **High** — incorrect or missing information that actively misleads a developer (wrong commands, missing routes, stale architecture description).
-- **Medium** — broken references, outdated details, contradictions between files.
-- **Low** — minor inconsistencies, style issues, nice-to-have clarifications.
-
-### 5. Make changes
+### 4. Make changes
 
 Edit only what is in the priority table. Do not expand scope, refactor structure, or clean up style beyond what was flagged.
 
 After any change to a doc file, verify `docs/_index.md` is still accurate per the rule in `AGENTS.md`.
 
-### 6. Commit and open a PR
+### 5. Commit and open a PR
 
 Commit message format:
 
