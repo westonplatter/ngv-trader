@@ -53,11 +53,22 @@ Execution identity:
 - The highest revision is `is_canonical=true`; older revisions remain as history.
   Enforced by `_enforce_canonical_flags()` in `sync_common.py`.
 
-Trade parent matching (priority order):
+Trade parent matching (priority order) — TWS path (`trade_sync_tws._resolve_or_create_trade`,
+dormant):
 
 1. `(account_id, ib_perm_id)` when `ib_perm_id > 0`.
-2. `(account_id, order_ref)` when `order_ref` exists.
-3. Fallback composite: `(account_id, ib_order_id, symbol, side, trade_date_utc)`.
+2. `(account_id, order_ref)` when `order_ref` starts with `ngtrader-`.
+3. Fallback composite: `(account_id, ib_order_id, symbol, side, trade_date)`, where
+   `trade_date` is a derived `YYYY-MM-DD` string, not a persisted column.
+
+FlexQuery path (`trade_sync_flexquery._resolve_or_create_flex_trade`, active) skips
+tier 1 — FlexQuery has no `permId`:
+
+1. `(account_id, order_ref)` when `order_ref` starts with `ngtrader-`.
+2. Fallback composite: `(account_id, ib_order_id, symbol, side)`, with **no date
+   field** — timezone normalization between the source `exec_time` and the persisted
+   `first_executed_at` can disagree at the day boundary, so a date check would cause
+   duplicate parents on re-runs.
 
 Notes:
 
