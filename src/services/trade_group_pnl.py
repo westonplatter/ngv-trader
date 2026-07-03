@@ -26,7 +26,6 @@ from sqlalchemy import func, select
 from sqlalchemy import tuple_ as sa_tuple
 from sqlalchemy.orm import Session
 
-from src.api.routers.trades import _execution_realized_pnl
 from src.models import (
     LatestQuote,
     LiveExecution,
@@ -36,6 +35,7 @@ from src.models import (
     TradeGroup,
     TradeGroupExecution,
 )
+from src.services.execution_pnl import execution_realized_pnl as _execution_realized_pnl
 from src.services.intraday_overlay import merge_positions, overlay_totals
 
 
@@ -77,7 +77,9 @@ def load_overlay_inputs(
         .all()
     )
     live_rows = list(
-        session.execute(select(LivePosition).where(sa_tuple(LivePosition.account_id, LivePosition.con_id).in_(pairs), LivePosition.position != 0)).scalars().all()
+        session.execute(select(LivePosition).where(sa_tuple(LivePosition.account_id, LivePosition.con_id).in_(pairs), LivePosition.position != 0))
+        .scalars()
+        .all()
     )
     con_ids = {p.con_id for p in flex_rows} | {p.con_id for p in live_rows}
     quotes: dict[int, Any] = {}
