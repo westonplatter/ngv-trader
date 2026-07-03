@@ -1,5 +1,50 @@
 # Changelog
 
+## [0.1.4](https://github.com/westonplatter/ngv-trader/compare/ngv-trader-v0.1.3...ngv-trader-v0.1.4) (2026-07-03)
+
+
+### Features
+
+* **intraday:** live TWS overlay for current-state P&L on FlexQuery positions ([#52](https://github.com/westonplatter/ngv-trader/issues/52)) ([d128cbd](https://github.com/westonplatter/ngv-trader/commit/d128cbd09c8de8b62e1126aca5c9b2d111953876))
+* **positions:** associate real-time TWS positions with a trade group (execution-level) ([#53](https://github.com/westonplatter/ngv-trader/issues/53)) ([682d613](https://github.com/westonplatter/ngv-trader/commit/682d613c57f00580877db8fd553e75aa074b4435))
+* **positions:** refine columns and add Trade Group links ([#49](https://github.com/westonplatter/ngv-trader/issues/49)) ([000a975](https://github.com/westonplatter/ngv-trader/commit/000a9751cc0f93dbb2073df9b217f882be11c248))
+* **trade-groups:** per-account P&L, spread-aware capital, correct live marks ([#62](https://github.com/westonplatter/ngv-trader/issues/62)) ([fb9c2f4](https://github.com/westonplatter/ngv-trader/commit/fb9c2f47a34ab13472c207212ff0fcd5aa57aaf0))
+* **tradebot:** OSI semantic layer + trade-group PnL for analyst queries ([#60](https://github.com/westonplatter/ngv-trader/issues/60)) ([6cca0b8](https://github.com/westonplatter/ngv-trader/commit/6cca0b80989cf96446a490c869f4ac924f9994d9))
+* **trades:** add "Sync Since Last Trade" button with dynamic date range ([#33](https://github.com/westonplatter/ngv-trader/issues/33)) ([59b3e16](https://github.com/westonplatter/ngv-trader/commit/59b3e166cb62594c1fd1cca0a150e909bff2c5a2))
+* **trades:** preemptively tag unsettled TWS fills, transition to settled on FlexQuery ([#55](https://github.com/westonplatter/ngv-trader/issues/55)) ([a9fd4f8](https://github.com/westonplatter/ngv-trader/commit/a9fd4f85fc891a7a3e7bda83a1bb46c881de23e8))
+* **trades:** weekly-review refinements ([#44](https://github.com/westonplatter/ngv-trader/issues/44)) ([e03cf65](https://github.com/westonplatter/ngv-trader/commit/e03cf659a4017d5fd1954735e30202aae6347d01))
+* **ui:** add status filter to Trade Groups list ([#50](https://github.com/westonplatter/ngv-trader/issues/50)) ([0d4dce4](https://github.com/westonplatter/ngv-trader/commit/0d4dce40c5628881bf168af791d6e346921601d7))
+* **ui:** demo-data mode with a fetch interceptor for backend-free UI ([#51](https://github.com/westonplatter/ngv-trader/issues/51)) ([92aab3b](https://github.com/westonplatter/ngv-trader/commit/92aab3bc15ca6a93e3f5f4891be9a70cf3d2f82c))
+* **ui:** filter untagged trades ([c53b86f](https://github.com/westonplatter/ngv-trader/commit/c53b86f694f0422c265baca4698f31432adbd148))
+* **ux:** finance number formatting, searchable position tagging, nav lights ([#57](https://github.com/westonplatter/ngv-trader/issues/57)) ([30eab06](https://github.com/westonplatter/ngv-trader/commit/30eab061aae0a84bbec717f16ad7d39feabd6469))
+* **ux:** make trade tagging better ([#32](https://github.com/westonplatter/ngv-trader/issues/32)) ([bd48108](https://github.com/westonplatter/ngv-trader/commit/bd48108aecd8842fa3d5362e6cca6242707ddda4))
+
+
+### Bug Fixes
+
+* **ui:** move Trade Groups + New button to the right above status ([#45](https://github.com/westonplatter/ngv-trader/issues/45)) ([cfea700](https://github.com/westonplatter/ngv-trader/commit/cfea700f12538470abfdab45247eaa25c594f327))
+* **ui:** place Trade Groups + New button above list status badges ([#46](https://github.com/westonplatter/ngv-trader/issues/46)) ([bb5f8ba](https://github.com/westonplatter/ngv-trader/commit/bb5f8ba695f8bd7cd2de87bd8dc03f490de0f984))
+
+
+### Documentation
+
+* add activated-products security master spec ([#48](https://github.com/westonplatter/ngv-trader/issues/48)) ([4ae96e5](https://github.com/westonplatter/ngv-trader/commit/4ae96e55232126323b5b1007d0005f2904a63432))
+* add doc_check.py and streamline doc-review process ([#64](https://github.com/westonplatter/ngv-trader/issues/64)) ([66b1508](https://github.com/westonplatter/ngv-trader/commit/66b1508c239de7361864889194c8254ea980b5c9))
+* add screenshots to README ([#61](https://github.com/westonplatter/ngv-trader/issues/61)) ([a496528](https://github.com/westonplatter/ngv-trader/commit/a49652880fe50ae9c0e4571f2666a747126353c8))
+* Add trades and positions to SSE event streaming ([#36](https://github.com/westonplatter/ngv-trader/issues/36)) ([e1a7b98](https://github.com/westonplatter/ngv-trader/commit/e1a7b9800a0285f1072cf5ce893cbbea5cbc899e))
+* cross-check docs against codebase + UV cooldown policy ([#35](https://github.com/westonplatter/ngv-trader/issues/35)) ([f25ea76](https://github.com/westonplatter/ngv-trader/commit/f25ea761395b285916ed27568039a24278629a71))
+* cross-check docs against codebase, fix stale/missing content ([#63](https://github.com/westonplatter/ngv-trader/issues/63)) ([83b30ee](https://github.com/westonplatter/ngv-trader/commit/83b30eea2eb0f5c858021dd977839804f4337897))
+* document Conventional Commit PR title requirement ([#47](https://github.com/westonplatter/ngv-trader/issues/47)) ([bd2a575](https://github.com/westonplatter/ngv-trader/commit/bd2a5759b48bb2b1b2d168e106eb1e52848d2958))
+* fix broken links, missing pages, and op run guidance ([#34](https://github.com/westonplatter/ngv-trader/issues/34)) ([8e7afba](https://github.com/westonplatter/ngv-trader/commit/8e7afba1f8c940a0ea1114f32b0d980a1f55dd6f))
+* reconcile docs with current codebase, prune shipped specs ([#30](https://github.com/westonplatter/ngv-trader/issues/30)) ([bd78938](https://github.com/westonplatter/ngv-trader/commit/bd7893827ef3e5640d9687169d1102687142484f))
+* Update documentation with corrected line numbers and scope ([#37](https://github.com/westonplatter/ngv-trader/issues/37)) ([1ec1326](https://github.com/westonplatter/ngv-trader/commit/1ec1326e0cc1139a583259dcfbdacde117bf905f))
+
+
+### Miscellaneous Chores
+
+* add SessionStart hook to install deps for Claude Code on the web ([#39](https://github.com/westonplatter/ngv-trader/issues/39)) ([1055d34](https://github.com/westonplatter/ngv-trader/commit/1055d34979c75f1991060803105413186a1f42f4))
+* **db:** merge alembic heads (intraday overlay + activated products) ([2324f20](https://github.com/westonplatter/ngv-trader/commit/2324f20e1579fc3344e980304ca3e3fc280682cd))
+
 ## [0.1.3](https://github.com/westonplatter/ngv-trader/compare/ngv-trader-v0.1.2...ngv-trader-v0.1.3) (2026-06-06)
 
 
