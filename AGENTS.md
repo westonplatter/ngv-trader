@@ -23,6 +23,17 @@ Do NOT make changes beyond what was explicitly requested. Do not proactively rem
 
 ## Database Changes
 
+### Running Migrations
+
+This project uses **Alembic**, driven through the Taskfile. To run migrations, use the task command (which auto-loads `.env.<ENV>`), not raw `alembic`:
+
+- Prod: `task migrate ENV=prod`
+- Dev: `task migrate ENV=dev`
+
+"Run the migrations in prod" means `task migrate ENV=prod`. No `op run` wrapper is needed — the DB URL is built from plain `DB_HOST`/`DB_USER`/`DB_PASSWORD`, not `op://` secrets. Related: `task migrate:down` (downgrade one), `task migrate:new -- "desc"` (autogenerate), `task validate`.
+
+### Snapshots
+
 Before any hard-to-reverse DB change (destructive/data-mutating migration, backfill, prod `downgrade`, bulk delete), take a Postgres snapshot first. See [docs/db-snapshots.md](docs/db-snapshots.md) for the snapshot/verify/restore commands and the recommended flow.
 
 ## Code Validation
