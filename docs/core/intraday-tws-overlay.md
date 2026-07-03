@@ -95,7 +95,7 @@ the responses match prior behavior.
 
 ## UI
 
-Both the TradeGroup view and the Positions page show a **"Refresh Live (TWS)"**
+Both the Tagging page (`/tagging`) and the Positions page show a **"Refresh Live (TWS)"**
 button that enqueues `intraday.sync.tws` and re-fetches after the job runs. Live
 mark / live-unrealized columns and intraday P&L totals render alongside the
 settled values, with a freshness indicator (`live as of HH:MM` when marks are
