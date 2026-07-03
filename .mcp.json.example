@@ -5,7 +5,7 @@
       "args": ["run", "--extra", "mcp", "python", "-m", "src.mcp.semantic_server"],
       "cwd": "/absolute/path/to/ngv-trader",
       "env": {
-        "NGV_SEMANTIC_DATABASE_URL": "postgresql://ngv_analyst:CHANGE_ME@host:5432/ngtrader_prod"
+        "NGV_SEMANTIC_DATABASE_URL": "${NGV_SEMANTIC_DATABASE_URL}"
       }
     }
   }

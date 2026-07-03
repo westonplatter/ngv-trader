@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.1.5](https://github.com/westonplatter/ngv-trader/compare/ngv-trader-v0.1.4...ngv-trader-v0.1.5) (2026-07-03)
+
+
+### Features
+
+* **positions:** default table sort to Symbol ascending ([#67](https://github.com/westonplatter/ngv-trader/issues/67)) ([8df5a77](https://github.com/westonplatter/ngv-trader/commit/8df5a77ec5e4660101df524613e03019027b3fa4))
+
+
+### Bug Fixes
+
+* **metrics:** boot the OSI semantic MCP server + source its DB URL from 1Password ([#69](https://github.com/westonplatter/ngv-trader/issues/69)) ([7d65aee](https://github.com/westonplatter/ngv-trader/commit/7d65aee57dfcb8481b74b08808f106c5e06b7421))
+
+
+### Documentation
+
+* fix stale claims and gaps found in scheduled doc review ([#66](https://github.com/westonplatter/ngv-trader/issues/66)) ([01fde62](https://github.com/westonplatter/ngv-trader/commit/01fde6284ebd1f954b76abb4bbe8d51b6e5458aa))
+
 ## [0.1.4](https://github.com/westonplatter/ngv-trader/compare/ngv-trader-v0.1.3...ngv-trader-v0.1.4) (2026-07-03)
 
 

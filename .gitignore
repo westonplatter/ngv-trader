@@ -136,3 +136,7 @@ cython_debug/
 # local MCP config holds DB connection strings; commit only .mcp.json.example
 .mcp.json
 
+# direnv: pulls secrets from 1Password at shell-enter time; commit only .envrc.example
+.envrc
+!.envrc.example
+

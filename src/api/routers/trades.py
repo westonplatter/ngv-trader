@@ -19,6 +19,7 @@ from src.models import (
     TradeGroupLiveExecution,
 )
 from src.services.cl_contracts import infer_contract_month_from_local_symbol
+from src.services.execution_pnl import execution_realized_pnl as _execution_realized_pnl
 from src.services.jobs import (
     JOB_TYPE_TRADES_SYNC_FLEXQUERY,
     JOB_TYPE_TRADES_SYNC_TWS,
@@ -244,30 +245,6 @@ def _trade_lifecycle_from_execution(raw: dict | None, exec_role: str | None) -> 
                 return normalized
 
     return None
-
-
-def _execution_realized_pnl(raw: dict | None) -> float | None:
-    if not raw:
-        return None
-
-    # TWS shape: raw.commissionReport.realizedPNL (nested)
-    commission_report = raw.get("commissionReport")
-    if isinstance(commission_report, dict):
-        value = commission_report.get("realizedPNL")
-        if value is not None:
-            try:
-                return float(value)
-            except (TypeError, ValueError):
-                pass
-
-    # FlexQuery shape: fifoPnlRealized at top level
-    value = raw.get("fifoPnlRealized")
-    if value is None:
-        return None
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
 
 
 def _trade_realized_pnl_from_executions(executions: list[tuple[dict | None, str | None, bool]]) -> float | None:
@@ -852,14 +829,11 @@ def _unsettled_live_executions(
     ib_exec_ids = [le.ib_exec_id for le in live_rows]
     group_by_exec_id: dict[str, int] = dict(
         db.execute(
-            select(TradeGroupLiveExecution.ib_exec_id, TradeGroupLiveExecution.trade_group_id).where(
-                TradeGroupLiveExecution.ib_exec_id.in_(ib_exec_ids)
-            )
+            select(TradeGroupLiveExecution.ib_exec_id, TradeGroupLiveExecution.trade_group_id).where(TradeGroupLiveExecution.ib_exec_id.in_(ib_exec_ids))
         ).all()
     )
     account_by_id: dict[int, Account] = {
-        a.id: a
-        for a in db.execute(select(Account).where(Account.id.in_({le.account_id for le in live_rows}))).scalars().all()
+        a.id: a for a in db.execute(select(Account).where(Account.id.in_({le.account_id for le in live_rows}))).scalars().all()
     }
 
     items: list[TradeExecutionListItem] = []
@@ -881,6 +855,7 @@ def _unsettled_live_executions(
             TradeExecutionListItem(
                 id=-le.id,  # negative id space so it can't collide with settled rows
                 trade_id=None,
+                con_id=le.con_id,
                 account_id=le.account_id,
                 account_alias=alias,
                 ib_exec_id=le.ib_exec_id,

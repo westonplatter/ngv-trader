@@ -1,0 +1,9 @@
+# Template for .envrc — copy to .envrc (gitignored) and run `direnv allow`.
+# Pulls the semantic MCP server's DB connection string from 1Password at
+# shell-enter time so it never lands in a committed file.
+#
+# Requires: direnv + 1Password CLI (op) signed in to the account holding the item.
+# Create the item first, e.g.:
+#   op item create --category 'Database' --vault ngtrader_pro --title ngv-semantic-mcp \
+#     'database-url=postgresql://ngv_analyst:<pw>@127.0.0.1:5432/ngtrader_pro_prod'
+export NGV_SEMANTIC_DATABASE_URL="$(op read 'op://ngtrader_pro/ngv-semantic-mcp/database-url')"
