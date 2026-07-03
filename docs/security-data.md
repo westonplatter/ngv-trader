@@ -259,7 +259,7 @@ In practice the normal sequence is:
 3. fetch futures-options prices
 4. read the data through futures endpoints or targeted snapshots
 
-`contract_sync.py` also uses `latest_futures` as an input for moneyness-based option filtering.
+`contract_sync.py` defines `_passes_strike_filter()` for moneyness-based option filtering, but it is not currently called anywhere — `sync_futures_chain()` stores the unfiltered chain into `option_chain_meta`.
 
 ## Operational Notes
 

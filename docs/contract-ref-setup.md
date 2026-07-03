@@ -25,9 +25,11 @@ Model: `ContractRef` in `src/models.py` (named `ContractRef` to avoid collision 
 | `contract_month`   | str         | yes        | "2026-04" (derived from expiry, FUT/FOP)                |
 | `contract_expiry`  | str         | yes        | Raw IB `lastTradeDateOrContractMonth` (e.g. "20260420") |
 | `multiplier`       | str         | yes        | "1000" (FUT), "100" (OPT/FOP), null (STK)               |
+| `price_magnifier`  | int         | yes        | IBKR `priceMagnifier`; divisor for quoted price unit (e.g. 100 for grain futures). Treated as 1 when null |
 | `strike`           | float       | yes        | OPT/FOP only                                            |
 | `right`            | str         | yes        | "C" or "P" (OPT/FOP only)                               |
 | `primary_exchange` | str         | yes        | For STK routing                                         |
+| `underlying_con_id`| int         | yes        | IBKR con_id of the underlying, for derivatives           |
 | `is_active`        | bool        | no         | `false` when contract is no longer returned by IB       |
 | `fetched_at`       | timestamptz | no         | When the contract was last synced from IB               |
 | `created_at`       | timestamptz | no         | Row creation time                                       |
@@ -90,7 +92,9 @@ The agent **never imports `ib_async`**. All IB interaction happens in `worker:jo
 | File                                                     | Role                                                                    |
 | -------------------------------------------------------- | ----------------------------------------------------------------------- |
 | `src/models.py`                                          | `ContractRef` model                                                     |
-| `alembic/versions/20260220000000_add_contracts_table.py` | Migration                                                               |
+| `alembic/versions/20260220000000_add_contracts_table.py` | Migration (initial table)                                               |
+| `alembic/versions/20260306090000_add_security_data_tables.py` | Migration (adds `underlying_con_id`)                               |
+| `alembic/versions/20260623232024_add_price_magnifier_to_contracts.py` | Migration (adds `price_magnifier`)                         |
 | `src/services/contract_sync.py`                          | IB -> DB sync logic                                                     |
 | `src/services/cl_contracts.py`                           | Pure utility functions (expiry parsing, month formatting)               |
 | `src/services/jobs.py`                                   | Job type constants                                                      |

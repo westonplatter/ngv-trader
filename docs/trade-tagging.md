@@ -132,9 +132,13 @@ Implemented endpoints:
 5. `DELETE /api/v1/trade-groups/{trade_group_id}`
 6. `POST /api/v1/trade-groups/{trade_group_id}/executions:assign`
 7. `POST /api/v1/trade-groups/{trade_group_id}/executions:unassign`
-8. `POST /api/v1/trade-executions/{execution_id}/trade-group:reassign`
-9. `GET /api/v1/trade-groups/{trade_group_id}/timeline`
-10. `GET /api/v1/trade-groups/{trade_group_id}/executions`
+8. `POST /api/v1/trade-groups/{trade_group_id}/positions:assign`
+9. `POST /api/v1/trade-groups/{trade_group_id}/positions:unassign`
+10. `POST /api/v1/trade-groups/{trade_group_id}/live-executions:assign`
+11. `POST /api/v1/trade-groups/{trade_group_id}/live-executions:unassign`
+12. `POST /api/v1/trade-executions/{execution_id}/trade-group:reassign`
+13. `GET /api/v1/trade-groups/{trade_group_id}/timeline`
+14. `GET /api/v1/trade-groups/{trade_group_id}/executions`
 
 #### `GET /trade-groups`
 
@@ -235,7 +239,15 @@ Current behavior:
 2. assignment writes execution-level membership, not just trade-level labeling
 3. unassignment removes those execution memberships
 
-This makes the trades page the main operational entry point for tagging fills into groups.
+This makes the trades page the main operational entry point for tagging fills into groups. It also supports assigning/unassigning live (intraday TWS) executions via the `live-executions:assign`/`live-executions:unassign` endpoints.
+
+### Positions page assignment
+
+`frontend/src/components/PositionsTable.tsx` supports group assignment and
+unassignment directly from the Positions page, via the
+`positions:assign`/`positions:unassign` endpoints (see
+[core/intraday-tws-overlay.md](core/intraday-tws-overlay.md) for how live
+positions are computed).
 
 ### Tagging workspace
 
@@ -296,4 +308,5 @@ Typical live workflow:
 2. `src/api/routers/trade_groups.py`
 3. `src/api/routers/tags.py`
 4. `frontend/src/components/TradesTable.tsx`
-5. `frontend/src/components/TradeTaggingPage.tsx`
+5. `frontend/src/components/PositionsTable.tsx`
+6. `frontend/src/components/TradeTaggingPage.tsx`

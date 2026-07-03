@@ -39,6 +39,9 @@ Avoid:
 ```md
 # Spec: <Short Feature Name>
 
+> **Status: PROPOSED — not implemented (as of <date>).** <One-line summary;
+> update in place as the spec moves to PARTIAL / IMPLEMENTED.>
+
 ## Complexity: <1-5>
 
 <Rate the implementation complexity from 1 (trivial config/dependency changes, no app code) to 5 (cross-cutting architectural change touching many systems). This helps prioritize and set expectations.>
