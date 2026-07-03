@@ -116,10 +116,14 @@ Read API (`src/api/routers/trades.py`):
 - `GET /api/v1/trades`
 - `GET /api/v1/trades/{trade_id}`
 - `GET /api/v1/trades/{trade_id}/executions`
+- `GET /api/v1/trade-executions` — flat, filterable execution list across trades
+  (also surfaces unsettled live TWS fills; see [core/intraday-tws-overlay.md](core/intraday-tws-overlay.md)).
 - `POST /api/v1/trades/sync/flex-query` — accepts a fixed lookback (`days`),
   an explicit `start_date`/`end_date`, or `since_last_trade: true` (derives the
   window from the latest execution date across all accounts through the
   previous business day; the response echoes the computed `start_date`/`end_date`).
+- `POST /api/v1/trades/sync/tws` — enqueues `trades.sync.tws`, which has no
+  registered handler (see "dormant, unregistered" above); the job stays queued.
 
 Responses expose `data_source`, `flex_transaction_id`, `sec_type`, `exec_role`.
 Realized PnL is currently computed on read from `raw` (see

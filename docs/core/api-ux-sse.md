@@ -52,7 +52,7 @@ Both transports terminate in worker code that commits to PostgreSQL and then pub
 | Source                                                      | How it publishes                                                                | When                                           |
 | ----------------------------------------------------------- | ------------------------------------------------------------------------------- | ---------------------------------------------- |
 | **API endpoints** (create job, archive job, cancel order)   | Direct call to `broadcaster.publish()` in the same process, after `db.commit()` | Immediately after the mutation                 |
-| **Workers** (job state transitions, order sync, heartbeats) | HTTP POST to `/api/v1/events/notify-job` or `/api/v1/events/notify-order`       | After `session.commit()` in the worker process |
+| **Workers** (job state transitions, heartbeats) | HTTP POST to `/api/v1/events/notify-job`, `/api/v1/events/notify-worker-status`, `/api/v1/events/notify-trades`, or `/api/v1/events/notify-positions` | After `session.commit()` in the worker process |
 
 Workers run in a separate process from the API, so they cannot access the in-memory broadcaster directly. The notify endpoints bridge this gap.
 
@@ -145,14 +145,16 @@ All events use a consistent envelope:
 | `job.updated`      | `jobs`          | Worker completes a job (running → completed)    | `scripts/work_jobs.py` via notify             | `JobResponse`         |
 | `job.updated`      | `jobs`          | Worker fails a job (running → failed/queued)    | `scripts/work_jobs.py` via notify             | `JobResponse`         |
 | `job.archived`     | `jobs`          | `POST /api/v1/jobs/{id}/archive`                | `src/api/routers/jobs.py`                     | `JobResponse`         |
-| `order.created`    | `orders`        | TWS broker sync discovers a new order           | `src/services/order_sync_tws.py`              | `OrderResponse`       |
-| `order.updated`    | `orders`        | TWS broker sync updates an existing order       | `src/services/order_sync_tws.py`              | `OrderResponse`       |
+| `order.created`    | `orders`        | TWS broker sync discovers a new order           | `src/services/order_sync_tws.py` (calls `broadcaster.publish()` directly — see note below) | `OrderResponse` |
+| `order.updated`    | `orders`        | TWS broker sync updates an existing order       | `src/services/order_sync_tws.py` (calls `broadcaster.publish()` directly — see note below) | `OrderResponse` |
 | `order.cancelled`  | `orders`        | `POST /api/v1/orders/{id}/cancel`               | `src/api/routers/orders.py`                   | `OrderResponse`       |
 | `worker.heartbeat`  | `worker_status` | Worker heartbeat upsert (every poll cycle)                      | `src/services/worker_heartbeat.py` via notify | `WorkerStatusPayload` |
 | `trades.changed`    | `trades`        | `trades.sync.flexquery` job completes                           | `scripts/work_jobs.py` via notify             | `{}` (coarse hint)    |
 | `positions.changed` | `positions`     | `positions.sync.flexquery` job completes                        | `scripts/work_jobs.py` via notify             | `{}` (coarse hint)    |
 
 **Notify path**: Events marked "via notify" originate in the worker process. After committing to Postgres, the worker POSTs to a notification endpoint on the API (`/events/notify-job` or `/events/notify-worker-status`). The API reads the committed row, builds the response DTO, and publishes to the in-memory broadcaster. Events without "via notify" are published directly by the API process after its own `db.commit()`.
+
+**Order sync events are currently broken in practice**: `order_sync_tws.py` runs inside the `worker:jobs` process (via `handle_order_fetch_sync`), not the API process, so its direct `broadcaster.publish()` call writes to a broadcaster instance with no SSE subscribers. Nothing in the codebase calls `POST /api/v1/events/notify-order` — the endpoint exists but is never invoked. `order.created`/`order.updated` events do not currently reach the browser; the UI catches up via the next REST fetch instead.
 
 ## Frontend Integration
 

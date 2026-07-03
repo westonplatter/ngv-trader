@@ -116,7 +116,7 @@ To resolve `op://` references, wrap scripts that don't use the task runner direc
 op run --env-file=.env.dev -- uv run python scripts/setup_db.py --env dev
 ```
 
-`op run` resolves the references and injects the real values as environment variables before the inner command starts. All `task` commands (e.g. `task api`, `task worker:jobs`) already embed `op run` internally — run them directly.
+`op run` resolves the references and injects the real values as environment variables before the inner command starts. Only `task api`, `task worker:jobs`, and `task worker:orders` embed `op run` internally — run those directly. `task migrate`, `task migrate:down`, `task migrate:new`, and `task validate` load `.env.<ENV>` themselves but do not wrap `op run`, so prefix them with `op run --env-file=.env.dev -- ...` if your env file has `op://` references. `task frontend` and `task frontend:install` don't read `.env.dev`/`.env.prod` at all.
 
 See [secrets-using-1password.md](secrets-using-1password.md) for details.
 

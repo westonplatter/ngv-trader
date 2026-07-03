@@ -17,7 +17,7 @@ For example:
 DB_HOST=127.0.0.1
 
 # 1Password reference — resolved at runtime by `op run`
-DB_PASSWORD=op://ngtr8der_dev/database/password
+DB_PASSWORD=op://ngtrader_dev/database/password
 ```
 
 When you run a command with `op run --env-file=<file>`, the 1Password CLI:
@@ -43,7 +43,7 @@ op run --env-file=.env.dev -- uv run python scripts/setup_db.py --env dev
 op run --env-file=.env.prod -- uv run python scripts/setup_db.py --env prod
 ```
 
-Task commands (`task api`, `task worker:jobs`, etc.) already embed `op run` internally — run them directly without wrapping.
+Only `task api`, `task worker:jobs`, and `task worker:orders` embed `op run` internally — run those directly without wrapping. `task migrate`, `task migrate:down`, `task migrate:new`, and `task validate` load the env file themselves but do not wrap `op run`, so prefix them with `op run --env-file=.env.dev -- ...` if the env file has `op://` references.
 
 ### Running without 1Password (plain dotenv only)
 

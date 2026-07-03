@@ -25,7 +25,7 @@ TWS-style label an operator can read at a glance.
 
 ```python
 def contract_display_name(
-    symbol, sec_type, *,
+    symbol, sec_type,
     local_symbol=None, right=None, strike=None,
     contract_expiry=None, contract_month=None,
     exchange=None, trading_class=None,
@@ -80,7 +80,7 @@ if the local symbol pattern doesn't match.
 
 ## Where Display Names Are Built
 
-### Positions (`src/api/routers/positions.py:115`)
+### Positions (`src/api/routers/positions.py:208`)
 
 Uses `contract_display_name()` with full field set from the `Position` model:
 
@@ -135,32 +135,31 @@ Uses `contract_display_name()` with fields from `WatchListInstrument`:
 `watch_list_instruments.contract_expiry`,
 `watch_list_instruments.exchange`, `watch_list_instruments.trading_class`
 
-### Trade Executions (`src/api/routers/trades.py:111`)
+### Trade Executions (`src/api/routers/trades.py:119`)
 
 Uses a separate method `_contract_display_from_raw()` because
 `trade_executions` does not have contract columns — the contract info is
-stored in the `raw` JSON field.
+read from the `raw` JSON field, enriched with a `ContractRef` looked up via
+`con_id` when the raw payload is missing a field (strike, right, trading
+class, expiry).
 
 **Method:** `_contract_display_from_raw()`
-**Location:** `src/api/routers/trades.py:111`
+**Location:** `src/api/routers/trades.py:119`
 
 ```python
-def _contract_display_from_raw(raw: dict | None) -> str | None:
-    contract = raw.get("contract")
-    local_symbol = contract.get("localSymbol")
-    sec_type = contract.get("secType")
-    symbol = contract.get("symbol")
-    # BAG → "CL Combo"
-    # Otherwise → localSymbol (e.g. "CLU6") or symbol fallback
+def _contract_display_from_raw(
+    raw: dict | None,
+    contract_ref: ContractRef | None = None,
+) -> str | None:
+    # Reads symbol/sec_type/local_symbol/right/strike/trading_class/
+    # contract_expiry from raw["contract"], falling back to contract_ref
+    # fields (and to parsing the local_symbol) for anything raw is missing,
+    # then calls contract_display_name() with the merged fields.
 ```
 
-**Data source:** `trade_executions.raw` → `raw["contract"]["localSymbol"]`,
-`raw["contract"]["secType"]`, `raw["contract"]["symbol"]`
-
-This method uses IBKR's `localSymbol` directly rather than building a
-display name from components, because `trade_executions` does not persist
-the individual contract fields (`strike`, `right`, `trading_class`,
-`contract_expiry`) as columns.
+**Data source:** `trade_executions.raw` (`raw["contract"]["localSymbol"]`,
+`raw["contract"]["secType"]`, `raw["contract"]["symbol"]`, etc.), joined
+with `contracts` via `con_id` for richer fallback fields.
 
 ## DB Fields That Drive Display Names
 
@@ -179,12 +178,12 @@ the individual contract fields (`strike`, `right`, `trading_class`,
 | `watch_list_instruments` | Same as positions                             | Same IBKR sources                       | Same purposes        |
 | `trade_executions`       | `raw` (jsonb)                                 | Full fill object serialized             | localSymbol extract  |
 
-## Gap: Trade Executions
+## Trade Executions: `contracts` Join
 
-The trades router still derives execution display names from the `raw` JSON via
-`_contract_display_from_raw()`, which limits formatting to whatever IBKR puts in
-`localSymbol`. `trade_executions` now persists `sec_type` and `con_id` columns
-(see [trades-and-executions-sync.md](trades-and-executions-sync.md)), so the read
-path *could* join `con_id` → `contracts` and use the full
-`contract_display_name()` for richer per-leg labels — but that wiring is not done
-yet.
+`trade_executions` still does not persist `strike`/`right`/`trading_class`/
+`contract_expiry` as its own columns, but `_contract_display_from_raw()`
+joins `con_id` → `contracts` (see
+[trades-and-executions-sync.md](trades-and-executions-sync.md)) and falls back
+to the resulting `ContractRef` fields whenever the `raw` JSON payload is
+missing them, so labels are no longer limited to whatever IBKR put in
+`localSymbol`.
