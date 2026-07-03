@@ -21,11 +21,11 @@ TWS-style label an operator can read at a glance.
 
 ## Primary Method: `contract_display_name()`
 
-**Location:** `src/utils/contract_display.py:53`
+**Location:** `src/utils/contract_display.py`
 
 ```python
 def contract_display_name(
-    symbol, sec_type,
+    symbol, sec_type, *,
     local_symbol=None, right=None, strike=None,
     contract_expiry=None, contract_month=None,
     exchange=None, trading_class=None,
@@ -60,11 +60,11 @@ def contract_display_name(
 
 ### Internal helpers
 
-| Helper                            | Location                           | Purpose                           |
-| --------------------------------- | ---------------------------------- | --------------------------------- |
-| `_format_expiry_month_year()`     | `src/utils/contract_display.py:10` | `"20260915"` → `"Sep'26"`         |
-| `_format_expiry_day_month_year()` | `src/utils/contract_display.py:31` | `"20260227"` → `"Feb27'26"`       |
-| `_format_right()`                 | `src/utils/contract_display.py:44` | `"C"` → `"CALL"`, `"P"` → `"PUT"` |
+| Helper                            | Location                          | Purpose                           |
+| --------------------------------- | --------------------------------- | --------------------------------- |
+| `_format_expiry_month_year()`     | `src/utils/contract_display.py`   | `"20260915"` → `"Sep'26"`         |
+| `_format_expiry_day_month_year()` | `src/utils/contract_display.py`   | `"20260227"` → `"Feb27'26"`       |
+| `_format_right()`                 | `src/utils/contract_display.py`   | `"C"` → `"CALL"`, `"P"` → `"PUT"` |
 
 ### Contract month inference
 
@@ -80,7 +80,7 @@ if the local symbol pattern doesn't match.
 
 ## Where Display Names Are Built
 
-### Positions (`src/api/routers/positions.py:208`)
+### Positions (`src/api/routers/positions.py`)
 
 Uses `contract_display_name()` with full field set from the `Position` model:
 
@@ -102,7 +102,7 @@ display_name = contract_display_name(
 `positions.local_symbol`, `positions.right`, `positions.strike`,
 `positions.last_trade_date`, `positions.exchange`, `positions.trading_class`
 
-### Orders (`src/api/routers/orders.py:186`)
+### Orders (`src/api/routers/orders.py`)
 
 Uses `contract_display_name()` with fields from the `Order` model,
 supplemented by contract ref lookups when available:
@@ -125,7 +125,7 @@ contract_display_name(
 `orders.local_symbol`, `orders.contract_expiry`, `orders.trading_class`,
 `orders.exchange`, plus `contracts.*` via con_id join for richer metadata.
 
-### Watch Lists (`src/api/routers/watch_lists.py:152`)
+### Watch Lists (`src/api/routers/watch_lists.py`)
 
 Uses `contract_display_name()` with fields from `WatchListInstrument`:
 
@@ -135,7 +135,7 @@ Uses `contract_display_name()` with fields from `WatchListInstrument`:
 `watch_list_instruments.contract_expiry`,
 `watch_list_instruments.exchange`, `watch_list_instruments.trading_class`
 
-### Trade Executions (`src/api/routers/trades.py:119`)
+### Trade Executions (`src/api/routers/trades.py`)
 
 Uses a separate method `_contract_display_from_raw()` because
 `trade_executions` does not have contract columns — the contract info is
@@ -143,8 +143,7 @@ read from the `raw` JSON field, enriched with a `ContractRef` looked up via
 `con_id` when the raw payload is missing a field (strike, right, trading
 class, expiry).
 
-**Method:** `_contract_display_from_raw()`
-**Location:** `src/api/routers/trades.py:119`
+**Method:** `_contract_display_from_raw()` in `src/api/routers/trades.py`
 
 ```python
 def _contract_display_from_raw(
@@ -178,12 +177,12 @@ with `contracts` via `con_id` for richer fallback fields.
 | `watch_list_instruments` | Same as positions                             | Same IBKR sources                       | Same purposes        |
 | `trade_executions`       | `raw` (jsonb)                                 | Full fill object serialized             | localSymbol extract  |
 
-## Trade Executions: `contracts` Join
+## Gap: Trade Executions
 
-`trade_executions` still does not persist `strike`/`right`/`trading_class`/
-`contract_expiry` as its own columns, but `_contract_display_from_raw()`
-joins `con_id` → `contracts` (see
-[trades-and-executions-sync.md](trades-and-executions-sync.md)) and falls back
-to the resulting `ContractRef` fields whenever the `raw` JSON payload is
-missing them, so labels are no longer limited to whatever IBKR put in
-`localSymbol`.
+The trades router still derives execution display names from the `raw` JSON via
+`_contract_display_from_raw()`, which limits formatting to whatever IBKR puts in
+`localSymbol`. `trade_executions` now persists `sec_type` and `con_id` columns
+(see [trades-and-executions-sync.md](trades-and-executions-sync.md)), so the read
+path *could* join `con_id` → `contracts` and use the full
+`contract_display_name()` for richer per-leg labels — but that wiring is not done
+yet.
