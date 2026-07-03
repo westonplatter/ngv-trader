@@ -62,7 +62,7 @@ Workers run in a separate process from the API, so they cannot access the in-mem
 
 `GET /api/v1/events/stream?topics=jobs,orders,worker_status,trades,positions`
 
-One multiplexed endpoint serves all topics. The browser opens a single `EventSource` connection per tab. FastAPI handles keepalive pings (every 15s), `Cache-Control: no-cache`, and `X-Accel-Buffering: no` automatically.
+One multiplexed endpoint serves all topics. The browser opens a single `EventSource` connection per tab. FastAPI's `EventSourceResponse` sends a keepalive ping every 15s automatically; the route does not set `Cache-Control` or `X-Accel-Buffering` headers, so a reverse proxy in front of the API may need those configured separately to avoid buffering the stream.
 
 ### In-memory broadcaster (`src/services/ui_events.py`)
 

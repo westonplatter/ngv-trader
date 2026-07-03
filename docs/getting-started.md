@@ -94,6 +94,10 @@ BROKER_TWS_PORT=7497
 # CL futures near-expiry safety window (days)
 BROKER_CL_MIN_DAYS_TO_EXPIRY=7
 
+# IBKR Flex Query credentials (JSON string with account flex_token and query IDs)
+# Required for trades/positions FlexQuery sync — see workers.md
+# IB_JSON={"accounts": [{"flex_token": "your_flex_token_here", "daily": 123456, "annual": 234567, "weekly": 345678}]}
+
 # Tradebot LLM (optional — needed only for the chat feature)
 # TRADEBOT_LLM_API_KEY=sk-...
 # TRADEBOT_LLM_MODEL=gpt-5-mini
@@ -232,7 +236,7 @@ Workers are background processes that sync data with IBKR. Run in its own termin
 task worker:jobs
 ```
 
-Workers require TWS/Gateway to be running. The UI header shows worker health lights (green/yellow/red) based on heartbeat freshness.
+TWS/Gateway is only required for contract-metadata sync and watchlist quotes; FlexQuery trade/position sync (the active sync path) works without it as long as `IB_JSON` is set. The UI header shows worker health lights (green/yellow/red) based on heartbeat freshness.
 
 See [workers.md](workers.md) for worker architecture details.
 
