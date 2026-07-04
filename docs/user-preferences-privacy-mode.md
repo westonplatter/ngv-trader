@@ -2,7 +2,7 @@
 
 ## Overview
 
-A generic key-value user preferences system backed by a `user_preferences` table. The first preference built on top of it is **privacy mode**, which masks sensitive numeric values in the frontend.
+A generic key-value user preferences system backed by a `user_preferences` table. The first preference built on top of it is **privacy mode**, which hides sensitive numeric values in the frontend so holdings, trades, and strategies can be shown to others — revealing only *what* is held (contract types) and *relative* performance, never dollar amounts or position sizes.
 
 ## Backend
 
@@ -18,5 +18,10 @@ A generic key-value user preferences system backed by a `user_preferences` table
 
 - **Context**: `PrivacyContext` (`frontend/src/contexts/PrivacyContext.tsx`) provides `privacyMode` (boolean) and `togglePrivacy()` to the component tree via `PrivacyProvider`.
 - **Toggle**: A button in the top nav bar reads the `privacy_mode` preference on load and persists changes via `PUT`.
-- **Masking**: When enabled, sensitive fields (quantities, perm IDs, exec IDs, position sizes) are replaced with `"•••"` (`PRIVACY_MASK` from `frontend/src/utils/privacy.ts`).
+- **Masking**: When enabled, sensitive fields are replaced with `"•••"` (`PRIVACY_MASK` from `frontend/src/utils/privacy.ts`):
+  - **Dollar amounts** — avg cost, mark / live mark price, position value, trade execution price, order limit price, order avg fill price.
+  - **Quantities** — position size, trade/order quantity, filled quantity.
+  - **Identifiers** — perm IDs, exec IDs.
+- **Relative returns**: P&L is *not* masked — it is re-expressed as a percentage return (`formatRelativeReturn` in `privacy.ts`): `P&L ÷ |cost basis|`. Positions derive cost basis as `position_value − fifo_pnl_unrealized`, so no dollar figure leaks; the Unrealized / Live PnL header totals use the aggregate basis. Where a reliable per-row basis isn't available (e.g. individual trade executions), the P&L stays masked rather than showing a misleading percentage.
+- **Kept visible**: position *type* fields — symbol, sec type, contract, side, call/put, strike, expiry — since they describe the position, not its size or value.
 - **Affected components**: `OrdersTable`, `OrdersSideTable`, `TradesTable`, `PositionsTable`.
