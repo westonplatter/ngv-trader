@@ -90,8 +90,11 @@ the responses match prior behavior.
   `(account_id, con_id)` pairs. Adds per-position `source` / `mark` / `mark_ts` /
   `live_unrealized` and top-level `intraday_unrealized_pnl` /
   `intraday_realized_pnl` / `intraday_total_pnl` / `marks_as_of`.
-- `GET /positions` — portfolio-wide overlay reusing the same helper; live qty/
-  cost/mark preferred, opened-today positions surfaced as additional rows.
+- `GET /positions` — portfolio-wide overlay with its own inline merge (not the
+  `merge_positions()` helper); live qty/cost/mark preferred, opened-today
+  positions surfaced as additional rows. Unlike `merge_positions()`, it has no
+  equivalent net-closed check, so a position that closed out intraday can
+  still surface a stale settled-only row.
 
 ## UI
 

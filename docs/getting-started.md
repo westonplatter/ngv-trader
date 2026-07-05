@@ -38,7 +38,7 @@ Install these before proceeding:
 | Bun                    | 1.0+     | [bun.sh](https://bun.sh/)                                                           |
 | PostgreSQL             | 14+      | [postgresql.org](https://www.postgresql.org/download/) or `brew install postgresql` |
 | Task                   | latest   | [taskfile.dev](https://taskfile.dev/docs/installation)                              |
-| 1Password CLI (`op`)   | latest   | [developer.1password.com](https://developer.1password.com/docs/cli/get-started/) — required; all `task` commands embed `op run` |
+| 1Password CLI (`op`)   | latest   | [developer.1password.com](https://developer.1password.com/docs/cli/get-started/) — required for `task api`/`worker:jobs`/`worker:orders`; other tasks load the env file directly |
 | IBKR TWS or IB Gateway | optional | [interactivebrokers.com](https://www.interactivebrokers.com/en/trading/tws.php)     |
 
 ## 1. Clone and Install Dependencies

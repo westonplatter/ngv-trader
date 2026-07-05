@@ -5,8 +5,9 @@ data-mutating migrations, backfills, `alembic downgrade` on prod, or bulk
 deletes. Additive-only migrations (new tables/columns, nullable) generally don't
 need one, but snapshot anyway when unsure — it's cheap.
 
-`ENV=prod` (working DB `ngtrader_prod`) is the default working environment.
-A separate dev DB (`ngtrader_dev`) also exists per
+Day-to-day work happens against `ENV=prod` (working DB `ngtrader_prod`), though
+the tooling itself defaults `ENV` to `dev` — pass `ENV=prod` explicitly to
+target prod. A separate dev DB (`ngtrader_dev`) also exists per
 [getting-started.md](getting-started.md); pass `ENV=dev` and adjust `DB_NAME`
 below to snapshot dev instead. Connection vars (`DB_HOST/PORT/USER/PASSWORD/NAME`)
 resolve from `op://` references, so every command runs under `op run`.
