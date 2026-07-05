@@ -4,7 +4,7 @@
 
 The `contracts` table acts as a local cache of IB contract details (a "SecRef" or security reference). It stores qualified contract metadata so that the tradebot agent and other services can look up contracts from the database without connecting to IBKR directly.
 
-This enforces the **agent-IB boundary**: the LLM agent reads contracts from DB and enqueues jobs; only workers talk to IBKR.
+This enforces the **agent-IB boundary** for the common case: the LLM agent reads contracts from DB and enqueues jobs; only workers talk to IBKR. The one exception is `lookup_contract`'s synchronous fallback — see "How the Agent Uses Contracts" below.
 
 ## Table: `contracts`
 
@@ -82,10 +82,16 @@ ENV=dev task worker:jobs
 ## How the Agent Uses Contracts
 
 1. User asks for contract info (for example front month or available expiries).
-2. Agent calls `lookup_contract` to read active contracts from the `contracts` table.
+2. Agent calls `lookup_contract`, which reads active contracts from the `contracts`
+   table via `find_contracts_with_fallback()` (`src/services/contract_lookup.py`).
+   If the DB has no matching rows, that function calls `_fetch_from_ibkr()`, which
+   connects to TWS/Gateway synchronously and calls `sync_contracts()` mid-turn —
+   this is a live IBKR fetch, not a queued job.
 3. If the user asks to track an instrument, agent can enqueue `watchlist.add_instrument` with resolved contract data.
 
-The agent **never imports `ib_async`**. All IB interaction happens in `worker:jobs`.
+`src/services/tradebot_agent.py` itself never imports `ib_async`, but `lookup_contract`
+can trigger a synchronous IBKR connection one call deeper via `contract_lookup.py`'s
+fallback. Everything else (positions/trades/orders sync) goes through `worker:jobs`.
 
 ## Key Files
 
@@ -95,6 +101,7 @@ The agent **never imports `ib_async`**. All IB interaction happens in `worker:jo
 | `alembic/versions/20260220000000_add_contracts_table.py` | Migration (initial table)                                               |
 | `alembic/versions/20260306090000_add_security_data_tables.py` | Migration (adds `underlying_con_id`)                               |
 | `alembic/versions/20260623232024_add_price_magnifier_to_contracts.py` | Migration (adds `price_magnifier`)                         |
+| `alembic/versions/20260625083438_backfill_price_magnifier_for_cents_.py` | Migration (backfills `price_magnifier=100` for cents-quoted roots) |
 | `src/services/contract_sync.py`                          | IB -> DB sync logic                                                     |
 | `src/services/cl_contracts.py`                           | Pure utility functions (expiry parsing, month formatting)               |
 | `src/services/jobs.py`                                   | Job type constants                                                      |

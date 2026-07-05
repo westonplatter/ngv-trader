@@ -1,7 +1,7 @@
 ---
 title: "refactor: Make Flex Query the only active sync path; rename TWS vs Flex symbols/routes explicitly"
 type: refactor
-status: active
+status: shipped
 created: 2026-05-13
 ---
 

@@ -44,8 +44,8 @@ function PrivacyToggle() {
       }`}
       title={
         privacyMode
-          ? "Privacy mode ON — quantities hidden"
-          : "Privacy mode OFF — quantities visible"
+          ? "Privacy mode ON — dollar amounts & quantities hidden; P&L shown as % return"
+          : "Privacy mode OFF — dollar amounts & quantities visible"
       }
     >
       <span>{privacyMode ? "🙈" : "👁"}</span>

@@ -2,7 +2,7 @@ import type React from "react";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { usePrivacy } from "../contexts/PrivacyContext";
-import { PRIVACY_MASK } from "../utils/privacy";
+import { PRIVACY_MASK, formatRelativeReturn } from "../utils/privacy";
 import { API_BASE_URL } from "../config";
 import { useSSE } from "../lib/events";
 import { formatMoney, formatMultiplier, formatStrike } from "../utils/number";
@@ -77,6 +77,16 @@ function expiryForPosition(pos: Position): string {
     return formatExpiry(pos.last_trade_date);
   }
   return formatExpiry(pos.option_expiry_date ?? pos.last_trade_date);
+}
+
+// Entry cost basis for a position, derived as current value − unrealized gain.
+// Used only for privacy-mode relative returns; null when either input is
+// missing so the caller can fall back to masking.
+function positionCostBasis(pos: Position): number | null {
+  if (pos.position_value == null || pos.fifo_pnl_unrealized == null) {
+    return null;
+  }
+  return pos.position_value - pos.fifo_pnl_unrealized;
 }
 
 const COLUMNS: { key: keyof Position; label: string }[] = [
@@ -255,6 +265,21 @@ export default function PositionsTable() {
         p.source === "live" ? p.live_unrealized : p.fifo_pnl_unrealized;
       if (val != null) {
         total += val;
+        any = true;
+      }
+    }
+    return any ? total : null;
+  }, [sortedPositions]);
+
+  // Aggregate cost basis (entry cost) for privacy-mode relative returns.
+  // basis = current value − unrealized gain, so no dollar figure is exposed —
+  // only the ratio total_pnl / total_basis is shown.
+  const totalCostBasis = useMemo(() => {
+    let total = 0;
+    let any = false;
+    for (const p of sortedPositions) {
+      if (p.position_value != null && p.fifo_pnl_unrealized != null) {
+        total += p.position_value - p.fifo_pnl_unrealized;
         any = true;
       }
     }
@@ -478,7 +503,7 @@ export default function PositionsTable() {
               }
             >
               {privacyMode
-                ? PRIVACY_MASK
+                ? formatRelativeReturn(totalUnrealizedPnl, totalCostBasis)
                 : totalUnrealizedPnl == null
                   ? "—"
                   : totalUnrealizedPnl.toLocaleString(undefined, {
@@ -499,7 +524,7 @@ export default function PositionsTable() {
               }
             >
               {privacyMode
-                ? PRIVACY_MASK
+                ? formatRelativeReturn(totalLiveUnrealized, totalCostBasis)
                 : totalLiveUnrealized == null
                   ? "—"
                   : totalLiveUnrealized.toLocaleString(undefined, {
@@ -805,36 +830,50 @@ export default function PositionsTable() {
                   } else if (col.key === "multiplier") {
                     content = formatMultiplier(pos.multiplier);
                   } else if (col.key === "avg_cost") {
-                    content = formatMoney(pos.avg_cost);
+                    content = privacyMode
+                      ? PRIVACY_MASK
+                      : formatMoney(pos.avg_cost);
                   } else if (col.key === "mark_price") {
-                    content = renderNumeric(pos.mark_price);
+                    content = privacyMode
+                      ? PRIVACY_MASK
+                      : renderNumeric(pos.mark_price);
                   } else if (col.key === "position_value") {
-                    content = renderNumeric(pos.position_value);
+                    content = privacyMode
+                      ? PRIVACY_MASK
+                      : renderNumeric(pos.position_value);
                   } else if (col.key === "fifo_pnl_unrealized") {
+                    if (pos.fifo_pnl_unrealized != null) {
+                      extraClass =
+                        pos.fifo_pnl_unrealized >= 0
+                          ? "text-emerald-700 font-medium"
+                          : "text-red-700 font-medium";
+                    }
                     if (privacyMode) {
-                      content = PRIVACY_MASK;
+                      content = formatRelativeReturn(
+                        pos.fifo_pnl_unrealized,
+                        positionCostBasis(pos),
+                      );
                     } else {
                       content = renderNumeric(pos.fifo_pnl_unrealized);
-                      if (pos.fifo_pnl_unrealized != null) {
-                        extraClass =
-                          pos.fifo_pnl_unrealized >= 0
-                            ? "text-emerald-700 font-medium"
-                            : "text-red-700 font-medium";
-                      }
                     }
                   } else if (col.key === "mark") {
-                    content = renderNumeric(pos.mark);
+                    content = privacyMode
+                      ? PRIVACY_MASK
+                      : renderNumeric(pos.mark);
                   } else if (col.key === "live_unrealized") {
+                    if (pos.live_unrealized != null) {
+                      extraClass =
+                        pos.live_unrealized >= 0
+                          ? "text-emerald-700 font-medium"
+                          : "text-red-700 font-medium";
+                    }
                     if (privacyMode) {
-                      content = PRIVACY_MASK;
+                      content = formatRelativeReturn(
+                        pos.live_unrealized,
+                        positionCostBasis(pos),
+                      );
                     } else {
                       content = renderNumeric(pos.live_unrealized);
-                      if (pos.live_unrealized != null) {
-                        extraClass =
-                          pos.live_unrealized >= 0
-                            ? "text-emerald-700 font-medium"
-                            : "text-red-700 font-medium";
-                      }
                     }
                   } else if (col.key === "source") {
                     if (pos.source === "live") {
