@@ -432,7 +432,7 @@ export default function OrdersTable() {
                   {order.tif}
                 </td>
                 <td className="px-3 py-2 whitespace-nowrap text-gray-700">
-                  {order.limit_price ?? "—"}
+                  {privacyMode ? PRIVACY_MASK : (order.limit_price ?? "—")}
                 </td>
                 <td className="px-3 py-2 whitespace-nowrap text-gray-700">
                   <div>{order.contract_display_name}</div>

@@ -177,7 +177,11 @@ export default function OrdersSideTable() {
                 <td className="px-2 py-1">
                   <span
                     className={`rounded px-1.5 py-0.5 ${STATUS_CLASS[order.status] ?? "text-gray-700 bg-gray-100"}`}
-                    title={`filled ${order.filled_quantity} avg ${order.avg_fill_price ?? "n/a"}`}
+                    title={
+                      privacyMode
+                        ? `filled ${PRIVACY_MASK} avg ${PRIVACY_MASK}`
+                        : `filled ${order.filled_quantity} avg ${order.avg_fill_price ?? "n/a"}`
+                    }
                   >
                     {order.status}
                   </span>

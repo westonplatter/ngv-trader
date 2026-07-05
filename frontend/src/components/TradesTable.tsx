@@ -922,7 +922,7 @@ export default function TradesTable() {
                     {privacyMode ? PRIVACY_MASK : row.quantity}
                   </td>
                   <td className="whitespace-nowrap px-3 py-2 text-gray-700">
-                    {formatMoney(row.price, "-")}
+                    {privacyMode ? PRIVACY_MASK : formatMoney(row.price, "-")}
                   </td>
                   <td className="whitespace-nowrap px-3 py-2 text-gray-700">
                     {privacyMode
