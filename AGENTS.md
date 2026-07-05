@@ -23,6 +23,16 @@ Do NOT make changes beyond what was explicitly requested. Do not proactively rem
 
 ## Database Changes
 
+### No ad-hoc DB changes — migrations only
+
+**Every change to database state (schema, views, indexes, constraints, seed/backfill
+data) MUST go through an Alembic migration.** Never apply DDL or data changes to a
+database directly — no `psql`/`CREATE`/`ALTER`/`DROP`/`UPDATE` run by hand, no
+`CREATE TEMP VIEW` to "just check" against a real DB, no ORM one-off scripts that
+mutate. This includes the semantic-layer `v_*` views. Migrations are the only
+reviewable, reversible, reproducible record of DB state. Read-only `SELECT`s for
+inspecting data are fine; anything that writes or defines structure is a migration.
+
 ### Running Migrations
 
 This project uses **Alembic**, driven through the Taskfile. To run migrations, use the task command (which auto-loads `.env.<ENV>`), not raw `alembic`:

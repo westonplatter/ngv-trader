@@ -13,44 +13,45 @@ banner at the top.
 
 ## Architecture & subsystems (current state)
 
-| Doc                                                                  | What it covers                                                                                                          |
-| -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| [workers.md](workers.md)                                             | `worker:jobs` handler map and `worker:orders` (submission disabled); heartbeats and health                              |
-| [trades-and-executions-sync.md](trades-and-executions-sync.md)       | Trade/position ingestion via FlexQuery (TWS dormant), spread/combo detection, corrections, idempotency, `flex_sync_log` |
-| [security-data.md](security-data.md)                                 | Market-data tables (`latest_*` / `ts_*`), futures/options fetch jobs, and futures read API                              |
-| [contract-ref-setup.md](contract-ref-setup.md)                       | `contracts` (SecRef) cache, `contracts.sync`, and the agent↔IBKR boundary                                               |
-| [contract-display-names.md](contract-display-names.md)               | How human-readable contract labels are built across positions/orders/trades/watchlists                                  |
-| [trade-tagging.md](trade-tagging.md)                                 | Trade groups, tag catalogs, execution assignment, timeline, and tagging UI                                              |
-| [tradebot-chatbot.md](tradebot-chatbot.md)                           | LangGraph chat agent: tools, guardrails, env vars (no order submission)                                                 |
-| [core/semantic-queries.md](core/semantic-queries.md)                 | OSI semantic layer: fact grains, relationships, `query_metric` tool + MCP server — analytics as read-only SQL by metric name |
-| [user-preferences-privacy-mode.md](user-preferences-privacy-mode.md) | Key-value user preferences and frontend privacy masking                                                                 |
+| Doc                                                                  | What it covers                                                                                                                               |
+| -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| [workers.md](workers.md)                                             | `worker:jobs` handler map and `worker:orders` (submission disabled); heartbeats and health                                                   |
+| [trades-and-executions-sync.md](trades-and-executions-sync.md)       | Trade/position ingestion via FlexQuery (TWS dormant), spread/combo detection, corrections, idempotency, `flex_sync_log`                      |
+| [security-data.md](security-data.md)                                 | Market-data tables (`latest_*` / `ts_*`), futures/options fetch jobs, and futures read API                                                   |
+| [contract-ref-setup.md](contract-ref-setup.md)                       | `contracts` (SecRef) cache, `contracts.sync`, and the agent↔IBKR boundary                                                                    |
+| [contract-display-names.md](contract-display-names.md)               | How human-readable contract labels are built across positions/orders/trades/watchlists                                                       |
+| [trade-tagging.md](trade-tagging.md)                                 | Trade groups, tag catalogs, execution assignment, timeline, and tagging UI                                                                   |
+| [tradebot-chatbot.md](tradebot-chatbot.md)                           | LangGraph chat agent: tools, guardrails, env vars (no order submission)                                                                      |
+| [core/semantic-queries.md](core/semantic-queries.md)                 | OSI semantic layer: fact grains, relationships, semantic views, `query_metric` tool + MCP server — analytics as read-only SQL by metric name |
+| [core/semantic-data-model.md](core/semantic-data-model.md)           | Analyst-facing catalog of the semantic layer: metrics, dimensions, grains, and worked MCP examples (premium/PnL/positions)                   |
+| [user-preferences-privacy-mode.md](user-preferences-privacy-mode.md) | Key-value user preferences and frontend privacy masking                                                                                      |
 
 ## Core UX & platform patterns
 
 | Doc                                                          | What it covers                                                                                                                                            |
-| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | [core/intraday-tws-overlay.md](core/intraday-tws-overlay.md) | Optional live current-state P&L overlay from TWS (`live_positions`/`latest_quote`/`live_executions`), read-time merge over the settled FlexQuery snapshot |
-| [core/api-ux-sse.md](core/api-ux-sse.md)                     | Real-time UI via Server-Sent Events: broadcaster, notify endpoints, event envelope                                                                      |
-| [core/ux-actions.md](core/ux-actions.md)                     | Reusable action patterns: destructive confirmation, save feedback, state model                                                                          |
-| [core/ux-pricing.md](core/ux-pricing.md)                     | Pricing page: two-tier contract catalog, on-demand qualification, expected-PnL flow                                                                     |
+| [core/api-ux-sse.md](core/api-ux-sse.md)                     | Real-time UI via Server-Sent Events: broadcaster, notify endpoints, event envelope                                                                        |
+| [core/ux-actions.md](core/ux-actions.md)                     | Reusable action patterns: destructive confirmation, save feedback, state model                                                                            |
+| [core/ux-pricing.md](core/ux-pricing.md)                     | Pricing page: two-tier contract catalog, on-demand qualification, expected-PnL flow                                                                       |
 
 ## Planning & process
 
 | Doc                                                    | What it covers                                                     |
-| ------------------------------------------------------ | ----------------------------------------------------------------- |
+| ------------------------------------------------------ | ------------------------------------------------------------------ |
 | [db-snapshots.md](db-snapshots.md)                     | Postgres snapshot/verify/restore before hard-to-reverse DB changes |
-| [planning-spec-format.md](planning-spec-format.md)     | Template and conventions for writing a new `spec-*.md`            |
-| [planning-agents-quorum.md](planning-agents-quorum.md) | Agent quorum roles used to shape trade-tagging requirements       |
-| [doc-review.md](doc-review.md)                         | Checklist and conventions for reviewing and refining project docs |
+| [planning-spec-format.md](planning-spec-format.md)     | Template and conventions for writing a new `spec-*.md`             |
+| [planning-agents-quorum.md](planning-agents-quorum.md) | Agent quorum roles used to shape trade-tagging requirements        |
+| [doc-review.md](doc-review.md)                         | Checklist and conventions for reviewing and refining project docs  |
 
 ## Open specs (proposed / in progress)
 
 Each carries a status banner; none is fully shipped.
 
-| Spec                                                                                         | Status                                                                             |
-| -------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| [spec-first-class-realized-pnl-on-trades.md](spec-first-class-realized-pnl-on-trades.md)     | Not implemented — PnL computed on read from `raw`                                  |
-| [spec-tradebot-contract-metadata-autofetch.md](spec-tradebot-contract-metadata-autofetch.md) | Partial — on-demand fetch works; order-flow + background freshness pending         |
-| [spec-worker-order-recovery.md](spec-worker-order-recovery.md)                               | Partial scaffold — submission disabled; crash-safety fields pending                |
+| Spec                                                                                         | Status                                                                                                                          |
+| -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| [spec-first-class-realized-pnl-on-trades.md](spec-first-class-realized-pnl-on-trades.md)     | Not implemented — PnL computed on read from `raw`                                                                               |
+| [spec-tradebot-contract-metadata-autofetch.md](spec-tradebot-contract-metadata-autofetch.md) | Partial — on-demand fetch works; order-flow + background freshness pending                                                      |
+| [spec-worker-order-recovery.md](spec-worker-order-recovery.md)                               | Partial scaffold — submission disabled; crash-safety fields pending                                                             |
 | [spec-activated-products-security-master.md](spec-activated-products-security-master.md)     | Implemented — activated-products table, IBKR discovery, 12-month sync, read API/UI shipped; `resolve_exchange` demotion pending |
-| [spec-auto-tag-suggestions.md](spec-auto-tag-suggestions.md)                                 | Proposed — human-reviewed tag/assignment suggestions for closing and rolling fills |
+| [spec-auto-tag-suggestions.md](spec-auto-tag-suggestions.md)                                 | Proposed — human-reviewed tag/assignment suggestions for closing and rolling fills                                              |
