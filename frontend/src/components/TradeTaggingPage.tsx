@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { API_BASE_URL } from "../config";
+import { usePrivacy } from "../contexts/PrivacyContext";
+import { PRIVACY_MASK, formatRelativeReturn } from "../utils/privacy";
 
 export type TradeGroup = {
   id: number;
@@ -185,7 +187,28 @@ function parseIdParam(value: string | null): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+// Cost basis for a set of open positions. avg_cost is multiplier-inclusive, so
+// a leg's basis is avg_cost * position; long/short legs of a spread are netted
+// per bucket (options vs equity) then taken as magnitude, matching the capital
+// convention used in the PnL summary. Returns null when there are no positions.
+// Used as the denominator for privacy-mode relative returns.
+function capitalForPositions(positions: GroupOpenPosition[]): number | null {
+  let optionsSum = 0;
+  let equitySum = 0;
+  let any = false;
+  for (const pos of positions) {
+    any = true;
+    const basis = pos.avg_cost * pos.position;
+    if (pos.sec_type === "OPT" || pos.sec_type === "FOP") optionsSum += basis;
+    else equitySum += basis;
+  }
+  if (!any) return null;
+  const capital = Math.abs(optionsSum) + Math.abs(equitySum);
+  return capital > 0 ? capital : null;
+}
+
 export default function TradeTaggingPage() {
+  const { privacyMode } = usePrivacy();
   const [searchParams, setSearchParams] = useSearchParams();
 
   const [strategies, setStrategies] = useState<Tag[]>([]);
@@ -756,6 +779,9 @@ export default function TradeTaggingPage() {
     accountFilter == null
       ? executions
       : executions.filter((e) => e.account_id === accountFilter);
+  // Group-level cost basis, used as the denominator for privacy-mode relative
+  // returns in the Open Positions / Trades section headers.
+  const groupCapital = capitalForPositions(openPositions);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col space-y-4">
@@ -1177,12 +1203,14 @@ export default function TradeTaggingPage() {
                       }
                     }
                     const fmt = (v: number | null) =>
-                      v == null
-                        ? "—"
-                        : v.toLocaleString(undefined, {
-                            style: "currency",
-                            currency: "USD",
-                          });
+                      privacyMode
+                        ? PRIVACY_MASK
+                        : v == null
+                          ? "—"
+                          : v.toLocaleString(undefined, {
+                              style: "currency",
+                              currency: "USD",
+                            });
                     const cls = (v: number | null) =>
                       v == null
                         ? "text-gray-500"
@@ -1317,20 +1345,32 @@ export default function TradeTaggingPage() {
                                   {acct.account_alias ?? acct.account_id}
                                 </span>
                                 <span className="text-right text-gray-500">
-                                  {money(capital)}
+                                  {privacyMode ? PRIVACY_MASK : money(capital)}
                                 </span>
                                 <span className={`text-right ${cls(total)}`}>
-                                  {money(total)}
+                                  {privacyMode
+                                    ? formatRelativeReturn(total, capital)
+                                    : money(total)}
                                 </span>
                                 <span
                                   className={`text-right ${cls(acct.realized_pnl)}`}
                                 >
-                                  {money(acct.realized_pnl)}
+                                  {privacyMode
+                                    ? formatRelativeReturn(
+                                        acct.realized_pnl,
+                                        capital,
+                                      )
+                                    : money(acct.realized_pnl)}
                                 </span>
                                 <span
                                   className={`text-right ${cls(acct.unrealized_pnl)}`}
                                 >
-                                  {money(acct.unrealized_pnl)}
+                                  {privacyMode
+                                    ? formatRelativeReturn(
+                                        acct.unrealized_pnl,
+                                        capital,
+                                      )
+                                    : money(acct.unrealized_pnl)}
                                 </span>
                               </div>
                             );
@@ -1409,12 +1449,17 @@ export default function TradeTaggingPage() {
                                 : "font-semibold text-red-700"
                           }
                         >
-                          {totalUnrealizedPnl == null
-                            ? "—"
-                            : totalUnrealizedPnl.toLocaleString(undefined, {
-                                style: "currency",
-                                currency: "USD",
-                              })}
+                          {privacyMode
+                            ? formatRelativeReturn(
+                                totalUnrealizedPnl,
+                                groupCapital,
+                              )
+                            : totalUnrealizedPnl == null
+                              ? "—"
+                              : totalUnrealizedPnl.toLocaleString(undefined, {
+                                  style: "currency",
+                                  currency: "USD",
+                                })}
                         </span>
                       </span>
                     </div>
@@ -1496,39 +1541,57 @@ export default function TradeTaggingPage() {
                                   <td
                                     className={`px-2 py-1 text-right font-mono ${qtyClass}`}
                                   >
-                                    {pos.position}
+                                    {privacyMode ? PRIVACY_MASK : pos.position}
                                   </td>
                                   <td className="px-2 py-1 text-right font-mono text-gray-700">
-                                    {pos.avg_cost.toFixed(2)}
+                                    {privacyMode
+                                      ? PRIVACY_MASK
+                                      : pos.avg_cost.toFixed(2)}
                                   </td>
                                   <td className="px-2 py-1 text-right font-mono text-gray-700">
-                                    {pos.mark_price == null
-                                      ? "—"
-                                      : pos.mark_price.toFixed(2)}
+                                    {privacyMode
+                                      ? PRIVACY_MASK
+                                      : pos.mark_price == null
+                                        ? "—"
+                                        : pos.mark_price.toFixed(2)}
                                   </td>
                                   <td className="px-2 py-1 text-right font-mono text-gray-700">
-                                    {pos.mark == null
-                                      ? "—"
-                                      : pos.mark.toFixed(2)}
+                                    {privacyMode
+                                      ? PRIVACY_MASK
+                                      : pos.mark == null
+                                        ? "—"
+                                        : pos.mark.toFixed(2)}
                                   </td>
                                   <td className="px-2 py-1 text-right font-mono text-gray-700">
-                                    {pos.position_value == null
-                                      ? "—"
-                                      : pos.position_value.toFixed(2)}
+                                    {privacyMode
+                                      ? PRIVACY_MASK
+                                      : pos.position_value == null
+                                        ? "—"
+                                        : pos.position_value.toFixed(2)}
                                   </td>
                                   <td
                                     className={`px-2 py-1 text-right font-mono ${pnlClass}`}
                                   >
-                                    {pos.fifo_pnl_unrealized == null
-                                      ? "—"
-                                      : pos.fifo_pnl_unrealized.toFixed(2)}
+                                    {privacyMode
+                                      ? formatRelativeReturn(
+                                          pos.fifo_pnl_unrealized,
+                                          Math.abs(pos.avg_cost * pos.position),
+                                        )
+                                      : pos.fifo_pnl_unrealized == null
+                                        ? "—"
+                                        : pos.fifo_pnl_unrealized.toFixed(2)}
                                   </td>
                                   <td
                                     className={`px-2 py-1 text-right font-mono ${livePnlClass}`}
                                   >
-                                    {pos.live_unrealized == null
-                                      ? "—"
-                                      : pos.live_unrealized.toFixed(2)}
+                                    {privacyMode
+                                      ? formatRelativeReturn(
+                                          pos.live_unrealized,
+                                          Math.abs(pos.avg_cost * pos.position),
+                                        )
+                                      : pos.live_unrealized == null
+                                        ? "—"
+                                        : pos.live_unrealized.toFixed(2)}
                                   </td>
                                   <td className="px-2 py-1 text-gray-500">
                                     {pos.as_of_date ?? "—"}
@@ -1577,12 +1640,17 @@ export default function TradeTaggingPage() {
                                 : "font-semibold text-red-700"
                           }
                         >
-                          {totalRealizedPnl == null
-                            ? "—"
-                            : totalRealizedPnl.toLocaleString(undefined, {
-                                style: "currency",
-                                currency: "USD",
-                              })}
+                          {privacyMode
+                            ? formatRelativeReturn(
+                                totalRealizedPnl,
+                                groupCapital,
+                              )
+                            : totalRealizedPnl == null
+                              ? "—"
+                              : totalRealizedPnl.toLocaleString(undefined, {
+                                  style: "currency",
+                                  currency: "USD",
+                                })}
                         </span>
                       </span>
                     </div>
@@ -1680,20 +1748,30 @@ export default function TradeTaggingPage() {
                                         {ex.side ?? "—"}
                                       </td>
                                       <td className="px-2 py-1 text-right font-mono text-gray-800">
-                                        {ex.quantity}
+                                        {privacyMode
+                                          ? PRIVACY_MASK
+                                          : ex.quantity}
                                       </td>
                                       <td className="px-2 py-1 text-right font-mono text-gray-800">
-                                        {Number(ex.price.toFixed(4))}
+                                        {privacyMode
+                                          ? PRIVACY_MASK
+                                          : Number(ex.price.toFixed(4))}
                                       </td>
                                       <td
                                         className={`px-2 py-1 text-right font-mono ${pnlClass}`}
                                       >
-                                        {ex.realized_pnl == null
-                                          ? "—"
-                                          : ex.realized_pnl.toFixed(2)}
+                                        {privacyMode
+                                          ? PRIVACY_MASK
+                                          : ex.realized_pnl == null
+                                            ? "—"
+                                            : ex.realized_pnl.toFixed(2)}
                                       </td>
                                       <td className="px-2 py-1 text-right font-mono text-gray-700">
-                                        {counted ? running.toFixed(2) : "—"}
+                                        {privacyMode
+                                          ? PRIVACY_MASK
+                                          : counted
+                                            ? running.toFixed(2)
+                                            : "—"}
                                       </td>
                                     </tr>
                                   );
