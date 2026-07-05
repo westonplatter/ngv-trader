@@ -20,15 +20,19 @@ import os
 from functools import lru_cache
 from typing import Any
 
-from mcp.server.fastmcp import FastMCP
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
+from mcp.server.fastmcp import FastMCP
+from src.services.semantic.executor import run_metric_query
 from src.services.semantic.loader import get_model
 from src.services.semantic.resolver import ALLOWED_TIME_GRAINS, build_metric_query
-from src.services.semantic.executor import run_metric_query
-from src.services.trade_group_pnl import compute_trade_group_pnl, resolve_trade_group
+from src.services.trade_group_pnl import (
+    compute_trade_group_pnl,
+    resolve_trade_group,
+    search_trade_groups,
+)
 
 mcp = FastMCP("ngv-semantic")
 
@@ -133,11 +137,51 @@ def query_metric(  # noqa: PLR0913 — tool params mirror the metric-query inter
 
 
 @mcp.tool()
+def find_trade_groups(query: str, limit: int = 5) -> dict[str, Any]:
+    """Fuzzy-find trade groups by a free-text phrase — the 'find the group' step.
+
+    Resolve a human phrase to concrete trade group(s) BEFORE looking up PnL, when
+    you don't know the exact group name. The phrase is a fuzzy predicate, not a
+    symbol: every token must appear in the group name, but order and punctuation
+    don't matter — "MP", "gamma delta", "dec 27", "covered call" all work.
+
+    Prefer this over filtering a metric by symbol: `contracts.symbol` is missing
+    for many option con_ids, so symbol-filtered PnL silently undercounts. The
+    reliable path is phrase -> find_trade_groups -> pick a group -> its PnL.
+
+    Args:
+        query: Free-text phrase to match against trade group names.
+        limit: Max candidates to return (1-25).
+
+    Returns ranked ``matches`` [{id, name, score}]. If more than one is returned
+    the phrase is ambiguous — pick one and pass its ``id`` (or exact ``name``) to
+    ``trade_group_pnl`` for realized + unrealized PnL, or to ``query_metric``
+    (``filters={"tag": name}``). Matches names only: a strategy whose name omits
+    its symbol won't be found by that symbol.
+    """
+    text = (query or "").strip()
+    if not text:
+        return {"query": query, "count": 0, "matches": []}
+    capped = max(1, min(int(limit), 25))
+    with Session(_get_engine()) as session:
+        matches = search_trade_groups(session, text, limit=capped)
+    return {
+        "query": text,
+        "count": len(matches),
+        "matches": [{"id": m.id, "name": m.name, "score": m.score} for m in matches],
+        "next": "Pass a match's id or exact name to trade_group_pnl(group=...) for realized + unrealized PnL.",
+    }
+
+
+@mcp.tool()
 def trade_group_pnl(group: str) -> dict[str, Any]:
     """Realized + unrealized PnL for ONE trade group (the detail-view figures).
 
     Args:
-        group: Trade group name, or its numeric id as a string.
+        group: Trade group numeric id, exact name, OR a fuzzy phrase. A phrase
+            that matches exactly one group resolves automatically; if it matches
+            several, the error lists the candidates (use find_trade_groups to
+            search/disambiguate first).
 
     Returns realized_pnl (settled), settled_unrealized_pnl, and the live-overlay
     figures intraday_unrealized_pnl / intraday_realized_pnl / intraday_total_pnl

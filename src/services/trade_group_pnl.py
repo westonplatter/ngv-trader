@@ -18,6 +18,7 @@ figures the semantic resolver can't express.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
@@ -113,8 +114,67 @@ class TradeGroupPnl:
         }
 
 
+@dataclass(frozen=True)
+class TradeGroupMatch:
+    """A fuzzy trade-group search hit. Higher ``score`` = better match."""
+
+    id: int
+    name: str
+    score: int
+
+
+_TOKEN_SPLIT_RE = re.compile(r"[^a-z0-9]+")
+
+
+def _search_tokens(query: str) -> list[str]:
+    """Lowercase, split on any non-alphanumeric run (whitespace, ``'`` ``-`` ``+`` …)."""
+    return [tok for tok in _TOKEN_SPLIT_RE.split(query.lower()) if tok]
+
+
+def search_trade_groups(session: Session, query: str, limit: int = 5) -> list[TradeGroupMatch]:
+    """Fuzzy-resolve a free-text phrase to trade groups by name (token-AND ILIKE).
+
+    Every token in ``query`` must appear somewhere in the group name, but order
+    and punctuation don't matter — so ``"gamma delta"``, ``"cl dec 27"`` and
+    ``"dec'27"`` all find ``"CL Short Gamma + Long Delta --- Dec'27"``. Results
+    are ranked best-first (exact name > full-phrase substring > more tokens >
+    shorter name). An ambiguous phrase legitimately returns several candidates so
+    the caller disambiguates instead of silently picking one.
+
+    Equality-only ``query_metric`` can't express this; it's a resolution step, not
+    aggregation. Matches names only — a strategy whose name omits its symbol won't
+    be found by that symbol.
+    """
+    tokens = _search_tokens(query)
+    if not tokens:
+        return []
+    stmt = select(TradeGroup)
+    for tok in tokens:
+        stmt = stmt.where(TradeGroup.name.ilike(f"%{tok}%"))
+    groups = session.execute(stmt).scalars().all()
+
+    needle = query.strip().lower()
+    matches: list[TradeGroupMatch] = []
+    for group in groups:
+        name_lower = group.name.lower()
+        score = 10 * len(tokens)  # all tokens matched (WHERE guarantees it)
+        if name_lower == needle:
+            score += 1000  # exact name
+        elif needle in name_lower:
+            score += 100  # whole phrase is a contiguous substring
+        matches.append(TradeGroupMatch(id=group.id, name=group.name, score=score))
+    # Tie-break on the shorter (more specific) name, then alphabetically.
+    matches.sort(key=lambda m: (-m.score, len(m.name), m.name))
+    return matches[:limit]
+
+
 def resolve_trade_group(session: Session, group: int | str) -> TradeGroup:
-    """Resolve a trade group by id or (case-insensitive) name."""
+    """Resolve a trade group by id, exact (case-insensitive) name, or fuzzy phrase.
+
+    Exact matches win. If the name isn't found verbatim, fall back to
+    :func:`search_trade_groups`: a single fuzzy hit resolves; multiple hits raise
+    with the candidate list so the caller can pick (never silently guesses).
+    """
     if isinstance(group, int):
         found = session.get(TradeGroup, group)
         if found is None:
@@ -123,12 +183,19 @@ def resolve_trade_group(session: Session, group: int | str) -> TradeGroup:
     name = str(group).strip()
     if not name:
         raise ValueError("Provide a trade group id or name.")
-    matches = session.execute(select(TradeGroup).where(func.lower(TradeGroup.name) == name.lower())).scalars().all()
-    if not matches:
-        raise ValueError(f"No trade group named '{group}'.")
-    if len(matches) > 1:
+    exact = session.execute(select(TradeGroup).where(func.lower(TradeGroup.name) == name.lower())).scalars().all()
+    if len(exact) == 1:
+        return exact[0]
+    if len(exact) > 1:
         raise ValueError(f"Multiple trade groups named '{group}'; use the numeric id instead.")
-    return matches[0]
+
+    fuzzy = search_trade_groups(session, name, limit=5)
+    if not fuzzy:
+        raise ValueError(f"No trade group matching '{group}'. Try find_trade_groups to search by phrase.")
+    if len(fuzzy) == 1:
+        return session.get(TradeGroup, fuzzy[0].id)
+    candidates = ", ".join(f"#{m.id} {m.name!r}" for m in fuzzy)
+    raise ValueError(f"'{group}' matches multiple trade groups: {candidates}. Re-run with the exact name or numeric id.")
 
 
 def compute_trade_group_pnl(session: Session, group_id: int) -> TradeGroupPnl:

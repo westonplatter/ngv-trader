@@ -15,7 +15,7 @@
 #     the resolver can emit it verbatim against `FROM <source> AS <dataset>`.
 #   - One grain per query: the resolver routes a query to the metric's fact and
 #     only allows dimensions reachable from that fact (grain enforcement).
-version: "0.2.0"
+version: "0.3.0"
 semantic_model:
   - datasets:
       # ---- Facts -----------------------------------------------------------
@@ -29,12 +29,25 @@ semantic_model:
             dimension: { is_time: true }
             ai_context: { synonyms: ["date", "time", "fill time"] }
             expression:
-              dialects: [{ dialect: ANSI_SQL, expression: execution_facts.executed_at }]
+              dialects:
+                [{ dialect: ANSI_SQL, expression: execution_facts.executed_at }]
           - name: exec_role
             description: Execution role (standalone, leg, combo_summary).
             dimension: { is_time: false }
             expression:
-              dialects: [{ dialect: ANSI_SQL, expression: execution_facts.exec_role }]
+              dialects:
+                [{ dialect: ANSI_SQL, expression: execution_facts.exec_role }]
+          - name: sec_type
+            description: >
+              Security type (STK, FUT, OPT, FOP) at execution grain, straight off
+              the fill (not the contracts master), so it's always populated — use
+              it to split stock cash flow from option premium.
+            dimension: { is_time: false }
+            ai_context:
+              { synonyms: ["security type", "instrument type", "asset class"] }
+            expression:
+              dialects:
+                [{ dialect: ANSI_SQL, expression: execution_facts.sec_type }]
 
       - name: trade_facts
         source: v_trade_facts
@@ -46,7 +59,13 @@ semantic_model:
             dimension: { is_time: true }
             ai_context: { synonyms: ["date", "time", "trade date"] }
             expression:
-              dialects: [{ dialect: ANSI_SQL, expression: trade_facts.last_executed_at }]
+              dialects:
+                [
+                  {
+                    dialect: ANSI_SQL,
+                    expression: trade_facts.last_executed_at,
+                  },
+                ]
           - name: status
             description: Trade lifecycle status (filled, partial, unknown).
             dimension: { is_time: false }
@@ -67,7 +86,96 @@ semantic_model:
             description: Security type (trade grain).
             dimension: { is_time: false }
             expression:
-              dialects: [{ dialect: ANSI_SQL, expression: trade_facts.sec_type }]
+              dialects:
+                [{ dialect: ANSI_SQL, expression: trade_facts.sec_type }]
+
+      - name: position_facts
+        source: v_position_facts
+        primary_key: [position_id]
+        description: >
+          One row per OPEN position (positions.position <> 0), as of the last
+          position sync. Position grain. Additive point-in-time measures
+          (net quantity, market value, unrealized PnL) — NOT a time series, so
+          it has no execution-style time axis. `expiration` (the contract's last
+          trade date) is the only time dimension; range-filter it to find
+          positions expiring in a window.
+        fields:
+          - name: sec_type
+            description: Security type (STK, FUT, OPT, FOP).
+            dimension: { is_time: false }
+            ai_context:
+              { synonyms: ["security type", "instrument type", "asset class"] }
+            expression:
+              dialects:
+                [{ dialect: ANSI_SQL, expression: position_facts.sec_type }]
+          - name: symbol
+            description: Underlying ticker symbol (position grain).
+            dimension: { is_time: false }
+            ai_context: { synonyms: ["ticker", "underlying"] }
+            expression:
+              dialects:
+                [{ dialect: ANSI_SQL, expression: position_facts.symbol }]
+          - name: right
+            description: Option right (C/P); NULL for non-options.
+            dimension: { is_time: false }
+            ai_context: { synonyms: ["call or put", "put/call"] }
+            expression:
+              dialects:
+                [{ dialect: ANSI_SQL, expression: 'position_facts."right"' }]
+          - name: strike
+            description: Option strike price; NULL for non-options.
+            dimension: { is_time: false }
+            expression:
+              dialects:
+                [{ dialect: ANSI_SQL, expression: position_facts.strike }]
+          - name: expiration
+            description: >
+              Contract expiration / last trade date (the time axis at position
+              grain). NULL for stock. Range-filter (start_date/end_date) to scope
+              to positions expiring in a window, e.g. "expiring in the next 30
+              days".
+            dimension: { is_time: true }
+            ai_context:
+              { synonyms: ["expiry", "last trade date", "expiration date"] }
+            expression:
+              dialects:
+                [{ dialect: ANSI_SQL, expression: position_facts.expiration }]
+          - name: days_to_expiration
+            description: >
+              Whole calendar days from today until expiration (expiration minus
+              CURRENT_DATE); NULL for stock, negative if already past. Use for
+              grouping/display; to FILTER by a horizon, range-filter `expiration`
+              instead (equality-only filters can't express "within N days").
+            dimension: { is_time: false }
+            ai_context:
+              {
+                synonyms:
+                  [
+                    "dte",
+                    "days left",
+                    "days until expiry",
+                    "time to expiration",
+                  ],
+              }
+            expression:
+              dialects:
+                [
+                  {
+                    dialect: ANSI_SQL,
+                    expression: "(position_facts.expiration - CURRENT_DATE)",
+                  },
+                ]
+
+      - name: position_group_memberships
+        source: v_position_trade_group
+        primary_key: [trade_group_id, account_id, con_id]
+        description: >
+          Bridge — maps each open position (account_id, con_id) to every trade
+          group whose executions touched it. DISTINCT per (group, account, con_id)
+          so it does not fan out a position within one group. Many-to-many across
+          groups: settled-unrealized summed with NO tag filter double-counts
+          positions shared by multiple groups (same attribution as the
+          trade_group_pnl tool) — slice/filter by one `tag` at a time.
 
       # ---- Conformed dimensions -------------------------------------------
       - name: accounts
@@ -80,7 +188,13 @@ semantic_model:
             dimension: { is_time: false }
             ai_context: { synonyms: ["account name", "account alias"] }
             expression:
-              dialects: [{ dialect: ANSI_SQL, expression: "COALESCE(accounts.alias, 'account_' || accounts.id)" }]
+              dialects:
+                [
+                  {
+                    dialect: ANSI_SQL,
+                    expression: "COALESCE(accounts.alias, 'account_' || accounts.id)",
+                  },
+                ]
 
       - name: contracts
         source: contracts
@@ -102,7 +216,8 @@ semantic_model:
             description: Contract month (e.g. 2026-03) for futures/options.
             dimension: { is_time: false }
             expression:
-              dialects: [{ dialect: ANSI_SQL, expression: contracts.contract_month }]
+              dialects:
+                [{ dialect: ANSI_SQL, expression: contracts.contract_month }]
           - name: right
             description: Option right (C/P).
             dimension: { is_time: false }
@@ -156,14 +271,31 @@ semantic_model:
       - name: trade_to_account
         from: { dataset: trade_facts, columns: [account_id] }
         to: { dataset: accounts, columns: [id] }
+      - name: position_to_account
+        from: { dataset: position_facts, columns: [account_id] }
+        to: { dataset: accounts, columns: [id] }
+      - name: position_to_membership
+        from: { dataset: position_facts, columns: [account_id, con_id] }
+        to:
+          { dataset: position_group_memberships, columns: [account_id, con_id] }
+      - name: position_membership_to_group
+        from: { dataset: position_group_memberships, columns: [trade_group_id] }
+        to: { dataset: trade_groups, columns: [id] }
 
     metrics:
       - name: realized_pnl
         fact: execution_facts
         description: Net realized PnL summed across executions (USD).
-        ai_context: { synonyms: ["realized profit", "booked pnl", "pnl", "profit"] }
+        ai_context:
+          { synonyms: ["realized profit", "booked pnl", "pnl", "profit"] }
         expression:
-          dialects: [{ dialect: ANSI_SQL, expression: SUM(execution_facts.realized_pnl) }]
+          dialects:
+            [
+              {
+                dialect: ANSI_SQL,
+                expression: SUM(execution_facts.realized_pnl),
+              },
+            ]
       - name: total_commissions
         fact: execution_facts
         description: Total commissions paid (USD). Excludes synthetic combo summaries.
@@ -186,13 +318,135 @@ semantic_model:
         ai_context: { synonyms: ["number of trades", "count of trades"] }
         expression:
           dialects: [{ dialect: ANSI_SQL, expression: COUNT(*) }]
+      # ---- Cash flow / premium (execution grain) --------------------------
+      # `proceeds` is IBKR's signed gross cash: SELL positive (cash in / premium
+      # collected), BUY negative (cash out / premium paid). Combo-safe (NULL on
+      # combo_summary). These live on the fact so they're correct sliced by `tag`
+      # WITHOUT the contracts join (contracts is incomplete for many option
+      # con_ids); split stock vs options with the execution-grain `sec_type`.
+      - name: gross_premium
+        fact: execution_facts
+        description: >
+          Net cash flow across fills (USD): premium/credits received minus
+          premium/debits paid (SUM of signed proceeds). Positive = net credit
+          collected, negative = net cash outlay. For a covered-call group this is
+          weekly-call credits minus the long option (and stock) purchase cost.
+        ai_context:
+          {
+            synonyms:
+              ["net cash flow", "net premium", "cash flow", "net credit"],
+          }
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: "SUM(execution_facts.proceeds) FILTER (WHERE execution_facts.exec_role <> 'combo_summary')"
+      - name: premium_collected
+        fact: execution_facts
+        description: >
+          Total premium/cash received from SELL fills (credits only), as a
+          positive USD amount. E.g. covered-call premium sold to finance a long
+          option. Filter sec_type='OPT' (and 'FOP') to exclude stock proceeds.
+        ai_context:
+          {
+            synonyms:
+              [
+                "premium sold",
+                "credits received",
+                "premium received",
+                "premium income",
+              ],
+          }
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: "SUM(execution_facts.proceeds) FILTER (WHERE execution_facts.proceeds > 0 AND execution_facts.exec_role <> 'combo_summary')"
+      - name: premium_paid
+        fact: execution_facts
+        description: >
+          Total premium/cash paid on BUY fills (debits only), as a positive USD
+          amount. E.g. the cost basis paid to open a long-dated option, or to
+          buy-to-close short options. Filter sec_type='OPT'/'FOP' to exclude the
+          stock leg.
+        ai_context:
+          {
+            synonyms:
+              [
+                "premium bought",
+                "debits paid",
+                "premium spent",
+                "cost to open",
+              ],
+          }
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: "SUM(-execution_facts.proceeds) FILTER (WHERE execution_facts.proceeds < 0 AND execution_facts.exec_role <> 'combo_summary')"
+
+      # ---- Position grain (open positions) --------------------------------
+      - name: open_position_count
+        fact: position_facts
+        description: Number of open positions (position <> 0).
+        ai_context:
+          {
+            synonyms:
+              ["number of positions", "open positions", "position count"],
+          }
+        expression:
+          dialects: [{ dialect: ANSI_SQL, expression: COUNT(*) }]
+      - name: net_quantity
+        fact: position_facts
+        description: Net signed quantity across open positions (long minus short).
+        ai_context: { synonyms: ["net qty", "net position", "net contracts"] }
+        expression:
+          dialects:
+            [{ dialect: ANSI_SQL, expression: SUM(position_facts.quantity) }]
+      - name: position_market_value
+        fact: position_facts
+        description: Total market value of open positions (USD, as of last sync).
+        ai_context: { synonyms: ["market value", "position value", "notional"] }
+        expression:
+          dialects:
+            [
+              {
+                dialect: ANSI_SQL,
+                expression: SUM(position_facts.position_value),
+              },
+            ]
+      - name: settled_unrealized_pnl
+        fact: position_facts
+        description: >
+          Settled (end-of-day snapshot) unrealized PnL across open positions
+          (USD). Sliced/filtered by `tag` it is the per-trade-group figure from
+          the detail view — NOT additive across groups (a shared position counts
+          in each), so query one group at a time. This is the settled figure; the
+          intraday/live unrealized is only in the `trade_group_pnl` tool.
+        ai_context:
+          {
+            synonyms:
+              [
+                "unrealized pnl",
+                "unrealized",
+                "open pnl",
+                "mark to market pnl",
+              ],
+          }
+        expression:
+          dialects:
+            [
+              {
+                dialect: ANSI_SQL,
+                expression: SUM(position_facts.unrealized_pnl),
+              },
+            ]
+
       - name: win_rate
         fact: trade_facts
         description: >
           Fraction of trades with positive realized PnL, among trades that have a
           realized PnL value (i.e. that realized something). 0..1; breakeven (0)
           counts as a non-win; trades with no realized PnL are excluded.
-        ai_context: { synonyms: ["hit rate", "percent winners", "win percentage"] }
+        ai_context:
+          { synonyms: ["hit rate", "percent winners", "win percentage"] }
         expression:
           dialects:
             - dialect: ANSI_SQL
