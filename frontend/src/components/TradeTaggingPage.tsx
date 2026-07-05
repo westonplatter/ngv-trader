@@ -172,6 +172,13 @@ const GROUP_FILTERS: { value: GroupFilter; label: string }[] = [
   { value: "all", label: "All" },
 ];
 
+type GroupSort = "name" | "opened_at";
+
+const GROUP_SORTS: { value: GroupSort; label: string }[] = [
+  { value: "name", label: "A–Z" },
+  { value: "opened_at", label: "Opened" },
+];
+
 function parseIdParam(value: string | null): number | null {
   if (!value) return null;
   const parsed = Number.parseInt(value, 10);
@@ -229,6 +236,7 @@ export default function TradeTaggingPage() {
   const [newGroupName, setNewGroupName] = useState("");
   const [newGroupNotes, setNewGroupNotes] = useState("");
   const [groupFilter, setGroupFilter] = useState<GroupFilter>("active");
+  const [groupSort, setGroupSort] = useState<GroupSort>("name");
 
   const [editingGroup, setEditingGroup] = useState(false);
   const [editName, setEditName] = useState("");
@@ -255,13 +263,18 @@ export default function TradeTaggingPage() {
               groupFilter === "active" ? "open" : groupFilter;
             return group.status === status;
           });
-    return [...filtered].sort((a, b) =>
-      a.name.localeCompare(b.name, undefined, {
+    return [...filtered].sort((a, b) => {
+      if (groupSort === "opened_at") {
+        // Most recently opened first; fall back to name for equal timestamps.
+        const diff = Date.parse(b.opened_at) - Date.parse(a.opened_at);
+        if (diff !== 0) return diff;
+      }
+      return a.name.localeCompare(b.name, undefined, {
         numeric: true,
         sensitivity: "base",
-      }),
-    );
-  }, [groups, groupFilter]);
+      });
+    });
+  }, [groups, groupFilter, groupSort]);
 
   const loadStrategies = useCallback(async () => {
     const params = new URLSearchParams({ limit: "200" });
@@ -898,6 +911,21 @@ export default function TradeTaggingPage() {
                   >
                     {showNewGroup ? "Cancel" : "+ New"}
                   </button>
+                  <select
+                    value={groupSort}
+                    onChange={(event) =>
+                      setGroupSort(event.target.value as GroupSort)
+                    }
+                    aria-label="Sort trade groups"
+                    title="Sort trade groups"
+                    className="rounded border border-gray-300 bg-white px-1.5 py-0.5 text-xs text-gray-600 hover:bg-gray-50"
+                  >
+                    {GROUP_SORTS.map((sort) => (
+                      <option key={sort.value} value={sort.value}>
+                        {sort.label}
+                      </option>
+                    ))}
+                  </select>
                   <select
                     value={groupFilter}
                     onChange={(event) =>
