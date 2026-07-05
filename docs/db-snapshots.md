@@ -5,8 +5,8 @@ data-mutating migrations, backfills, `alembic downgrade` on prod, or bulk
 deletes. Additive-only migrations (new tables/columns, nullable) generally don't
 need one, but snapshot anyway when unsure — it's cheap.
 
-`ENV=prod` (working DB `ngtrader_prod`) is the default working environment
-— see [project memory]. A separate dev DB (`ngtrader_dev`) also exists per
+`ENV=prod` (working DB `ngtrader_prod`) is the default working environment.
+A separate dev DB (`ngtrader_dev`) also exists per
 [getting-started.md](getting-started.md); pass `ENV=dev` and adjust `DB_NAME`
 below to snapshot dev instead. Connection vars (`DB_HOST/PORT/USER/PASSWORD/NAME`)
 resolve from `op://` references, so every command runs under `op run`.
@@ -44,8 +44,6 @@ ENV=prod op run --env-file=.env.prod -- bash -c '
 ## Recommended flow for a risky migration
 
 1. Snapshot + verify (above).
-2. Apply the migration; confirm round-trip with `alembic downgrade -1 && alembic upgrade head`.
+2. Apply the migration; confirm round-trip with `task migrate:down ENV=prod && task migrate ENV=prod` (use the task command, not raw `alembic` — see AGENTS.md).
 3. Spot-check affected tables.
 4. Keep the dump until the change is merged and confirmed in use.
-
-[project memory]: ENV=prod is the default working environment; secrets via `op run`.

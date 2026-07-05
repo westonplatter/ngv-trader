@@ -53,7 +53,12 @@ If you don't need 1Password resolution (e.g., no `op://` refs in your env file),
 uv run python scripts/setup_db.py --env dev
 ```
 
-Note: any `op://` values will remain as literal strings in this case.
+Note: this only leaves `op://` values as literal strings for vars read via raw
+`os.environ.get` (`DB_HOST`/`DB_PORT`/`DB_USER`/`DB_PASSWORD`/`DB_NAME`, `IB_JSON`).
+Vars read via `get_str_env`/`get_int_env` (`src/utils/env_vars.py`) — e.g.
+`BROKER_TWS_PORT`, `TRADEBOT_LLM_API_KEY`, `OPENAI_API_KEY` — self-resolve `op://`
+references by shelling out to `op read` directly, as long as the `op` CLI is
+installed and signed in, even without `op run`.
 
 ## Code pattern
 

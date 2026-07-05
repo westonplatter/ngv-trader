@@ -25,7 +25,7 @@ TWS-style label an operator can read at a glance.
 
 ```python
 def contract_display_name(
-    symbol, sec_type, *,
+    symbol, sec_type,
     local_symbol=None, right=None, strike=None,
     contract_expiry=None, contract_month=None,
     exchange=None, trading_class=None,
@@ -127,13 +127,14 @@ contract_display_name(
 
 ### Watch Lists (`src/api/routers/watch_lists.py`)
 
-Uses `contract_display_name()` with fields from `WatchListInstrument`:
+`WatchListInstrument` only stores `con_id` (no display columns of its own).
+`to_instrument_response()` joins to `ContractRef` via `con_id` and calls
+`contract_display_name()` with that row's fields.
 
-**DB fields used:** `watch_list_instruments.symbol`,
-`watch_list_instruments.sec_type`, `watch_list_instruments.local_symbol`,
-`watch_list_instruments.right`, `watch_list_instruments.strike`,
-`watch_list_instruments.contract_expiry`,
-`watch_list_instruments.exchange`, `watch_list_instruments.trading_class`
+**DB fields used:** `contracts.symbol`, `contracts.sec_type`,
+`contracts.right`, `contracts.strike`, `contracts.contract_expiry`,
+`contracts.contract_month`, `contracts.exchange`, `contracts.trading_class`
+(joined via `watch_list_instruments.con_id`).
 
 ### Trade Executions (`src/api/routers/trades.py`)
 
@@ -174,7 +175,7 @@ with `contracts` via `con_id` for richer fallback fields.
 | `positions`              | `exchange`                                    | `contract.exchange`                     | Optional suffix      |
 | `orders`                 | Same columns as above, plus `contract_expiry` | Same IBKR sources                       | Same purposes        |
 | `contracts`              | All of the above                              | IBKR contract details response          | Enrichment via join  |
-| `watch_list_instruments` | Same as positions                             | Same IBKR sources                       | Same purposes        |
+| `watch_list_instruments` | `con_id` only; joins to `contracts` for display fields | Same IBKR sources               | Same purposes         |
 | `trade_executions`       | `raw` (jsonb)                                 | Full fill object serialized             | localSymbol extract  |
 
 ## Gap: Trade-Level Display Names
