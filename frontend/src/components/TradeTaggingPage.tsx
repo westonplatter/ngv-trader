@@ -247,10 +247,20 @@ export default function TradeTaggingPage() {
   );
 
   const visibleGroups = useMemo(() => {
-    if (groupFilter === "all") return groups;
-    const status: TradeGroup["status"] =
-      groupFilter === "active" ? "open" : groupFilter;
-    return groups.filter((group) => group.status === status);
+    const filtered =
+      groupFilter === "all"
+        ? groups
+        : groups.filter((group) => {
+            const status: TradeGroup["status"] =
+              groupFilter === "active" ? "open" : groupFilter;
+            return group.status === status;
+          });
+    return [...filtered].sort((a, b) =>
+      a.name.localeCompare(b.name, undefined, {
+        numeric: true,
+        sensitivity: "base",
+      }),
+    );
   }, [groups, groupFilter]);
 
   const loadStrategies = useCallback(async () => {
