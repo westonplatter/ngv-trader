@@ -36,8 +36,8 @@ per metric; an invalid pick errors with the valid options).
 **Money & activity (execution grain)**
 
 - `realized_pnl` — net booked PnL (FlexQuery `fifoPnlRealized`). Only populated when a position is (partly) closed.
-- `total_commissions` — fees paid.
-- `fill_count` — number of real fills.
+- `total_commissions` — fees paid. Excludes synthetic `combo_summary` rows.
+- `fill_count` — number of real fills. Excludes synthetic `combo_summary` rows.
 
 **Cash flow / premium (execution grain)** — from IBKR's signed `proceeds` (SELL = cash in, BUY = cash out):
 
@@ -60,17 +60,21 @@ per metric; an invalid pick errors with the valid options).
 | `account`                           | all                           | Human alias (`main`, `sep`, `lsc`, `mini`) — never the raw account number.                                                                                      |
 | `tag`                               | execution, position           | **Trade group / strategy name.** The key slice for a strategy review.                                                                                           |
 | `sec_type`                          | execution, position, trade    | STK / FUT / OPT / FOP. On execution & position grains it comes straight off the fill/position, so it's **always populated** — use it to split stock vs options. |
-| `symbol`                            | all                           | Underlying ticker.                                                                                                                                              |
+| `symbol`                            | all                           | Underlying ticker. Native (complete) on `trade_facts`/`position_facts`; on `execution_facts` it comes via the `contracts` join — see the caveat below.          |
 | `expiration`                        | **position** (time axis)      | Contract last-trade date. **Range-filter** it (`start_date`/`end_date`) for "expiring in the next N days". NULL for stock.                                      |
 | `days_to_expiration`                | position                      | Whole days until expiration. For **display/grouping**; to filter a horizon, range-filter `expiration` instead.                                                  |
 | `executed_at`                       | execution / trade (time axis) | Fill/trade time. Range-filter for date windows.                                                                                                                 |
-| `right`, `strike`, `contract_month` | via `contracts`               | ⚠️ See the caveat below.                                                                                                                                        |
+| `right`, `strike`                   | position (native); execution (via `contracts`) | ⚠️ Complete on `position_facts` — see the caveat below for `execution_facts`.                                                                    |
+| `contract_month`                    | execution (via `contracts`)   | ⚠️ See the caveat below.                                                                                                                                        |
 | `exchange`, `side`, `status`        | see `describe`                | —                                                                                                                                                               |
 
-⚠️ **`strike` / `right` / `contract_month` come from the `contracts` security
-master, which is incomplete for many traded option `con_id`s.** Slicing a metric
-by these can silently **drop** fills whose contract isn't in the master. Totals by
-`tag` / `sec_type` (which don't touch `contracts`) are complete; strike-level
+⚠️ **On `execution_facts`, `strike` / `right` / `contract_month` / `symbol` all
+come from a join to the `contracts` security master, which is incomplete for
+many traded option `con_id`s.** Slicing an execution-grain metric by these can
+silently **drop** fills whose contract isn't in the master. On `position_facts`,
+`strike`/`right`/`symbol` are native columns and always complete — only
+`contract_month` isn't available on that grain. Totals by `tag` / `sec_type`
+(which don't touch `contracts`) are complete; execution-grain strike-level
 breakdowns are best-effort until contract coverage is backfilled.
 
 ## 5. Unrealized PnL — settled (SQL) vs intraday (tool)
@@ -117,9 +121,10 @@ _exact_ LEAP leg by `strike`/`right` is limited by the contracts caveat in §4.)
 
 You often don't know a group's exact name — you have a phrase ("MP", "gamma
 delta", "the CL Dec 27 thing"). **Don't filter a metric by `symbol` to find it**:
-`contracts.symbol` is incomplete (§4), so symbol-filtered PnL silently
-undercounts, and a symbol isn't even the right key (the phrase may be a strategy
-description, not a ticker). Use the two-step flow:
+on `execution_facts`, `symbol` comes from the incomplete `contracts` join (§4),
+so symbol-filtered PnL silently undercounts, and a symbol isn't even the right
+key (the phrase may be a strategy description, not a ticker). Use the two-step
+flow:
 
 1. **Resolve** — `find_trade_groups("gamma delta")` → `[{id:19, name:"CL Short Gamma + Long Delta --- Dec'27", score:…}]`.
    Every token in the phrase must appear in the name (order/punctuation-independent),
