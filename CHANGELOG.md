@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.1.6](https://github.com/westonplatter/ngv-trader/compare/ngv-trader-v0.1.5...ngv-trader-v0.1.6) (2026-07-05)
+
+
+### Features
+
+* **semantic:** open-positions grain, premium & unrealized metrics, fuzzy trade-group find ([#74](https://github.com/westonplatter/ngv-trader/issues/74)) ([60970ee](https://github.com/westonplatter/ngv-trader/commit/60970ee2a95dfaebfef6f1acc6194e5713b12144))
+* **ux:** hide dollar amounts and show relative returns in privacy mode ([#72](https://github.com/westonplatter/ngv-trader/issues/72)) ([47cc0b0](https://github.com/westonplatter/ngv-trader/commit/47cc0b01556b0a424b8a0807f03d84d54b0e2817))
+
+
+### Documentation
+
+* cross-check docs against codebase, fix stale/missing content ([#71](https://github.com/westonplatter/ngv-trader/issues/71)) ([c44bce8](https://github.com/westonplatter/ngv-trader/commit/c44bce81dbdc2c65df09a55b94cc0d703d2ea7f9))
+
+
+### Continuous Integration
+
+* regenerate uv.lock on release PR to keep self-version in sync ([#77](https://github.com/westonplatter/ngv-trader/issues/77)) ([5967b63](https://github.com/westonplatter/ngv-trader/commit/5967b6326b82738c3fb26f401539f450248ab693))
+
 ## [0.1.5](https://github.com/westonplatter/ngv-trader/compare/ngv-trader-v0.1.4...ngv-trader-v0.1.5) (2026-07-03)
 
 
