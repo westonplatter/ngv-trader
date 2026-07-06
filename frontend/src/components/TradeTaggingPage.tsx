@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { API_BASE_URL } from "../config";
 import { usePrivacy } from "../contexts/PrivacyContext";
+import { linkify } from "../utils/linkify";
 import { PRIVACY_MASK, formatRelativeReturn } from "../utils/privacy";
 
 export type TradeGroup = {
@@ -1123,7 +1124,7 @@ export default function TradeTaggingPage() {
                     <div>
                       <span className="text-xs text-gray-500">Notes</span>
                       <p className="mt-0.5 whitespace-pre-wrap text-sm text-gray-700">
-                        {groupDetail.notes}
+                        {linkify(groupDetail.notes)}
                       </p>
                     </div>
                   )}
