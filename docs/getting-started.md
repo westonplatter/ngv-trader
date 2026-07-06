@@ -140,10 +140,10 @@ This script:
 2. Creates `ngtrader_dev` (or whatever `DB_NAME` is set to) if it doesn't exist
 3. Runs all Alembic migrations to bring the schema up to date
 
-You can also run migrations independently:
+You can also run migrations independently. `task` commands default to `ENV=prod` (per `Taskfile.yaml`), so pass `ENV=dev` explicitly for local work:
 
 ```bash
-task migrate
+ENV=dev task migrate
 ```
 
 ## 4. Validate Your Setup
@@ -151,13 +151,13 @@ task migrate
 Run the environment validator to confirm everything is wired up correctly:
 
 ```bash
-task validate
+ENV=dev task validate
 ```
 
 This checks your `.env.dev` file, PostgreSQL connectivity, migration status, and TWS connectivity. To skip the TWS check if you don't have IBKR running:
 
 ```bash
-task validate -- --no-tws
+ENV=dev task validate -- --no-tws
 ```
 
 ## 5. Set Up IBKR TWS or IB Gateway (optional)
@@ -197,7 +197,7 @@ You need to start the backend and frontend. In two separate terminals:
 **Terminal 1 — Backend API (port 8000):**
 
 ```bash
-task api
+ENV=dev task api
 ```
 
 The API validates the database connection on startup. If PostgreSQL is unreachable, you'll see a clear error message immediately instead of a silent failure.
@@ -211,7 +211,7 @@ task frontend
 Or start both at once:
 
 ```bash
-task dev
+ENV=dev task dev
 ```
 
 Open [http://localhost:5173](http://localhost:5173) in your browser.
@@ -233,7 +233,7 @@ Workers are background processes that sync data with IBKR. Run in its own termin
 **Terminal 3 — Jobs worker** (position sync, contract sync, watchlist quotes):
 
 ```bash
-task worker:jobs
+ENV=dev task worker:jobs
 ```
 
 TWS/Gateway is only required for contract-metadata sync and watchlist quotes; FlexQuery trade/position sync (the active sync path) works without it as long as `IB_JSON` is set. The UI header shows worker health lights (green/yellow/red) based on heartbeat freshness.
@@ -282,24 +282,20 @@ Available commands include listing accounts/positions/orders, syncing positions 
 
 ## Quick Reference: Task Commands
 
+These default to `ENV=prod` (per `Taskfile.yaml`) — prefix each with `ENV=dev` to target your local setup instead:
+
 ```bash
 task list              # Show all available tasks
-task api               # Start FastAPI backend (port 8000)
+ENV=dev task api               # Start FastAPI backend (port 8000)
 task frontend          # Start Vite frontend (port 5173)
-task dev               # Start both API and frontend
+ENV=dev task dev               # Start both API and frontend
 task frontend:install  # bun install for frontend
-task migrate           # Run Alembic migrations to head
-task migrate:down      # Roll back one migration
-task migrate:new -- "description"  # Create a new migration
-task worker:jobs       # Start jobs worker (position sync, quotes)
-task validate          # Check env file, Postgres, migrations, TWS
-task validate -- --no-tws     # Skip TWS connectivity check
-```
-
-To target production:
-
-```bash
-ENV=prod task api
+ENV=dev task migrate           # Run Alembic migrations to head
+ENV=dev task migrate:down      # Roll back one migration
+ENV=dev task migrate:new -- "description"  # Create a new migration
+ENV=dev task worker:jobs       # Start jobs worker (position sync, quotes)
+ENV=dev task validate          # Check env file, Postgres, migrations, TWS
+ENV=dev task validate -- --no-tws     # Skip TWS connectivity check
 ```
 
 ## Troubleshooting
