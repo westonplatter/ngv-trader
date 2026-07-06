@@ -70,19 +70,19 @@ task frontend:install
 
 ## 2. Configure Environment Variables
 
-Copy the example env file and fill in your values:
+Copy the example env file and fill in your values. The tooling defaults to the `prod` environment (`task` reads `.env.prod`), so set that up first:
 
 ```bash
-cp .env.example .env.dev
+cp .env.example .env.prod
 ```
 
-Edit `.env.dev` with your database and broker settings:
+Edit `.env.prod` with your database and broker settings:
 
 ```bash
 # PostgreSQL connection
 DB_HOST=localhost
 DB_PORT=5432
-DB_NAME=ngtrader_dev
+DB_NAME=ngtrader_prod
 DB_USER=postgres
 DB_PASSWORD=your_password
 
@@ -105,9 +105,11 @@ BROKER_CL_MIN_DAYS_TO_EXPIRY=7
 # TRADEBOT_LLM_TIMEOUT_SECONDS=45
 ```
 
+> **Want an isolated development database?** Substitute `dev` for `prod` throughout this guide — `.env.dev`, `DB_NAME=ngtrader_dev`, `--env dev`, and prefix each `task` command with `ENV=dev` (e.g. `ENV=dev task migrate`) so it targets your dev setup instead of the default `prod`.
+
 ### Secrets with 1Password (optional)
 
-If you use 1Password, values in `.env.dev` can reference secrets with `op://` URIs instead of plain text:
+If you use 1Password, values in `.env.prod` can reference secrets with `op://` URIs instead of plain text:
 
 ```bash
 DB_PASSWORD=op://MyVault/ngtrader-db/password
@@ -117,33 +119,33 @@ BROKER_TWS_PORT=op://MyVault/ibkr/tws-port
 To resolve `op://` references, wrap scripts that don't use the task runner directly:
 
 ```bash
-op run --env-file=.env.dev -- uv run python scripts/setup_db.py --env dev
+op run --env-file=.env.prod -- uv run python scripts/setup_db.py --env prod
 ```
 
-`op run` resolves the references and injects the real values as environment variables before the inner command starts. Only `task api`, `task worker:jobs`, and `task worker:orders` embed `op run` internally — run those directly. `task migrate`, `task migrate:down`, `task migrate:new`, and `task validate` load `.env.<ENV>` themselves but do not wrap `op run`, so prefix them with `op run --env-file=.env.dev -- ...` if your env file has `op://` references. `task frontend` and `task frontend:install` don't read `.env.dev`/`.env.prod` at all.
+`op run` resolves the references and injects the real values as environment variables before the inner command starts. Only `task api`, `task worker:jobs`, and `task worker:orders` embed `op run` internally — run those directly. `task migrate`, `task migrate:down`, `task migrate:new`, and `task validate` load `.env.<ENV>` themselves but do not wrap `op run`, so prefix them with `op run --env-file=.env.prod -- ...` if your env file has `op://` references. `task frontend` and `task frontend:install` don't read `.env.dev`/`.env.prod` at all.
 
 See [secrets-using-1password.md](secrets-using-1password.md) for details.
 
-If you do **not** use 1Password, just use plain values in `.env.dev` and run commands directly.
+If you do **not** use 1Password, just use plain values in `.env.prod` and run commands directly.
 
 ## 3. Set Up PostgreSQL
 
 Make sure PostgreSQL is running, then create the database and run migrations:
 
 ```bash
-uv run python scripts/setup_db.py --env dev
+uv run python scripts/setup_db.py --env prod
 ```
 
 This script:
 
 1. Connects to the `postgres` maintenance database
-2. Creates `ngtrader_dev` (or whatever `DB_NAME` is set to) if it doesn't exist
+2. Creates `ngtrader_prod` (or whatever `DB_NAME` is set to) if it doesn't exist
 3. Runs all Alembic migrations to bring the schema up to date
 
-You can also run migrations independently. `task` commands default to `ENV=prod` (per `Taskfile.yaml`), so pass `ENV=dev` explicitly for local work:
+You can also run migrations independently. `task` commands default to `ENV=prod` (per `Taskfile.yaml`), so no prefix is needed:
 
 ```bash
-ENV=dev task migrate
+task migrate
 ```
 
 ## 4. Validate Your Setup
@@ -151,13 +153,13 @@ ENV=dev task migrate
 Run the environment validator to confirm everything is wired up correctly:
 
 ```bash
-ENV=dev task validate
+task validate
 ```
 
-This checks your `.env.dev` file, PostgreSQL connectivity, migration status, and TWS connectivity. To skip the TWS check if you don't have IBKR running:
+This checks your `.env.prod` file, PostgreSQL connectivity, migration status, and TWS connectivity. To skip the TWS check if you don't have IBKR running:
 
 ```bash
-ENV=dev task validate -- --no-tws
+task validate -- --no-tws
 ```
 
 ## 5. Set Up IBKR TWS or IB Gateway (optional)
@@ -175,7 +177,7 @@ ngv-trader connects to Interactive Brokers through TWS (Trader Workstation) or I
 ### Test the connection
 
 ```bash
-uv run python scripts/test_tws_connection.py --env dev
+uv run python scripts/test_tws_connection.py --env prod
 ```
 
 A successful test prints the server version, managed accounts, and net liquidation value.
@@ -185,7 +187,7 @@ A successful test prints the server version, managed accounts, and net liquidati
 With TWS/Gateway running, pull your current positions into the database:
 
 ```bash
-uv run python scripts/download_positions.py --env dev
+uv run python scripts/download_positions.py --env prod
 ```
 
 This connects to IBKR, fetches all positions across your managed accounts, creates `Account` rows, and upserts positions into the `positions` table. This is a one-time bootstrap; ongoing position and trade sync runs through the FlexQuery jobs in `worker:jobs` (see [workers.md](workers.md)).
@@ -197,7 +199,7 @@ You need to start the backend and frontend. In two separate terminals:
 **Terminal 1 — Backend API (port 8000):**
 
 ```bash
-ENV=dev task api
+task api
 ```
 
 The API validates the database connection on startup. If PostgreSQL is unreachable, you'll see a clear error message immediately instead of a silent failure.
@@ -211,7 +213,7 @@ task frontend
 Or start both at once:
 
 ```bash
-ENV=dev task dev
+task dev
 ```
 
 Open [http://localhost:5173](http://localhost:5173) in your browser.
@@ -233,7 +235,7 @@ Workers are background processes that sync data with IBKR. Run in its own termin
 **Terminal 3 — Jobs worker** (position sync, contract sync, watchlist quotes):
 
 ```bash
-ENV=dev task worker:jobs
+task worker:jobs
 ```
 
 TWS/Gateway is only required for contract-metadata sync and watchlist quotes; FlexQuery trade/position sync (the active sync path) works without it as long as `IB_JSON` is set. The UI header shows worker health lights (green/yellow/red) based on heartbeat freshness.
@@ -282,20 +284,20 @@ Available commands include listing accounts/positions/orders, syncing positions 
 
 ## Quick Reference: Task Commands
 
-These default to `ENV=prod` (per `Taskfile.yaml`) — prefix each with `ENV=dev` to target your local setup instead:
+These default to `ENV=prod` (per `Taskfile.yaml`). Prefix any command with `ENV=dev` if you keep a separate dev environment:
 
 ```bash
 task list              # Show all available tasks
-ENV=dev task api               # Start FastAPI backend (port 8000)
+task api               # Start FastAPI backend (port 8000)
 task frontend          # Start Vite frontend (port 5173)
-ENV=dev task dev               # Start both API and frontend
+task dev               # Start both API and frontend
 task frontend:install  # bun install for frontend
-ENV=dev task migrate           # Run Alembic migrations to head
-ENV=dev task migrate:down      # Roll back one migration
-ENV=dev task migrate:new -- "description"  # Create a new migration
-ENV=dev task worker:jobs       # Start jobs worker (position sync, quotes)
-ENV=dev task validate          # Check env file, Postgres, migrations, TWS
-ENV=dev task validate -- --no-tws     # Skip TWS connectivity check
+task migrate           # Run Alembic migrations to head
+task migrate:down      # Roll back one migration
+task migrate:new -- "description"  # Create a new migration
+task worker:jobs       # Start jobs worker (position sync, quotes)
+task validate          # Check env file, Postgres, migrations, TWS
+task validate -- --no-tws     # Skip TWS connectivity check
 ```
 
 ## Troubleshooting
