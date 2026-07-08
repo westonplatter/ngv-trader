@@ -73,6 +73,17 @@ class PositionView:
     settled_unrealized: float | None
     settled_position_value: float | None
     as_of_date: date | None
+    # Live option metrics (from the separate option_metrics.sync.tws job; None for
+    # non-options or when that job hasn't run). Greeks are as returned by IBKR;
+    # intrinsic/extrinsic are the read-time split of the mark (per-unit prices).
+    iv: float | None = None
+    delta: float | None = None
+    gamma: float | None = None
+    theta: float | None = None
+    vega: float | None = None
+    und_price: float | None = None
+    intrinsic_value: float | None = None
+    extrinsic_value: float | None = None
 
 
 def _key(account_id: int, con_id: int) -> tuple[int, int]:
@@ -99,11 +110,75 @@ def normalize_live_mark(mark: float | None, magnifier: Any) -> float | None:
     return mark / mag
 
 
+_OPTION_SEC_TYPES = {"OPT", "FOP"}
+_CALL_RIGHTS = {"C", "CALL"}
+_PUT_RIGHTS = {"P", "PUT"}
+
+
+def option_value_split(
+    mark: float | None,
+    right: str | None,
+    strike: float | None,
+    und_price: float | None,
+) -> tuple[float | None, float | None]:
+    """Split a per-unit option ``mark`` into ``(intrinsic, extrinsic)``.
+
+    Intrinsic (moneyness) needs ``strike``, ``und_price``, and ``right``:
+    call → ``max(0, und − strike)``, put → ``max(0, strike − und)``. Extrinsic
+    (time value) is ``max(0, mark − intrinsic)``. Any of the three parts is
+    ``None`` when its inputs are missing (non-option row, no underlying price, or
+    no mark). Values are per-unit prices in the same unit as ``mark`` — the
+    multiplier is applied only when converting to a dollar figure, per the
+    documented cost-basis convention. (For price-magnified products the mark unit
+    and strike/underlying unit can differ; that skew is a known follow-up, same
+    family as the underlying-price fallback.)
+    """
+    intrinsic: float | None = None
+    r = (right or "").strip().upper()
+    if strike is not None and und_price is not None:
+        if r in _CALL_RIGHTS:
+            intrinsic = max(0.0, und_price - strike)
+        elif r in _PUT_RIGHTS:
+            intrinsic = max(0.0, strike - und_price)
+    extrinsic = max(0.0, mark - intrinsic) if (mark is not None and intrinsic is not None) else None
+    return intrinsic, extrinsic
+
+
+def option_metric_fields(
+    sec_type: str | None,
+    right: str | None,
+    strike: float | None,
+    mark: float | None,
+    metric: Any,
+) -> dict[str, float | None]:
+    """Greek + intrinsic/extrinsic fields for a view, from a metrics row.
+
+    ``metric`` is a ``LatestOptionMetrics`` row (or None). Returns all-None for
+    non-option rows so the fields stay blank in the UI.
+    """
+    empty: dict[str, float | None] = {k: None for k in ("iv", "delta", "gamma", "theta", "vega", "und_price", "intrinsic_value", "extrinsic_value")}
+    if (sec_type or "").strip().upper() not in _OPTION_SEC_TYPES:
+        return empty
+    und_price = getattr(metric, "und_price", None) if metric is not None else None
+    intrinsic, extrinsic = option_value_split(mark, right, strike, und_price)
+    return {
+        "iv": getattr(metric, "iv", None) if metric is not None else None,
+        "delta": getattr(metric, "delta", None) if metric is not None else None,
+        "gamma": getattr(metric, "gamma", None) if metric is not None else None,
+        "theta": getattr(metric, "theta", None) if metric is not None else None,
+        "vega": getattr(metric, "vega", None) if metric is not None else None,
+        "und_price": und_price,
+        "intrinsic_value": intrinsic,
+        "extrinsic_value": extrinsic,
+    }
+
+
 def merge_positions(
     flex_rows: list[Any],
     live_rows: list[Any],
     quotes: dict[int, Any],
     magnifiers: dict[int, Any] | None = None,
+    metrics: dict[int, Any] | None = None,
 ) -> list[PositionView]:
     """Compose unified positions, preferring live state with FlexQuery fallback.
 
@@ -112,6 +187,10 @@ def merge_positions(
     - ``quotes``: ``{con_id: LatestQuote}`` live marks.
     - ``magnifiers``: ``{con_id: price_magnifier}`` to normalize quoted marks
       into the multiplier's price unit (defaults to 1 per con_id when absent).
+    - ``metrics``: ``{con_id: LatestOptionMetrics}`` live greeks/IV for held
+      options (from the separate ``option_metrics.sync.tws`` job). Optional; when
+      absent option rows simply carry no greeks. The intrinsic/extrinsic split is
+      computed here from the view's mark and the metric's underlying price.
 
     Reconciliation per ``(account, con_id)``:
       * live present  → live qty/cost, live mark (fallback settled mark), source=live.
@@ -122,6 +201,7 @@ def merge_positions(
     flex_by_key = {_key(r.account_id, r.con_id): r for r in flex_rows}
     live_accounts = {r.account_id for r in live_rows}
     magnifiers = magnifiers or {}
+    metrics = metrics or {}
     views: list[PositionView] = []
     seen: set[tuple[int, int]] = set()
 
@@ -164,6 +244,13 @@ def merge_positions(
                 settled_unrealized=flex.fifo_pnl_unrealized if flex else None,
                 settled_position_value=flex.position_value if flex else None,
                 as_of_date=flex.as_of_date if flex else None,
+                **option_metric_fields(
+                    live.sec_type or (flex.sec_type if flex else None),
+                    live.right or (flex.right if flex else None),
+                    live.strike if live.strike is not None else (flex.strike if flex else None),
+                    mark,
+                    metrics.get(live.con_id),
+                ),
             )
         )
 
@@ -195,6 +282,13 @@ def merge_positions(
                 settled_unrealized=flex.fifo_pnl_unrealized,
                 settled_position_value=flex.position_value,
                 as_of_date=flex.as_of_date,
+                **option_metric_fields(
+                    flex.sec_type,
+                    flex.right,
+                    flex.strike,
+                    flex.mark_price,
+                    metrics.get(flex.con_id),
+                ),
             )
         )
 

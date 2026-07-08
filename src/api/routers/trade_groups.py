@@ -13,6 +13,7 @@ from src.api.routers.trades import _contract_display_from_raw, _execution_realiz
 from src.models import (
     Account,
     ContractRef,
+    LatestOptionMetrics,
     LiveExecution,
     Tag,
     TagLink,
@@ -1004,6 +1005,15 @@ class TradeGroupOpenPositionItem(BaseModel):
     mark: float | None = None
     mark_ts: datetime | None = None
     live_unrealized: float | None = None
+    # Live option metrics (additive; from the separate option-metrics sync job).
+    iv: float | None = None
+    delta: float | None = None
+    gamma: float | None = None
+    theta: float | None = None
+    vega: float | None = None
+    und_price: float | None = None
+    intrinsic_value: float | None = None
+    extrinsic_value: float | None = None
 
 
 class TradeGroupAccountPnl(BaseModel):
@@ -1083,6 +1093,7 @@ def _build_open_positions_overlay(
     # multiplier's dollar unit before merge_positions computes live PnL.
     overlay_con_ids = {p.con_id for p in flex_rows} | {p.con_id for p in live_rows}
     magnifiers: dict[int, int] = {}
+    metrics: dict[int, LatestOptionMetrics] = {}
     if overlay_con_ids:
         magnifiers = dict(
             db.execute(
@@ -1091,7 +1102,11 @@ def _build_open_positions_overlay(
                 )
             ).all()
         )
-    views = merge_positions(flex_rows, live_rows, quotes, magnifiers)
+        metrics = {
+            m.con_id: m
+            for m in db.execute(select(LatestOptionMetrics).where(LatestOptionMetrics.con_id.in_(list(overlay_con_ids)))).scalars().all()
+        }
+    views = merge_positions(flex_rows, live_rows, quotes, magnifiers, metrics)
 
     view_account_ids = {v.account_id for v in views}
     alias_by_id = {}
@@ -1185,6 +1200,14 @@ def _view_to_open_position(view, flex, account) -> TradeGroupOpenPositionItem:
         mark=view.mark,
         mark_ts=view.mark_ts,
         live_unrealized=view.live_unrealized,
+        iv=view.iv,
+        delta=view.delta,
+        gamma=view.gamma,
+        theta=view.theta,
+        vega=view.vega,
+        und_price=view.und_price,
+        intrinsic_value=view.intrinsic_value,
+        extrinsic_value=view.extrinsic_value,
     )
 
 

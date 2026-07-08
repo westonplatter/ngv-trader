@@ -26,6 +26,7 @@ from src.services.jobs import (
     JOB_TYPE_MARKET_DATA_FUTURES_OPTIONS,
     JOB_TYPE_MARKET_DATA_FUTURES_PRICES,
     JOB_TYPE_MARKET_DATA_SNAPSHOT,
+    JOB_TYPE_OPTION_METRICS_SYNC_TWS,
     JOB_TYPE_ORDER_FETCH_SYNC,
     JOB_TYPE_POSITIONS_SYNC_FLEXQUERY,
     JOB_TYPE_TRADES_SYNC_FLEXQUERY,
@@ -644,6 +645,20 @@ def handle_intraday_sync_tws(job: Job, engine: Engine, ib_pool: IBSessionPool) -
     return run_intraday_sync(engine=engine, ib=ib)
 
 
+def handle_option_metrics_sync_tws(job: Job, engine: Engine, ib_pool: IBSessionPool) -> dict:
+    """Run the option-metrics TWS sync: live greeks/IV for held options.
+
+    Separate from ``handle_intraday_sync_tws`` (the real-time mark fetch) so the
+    two run independently and never clobber each other's columns.
+    """
+    from src.services.option_metrics_sync_tws import run_option_metrics_sync
+
+    payload = job.payload or {}
+    host, port, client_id, connect_timeout_seconds = resolve_tws_connection(payload, default_client_id=41)
+    ib = ib_pool.get(host=host, port=port, client_id=client_id, connect_timeout_seconds=connect_timeout_seconds)
+    return run_option_metrics_sync(engine=engine, ib=ib)
+
+
 def get_handler(job_type: str) -> Callable[[Job, Engine, IBSessionPool], dict] | None:
     # TWS sync entries (JOB_TYPE_POSITIONS_SYNC_TWS, JOB_TYPE_TRADES_SYNC_TWS) are
     # intentionally not registered while Flex Query is the active path. The
@@ -663,5 +678,6 @@ def get_handler(job_type: str) -> Callable[[Job, Engine, IBSessionPool], dict] |
         JOB_TYPE_CONTRACTS_QUALIFY_AND_SNAPSHOT: handle_contracts_qualify_and_snapshot,
         JOB_TYPE_CONTRACTS_SYNC_ACTIVATED: handle_contracts_sync_activated,
         JOB_TYPE_INTRADAY_SYNC_TWS: handle_intraday_sync_tws,
+        JOB_TYPE_OPTION_METRICS_SYNC_TWS: handle_option_metrics_sync_tws,
     }
     return handlers.get(job_type)

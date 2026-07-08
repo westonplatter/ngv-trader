@@ -68,7 +68,7 @@ function handle(method: string, path: string): Response {
 
   // Writes have no backend in demo mode. The sync trigger returns a job-shaped
   // payload so its UI flow stays intact; everything else gets a benign 200.
-  if (path === "/positions/sync/flex-query") {
+  if (path.startsWith("/positions/sync/")) {
     return jsonResponse({ job_id: 0, status: "demo (no backend)" });
   }
   return jsonResponse({ ok: true, demo: true });
