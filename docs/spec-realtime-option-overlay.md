@@ -1,8 +1,11 @@
 # Spec: Real-time Option Metrics Overlay
 
-> **Status: PROPOSED — not implemented (as of 2026-07-08).** Extend the existing
-> intraday TWS overlay so option positions carry live IV, delta (and the other
-> greeks), plus derived extrinsic/intrinsic value, alongside the live mark.
+> **Status: IMPLEMENTED (as of 2026-07-08).** Held option positions carry live
+> IV, delta (and the other greeks) plus derived extrinsic/intrinsic value.
+> Shipped as a **separate** job (`option_metrics.sync.tws`) writing a dedicated
+> `latest_option_metrics` table — decoupled from the real-time mark fetch, not
+> piggybacked on it (see "Data Model" note). Current-state docs live in
+> [core/intraday-tws-overlay.md](core/intraday-tws-overlay.md).
 
 ## Complexity: 2
 
@@ -111,17 +114,23 @@ computed for the futures-options *research* tables, never for held positions.
 
 ## Functional Plan
 
-1. Widen the live quote table to carry greeks.
-   - Alembic migration adds nullable `iv`, `delta`, `gamma`, `theta`, `vega`,
-     `und_price` to `latest_quote` (mirrors `latest_futures_options`).
-   - Nullable so FUT/STK quotes leave them null; no backfill needed.
-2. Populate greeks during the intraday sync.
-   - In `_write_quotes`, read `ticker.modelGreeks` exactly as `market_data.py`
-     does and include the six fields in the upsert values.
-   - Underlying-price fallback: when `modelGreeks.undPrice` is missing, leave
-     `und_price` null (the position overlay has no per-symbol future prefetch
-     like the research path; a fallback join is a follow-up, not Phase 1).
-   - Guard every field through the existing `_safe_float` (rejects NaN/inf and
+> **Design change from the original draft:** the metrics fetch ships as a
+> **separate job** writing a **separate table**, not by widening `latest_quote`
+> and piggybacking on the mark job. Two jobs upserting the same `latest_quote`
+> row would clobber each other's columns; decoupling also lets each run on its
+> own cadence. The intrinsic/extrinsic read-time compute is unchanged.
+
+1. New `latest_option_metrics` table for greeks.
+   - Alembic migration creates it keyed by `con_id` with nullable `iv`, `delta`,
+     `gamma`, `theta`, `vega`, `und_price`, `market_ts` (mirrors
+     `latest_futures_options` minus prices/FK). Additive; no backfill.
+2. New `option_metrics.sync.tws` job populates it.
+   - `run_option_metrics_sync` calls `ib.positions()`, filters to OPT/FOP,
+     qualifies exchanges, `reqTickers`, and reads `ticker.modelGreeks` exactly as
+     `market_data.py` does — self-contained, independent of the mark job.
+   - Underlying price comes from `modelGreeks.undPrice`; when missing, `und_price`
+     is left null (a `latest_futures` fallback join is a follow-up).
+   - Every field is guarded through the shared `_safe_float` (rejects NaN/inf and
      the IBKR sentinel) so a missing greek never poisons a row.
 3. Compute intrinsic/extrinsic at read time (pure, in `intraday_overlay.py`).
    - New helper `option_value_split(mark, right, strike, und_price) ->
@@ -149,9 +158,11 @@ computed for the futures-options *research* tables, never for held positions.
 
 ## Data Model and State Changes
 
-- `latest_quote`: add nullable `iv`, `delta`, `gamma`, `theta`, `vega`,
-  `und_price` (Float). Single additive Alembic migration; downgrade drops them.
-- No change to `live_positions` or `live_executions`.
+- New `latest_option_metrics` table keyed by `con_id`: nullable `iv`, `delta`,
+  `gamma`, `theta`, `vega`, `und_price`, `market_ts`, plus `ingested_at`. Single
+  additive Alembic migration; downgrade drops the table. Written only by
+  `option_metrics.sync.tws`, so it never races the mark job on `latest_quote`.
+- No change to `latest_quote`, `live_positions`, or `live_executions`.
 - Response additions (all optional, default null): `PositionResponse` and the
   trade-group executions item gain `iv`, `delta`, `gamma`, `theta`, `vega`,
   `und_price`, `intrinsic_value`, `extrinsic_value`.
@@ -160,14 +171,14 @@ computed for the futures-options *research* tables, never for held positions.
 
 ## API / Worker / Service Changes
 
-- `intraday_sync_tws._write_quotes`: read `modelGreeks`, upsert six new columns.
-- `intraday_overlay`: add `option_value_split` and the new `PositionView` fields;
-  no signature change to `merge_positions` inputs (greeks ride on the existing
-  quote objects).
-- `positions` router and trade-group executions endpoint: populate the new
-  response fields from the quote/computed split.
-- No new job type, no scheduler change in Phase 1 (piggybacks on
-  `intraday.sync.tws`).
+- New service `option_metrics_sync_tws.run_option_metrics_sync` + worker handler
+  `handle_option_metrics_sync_tws`; new job type `option_metrics.sync.tws`; new
+  endpoint `POST /positions/sync/option-metrics-tws`.
+- `intraday_overlay`: add `option_value_split` + `option_metric_fields` and the
+  new `PositionView` fields; `merge_positions` gains an optional `metrics` map.
+- `positions` router and trade-group executions endpoint: load
+  `latest_option_metrics` and populate the new response fields.
+- The mark job (`intraday.sync.tws`) and its `_write_quotes` are unchanged.
 
 ## Operational Considerations
 
