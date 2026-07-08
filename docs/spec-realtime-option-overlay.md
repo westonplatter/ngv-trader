@@ -56,6 +56,13 @@ computed for the futures-options *research* tables, never for held positions.
 - Position-level aggregate greeks (portfolio delta/vega roll-ups). Per-position
   greeks are provided; roll-ups can follow once the per-row data exists.
 - Recomputing IB's model greeks locally; we store what TWS returns.
+- **Pre-trade / quote metrics.** Metrics are shown for *held* option positions
+  only — the overlay reads greeks off the tickers of instruments returned by
+  `ib.positions()`. Pre-trade option analytics (greeks on prospective, not-yet-
+  held contracts, e.g. shopping a futures-options chain before entry) are a
+  separately-wanted capability and explicitly out of scope here; they belong to
+  the research/pricing path (`fetch_futures_options`, `latest_futures_options`,
+  the Pricing/Structures UI), not this positions overlay.
 
 ## Current State
 
