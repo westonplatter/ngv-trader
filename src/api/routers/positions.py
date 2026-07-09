@@ -11,6 +11,7 @@ from src.api.deps import get_db
 from src.models import (
     Account,
     ContractRef,
+    LatestOptionMetrics,
     LatestQuote,
     LivePosition,
     Position,
@@ -23,10 +24,12 @@ from src.services.cl_contracts import infer_contract_month_from_local_symbol
 from src.services.intraday_overlay import (
     compute_unrealized,
     normalize_live_mark,
+    option_metric_fields,
     parse_multiplier,
 )
 from src.services.jobs import (
     JOB_TYPE_INTRADAY_SYNC_TWS,
+    JOB_TYPE_OPTION_METRICS_SYNC_TWS,
     JOB_TYPE_POSITIONS_SYNC_FLEXQUERY,
     JOB_TYPE_POSITIONS_SYNC_TWS,
     enqueue_job,
@@ -79,6 +82,16 @@ class PositionResponse(BaseModel):
     mark: float | None = None
     mark_ts: datetime | None = None
     live_unrealized: float | None = None
+    # Live option metrics (additive; from the separate option-metrics sync job).
+    # None for non-options or when that job hasn't run.
+    iv: float | None = None
+    delta: float | None = None
+    gamma: float | None = None
+    theta: float | None = None
+    vega: float | None = None
+    und_price: float | None = None
+    intrinsic_value: float | None = None
+    extrinsic_value: float | None = None
 
 
 class PositionSyncRequest(BaseModel):
@@ -146,6 +159,8 @@ def list_positions(db: Session = DB_SESSION_DEPENDENCY):
     # Portfolio-wide live overlay (not group-scoped): live current state + marks.
     live_by_key = {(p.account_id, p.con_id): p for p in db.execute(select(LivePosition)).scalars().all()}
     quotes = {q.con_id: q for q in db.execute(select(LatestQuote)).scalars().all()}
+    # Live greeks/IV per con_id from the separate option-metrics sync job.
+    metrics = {m.con_id: m for m in db.execute(select(LatestOptionMetrics)).scalars().all()}
     # price_magnifier per con_id normalizes quoted marks (e.g. cents → dollars
     # for grain futures) into the multiplier's price unit. Missing → treated as 1.
     magnifiers = dict(db.execute(select(ContractRef.con_id, ContractRef.price_magnifier)).all())
@@ -238,6 +253,14 @@ def list_positions(db: Session = DB_SESSION_DEPENDENCY):
             avg_cost = live.avg_cost
             source = "live"
             live_unrealized = compute_unrealized(live.position, live.avg_cost, mark, parse_multiplier(live.multiplier))
+        # Option metrics: split off the best available mark (live, else settled).
+        opt_fields = option_metric_fields(
+            pos.sec_type,
+            pos.right,
+            pos.strike,
+            mark if mark is not None else pos.mark_price,
+            metrics.get(pos.con_id),
+        )
         results.append(
             PositionResponse(
                 id=pos.id,
@@ -271,6 +294,7 @@ def list_positions(db: Session = DB_SESSION_DEPENDENCY):
                 mark=mark,
                 mark_ts=mark_ts,
                 live_unrealized=live_unrealized,
+                **opt_fields,
             )
         )
 
@@ -295,6 +319,7 @@ def list_positions(db: Session = DB_SESSION_DEPENDENCY):
             exchange=None,
             trading_class=None,
         )
+        opt_fields = option_metric_fields(live.sec_type, live.right, live.strike, mark, metrics.get(con_id))
         results.append(
             PositionResponse(
                 id=-con_id,  # synthetic id for a live-only row (no Position PK yet)
@@ -333,6 +358,7 @@ def list_positions(db: Session = DB_SESSION_DEPENDENCY):
                     mark,
                     parse_multiplier(live.multiplier),
                 ),
+                **opt_fields,
             )
         )
 
@@ -385,6 +411,39 @@ def enqueue_intraday_sync(
         payload=payload,
         source=body.source,
         request_text=body.request_text or "Manual intraday TWS overlay sync from UI.",
+        max_attempts=body.max_attempts,
+    )
+    db.commit()
+    return PositionSyncResponse(
+        job_id=job.id,
+        job_type=job.job_type,
+        status=job.status,
+        max_attempts=job.max_attempts,
+    )
+
+
+@router.post(
+    "/positions/sync/option-metrics-tws",
+    response_model=PositionSyncResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+def enqueue_option_metrics_sync(
+    body: IntradaySyncRequest,
+    db: Session = DB_SESSION_DEPENDENCY,
+) -> PositionSyncResponse:
+    """Enqueue the option-metrics TWS sync (live greeks/IV for held options).
+
+    Separate job from the intraday mark sync so the two run independently.
+    """
+    payload: dict[str, object] = {}
+    if body.account_code:
+        payload["account_code"] = body.account_code
+    job = enqueue_job(
+        session=db,
+        job_type=JOB_TYPE_OPTION_METRICS_SYNC_TWS,
+        payload=payload,
+        source=body.source,
+        request_text=body.request_text or "Manual option-metrics TWS sync from UI.",
         max_attempts=body.max_attempts,
     )
     db.commit()

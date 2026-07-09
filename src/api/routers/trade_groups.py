@@ -13,6 +13,7 @@ from src.api.routers.trades import _contract_display_from_raw, _execution_realiz
 from src.models import (
     Account,
     ContractRef,
+    LatestOptionMetrics,
     LiveExecution,
     Tag,
     TagLink,
@@ -32,7 +33,12 @@ from src.services.intraday_overlay import (
     overlay_totals,
 )
 from src.services.trade_group_pnl import load_overlay_inputs, trade_group_realized_pnl
-from src.services.ui_events import TOPIC_POSITIONS, TOPIC_TRADES, broadcaster, make_coarse_event
+from src.services.ui_events import (
+    TOPIC_POSITIONS,
+    TOPIC_TRADES,
+    broadcaster,
+    make_coarse_event,
+)
 from src.utils.contract_display import contract_display_name
 
 router = APIRouter()
@@ -757,10 +763,7 @@ def assign_live_executions(
         raise HTTPException(status_code=400, detail="Invalid source")
 
     trade_group = _ensure_group(db, trade_group_id)
-    live_by_exec_id = {
-        le.ib_exec_id: le
-        for le in db.execute(select(LiveExecution).where(LiveExecution.ib_exec_id.in_(body.ib_exec_ids))).scalars().all()
-    }
+    live_by_exec_id = {le.ib_exec_id: le for le in db.execute(select(LiveExecution).where(LiveExecution.ib_exec_id.in_(body.ib_exec_ids))).scalars().all()}
     missing = [eid for eid in body.ib_exec_ids if eid not in live_by_exec_id]
     if missing:
         raise HTTPException(status_code=404, detail=f"Unknown live execution(s): {', '.join(missing)}")
@@ -770,9 +773,7 @@ def assign_live_executions(
         trade_group.updated_at = _now_utc()
 
     for ib_exec_id, live_exec in live_by_exec_id.items():
-        existing = db.execute(
-            select(TradeGroupLiveExecution).where(TradeGroupLiveExecution.ib_exec_id == ib_exec_id)
-        ).scalar_one_or_none()
+        existing = db.execute(select(TradeGroupLiveExecution).where(TradeGroupLiveExecution.ib_exec_id == ib_exec_id)).scalar_one_or_none()
         if existing is not None:
             existing.trade_group_id = trade_group_id
             existing.account_id = live_exec.account_id
@@ -811,14 +812,18 @@ def unassign_live_executions(
         raise HTTPException(status_code=400, detail="Invalid source")
 
     _ensure_group(db, trade_group_id)
-    links = db.execute(
-        select(TradeGroupLiveExecution).where(
-            and_(
-                TradeGroupLiveExecution.trade_group_id == trade_group_id,
-                TradeGroupLiveExecution.ib_exec_id.in_(body.ib_exec_ids),
+    links = (
+        db.execute(
+            select(TradeGroupLiveExecution).where(
+                and_(
+                    TradeGroupLiveExecution.trade_group_id == trade_group_id,
+                    TradeGroupLiveExecution.ib_exec_id.in_(body.ib_exec_ids),
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     for link in links:
         db.delete(link)
 
@@ -1004,6 +1009,15 @@ class TradeGroupOpenPositionItem(BaseModel):
     mark: float | None = None
     mark_ts: datetime | None = None
     live_unrealized: float | None = None
+    # Live option metrics (additive; from the separate option-metrics sync job).
+    iv: float | None = None
+    delta: float | None = None
+    gamma: float | None = None
+    theta: float | None = None
+    vega: float | None = None
+    und_price: float | None = None
+    intrinsic_value: float | None = None
+    extrinsic_value: float | None = None
 
 
 class TradeGroupAccountPnl(BaseModel):
@@ -1083,15 +1097,11 @@ def _build_open_positions_overlay(
     # multiplier's dollar unit before merge_positions computes live PnL.
     overlay_con_ids = {p.con_id for p in flex_rows} | {p.con_id for p in live_rows}
     magnifiers: dict[int, int] = {}
+    metrics: dict[int, LatestOptionMetrics] = {}
     if overlay_con_ids:
-        magnifiers = dict(
-            db.execute(
-                select(ContractRef.con_id, ContractRef.price_magnifier).where(
-                    ContractRef.con_id.in_(list(overlay_con_ids))
-                )
-            ).all()
-        )
-    views = merge_positions(flex_rows, live_rows, quotes, magnifiers)
+        magnifiers = dict(db.execute(select(ContractRef.con_id, ContractRef.price_magnifier).where(ContractRef.con_id.in_(list(overlay_con_ids)))).all())
+        metrics = {m.con_id: m for m in db.execute(select(LatestOptionMetrics).where(LatestOptionMetrics.con_id.in_(list(overlay_con_ids)))).scalars().all()}
+    views = merge_positions(flex_rows, live_rows, quotes, magnifiers, metrics)
 
     view_account_ids = {v.account_id for v in views}
     alias_by_id = {}
@@ -1185,6 +1195,14 @@ def _view_to_open_position(view, flex, account) -> TradeGroupOpenPositionItem:
         mark=view.mark,
         mark_ts=view.mark_ts,
         live_unrealized=view.live_unrealized,
+        iv=view.iv,
+        delta=view.delta,
+        gamma=view.gamma,
+        theta=view.theta,
+        vega=view.vega,
+        und_price=view.und_price,
+        intrinsic_value=view.intrinsic_value,
+        extrinsic_value=view.extrinsic_value,
     )
 
 
@@ -1285,9 +1303,7 @@ def trade_group_executions(trade_group_id: int, db: Session = DB_SESSION_DEPENDE
     # trade_group_pnl tool, so the figures cannot diverge). The same helper runs
     # per account partition so the per-account totals reconcile to the group.
     total_pnl = trade_group_realized_pnl([execution for execution, _ref, _trade, _account in rows])
-    realized_by_account = {
-        acct_id: trade_group_realized_pnl([execution for execution, *_ in acct_rows]) for acct_id, acct_rows in rows_by_account.items()
-    }
+    realized_by_account = {acct_id: trade_group_realized_pnl([execution for execution, *_ in acct_rows]) for acct_id, acct_rows in rows_by_account.items()}
 
     # Open positions linked to this group: match on (account_id, con_id) pairs
     # that appear in any of the group's executions. The settled snapshot
