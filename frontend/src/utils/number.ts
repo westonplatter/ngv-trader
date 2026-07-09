@@ -66,6 +66,23 @@ export function formatGreek(
 }
 
 /**
+ * Delta. Capped at 2 significant figures (delta is bounded to [-1, 1], so this
+ * reads as "up to 2 meaningful digits"). Trailing zeros are dropped.
+ *   0.54194   -> "0.54"
+ *   0.096689  -> "0.097"
+ *   -0.007789 -> "-0.0078"
+ *   1         -> "1"
+ */
+export function formatDelta(
+  value: number | null | undefined,
+  fallback = "—",
+): string {
+  if (value == null) return fallback;
+  if (!Number.isFinite(value)) return fallback;
+  return String(Number(value.toPrecision(2)));
+}
+
+/**
  * Multiplier. Thousands separators, integer.
  *   1000 -> "1,000"
  * Accepts strings (the positions payload types multiplier as a string).

@@ -6,6 +6,7 @@ import { PRIVACY_MASK, formatRelativeReturn } from "../utils/privacy";
 import { API_BASE_URL } from "../config";
 import { useSSE } from "../lib/events";
 import {
+  formatDelta,
   formatGreek,
   formatMoney,
   formatMultiplier,
@@ -106,6 +107,7 @@ function positionCostBasis(pos: Position): number | null {
 }
 
 const COLUMNS: { key: keyof Position; label: string }[] = [
+  { key: "con_id", label: "Con ID" },
   { key: "account_alias", label: "Account" },
   { key: "trade_groups", label: "Trade Group" },
   { key: "symbol", label: "Symbol" },
@@ -133,12 +135,59 @@ const COLUMNS: { key: keyof Position; label: string }[] = [
   { key: "extrinsic_value", label: "Extrinsic" },
   { key: "intrinsic_value", label: "Intrinsic" },
   { key: "source", label: "Freshness" },
-  { key: "con_id", label: "Con ID" },
 ];
 
 // Secondary greeks hidden unless "Show greeks" is toggled on (keeps the default
 // view compact; IV / Delta / Extrinsic / Intrinsic stay visible).
 const GREEK_KEYS: (keyof Position)[] = ["gamma", "theta", "vega"];
+
+// Column provenance, so the table can visually band live (TWS overlay) columns
+// apart from settled (FlexQuery snapshot) columns. Identity/contract columns are
+// neutral and left untinted.
+type ColumnGroup = "live" | "flex" | "neutral";
+
+const LIVE_KEYS = new Set<keyof Position>([
+  "mark",
+  "live_unrealized",
+  "iv",
+  "delta",
+  "gamma",
+  "theta",
+  "vega",
+  "extrinsic_value",
+  "intrinsic_value",
+  "source",
+]);
+
+const FLEX_KEYS = new Set<keyof Position>([
+  "mark_price",
+  "position_value",
+  "fifo_pnl_unrealized",
+]);
+
+function columnGroup(key: keyof Position): ColumnGroup {
+  if (LIVE_KEYS.has(key)) return "live";
+  if (FLEX_KEYS.has(key)) return "flex";
+  return "neutral";
+}
+
+// Tints per band. Body cells use group-hover so the row highlight still reads
+// through the column tint. Neutral columns fall back to the row/thead defaults.
+const HEADER_TINT: Record<ColumnGroup, string> = {
+  live: "bg-sky-100",
+  flex: "bg-amber-100",
+  neutral: "",
+};
+const FILTER_TINT: Record<ColumnGroup, string> = {
+  live: "bg-sky-50",
+  flex: "bg-amber-50",
+  neutral: "",
+};
+const CELL_TINT: Record<ColumnGroup, string> = {
+  live: "bg-sky-50 group-hover:bg-sky-100",
+  flex: "bg-amber-50 group-hover:bg-amber-100",
+  neutral: "",
+};
 
 function regexMatch(
   value: string | null | undefined,
@@ -696,7 +745,7 @@ export default function PositionsTable() {
                 <th
                   key={col.key}
                   aria-sort={ariaSortFor(col.key)}
-                  className="px-3 py-2 font-semibold text-gray-700 whitespace-nowrap"
+                  className={`px-3 py-2 font-semibold text-gray-700 whitespace-nowrap ${HEADER_TINT[columnGroup(col.key)]}`}
                 >
                   {col.key === "symbol" ||
                   col.key === "local_symbol" ||
@@ -730,7 +779,7 @@ export default function PositionsTable() {
               {columns.map((col) => (
                 <th
                   key={`filter-${col.key}`}
-                  className="px-3 py-1 font-normal text-gray-700 whitespace-nowrap"
+                  className={`px-3 py-1 font-normal text-gray-700 whitespace-nowrap ${FILTER_TINT[columnGroup(col.key)]}`}
                 >
                   {col.key === "symbol" ? (
                     <div className="flex items-center gap-1">
@@ -845,12 +894,11 @@ export default function PositionsTable() {
             {sortedPositions.map((pos) => (
               <tr
                 key={pos.id}
-                className="border-b border-gray-200 hover:bg-gray-50"
+                className="group border-b border-gray-200 hover:bg-gray-50"
               >
                 {columns.map((col) => {
-                  const renderNumeric = (
-                    val: number | null,
-                  ): React.ReactNode => formatMoney(val);
+                  const renderNumeric = (val: number | null): React.ReactNode =>
+                    formatMoney(val);
                   let content: React.ReactNode;
                   let extraClass = "";
                   if (col.key === "trade_groups") {
@@ -969,8 +1017,9 @@ export default function PositionsTable() {
                   } else if (col.key === "iv") {
                     // IV is a risk metric, not dollar exposure — show in privacy.
                     content = formatPercent(pos.iv);
+                  } else if (col.key === "delta") {
+                    content = formatDelta(pos.delta);
                   } else if (
-                    col.key === "delta" ||
                     col.key === "gamma" ||
                     col.key === "theta" ||
                     col.key === "vega"
@@ -1000,15 +1049,8 @@ export default function PositionsTable() {
                       );
                     }
                   } else if (col.key === "contract_display_name") {
-                    content = (
-                      <Link
-                        to={`/trades?symbol=${encodeURIComponent(pos.contract_display_name)}`}
-                        className="text-blue-600 hover:underline"
-                        title="Search this contract in Trades"
-                      >
-                        {pos.contract_display_name}
-                      </Link>
-                    );
+                    // Informational only — no link.
+                    content = pos.contract_display_name;
                   } else if (col.key === "con_id") {
                     content = pos.con_id ? (
                       <Link
@@ -1027,7 +1069,7 @@ export default function PositionsTable() {
                   return (
                     <td
                       key={col.key}
-                      className={`px-3 py-2 whitespace-nowrap ${extraClass}`}
+                      className={`px-3 py-2 whitespace-nowrap ${CELL_TINT[columnGroup(col.key)]} ${extraClass}`}
                     >
                       {content}
                     </td>
