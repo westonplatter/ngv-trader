@@ -28,12 +28,13 @@ banner at the top.
 
 ## Core UX & platform patterns
 
-| Doc                                                          | What it covers                                                                                                                                            |
-| ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [core/intraday-tws-overlay.md](core/intraday-tws-overlay.md) | Optional live current-state P&L overlay from TWS (`live_positions`/`latest_quote`/`live_executions`), read-time merge over the settled FlexQuery snapshot |
-| [core/api-ux-sse.md](core/api-ux-sse.md)                     | Real-time UI via Server-Sent Events: broadcaster, notify endpoints, event envelope                                                                        |
-| [core/ux-actions.md](core/ux-actions.md)                     | Reusable action patterns: destructive confirmation, save feedback, state model                                                                            |
-| [core/ux-pricing.md](core/ux-pricing.md)                     | Pricing page: two-tier contract catalog, on-demand qualification, expected-PnL flow                                                                       |
+| Doc                                                              | What it covers                                                                                                                                            |
+| ---------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [core/intraday-tws-overlay.md](core/intraday-tws-overlay.md)     | Optional live current-state P&L overlay from TWS (`live_positions`/`latest_quote`/`live_executions`), read-time merge over the settled FlexQuery snapshot |
+| [core/option-metrics-overlay.md](core/option-metrics-overlay.md) | Live option greeks/IV + extrinsic/intrinsic on held OPT/FOP positions via the separate `option_metrics.sync.tws` job + `latest_option_metrics` table      |
+| [core/api-ux-sse.md](core/api-ux-sse.md)                         | Real-time UI via Server-Sent Events: broadcaster, notify endpoints, event envelope                                                                        |
+| [core/ux-actions.md](core/ux-actions.md)                         | Reusable action patterns: destructive confirmation, save feedback, state model                                                                            |
+| [core/ux-pricing.md](core/ux-pricing.md)                         | Pricing page: two-tier contract catalog, on-demand qualification, expected-PnL flow                                                                       |
 
 ## Planning & process
 
@@ -48,11 +49,10 @@ banner at the top.
 
 Each carries a status banner; none is fully shipped.
 
-| Spec                                                                                         | Status                                                                                                                                               |
-| -------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [spec-first-class-realized-pnl-on-trades.md](spec-first-class-realized-pnl-on-trades.md)     | Not implemented — PnL computed on read from `raw`                                                                                                    |
-| [spec-tradebot-contract-metadata-autofetch.md](spec-tradebot-contract-metadata-autofetch.md) | Partial — on-demand fetch works; order-flow + background freshness pending                                                                           |
-| [spec-worker-order-recovery.md](spec-worker-order-recovery.md)                               | Partial scaffold — submission disabled; crash-safety fields pending                                                                                  |
-| [spec-activated-products-security-master.md](spec-activated-products-security-master.md)     | Implemented — activated-products table, IBKR discovery, 12-month sync, read API/UI shipped; `resolve_exchange` demotion pending                      |
-| [spec-auto-tag-suggestions.md](spec-auto-tag-suggestions.md)                                 | Proposed — human-reviewed tag/assignment suggestions for closing and rolling fills                                                                   |
-| [spec-realtime-option-overlay.md](spec-realtime-option-overlay.md)                           | Implemented — separate `option_metrics.sync.tws` job + `latest_option_metrics` table; live IV/delta/greeks + extrinsic/intrinsic on option positions |
+| Spec                                                                                         | Status                                                                                                                          |
+| -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| [spec-first-class-realized-pnl-on-trades.md](spec-first-class-realized-pnl-on-trades.md)     | Not implemented — PnL computed on read from `raw`                                                                               |
+| [spec-tradebot-contract-metadata-autofetch.md](spec-tradebot-contract-metadata-autofetch.md) | Partial — on-demand fetch works; order-flow + background freshness pending                                                      |
+| [spec-worker-order-recovery.md](spec-worker-order-recovery.md)                               | Partial scaffold — submission disabled; crash-safety fields pending                                                             |
+| [spec-activated-products-security-master.md](spec-activated-products-security-master.md)     | Implemented — activated-products table, IBKR discovery, 12-month sync, read API/UI shipped; `resolve_exchange` demotion pending |
+| [spec-auto-tag-suggestions.md](spec-auto-tag-suggestions.md)                                 | Proposed — human-reviewed tag/assignment suggestions for closing and rolling fills                                              |

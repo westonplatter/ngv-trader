@@ -37,7 +37,7 @@ FK'd to the futures-only `contracts` table — distinct from `latest_futures*`
 
 One manual-triggered job does all three fetches in a single IB session.
 
-```
+```text
 "Refresh Live (TWS)" button ─► POST /positions/sync/intraday-tws
    ─► enqueue Job(intraday.sync.tws)
    ─► worker: handle_intraday_sync_tws → run_intraday_sync(engine, ib)
@@ -126,37 +126,16 @@ no intraday sync runs).
 
 ## Option metrics overlay (separate job)
 
-Held option positions (OPT/FOP) carry live greeks/IV and a derived
-intrinsic/extrinsic split, sourced from a **separate** job so it never clobbers
-the mark fetch and can run on its own cadence.
-
-| Piece  | Detail                                                                                                                                                    |
-| ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Job    | `option_metrics.sync.tws` — `run_option_metrics_sync` (`src/services/option_metrics_sync_tws.py`)                                                         |
-| Source | `ib.positions()` filtered to OPT/FOP → `qualifyContracts` → `reqTickers` → `ticker.modelGreeks` (same shape as `market_data.py`)                          |
-| Table  | `latest_option_metrics` keyed by `con_id`: `iv`, `delta`, `gamma`, `theta`, `vega`, `und_price`, `market_ts` (sec-type-agnostic, not FK'd to `contracts`) |
-| UI     | Positions page **"Refresh Metrics (TWS)"** button; columns IV / Delta / Extrinsic / Intrinsic, with Gamma/Theta/Vega behind a "Show greeks" toggle        |
-
-The intrinsic/extrinsic split is computed at read time in
-`intraday_overlay.option_value_split` (call → `max(0, und − strike)`, put →
-`max(0, strike − und)`; extrinsic = `max(0, mark − intrinsic)`), per-unit in the
-same price unit as `mark`. Fields ride the existing overlay: `merge_positions`
-takes an optional `metrics` map and populates the `PositionView` greek fields, so
-both `GET /positions` and `GET /trade-groups/{id}/executions` surface them
-additively (null for non-options or when the metrics job hasn't run).
-
-Metrics only cover **held** options; pre-trade / quote-chain option analytics are
-out of scope and belong to the research path (`fetch_futures_options` →
-`latest_futures_options`).
+Held option positions (OPT/FOP) also carry live greeks/IV and a derived
+extrinsic/intrinsic split, fetched by a **separate** job (`option_metrics.sync.tws`)
+that writes its own `latest_option_metrics` table and rides this overlay's
+read-time merge. Kept separate so the two jobs never clobber each other's columns
+and can run on independent cadences. See [option-metrics-overlay.md](option-metrics-overlay.md).
 
 ## Known limitations (deferred)
 
 - No interval auto-refresh (manual buttons only); no historical intraday
   time-series (only the latest live state is stored).
-- Option greeks require a delayed/live market-data entitlement; illiquid strikes
-  may return no `modelGreeks` (row still shows mark, metrics left null).
-- Intrinsic/extrinsic assume the mark and strike/underlying share a price unit;
-  price-magnified products (e.g. some grain FOPs) can skew — a known follow-up.
 
 ## Reference
 
