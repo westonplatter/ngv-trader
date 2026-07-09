@@ -1,10 +1,17 @@
 import type React from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { API_BASE_URL } from "../config";
-import {
-  type TradeGroupResult,
-  tradeGroupLabel,
-} from "../lib/tradeGroups";
+import { type TradeGroupResult, tradeGroupLabel } from "../lib/tradeGroups";
+
+// The contract's symbol root — the first whitespace-delimited token of the
+// display name. Works for shares ("GLD" → "GLD") and options
+// ("GLD Dec31'25 412 CALL" → "GLD"), so it can seed a recommended-group search
+// (q=GLD matches a group named "GLD Rolling Diagonals").
+function contractSymbol(display: string | null): string | null {
+  if (!display) return null;
+  const token = display.trim().split(/\s+/)[0];
+  return token ? token.toUpperCase() : null;
+}
 
 /**
  * A searchable trade-group picker shared by the Positions and Trades tables.
@@ -36,6 +43,7 @@ export default function TradeGroupSearchSelect({
   const [dropdownPos, setDropdownPos] = useState<{
     top: number;
     left: number;
+    width: number;
     flipUp: boolean;
   } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -52,6 +60,9 @@ export default function TradeGroupSearchSelect({
     setDropdownPos({
       top: flipUp ? rect.top : rect.bottom + 4,
       left: rect.left,
+      // Match the trigger cell's rendered width (the dynamically sized Tag Group
+      // column), with a floor so the list is never uncomfortably narrow.
+      width: Math.max(rect.width, 240),
       flipUp,
     });
   }, []);
@@ -101,11 +112,29 @@ export default function TradeGroupSearchSelect({
     setMode("search");
     setQuery("");
     setLoading(true);
-    void searchGroups("")
-      .then((data) => applyResults(data))
-      .catch(() => applyResults([]))
-      .finally(() => setLoading(false));
-  }, [searchGroups, applyResults]);
+    // Version-guard against a race with an immediate keystroke (handleQueryChange
+    // shares searchVersionRef; the latest interaction wins).
+    const version = ++searchVersionRef.current;
+    const symbol = contractSymbol(contractDisplayName);
+    // Recommended = groups whose name/strategy matches the contract symbol. Take
+    // the top 2 and float them to the top of the list, then all other open groups
+    // (recency order) with the shown recs de-duped out. No visual label (1B).
+    const recommended = symbol ? searchGroups(symbol) : Promise.resolve([]);
+    void Promise.all([recommended, searchGroups("")])
+      .then(([recs, all]) => {
+        if (searchVersionRef.current !== version) return;
+        const topRecs = recs.slice(0, 2);
+        const recIds = new Set(topRecs.map((g) => g.id));
+        const rest = all.filter((g) => !recIds.has(g.id));
+        applyResults([...topRecs, ...rest]);
+      })
+      .catch(() => {
+        if (searchVersionRef.current === version) applyResults([]);
+      })
+      .finally(() => {
+        if (searchVersionRef.current === version) setLoading(false);
+      });
+  }, [searchGroups, applyResults, contractDisplayName]);
 
   // Focus the input and position the popover once we've entered search mode.
   useEffect(() => {
@@ -193,15 +222,19 @@ export default function TradeGroupSearchSelect({
             }
           }
         }}
-        className="w-full min-w-[200px] rounded border border-blue-300 px-2 py-1 text-xs"
+        className="w-full min-w-[200px] rounded border border-blue-300 px-2 py-0.5 text-xs"
         placeholder="Search trade groups..."
         disabled={disabled}
       />
       {dropdownPos && (
         <div
-          className="fixed z-50 max-h-[240px] w-[320px] overflow-y-auto rounded border border-gray-200 bg-white shadow-lg"
+          className="fixed z-50 max-h-[240px] w-max overflow-y-auto rounded border border-gray-200 bg-white shadow-lg"
           style={{
             left: dropdownPos.left,
+            // Grow to fit the widest label (no wrapping); never narrower than the
+            // trigger cell, never past the right edge of the viewport.
+            minWidth: dropdownPos.width,
+            maxWidth: window.innerWidth - dropdownPos.left - 8,
             ...(dropdownPos.flipUp
               ? { bottom: window.innerHeight - dropdownPos.top + 4 }
               : { top: dropdownPos.top }),
@@ -245,10 +278,10 @@ export default function TradeGroupSearchSelect({
                   index === highlightedIndex ? "bg-blue-50" : "hover:bg-blue-50"
                 }`}
               >
-                <span className="font-medium text-gray-800">
+                <span className="whitespace-nowrap font-medium text-gray-800">
                   {tradeGroupLabel(group)}
                 </span>
-                <span className="ml-auto text-gray-400">#{group.id}</span>
+                <span className="ml-auto pl-2 text-gray-400">#{group.id}</span>
               </button>
             ))}
         </div>
