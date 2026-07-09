@@ -22,8 +22,8 @@ const DEMO_MODE = isDemoMode();
 
 const NAV_ITEMS = [
   { label: "Accounts", path: "/accounts" },
-  { label: "Positions", path: "/positions" },
   { label: "Orders", path: "/orders" },
+  { label: "Positions", path: "/positions" },
   { label: "Trades", path: "/trades" },
   { label: "Tagging", path: "/tagging" },
   { label: "Watch Lists", path: "/watchlists" },
