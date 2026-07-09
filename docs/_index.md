@@ -28,12 +28,13 @@ banner at the top.
 
 ## Core UX & platform patterns
 
-| Doc                                                          | What it covers                                                                                                                                            |
-| ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [core/intraday-tws-overlay.md](core/intraday-tws-overlay.md) | Optional live current-state P&L overlay from TWS (`live_positions`/`latest_quote`/`live_executions`), read-time merge over the settled FlexQuery snapshot |
-| [core/api-ux-sse.md](core/api-ux-sse.md)                     | Real-time UI via Server-Sent Events: broadcaster, notify endpoints, event envelope                                                                        |
-| [core/ux-actions.md](core/ux-actions.md)                     | Reusable action patterns: destructive confirmation, save feedback, state model                                                                            |
-| [core/ux-pricing.md](core/ux-pricing.md)                     | Pricing page: two-tier contract catalog, on-demand qualification, expected-PnL flow                                                                       |
+| Doc                                                              | What it covers                                                                                                                                            |
+| ---------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [core/intraday-tws-overlay.md](core/intraday-tws-overlay.md)     | Optional live current-state P&L overlay from TWS (`live_positions`/`latest_quote`/`live_executions`), read-time merge over the settled FlexQuery snapshot |
+| [core/option-metrics-overlay.md](core/option-metrics-overlay.md) | Live option greeks/IV + extrinsic/intrinsic on held OPT/FOP positions via the separate `option_metrics.sync.tws` job + `latest_option_metrics` table      |
+| [core/api-ux-sse.md](core/api-ux-sse.md)                         | Real-time UI via Server-Sent Events: broadcaster, notify endpoints, event envelope                                                                        |
+| [core/ux-actions.md](core/ux-actions.md)                         | Reusable action patterns: destructive confirmation, save feedback, state model                                                                            |
+| [core/ux-pricing.md](core/ux-pricing.md)                         | Pricing page: two-tier contract catalog, on-demand qualification, expected-PnL flow                                                                       |
 
 ## Planning & process
 

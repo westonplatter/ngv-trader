@@ -188,26 +188,6 @@ function parseIdParam(value: string | null): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-// Cost basis for a set of open positions. avg_cost is multiplier-inclusive, so
-// a leg's basis is avg_cost * position; long/short legs of a spread are netted
-// per bucket (options vs equity) then taken as magnitude, matching the capital
-// convention used in the PnL summary. Returns null when there are no positions.
-// Used as the denominator for privacy-mode relative returns.
-function capitalForPositions(positions: GroupOpenPosition[]): number | null {
-  let optionsSum = 0;
-  let equitySum = 0;
-  let any = false;
-  for (const pos of positions) {
-    any = true;
-    const basis = pos.avg_cost * pos.position;
-    if (pos.sec_type === "OPT" || pos.sec_type === "FOP") optionsSum += basis;
-    else equitySum += basis;
-  }
-  if (!any) return null;
-  const capital = Math.abs(optionsSum) + Math.abs(equitySum);
-  return capital > 0 ? capital : null;
-}
-
 export default function TradeTaggingPage() {
   const { privacyMode } = usePrivacy();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -780,9 +760,6 @@ export default function TradeTaggingPage() {
     accountFilter == null
       ? executions
       : executions.filter((e) => e.account_id === accountFilter);
-  // Group-level cost basis, used as the denominator for privacy-mode relative
-  // returns in the Open Positions / Trades section headers.
-  const groupCapital = capitalForPositions(openPositions);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col space-y-4">
@@ -1439,30 +1416,6 @@ export default function TradeTaggingPage() {
                           : ""}
                         )
                       </h5>
-                      <span className="text-xs text-gray-600">
-                        Unrealized PnL:{" "}
-                        <span
-                          className={
-                            totalUnrealizedPnl == null
-                              ? "text-gray-500"
-                              : totalUnrealizedPnl >= 0
-                                ? "font-semibold text-emerald-700"
-                                : "font-semibold text-red-700"
-                          }
-                        >
-                          {privacyMode
-                            ? formatRelativeReturn(
-                                totalUnrealizedPnl,
-                                groupCapital,
-                              )
-                            : totalUnrealizedPnl == null
-                              ? "—"
-                              : totalUnrealizedPnl.toLocaleString(undefined, {
-                                  style: "currency",
-                                  currency: "USD",
-                                })}
-                        </span>
-                      </span>
                     </div>
                     {visiblePositions.length === 0 && (
                       <p className="mb-3 text-xs text-gray-400">
@@ -1630,30 +1583,6 @@ export default function TradeTaggingPage() {
                           : ""}
                         )
                       </h5>
-                      <span className="text-xs text-gray-600">
-                        Total realized PnL:{" "}
-                        <span
-                          className={
-                            totalRealizedPnl == null
-                              ? "text-gray-500"
-                              : totalRealizedPnl >= 0
-                                ? "font-semibold text-emerald-700"
-                                : "font-semibold text-red-700"
-                          }
-                        >
-                          {privacyMode
-                            ? formatRelativeReturn(
-                                totalRealizedPnl,
-                                groupCapital,
-                              )
-                            : totalRealizedPnl == null
-                              ? "—"
-                              : totalRealizedPnl.toLocaleString(undefined, {
-                                  style: "currency",
-                                  currency: "USD",
-                                })}
-                        </span>
-                      </span>
                     </div>
                     {visibleExecutions.length === 0 && (
                       <p className="mb-3 text-xs text-gray-400">

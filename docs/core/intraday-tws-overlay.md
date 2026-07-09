@@ -15,7 +15,7 @@ available, the views silently degrade to settled values.
 The authoritative current state is `ib.positions()` (current quantity + blended
 average cost for every held contract, including ones opened today), so the four
 intraday mutation cases — opened / added / reduced / net-closed-or-flipped — all
-fall out without lot arithmetic. Fills drive *realized* attribution only, never
+fall out without lot arithmetic. Fills drive _realized_ attribution only, never
 quantity.
 
 ## Data model (separate from FlexQuery)
@@ -23,11 +23,11 @@ quantity.
 Three additive tables hold the overlay; the FlexQuery `positions` /
 `trade_executions` tables are never touched.
 
-| Table | Holds | Key |
-| --- | --- | --- |
-| `live_positions` | current TWS qty + blended `avg_cost` per holding | unique `(account_id, con_id)` |
-| `latest_quote` | live marks (bid/ask/last/close + selected `mark`) for any sec type | `con_id` (supplied, not generated) |
-| `live_executions` | today's fills with `realized_pnl` | unique `ib_exec_id` (dedup vs settled) |
+| Table             | Holds                                                              | Key                                    |
+| ----------------- | ------------------------------------------------------------------ | -------------------------------------- |
+| `live_positions`  | current TWS qty + blended `avg_cost` per holding                   | unique `(account_id, con_id)`          |
+| `latest_quote`    | live marks (bid/ask/last/close + selected `mark`) for any sec type | `con_id` (supplied, not generated)     |
+| `live_executions` | today's fills with `realized_pnl`                                  | unique `ib_exec_id` (dedup vs settled) |
 
 `latest_quote` is sec-type-agnostic (FUT/FOP/STK/OPT) and intentionally **not**
 FK'd to the futures-only `contracts` table — distinct from `latest_futures*`
@@ -37,7 +37,7 @@ FK'd to the futures-only `contracts` table — distinct from `latest_futures*`
 
 One manual-triggered job does all three fetches in a single IB session.
 
-```
+```text
 "Refresh Live (TWS)" button ─► POST /positions/sync/intraday-tws
    ─► enqueue Job(intraday.sync.tws)
    ─► worker: handle_intraday_sync_tws → run_intraday_sync(engine, ib)
@@ -127,10 +127,17 @@ It runs in **both** sync paths: the intraday purge and, robustly, at the end of
 the FlexQuery trade sync (so a fill that settles overnight is reconciled even if
 no intraday sync runs).
 
+## Option metrics overlay (separate job)
+
+Held option positions (OPT/FOP) also carry live greeks/IV and a derived
+extrinsic/intrinsic split, fetched by a **separate** job (`option_metrics.sync.tws`)
+that writes its own `latest_option_metrics` table and rides this overlay's
+read-time merge. Kept separate so the two jobs never clobber each other's columns
+and can run on independent cadences. See [option-metrics-overlay.md](option-metrics-overlay.md).
+
 ## Known limitations (deferred)
 
-- No greeks/IV on the live mark (mark price only).
-- No interval auto-refresh (manual button only); no historical intraday
+- No interval auto-refresh (manual buttons only); no historical intraday
   time-series (only the latest live state is stored).
 
 ## Reference

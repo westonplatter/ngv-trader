@@ -38,6 +38,51 @@ export function formatStrike(
 }
 
 /**
+ * Implied volatility. A decimal fraction rendered as a percent.
+ *   0.2453 -> "24.5%"
+ */
+export function formatPercent(
+  value: number | null | undefined,
+  fallback = "—",
+): string {
+  if (value == null) return fallback;
+  return `${(value * 100).toLocaleString(undefined, {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  })}%`;
+}
+
+/**
+ * Greek (delta/gamma/theta/vega). Signed, up to 3 decimals, no thousands sep.
+ *   0.4231  -> "0.423"
+ *   -0.05   -> "-0.05"
+ */
+export function formatGreek(
+  value: number | null | undefined,
+  fallback = "—",
+): string {
+  if (value == null) return fallback;
+  return value.toLocaleString(undefined, { maximumFractionDigits: 3 });
+}
+
+/**
+ * Delta. Capped at 2 significant figures (delta is bounded to [-1, 1], so this
+ * reads as "up to 2 meaningful digits"). Trailing zeros are dropped.
+ *   0.54194   -> "0.54"
+ *   0.096689  -> "0.097"
+ *   -0.007789 -> "-0.0078"
+ *   1         -> "1"
+ */
+export function formatDelta(
+  value: number | null | undefined,
+  fallback = "—",
+): string {
+  if (value == null) return fallback;
+  if (!Number.isFinite(value)) return fallback;
+  return String(Number(value.toPrecision(2)));
+}
+
+/**
  * Multiplier. Thousands separators, integer.
  *   1000 -> "1,000"
  * Accepts strings (the positions payload types multiplier as a string).
