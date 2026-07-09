@@ -46,6 +46,9 @@ const STATUS_CLASS: Record<string, string> = {
   filled: "bg-emerald-100 text-emerald-800",
   partial: "bg-blue-100 text-blue-800",
   cancelled: "bg-zinc-200 text-zinc-800",
+  expired: "bg-purple-100 text-purple-800",
+  assigned: "bg-orange-100 text-orange-800",
+  exercised: "bg-teal-100 text-teal-800",
   unknown: "bg-gray-100 text-gray-800",
   unsettled: "bg-amber-100 text-amber-800",
 };
