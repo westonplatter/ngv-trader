@@ -21,13 +21,13 @@ and unrealized P&L on top of the settled FlexQuery snapshot. For option
 positions the operator also needs the live risk picture — implied volatility,
 delta (and the rest of the greeks), and the extrinsic/intrinsic split of the
 mark — to judge and manage open structures intraday. These are currently only
-computed for the futures-options *research* tables, never for held positions.
+computed for the futures-options _research_ tables, never for held positions.
 
 ## Problem
 
 - The overlay marks options with a price only. `docs/core/intraday-tws-overlay.md`
-  lists this explicitly under Known limitations: *"No greeks/IV on the live mark
-  (mark price only)."*
+  lists this explicitly under Known limitations: _"No greeks/IV on the live mark
+  (mark price only)."_
 - To see live IV/delta for a held option the operator must leave the app and
   read TWS directly; there is no extrinsic/intrinsic decomposition anywhere for
   positions.
@@ -59,7 +59,7 @@ computed for the futures-options *research* tables, never for held positions.
 - Position-level aggregate greeks (portfolio delta/vega roll-ups). Per-position
   greeks are provided; roll-ups can follow once the per-row data exists.
 - Recomputing IB's model greeks locally; we store what TWS returns.
-- **Pre-trade / quote metrics.** Metrics are shown for *held* option positions
+- **Pre-trade / quote metrics.** Metrics are shown for _held_ option positions
   only — the overlay reads greeks off the tickers of instruments returned by
   `ib.positions()`. Pre-trade option analytics (greeks on prospective, not-yet-
   held contracts, e.g. shopping a futures-options chain before entry) are a
@@ -79,7 +79,7 @@ computed for the futures-options *research* tables, never for held positions.
 - The greek-extraction pattern already exists in
   `src/services/market_data.py` (`fetch_futures_options`, `fetch_snapshot`):
   `greeks = ticker.modelGreeks; iv = greeks.impliedVol; delta = greeks.delta; …;
-  und_price = greeks.undPrice`, with a `latest_futures` fallback for und_price.
+und_price = greeks.undPrice`, with a `latest_futures` fallback for und_price.
   It writes the futures-only `latest_futures_options` / `ts_futures_options`
   tables (FK'd to `contracts`), which are not used by the position overlay.
 - Read-time merge lives in `src/services/intraday_overlay.py` (`merge_positions`
@@ -134,12 +134,10 @@ computed for the futures-options *research* tables, never for held positions.
      the IBKR sentinel) so a missing greek never poisons a row.
 3. Compute intrinsic/extrinsic at read time (pure, in `intraday_overlay.py`).
    - New helper `option_value_split(mark, right, strike, und_price) ->
-     (intrinsic, extrinsic)`:
-     - intrinsic per unit: call → `max(0, und_price − strike)`; put →
-       `max(0, strike − und_price)`; `None` if any input missing or the row is
-       not an option.
-     - extrinsic per unit: `mark − intrinsic` (clamped at 0); `None` when mark or
-       intrinsic is unavailable.
+(intrinsic, extrinsic)`: - intrinsic per unit: call → `max(0, und_price − strike)`; put →
+     `max(0, strike − und_price)`; `None` if any input missing or the row is
+     not an option. - extrinsic per unit: `mark − intrinsic` (clamped at 0); `None` when mark or
+     intrinsic is unavailable.
    - These are per-unit prices in the same unit as `mark` (multiplier applied
      only for dollar value, consistent with the documented cost-basis
      convention). No P&L math changes.
@@ -256,5 +254,5 @@ computed for the futures-options *research* tables, never for held positions.
 - `frontend/src/components/PositionsTable.tsx`, `frontend/src/components/TradeTaggingPage.tsx`
 - `frontend/src/lib/demoData.ts`, `frontend/src/lib/demoApi.ts`
 - `docs/core/intraday-tws-overlay.md` (current-state doc to update on ship)
-</content>
-</invoke>
+  </content>
+  </invoke>

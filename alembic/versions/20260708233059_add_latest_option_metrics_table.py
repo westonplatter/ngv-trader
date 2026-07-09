@@ -10,15 +10,15 @@ writes ``latest_quote``). Keyed by ``con_id``, sec-type-agnostic (OPT/FOP), and
 intentionally not FK'd to the futures-only ``contracts`` table — mirrors
 ``latest_quote``. Additive; no backfill.
 """
+
 from typing import Sequence, Union
 
-from alembic import op
 import sqlalchemy as sa
-
+from alembic import op
 
 # revision identifiers, used by Alembic.
-revision: str = '01711d684634'
-down_revision: Union[str, Sequence[str], None] = '936d0e0f325f'
+revision: str = "01711d684634"
+down_revision: Union[str, Sequence[str], None] = "936d0e0f325f"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

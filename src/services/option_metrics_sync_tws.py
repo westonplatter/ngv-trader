@@ -92,11 +92,7 @@ def run_option_metrics_sync(engine: Engine, ib: IB) -> dict:
     now = _now_utc()
 
     positions = ib.positions()
-    option_contracts = [
-        p.contract
-        for p in positions
-        if getattr(p.contract, "conId", None) and getattr(p.contract, "secType", None) in OPTION_SEC_TYPES
-    ]
+    option_contracts = [p.contract for p in positions if getattr(p.contract, "conId", None) and getattr(p.contract, "secType", None) in OPTION_SEC_TYPES]
     logger.info("Option-metrics sync: %d held option contracts", len(option_contracts))
     if not option_contracts:
         return {"options": 0, "quotes": 0, "with_greeks": 0}

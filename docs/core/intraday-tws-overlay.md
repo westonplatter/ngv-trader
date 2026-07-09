@@ -15,7 +15,7 @@ available, the views silently degrade to settled values.
 The authoritative current state is `ib.positions()` (current quantity + blended
 average cost for every held contract, including ones opened today), so the four
 intraday mutation cases — opened / added / reduced / net-closed-or-flipped — all
-fall out without lot arithmetic. Fills drive *realized* attribution only, never
+fall out without lot arithmetic. Fills drive _realized_ attribution only, never
 quantity.
 
 ## Data model (separate from FlexQuery)
@@ -23,11 +23,11 @@ quantity.
 Three additive tables hold the overlay; the FlexQuery `positions` /
 `trade_executions` tables are never touched.
 
-| Table | Holds | Key |
-| --- | --- | --- |
-| `live_positions` | current TWS qty + blended `avg_cost` per holding | unique `(account_id, con_id)` |
-| `latest_quote` | live marks (bid/ask/last/close + selected `mark`) for any sec type | `con_id` (supplied, not generated) |
-| `live_executions` | today's fills with `realized_pnl` | unique `ib_exec_id` (dedup vs settled) |
+| Table             | Holds                                                              | Key                                    |
+| ----------------- | ------------------------------------------------------------------ | -------------------------------------- |
+| `live_positions`  | current TWS qty + blended `avg_cost` per holding                   | unique `(account_id, con_id)`          |
+| `latest_quote`    | live marks (bid/ask/last/close + selected `mark`) for any sec type | `con_id` (supplied, not generated)     |
+| `live_executions` | today's fills with `realized_pnl`                                  | unique `ib_exec_id` (dedup vs settled) |
 
 `latest_quote` is sec-type-agnostic (FUT/FOP/STK/OPT) and intentionally **not**
 FK'd to the futures-only `contracts` table — distinct from `latest_futures*`
@@ -130,12 +130,12 @@ Held option positions (OPT/FOP) carry live greeks/IV and a derived
 intrinsic/extrinsic split, sourced from a **separate** job so it never clobbers
 the mark fetch and can run on its own cadence.
 
-| Piece | Detail |
-| --- | --- |
-| Job | `option_metrics.sync.tws` — `run_option_metrics_sync` (`src/services/option_metrics_sync_tws.py`) |
-| Source | `ib.positions()` filtered to OPT/FOP → `qualifyContracts` → `reqTickers` → `ticker.modelGreeks` (same shape as `market_data.py`) |
-| Table | `latest_option_metrics` keyed by `con_id`: `iv`, `delta`, `gamma`, `theta`, `vega`, `und_price`, `market_ts` (sec-type-agnostic, not FK'd to `contracts`) |
-| UI | Positions page **"Refresh Metrics (TWS)"** button; columns IV / Delta / Extrinsic / Intrinsic, with Gamma/Theta/Vega behind a "Show greeks" toggle |
+| Piece  | Detail                                                                                                                                                    |
+| ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Job    | `option_metrics.sync.tws` — `run_option_metrics_sync` (`src/services/option_metrics_sync_tws.py`)                                                         |
+| Source | `ib.positions()` filtered to OPT/FOP → `qualifyContracts` → `reqTickers` → `ticker.modelGreeks` (same shape as `market_data.py`)                          |
+| Table  | `latest_option_metrics` keyed by `con_id`: `iv`, `delta`, `gamma`, `theta`, `vega`, `und_price`, `market_ts` (sec-type-agnostic, not FK'd to `contracts`) |
+| UI     | Positions page **"Refresh Metrics (TWS)"** button; columns IV / Delta / Extrinsic / Intrinsic, with Gamma/Theta/Vega behind a "Show greeks" toggle        |
 
 The intrinsic/extrinsic split is computed at read time in
 `intraday_overlay.option_value_split` (call → `max(0, und − strike)`, put →

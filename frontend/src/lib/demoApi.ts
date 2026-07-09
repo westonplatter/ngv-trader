@@ -52,7 +52,8 @@ function routeGet(path: string): Json | undefined {
   if (execMatch) return demoGroupExecutions(Number(execMatch[1])) ?? undefined;
 
   const detailMatch = path.match(/^\/trade-groups\/(\d+)$/);
-  if (detailMatch) return demoTradeGroupDetail(Number(detailMatch[1])) ?? undefined;
+  if (detailMatch)
+    return demoTradeGroupDetail(Number(detailMatch[1])) ?? undefined;
 
   return undefined;
 }
@@ -95,8 +96,7 @@ export function installDemoApi(): void {
 
     if (url.startsWith(API_BASE_URL)) {
       const method = (
-        init?.method ??
-        (input instanceof Request ? input.method : "GET")
+        init?.method ?? (input instanceof Request ? input.method : "GET")
       ).toUpperCase();
       const path = url.slice(API_BASE_URL.length).split("?")[0];
       return handle(method, path);
