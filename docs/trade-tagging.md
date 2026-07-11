@@ -310,3 +310,4 @@ Typical live workflow:
 4. `frontend/src/components/TradesTable.tsx`
 5. `frontend/src/components/PositionsTable.tsx`
 6. `frontend/src/components/TradeTaggingPage.tsx`
+7. `frontend/src/contexts/PrivacyContext.tsx`, `frontend/src/utils/privacy.ts` (privacy-mode masking used throughout the trade-group detail view)

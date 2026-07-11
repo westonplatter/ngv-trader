@@ -7,6 +7,10 @@ created: 2026-05-13
 
 # refactor: Make Flex Query the only active sync path; rename TWS vs Flex symbols/routes explicitly
 
+> **Status: SHIPPED.** This document is retained as the original design and
+> rationale. For how the system works today, see the current-state doc:
+> [docs/trades-and-executions-sync.md](../trades-and-executions-sync.md).
+
 ## Summary
 
 The IBKR background worker currently dispatches both TWS-backed sync jobs (`positions.sync`, `trades.sync`) and Flex Query sync jobs (`positions.flex_sync`, `trades.flex_sync`). Going forward, only the Flex Query path should be active in the worker and exposed by the UI. The TWS code path (handlers, API endpoints, services) must remain in the codebase so it can be reactivated when real-time TWS data fetching is added back later.
