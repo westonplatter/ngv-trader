@@ -124,5 +124,5 @@ Before implementing an action on any page:
 - `/watchlists`:
   - Row-level remove instrument: inline `Remove -> Confirm -> DELETE`.
   - Watch list delete: full-entity confirm dialog before `DELETE`.
-- `/structures`:
+- `/structures` (rendered by `PricingPage.tsx` — there is no separate structures component):
   - Sidebar save: single-step `Save` action with `Saving...` pending state and inline success/error text directly below the actions.
