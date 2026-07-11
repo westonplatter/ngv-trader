@@ -34,19 +34,21 @@ Main fields:
 2. `account_id`
 3. `name`
 4. `notes`
-5. `status` with values `open`, `closed`, `archived`
-6. `opened_at`
-7. `closed_at`
-8. `opened_by`
-9. `closed_by`
-10. `created_at`
-11. `updated_at`
+5. `meta_yaml`
+6. `status` with values `open`, `closed`, `archived`
+7. `opened_at`
+8. `closed_at`
+9. `opened_by`
+10. `closed_by`
+11. `created_at`
+12. `updated_at`
 
 Notes:
 
 1. `account_id` is nullable at creation
 2. when the first execution is assigned, the group auto-populates `account_id` from that execution
 3. assignment is intentionally cross-account in V1, so group membership is not limited by `account_id`
+4. `meta_yaml` holds an optional free-form YAML "management spec" (target delta, estimated entry/exit dates, dated profit targets, plus arbitrary keys). Stored verbatim; validated on write; `GET /trade-groups/{id}` returns the parsed form as `meta`. See [spec-trade-group-meta-yaml.md](spec-trade-group-meta-yaml.md).
 
 ### `trade_group_executions`
 
@@ -161,8 +163,9 @@ Creates a group with:
 
 1. required `name`
 2. optional `notes`
-3. optional `strategy_tag_id`
-4. provenance fields such as `source`, `created_by`, and `confidence`
+3. optional `meta_yaml`
+4. optional `strategy_tag_id`
+5. provenance fields such as `source`, `created_by`, and `confidence`
 
 Behavior:
 
@@ -175,9 +178,10 @@ Supports edits to:
 
 1. `name`
 2. `notes`
-3. `status`
-4. `closed_at`
-5. `closed_by`
+3. `meta_yaml` (blank string clears it)
+4. `status`
+5. `closed_at`
+6. `closed_by`
 
 #### Assignment endpoints
 

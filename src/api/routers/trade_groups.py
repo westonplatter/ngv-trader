@@ -32,6 +32,7 @@ from src.services.intraday_overlay import (
     merge_positions,
     overlay_totals,
 )
+from src.services.trade_group_meta import TradeGroupMetaError, parse_meta_yaml
 from src.services.trade_group_pnl import load_overlay_inputs, trade_group_realized_pnl
 from src.services.ui_events import (
     TOPIC_POSITIONS,
@@ -59,6 +60,14 @@ def _now_utc() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _parse_meta_or_400(raw: str | None) -> dict | None:
+    """Validate/parse meta YAML, mapping malformed input to a 400."""
+    try:
+        return parse_meta_yaml(raw)
+    except TradeGroupMetaError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 class TradeGroupResponse(BaseModel):
     model_config = {"from_attributes": True}
 
@@ -66,6 +75,7 @@ class TradeGroupResponse(BaseModel):
     account_id: int | None
     name: str
     notes: str | None
+    meta_yaml: str | None = None
     status: str
     primary_strategy_value: str | None = None
     opened_at: datetime
@@ -79,11 +89,15 @@ class TradeGroupResponse(BaseModel):
 class TradeGroupDetailResponse(TradeGroupResponse):
     tags: list[TagLinkResponse]
     execution_count: int
+    # Parsed, JSON-serializable form of ``meta_yaml`` (recognized blocks validated,
+    # arbitrary keys passed through). ``None`` when no meta is set.
+    meta: dict | None = None
 
 
 class TradeGroupCreateRequest(BaseModel):
     name: str
     notes: str | None = None
+    meta_yaml: str | None = None
     strategy_tag_id: int | None = None
     source: str = "manual"
     created_by: str = "api"
@@ -94,6 +108,7 @@ class TradeGroupCreateRequest(BaseModel):
 class TradeGroupPatchRequest(BaseModel):
     name: str | None = None
     notes: str | None = None
+    meta_yaml: str | None = None
     status: str | None = None
     closed_at: datetime | None = None
     closed_by: str | None = None
@@ -289,11 +304,14 @@ def create_trade_group(body: TradeGroupCreateRequest, db: Session = DB_SESSION_D
     if body.source not in ASSIGNMENT_SOURCES:
         raise HTTPException(status_code=400, detail="Invalid source")
 
+    _parse_meta_or_400(body.meta_yaml)  # validate; raises 400 on malformed YAML
+
     opened_at = body.opened_at or _now_utc()
     trade_group = TradeGroup(
         account_id=None,
         name=body.name,
         notes=body.notes,
+        meta_yaml=body.meta_yaml or None,
         status="open",
         opened_at=opened_at,
         opened_by=body.created_by,
@@ -350,6 +368,7 @@ def get_trade_group(trade_group_id: int, db: Session = DB_SESSION_DEPENDENCY):
         **TradeGroupResponse.model_validate(trade_group).model_dump(),
         tags=[TagLinkResponse.model_validate(row) for row in tag_links],
         execution_count=execution_count,
+        meta=_parse_meta_or_400(trade_group.meta_yaml),
     )
 
 
@@ -369,6 +388,10 @@ def patch_trade_group(
         trade_group.name = body.name
     if body.notes is not None:
         trade_group.notes = body.notes
+    if body.meta_yaml is not None:
+        _parse_meta_or_400(body.meta_yaml)  # validate; raises 400 on malformed YAML
+        # Blank clears the spec; otherwise store the raw source verbatim.
+        trade_group.meta_yaml = body.meta_yaml or None
     if body.closed_by is not None:
         trade_group.closed_by = body.closed_by
     if body.closed_at is not None:

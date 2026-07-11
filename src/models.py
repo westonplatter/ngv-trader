@@ -438,6 +438,11 @@ class TradeGroup(Base):
     account_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("accounts.id"), nullable=True)
     name: Mapped[str] = mapped_column(Text, nullable=False)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Free-form YAML "management spec": raw, human-authored source stored verbatim.
+    # Parsed and validated at the API boundary (see src/services/trade_group_meta.py);
+    # recognized blocks (targets/dates/profit_targets) let an agent read intent while
+    # arbitrary keys pass through untouched.
+    meta_yaml: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(Text, nullable=False, default="open")
     opened_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

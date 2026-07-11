@@ -56,3 +56,4 @@ Each carries a status banner; none is fully shipped.
 | [spec-worker-order-recovery.md](spec-worker-order-recovery.md)                               | Partial scaffold — submission disabled; crash-safety fields pending                                                             |
 | [spec-activated-products-security-master.md](spec-activated-products-security-master.md)     | Implemented — activated-products table, IBKR discovery, 12-month sync, read API/UI shipped; `resolve_exchange` demotion pending |
 | [spec-auto-tag-suggestions.md](spec-auto-tag-suggestions.md)                                 | Proposed — human-reviewed tag/assignment suggestions for closing and rolling fills                                              |
+| [spec-trade-group-meta-yaml.md](spec-trade-group-meta-yaml.md)                               | Partial — YAML "management spec" (delta/date/profit targets) per trade group; backend shipped, UI + agent reads pending         |
