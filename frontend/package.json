@@ -8,7 +8,8 @@
     "build": "bunx --bun tsc -b && bunx --bun vite build",
     "lint": "bunx eslint .",
     "typecheck": "bunx --bun tsc --noEmit",
-    "preview": "bunx --bun vite preview"
+    "preview": "bunx --bun vite preview",
+    "test": "bun test"
   },
   "dependencies": {
     "@ai-sdk/react": "^3.0.93",
@@ -25,6 +26,7 @@
   "devDependencies": {
     "@eslint/js": "^9.39.1",
     "@tailwindcss/vite": "^4.1.18",
+    "@types/bun": "^1.2.4",
     "@types/node": "^24.10.1",
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",

@@ -855,6 +855,35 @@ class LatestQuote(Base):
     )
 
 
+class LatestOptionMetrics(Base):
+    """Live greeks/IV for a held option position, keyed by ``con_id``.
+
+    Written by the **separate** ``option_metrics.sync.tws`` job (distinct from the
+    real-time mark fetch that writes ``latest_quote``), so the two jobs never
+    clobber each other's columns. Sec-type-agnostic (OPT/FOP) and intentionally
+    **not** FK'd to the futures-only ``contracts`` table — mirrors ``latest_quote``.
+    Distinct from ``latest_futures_options`` (which the research/term-structure
+    path owns). ``und_price`` is IBKR ``modelGreeks.undPrice`` and feeds the
+    read-time intrinsic/extrinsic split.
+    """
+
+    __tablename__ = "latest_option_metrics"
+
+    con_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
+    iv: Mapped[float | None] = mapped_column(Float, nullable=True)
+    delta: Mapped[float | None] = mapped_column(Float, nullable=True)
+    gamma: Mapped[float | None] = mapped_column(Float, nullable=True)
+    theta: Mapped[float | None] = mapped_column(Float, nullable=True)
+    vega: Mapped[float | None] = mapped_column(Float, nullable=True)
+    und_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    market_ts: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    ingested_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+
+
 class LiveExecution(Base):
     """Today's TWS fills for intraday realized P&L.
 

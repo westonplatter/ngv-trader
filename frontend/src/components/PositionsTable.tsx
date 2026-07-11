@@ -5,7 +5,14 @@ import { usePrivacy } from "../contexts/PrivacyContext";
 import { PRIVACY_MASK, formatRelativeReturn } from "../utils/privacy";
 import { API_BASE_URL } from "../config";
 import { useSSE } from "../lib/events";
-import { formatMoney, formatMultiplier, formatStrike } from "../utils/number";
+import {
+  formatDelta,
+  formatGreek,
+  formatMoney,
+  formatMultiplier,
+  formatPercent,
+  formatStrike,
+} from "../utils/number";
 import TradeGroupSearchSelect from "./TradeGroupSearchSelect";
 
 export interface TradeGroupRef {
@@ -44,6 +51,16 @@ export interface Position {
   mark: number | null;
   mark_ts: string | null;
   live_unrealized: number | null;
+  // Live option metrics (additive; from the separate option-metrics sync job).
+  // null for non-options or when that job hasn't run.
+  iv: number | null;
+  delta: number | null;
+  gamma: number | null;
+  theta: number | null;
+  vega: number | null;
+  und_price: number | null;
+  intrinsic_value: number | null;
+  extrinsic_value: number | null;
 }
 
 function formatMarkTime(value: string | null | undefined): string {
@@ -90,6 +107,7 @@ function positionCostBasis(pos: Position): number | null {
 }
 
 const COLUMNS: { key: keyof Position; label: string }[] = [
+  { key: "con_id", label: "Con ID" },
   { key: "account_alias", label: "Account" },
   { key: "trade_groups", label: "Trade Group" },
   { key: "symbol", label: "Symbol" },
@@ -109,9 +127,67 @@ const COLUMNS: { key: keyof Position; label: string }[] = [
   { key: "fifo_pnl_unrealized", label: "Unrealized PnL" },
   { key: "mark", label: "Live Mark" },
   { key: "live_unrealized", label: "Live Unrealized" },
+  { key: "iv", label: "IV" },
+  { key: "delta", label: "Delta" },
+  { key: "gamma", label: "Gamma" },
+  { key: "theta", label: "Theta" },
+  { key: "vega", label: "Vega" },
+  { key: "extrinsic_value", label: "Extrinsic" },
+  { key: "intrinsic_value", label: "Intrinsic" },
   { key: "source", label: "Freshness" },
-  { key: "con_id", label: "Con ID" },
 ];
+
+// Secondary greeks hidden unless "Show greeks" is toggled on (keeps the default
+// view compact; IV / Delta / Extrinsic / Intrinsic stay visible).
+const GREEK_KEYS: (keyof Position)[] = ["gamma", "theta", "vega"];
+
+// Column provenance, so the table can visually band live (TWS overlay) columns
+// apart from settled (FlexQuery snapshot) columns. Identity/contract columns are
+// neutral and left untinted.
+type ColumnGroup = "live" | "flex" | "neutral";
+
+const LIVE_KEYS = new Set<keyof Position>([
+  "mark",
+  "live_unrealized",
+  "iv",
+  "delta",
+  "gamma",
+  "theta",
+  "vega",
+  "extrinsic_value",
+  "intrinsic_value",
+  "source",
+]);
+
+const FLEX_KEYS = new Set<keyof Position>([
+  "mark_price",
+  "position_value",
+  "fifo_pnl_unrealized",
+]);
+
+function columnGroup(key: keyof Position): ColumnGroup {
+  if (LIVE_KEYS.has(key)) return "live";
+  if (FLEX_KEYS.has(key)) return "flex";
+  return "neutral";
+}
+
+// Tints per band. Body cells use group-hover so the row highlight still reads
+// through the column tint. Neutral columns fall back to the row/thead defaults.
+const HEADER_TINT: Record<ColumnGroup, string> = {
+  live: "bg-sky-100",
+  flex: "bg-amber-100",
+  neutral: "",
+};
+const FILTER_TINT: Record<ColumnGroup, string> = {
+  live: "bg-sky-50",
+  flex: "bg-amber-50",
+  neutral: "",
+};
+const CELL_TINT: Record<ColumnGroup, string> = {
+  live: "bg-sky-50 group-hover:bg-sky-100",
+  flex: "bg-amber-50 group-hover:bg-amber-100",
+  neutral: "",
+};
 
 function regexMatch(
   value: string | null | undefined,
@@ -135,6 +211,8 @@ export default function PositionsTable() {
   const [syncError, setSyncError] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [liveSyncing, setLiveSyncing] = useState(false);
+  const [metricsSyncing, setMetricsSyncing] = useState(false);
+  const [showGreeks, setShowGreeks] = useState(false);
   const [assignError, setAssignError] = useState<string | null>(null);
   const [accountFilter, setAccountFilter] = useState<string>("all");
   const [symbolFilter, setSymbolFilter] = useState("");
@@ -156,6 +234,12 @@ export default function PositionsTable() {
     const parsed = Number(dteMaxFilter);
     return Number.isFinite(parsed) ? parsed : null;
   }, [dteMaxFilter]);
+
+  // Hide the secondary greeks (gamma/theta/vega) unless the toggle is on.
+  const columns = useMemo(
+    () => COLUMNS.filter((c) => showGreeks || !GREEK_KEYS.includes(c.key)),
+    [showGreeks],
+  );
 
   const accountAliases = useMemo(() => {
     const seen = new Set<string>();
@@ -426,6 +510,41 @@ export default function PositionsTable() {
     }
   };
 
+  const kickOffMetricsSync = async () => {
+    setMetricsSyncing(true);
+    setSyncError(null);
+    setSyncMessage(null);
+    try {
+      const res = await fetch(
+        `${API_BASE_URL}/positions/sync/option-metrics-tws`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            source: "manual-ui",
+            request_text: "Refresh live option metrics from Positions page.",
+            max_attempts: 3,
+          }),
+        },
+      );
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+      const data: { job_id: number; status: string } = await res.json();
+      setSyncMessage(
+        `Queued option-metrics TWS sync job #${data.job_id} (${data.status}). Refreshing shortly…`,
+      );
+      // The TWS session + reqTickers take longer than a flex enqueue; poll a few times.
+      window.setTimeout(() => loadPositions(), 3000);
+      window.setTimeout(() => loadPositions(), 8000);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unknown sync error";
+      setSyncError(message);
+    } finally {
+      setMetricsSyncing(false);
+    }
+  };
+
   if (loading) return <p className="text-gray-500">Loading positions...</p>;
   if (error) return <p className="text-red-600">Error: {error}</p>;
   if (positions.length === 0)
@@ -556,6 +675,27 @@ export default function PositionsTable() {
           >
             {liveSyncing ? "Queueing..." : "Refresh Live (TWS)"}
           </button>
+          <button
+            onClick={() => {
+              void kickOffMetricsSync();
+            }}
+            disabled={metricsSyncing}
+            className="rounded border border-violet-300 px-3 py-1 text-sm text-violet-700 hover:bg-violet-50 disabled:opacity-50"
+          >
+            {metricsSyncing ? "Queueing..." : "Refresh Metrics (TWS)"}
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowGreeks((v) => !v)}
+            aria-pressed={showGreeks}
+            className={`rounded border px-3 py-1 text-sm ${
+              showGreeks
+                ? "border-violet-400 bg-violet-50 text-violet-700"
+                : "border-gray-300 text-gray-700 hover:bg-gray-50"
+            }`}
+          >
+            {showGreeks ? "Hide greeks" : "Show greeks"}
+          </button>
         </div>
       </div>
 
@@ -601,11 +741,11 @@ export default function PositionsTable() {
         <table className="min-w-full border-collapse text-sm">
           <thead>
             <tr className="bg-gray-100 text-left">
-              {COLUMNS.map((col) => (
+              {columns.map((col) => (
                 <th
                   key={col.key}
                   aria-sort={ariaSortFor(col.key)}
-                  className="px-3 py-2 font-semibold text-gray-700 whitespace-nowrap"
+                  className={`px-3 py-2 font-semibold text-gray-700 whitespace-nowrap ${HEADER_TINT[columnGroup(col.key)]}`}
                 >
                   {col.key === "symbol" ||
                   col.key === "local_symbol" ||
@@ -636,10 +776,10 @@ export default function PositionsTable() {
               ))}
             </tr>
             <tr className="bg-gray-50 text-left">
-              {COLUMNS.map((col) => (
+              {columns.map((col) => (
                 <th
                   key={`filter-${col.key}`}
-                  className="px-3 py-1 font-normal text-gray-700 whitespace-nowrap"
+                  className={`px-3 py-1 font-normal text-gray-700 whitespace-nowrap ${FILTER_TINT[columnGroup(col.key)]}`}
                 >
                   {col.key === "symbol" ? (
                     <div className="flex items-center gap-1">
@@ -744,7 +884,7 @@ export default function PositionsTable() {
             {sortedPositions.length === 0 && (
               <tr>
                 <td
-                  colSpan={COLUMNS.length}
+                  colSpan={columns.length}
                   className="px-3 py-6 text-center text-gray-500"
                 >
                   No positions match the current filters.
@@ -754,12 +894,11 @@ export default function PositionsTable() {
             {sortedPositions.map((pos) => (
               <tr
                 key={pos.id}
-                className="border-b border-gray-200 hover:bg-gray-50"
+                className="group border-b border-gray-200 hover:bg-gray-50"
               >
-                {COLUMNS.map((col) => {
-                  const renderNumeric = (
-                    val: number | null,
-                  ): React.ReactNode => formatMoney(val);
+                {columns.map((col) => {
+                  const renderNumeric = (val: number | null): React.ReactNode =>
+                    formatMoney(val);
                   let content: React.ReactNode;
                   let extraClass = "";
                   if (col.key === "trade_groups") {
@@ -875,6 +1014,25 @@ export default function PositionsTable() {
                     } else {
                       content = renderNumeric(pos.live_unrealized);
                     }
+                  } else if (col.key === "iv") {
+                    // IV is a risk metric, not dollar exposure — show in privacy.
+                    content = formatPercent(pos.iv);
+                  } else if (col.key === "delta") {
+                    content = formatDelta(pos.delta);
+                  } else if (
+                    col.key === "gamma" ||
+                    col.key === "theta" ||
+                    col.key === "vega"
+                  ) {
+                    content = formatGreek(pos[col.key] as number | null);
+                  } else if (
+                    col.key === "extrinsic_value" ||
+                    col.key === "intrinsic_value"
+                  ) {
+                    // Per-unit prices — mask like the other price columns.
+                    content = privacyMode
+                      ? PRIVACY_MASK
+                      : renderNumeric(pos[col.key] as number | null);
                   } else if (col.key === "source") {
                     if (pos.source === "live") {
                       const ts = formatMarkTime(pos.mark_ts);
@@ -891,15 +1049,8 @@ export default function PositionsTable() {
                       );
                     }
                   } else if (col.key === "contract_display_name") {
-                    content = (
-                      <Link
-                        to={`/trades?symbol=${encodeURIComponent(pos.contract_display_name)}`}
-                        className="text-blue-600 hover:underline"
-                        title="Search this contract in Trades"
-                      >
-                        {pos.contract_display_name}
-                      </Link>
-                    );
+                    // Informational only — no link.
+                    content = pos.contract_display_name;
                   } else if (col.key === "con_id") {
                     content = pos.con_id ? (
                       <Link
@@ -918,7 +1069,7 @@ export default function PositionsTable() {
                   return (
                     <td
                       key={col.key}
-                      className={`px-3 py-2 whitespace-nowrap ${extraClass}`}
+                      className={`px-3 py-2 whitespace-nowrap ${CELL_TINT[columnGroup(col.key)]} ${extraClass}`}
                     >
                       {content}
                     </td>

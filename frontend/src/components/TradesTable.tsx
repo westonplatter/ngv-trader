@@ -364,7 +364,11 @@ export default function TradesTable() {
     () => searchParams.get("symbol") ?? "",
   );
   const [accountFilter, setAccountFilter] = useState<string>("all");
-  const [timeRange, setTimeRange] = useState<string>("all");
+  // Default to the last 30 days for performance (fewer rows rendered). The
+  // con_id deep-link case wants every execution for a contract, so it opts out.
+  const [timeRange, setTimeRange] = useState<string>(() =>
+    searchParams.get("con_id") ? "all" : "30d",
+  );
   const [tagStatus, setTagStatus] = useState<"all" | "tagged" | "untagged">(
     "all",
   );
@@ -490,7 +494,14 @@ export default function TradesTable() {
           : rowGroupId(row) === null,
       );
     }
-    return next;
+    // Newest first by execution time, regardless of settled/unsettled — so the
+    // most recent fills (including today's unsettled TWS fills) sit at the top.
+    // Stable sort keeps same-timestamp combo/leg rows in their existing order.
+    const execMs = (row: TradeExecutionRow) => {
+      const t = Date.parse(row.executed_at);
+      return Number.isNaN(t) ? Number.NEGATIVE_INFINITY : t;
+    };
+    return [...next].sort((a, b) => execMs(b) - execMs(a));
   }, [executions, accountFilter, symbolRegex, timeRange, tagStatus]);
 
   // For each trade_id, the row that owns the Tag Group cell.
