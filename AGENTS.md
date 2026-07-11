@@ -4,7 +4,7 @@ Agentic software enabling one person to operate as an quick and nimble quantativ
 
 ## Docs Index Rule
 
-If any `docs/*.md` file is added, modified, renamed, or deleted (excluding `docs/_index.md`), update `docs/_index.md` in the same change.
+If any `docs/*.md` file is added, modified, renamed, or deleted (excluding `docs/_index.md`), update `docs/_index.md` in the same change. Exception: `docs/plans/*.md` are dated, historical implementation-plan artifacts and are not indexed.
 
 `docs/_index.md` separates **current-state docs** (how the system works today, grouped by area) from **open specs** (`spec-*` files, proposed or in-progress). Place each entry in the right place. Every `spec-*.md` carries a status banner at the top (e.g. `Status: NOT IMPLEMENTED` / `PARTIAL`).
 
