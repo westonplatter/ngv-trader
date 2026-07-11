@@ -379,6 +379,7 @@ export const DEMO_TRADE_GROUPS: TradeGroup[] = [
     account_id: ACCOUNT_ID,
     name: GROUP_NQ.name,
     notes: "Long NQ futures — trend continuation.",
+    meta_yaml: null,
     status: "open",
     primary_strategy_value: DEMO_STRATEGIES[0].value,
     opened_at: "2026-06-05T15:02:00Z",
@@ -391,6 +392,7 @@ export const DEMO_TRADE_GROUPS: TradeGroup[] = [
     account_id: ACCOUNT_ID,
     name: GROUP_ES_DIAGONAL.name,
     notes: "Long call diagonal: short-dated 6000C vs longer-dated 6100C.",
+    meta_yaml: null,
     status: "open",
     primary_strategy_value: DEMO_STRATEGIES[0].value,
     opened_at: "2026-06-10T18:20:00Z",
@@ -403,6 +405,26 @@ export const DEMO_TRADE_GROUPS: TradeGroup[] = [
     account_id: ACCOUNT_ID,
     name: GROUP_GLD_CC.name,
     notes: "200 GLD shares overwritten with calls at ATM / +2% / +4%.",
+    meta_yaml: `# 200 long GLD shares overwritten with calls. Steer net delta toward 120.
+targets:
+  delta:
+    target: 120
+    min: 90
+    max: 150
+    tolerance: 10
+    static: 200          # from the 200 long shares
+    options_transient: -80 # from the short calls, moves with the market
+dates:
+  entry_estimate: 2026-06-12
+  exit_estimate: 2026-09-19
+profit_targets:
+  - date: 2026-08-15
+    amount: 1500
+    note: roll up calls if realized+unrealized clears this
+  - date: 2026-09-19
+    amount: 3200
+thesis: gold consolidating; collect theta while range-bound
+`,
     status: "open",
     primary_strategy_value: DEMO_STRATEGIES[0].value,
     opened_at: "2026-06-12T14:31:00Z",
