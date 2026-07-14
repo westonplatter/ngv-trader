@@ -33,7 +33,11 @@ from src.services.intraday_overlay import (
     merge_positions,
     overlay_totals,
 )
-from src.services.trade_group_pnl import load_overlay_inputs, trade_group_realized_pnl
+from src.services.trade_group_pnl import (
+    load_overlay_inputs,
+    trade_group_realized_pnl,
+    trade_group_total_pnls,
+)
 from src.services.ui_events import (
     TOPIC_POSITIONS,
     TOPIC_TRADES,
@@ -75,6 +79,9 @@ class TradeGroupResponse(BaseModel):
     closed_by: str | None
     created_at: datetime
     updated_at: datetime
+    # Settled Total PnL (realized + settled unrealized). Populated by the list
+    # endpoint; None elsewhere (the detail view computes its own live figures).
+    total_pnl: float | None = None
 
 
 class TradeGroupDetailResponse(TradeGroupResponse):
@@ -277,10 +284,13 @@ def list_trade_groups(  # noqa: PLR0913
         )
 
     rows = db.execute(stmt.order_by(TradeGroup.created_at.desc()).limit(limit)).all()
+    # Batched settled Total PnL for every group in the page (two queries, no N+1).
+    total_pnls = trade_group_total_pnls(db, [trade_group.id for trade_group, _ in rows])
     results = []
     for trade_group, strategy_val in rows:
         resp = TradeGroupResponse.model_validate(trade_group)
         resp.primary_strategy_value = strategy_val
+        resp.total_pnl = total_pnls.get(trade_group.id)
         results.append(resp)
     return results
 

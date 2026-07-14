@@ -16,6 +16,9 @@ export type TradeGroup = {
   closed_at: string | null;
   opened_by: string | null;
   closed_by: string | null;
+  // Settled Total PnL (realized + settled unrealized) for the group. Matches the
+  // detail panel's "Total PnL" headline. Null when the group has no PnL data.
+  total_pnl: number | null;
 };
 
 export type TradeGroupDetail = TradeGroup & {
@@ -1032,9 +1035,27 @@ export default function TradeTaggingPage() {
                             {group.status}
                           </span>
                         </div>
-                        <p className="mt-1 text-xs text-gray-500">
-                          #{group.id} · Opened {formatDate(group.opened_at)}
-                        </p>
+                        <div className="mt-1 flex items-baseline justify-between gap-3">
+                          <p className="text-xs text-gray-500">
+                            #{group.id} · Opened {formatDate(group.opened_at)}
+                          </p>
+                          {group.total_pnl != null && (
+                            <span
+                              className={`shrink-0 text-xs font-semibold ${
+                                group.total_pnl >= 0
+                                  ? "text-emerald-700"
+                                  : "text-red-700"
+                              }`}
+                            >
+                              {privacyMode
+                                ? PRIVACY_MASK
+                                : group.total_pnl.toLocaleString(undefined, {
+                                    style: "currency",
+                                    currency: "USD",
+                                  })}
+                            </span>
+                          )}
+                        </div>
                       </button>
                     </li>
                   ))}
