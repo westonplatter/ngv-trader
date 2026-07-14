@@ -9,6 +9,7 @@ cross-import the other.
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from typing import Any
 
@@ -16,6 +17,56 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from src.models import Account, Trade, TradeExecution
+
+# IBKR Flex "notes/codes" split on any comma/semicolon/whitespace run. A single
+# execution can carry several codes (e.g. "L;P"), so we tokenize before matching
+# rather than substring-testing (which would misread "AFx"/"IA" as an "A").
+_NOTES_SPLIT = re.compile(r"[;,\s]+")
+
+# Flex notes codes that mark a non-fill lifecycle outcome, in priority order.
+# Every other code (empty, "P" partial, "L" margin, "R" dividend reinvest, auto-FX,
+# affiliate, etc.) is a genuine fill and maps to "filled".
+#   Ep -> Resulted from an Expired position (option let expire worthless)
+#   A  -> Assignment (short option assigned; also the resulting STK/FUT leg)
+#   Ex -> Exercise (long option exercised; unobserved recently but expected)
+_NOTE_STATUS: tuple[tuple[str, str], ...] = (
+    ("EP", "expired"),
+    ("A", "assigned"),
+    ("EX", "exercised"),
+)
+
+
+def _execution_outcome(raw: Any) -> str:
+    """Classify one execution's lifecycle outcome from its raw Flex `notes`.
+
+    Returns "expired" | "assigned" | "exercised" for the special BookTrade codes,
+    else "filled" for a normal fill (including partials and any unmapped code).
+    """
+    if not isinstance(raw, dict):
+        return "filled"
+    notes = raw.get("notes")
+    if not notes:
+        return "filled"
+    codes = {tok.upper() for tok in _NOTES_SPLIT.split(str(notes)) if tok}
+    for code, status in _NOTE_STATUS:
+        if code in codes:
+            return status
+    return "filled"
+
+
+def _derive_trade_status(canonical: list[TradeExecution]) -> str:
+    """Derive a parent trade's status from its canonical executions.
+
+    When every canonical execution shares one outcome we report it directly, so a
+    trade whose fills are all expirations reads "expired", all assignments reads
+    "assigned", etc. Any mix (or a plain fill) reads "filled". Flex groups these
+    book events into their own parent trade (distinct side/order from the opening
+    fill), so a real opening fill is never mislabeled.
+    """
+    outcomes = {_execution_outcome(ex.raw) for ex in canonical}
+    if len(outcomes) == 1:
+        return next(iter(outcomes))
+    return "filled"
 
 
 def _safe_str(val: Any) -> str | None:
@@ -156,7 +207,7 @@ def _recompute_trade_aggregates(session: Session, trade_id: int, now: datetime) 
     trade.avg_price = avg_price
     trade.first_executed_at = first_at
     trade.last_executed_at = last_at
-    trade.status = "filled"
+    trade.status = _derive_trade_status(canonical)
     trade.fetched_at = now
     trade.updated_at = now
     session.flush()

@@ -56,6 +56,76 @@ def trade_group_realized_pnl(executions: list[Any]) -> float | None:
     return sum(values) if values else None
 
 
+def trade_group_total_pnls(session: Session, group_ids: list[int]) -> dict[int, float | None]:
+    """Batched settled Total PnL (realized + settled unrealized) per trade group.
+
+    Returns ``{group_id: total_pnl}`` where ``total_pnl`` matches the trade-group
+    detail panel's "Total PnL" headline: ``total_realized_pnl +
+    total_unrealized_pnl`` using the *settled* figures (the FlexQuery snapshot),
+    NOT the intraday/live overlay. ``None`` when a group has neither realized nor
+    settled-unrealized data.
+
+    Runs in two queries regardless of ``len(group_ids)`` (no N+1):
+      1. all executions across the groups (realized is a combo-aware Python sum);
+      2. settled ``Position`` snapshot rows for the union of the groups'
+         ``(account_id, con_id)`` pairs (settled unrealized).
+
+    Attribution mirrors the detail endpoint: a position is attributed to a group
+    when any of the group's executions touched its ``(account_id, con_id)``. This
+    is a per-group figure and is NOT additive across groups (a position shared by
+    two groups is counted in both).
+    """
+    result: dict[int, float | None] = {gid: None for gid in group_ids}
+    if not group_ids:
+        return result
+
+    # Query 1: every execution for the requested groups, one round-trip.
+    exec_rows = session.execute(
+        select(TradeGroupExecution.trade_group_id, TradeExecution)
+        .join(TradeExecution, TradeExecution.id == TradeGroupExecution.trade_execution_id)
+        .where(TradeGroupExecution.trade_group_id.in_(group_ids))
+    ).all()
+
+    execs_by_group: dict[int, list[Any]] = {}
+    pairs_by_group: dict[int, set[tuple[int, int]]] = {}
+    all_pairs: set[tuple[int, int]] = set()
+    for group_id, execution in exec_rows:
+        execs_by_group.setdefault(group_id, []).append(execution)
+        if execution.con_id is not None:
+            pair = (execution.account_id, execution.con_id)
+            pairs_by_group.setdefault(group_id, set()).add(pair)
+            all_pairs.add(pair)
+
+    # Query 2: settled unrealized from the FlexQuery Position snapshot for the
+    # union of all groups' (account_id, con_id) pairs (open legs only).
+    settled_by_pair: dict[tuple[int, int], float] = {}
+    if all_pairs:
+        pos_rows = session.execute(
+            select(Position.account_id, Position.con_id, Position.fifo_pnl_unrealized).where(
+                sa_tuple(Position.account_id, Position.con_id).in_(list(all_pairs)),
+                Position.position != 0,
+            )
+        ).all()
+        for account_id, con_id, fifo in pos_rows:
+            if fifo is not None:
+                settled_by_pair[(account_id, con_id)] = fifo
+
+    for group_id in group_ids:
+        realized = trade_group_realized_pnl(execs_by_group.get(group_id, []))
+        settled_vals = [settled_by_pair[pair] for pair in pairs_by_group.get(group_id, set()) if pair in settled_by_pair]
+        settled_unrealized = sum(settled_vals) if settled_vals else None
+        result[group_id] = _combine_total(realized, settled_unrealized)
+
+    return result
+
+
+def _combine_total(realized: float | None, settled_unrealized: float | None) -> float | None:
+    """Settled Total PnL, or ``None`` when both components are absent."""
+    if realized is None and settled_unrealized is None:
+        return None
+    return (realized or 0.0) + (settled_unrealized or 0.0)
+
+
 def load_overlay_inputs(
     session: Session,
     account_con_pairs: set[tuple[int, int]],
