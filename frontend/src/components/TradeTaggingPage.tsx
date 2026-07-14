@@ -73,6 +73,11 @@ export type GroupOpenPosition = {
   mark: number | null;
   mark_ts: string | null;
   live_unrealized: number | null;
+  // Staleness of the live TWS overlay: true when the settled snapshot is newer
+  // (prior-MT-day live snapshot). When stale, the live overlay cells are blanked
+  // and the freshness badge reads "stale" (not green "live").
+  live_fetched_at: string | null;
+  live_is_stale: boolean;
 };
 
 export type GroupAccountPnl = {
@@ -1246,7 +1251,12 @@ export default function TradeTaggingPage() {
                           </span>
                           <span className="text-[11px] text-gray-400">
                             {marksAsOf
-                              ? `live as of ${formatMarkTime(marksAsOf)}`
+                              ? openPositions.some(
+                                  (p) =>
+                                    p.source === "live" && !p.live_is_stale,
+                                )
+                                ? `live as of ${formatMarkTime(marksAsOf)}`
+                                : `stale as of ${formatMarkTime(marksAsOf)}`
                               : "settled — no live data"}
                           </span>
                         </div>
@@ -1473,8 +1483,12 @@ export default function TradeTaggingPage() {
                                   : pos.fifo_pnl_unrealized >= 0
                                     ? "text-emerald-700"
                                     : "text-red-700";
+                              // A stale live overlay (settled snapshot is newer)
+                              // must not be shown as current: blank the live-only
+                              // cells and flag the badge as "stale".
+                              const liveStale = pos.live_is_stale;
                               const livePnlClass =
-                                pos.live_unrealized == null
+                                liveStale || pos.live_unrealized == null
                                   ? "text-gray-400"
                                   : pos.live_unrealized >= 0
                                     ? "text-emerald-700"
@@ -1515,7 +1529,7 @@ export default function TradeTaggingPage() {
                                   <td className="px-2 py-1 text-right font-mono text-gray-700">
                                     {privacyMode
                                       ? PRIVACY_MASK
-                                      : pos.mark == null
+                                      : liveStale || pos.mark == null
                                         ? "—"
                                         : pos.mark.toFixed(2)}
                                   </td>
@@ -1542,11 +1556,15 @@ export default function TradeTaggingPage() {
                                     className={`px-2 py-1 text-right font-mono ${livePnlClass}`}
                                   >
                                     {privacyMode
-                                      ? formatRelativeReturn(
-                                          pos.live_unrealized,
-                                          Math.abs(pos.avg_cost * pos.position),
-                                        )
-                                      : pos.live_unrealized == null
+                                      ? liveStale
+                                        ? PRIVACY_MASK
+                                        : formatRelativeReturn(
+                                            pos.live_unrealized,
+                                            Math.abs(
+                                              pos.avg_cost * pos.position,
+                                            ),
+                                          )
+                                      : liveStale || pos.live_unrealized == null
                                         ? "—"
                                         : pos.live_unrealized.toFixed(2)}
                                   </td>
@@ -1554,7 +1572,17 @@ export default function TradeTaggingPage() {
                                     {pos.as_of_date ?? "—"}
                                   </td>
                                   <td className="px-2 py-1">
-                                    {pos.source === "live" ? (
+                                    {pos.source === "live" && liveStale ? (
+                                      <span
+                                        className="rounded bg-amber-100 px-1.5 py-0.5 text-[11px] font-medium text-amber-800"
+                                        title="Live TWS overlay is older than the latest settled snapshot. Refresh Live (TWS) to update."
+                                      >
+                                        stale
+                                        {(pos.mark_ts ?? pos.live_fetched_at)
+                                          ? ` ${formatMarkTime(pos.mark_ts ?? pos.live_fetched_at)}`
+                                          : ""}
+                                      </span>
+                                    ) : pos.source === "live" ? (
                                       <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[11px] font-medium text-emerald-800">
                                         live
                                         {pos.mark_ts

@@ -29,6 +29,7 @@ from src.services.cl_contracts import infer_contract_month_from_local_symbol
 from src.services.intraday_overlay import (
     dedupe_live_realized,
     intraday_unrealized_total,
+    is_live_stale,
     merge_positions,
     overlay_totals,
 )
@@ -1009,6 +1010,13 @@ class TradeGroupOpenPositionItem(BaseModel):
     mark: float | None = None
     mark_ts: datetime | None = None
     live_unrealized: float | None = None
+    # Staleness of the live TWS overlay — see ``is_live_stale``. True when the
+    # live snapshot is from a prior Mountain-Time calendar day and a settled
+    # FlexQuery import exists to fall back to. The frontend uses this to render
+    # the freshness badge as "stale" (not green "live") and to blank the live
+    # overlay columns.
+    live_fetched_at: datetime | None = None
+    live_is_stale: bool = False
     # Live option metrics (additive; from the separate option-metrics sync job).
     iv: float | None = None
     delta: float | None = None
@@ -1108,12 +1116,14 @@ def _build_open_positions_overlay(
     if view_account_ids:
         alias_by_id = {a.id: a for a in db.execute(select(Account).where(Account.id.in_(list(view_account_ids)))).scalars().all()}
     flex_by_key = {(p.account_id, p.con_id): p for p in flex_rows}
+    live_fetched_by_key = {(p.account_id, p.con_id): p.fetched_at for p in live_rows}
 
     open_positions = [
         _view_to_open_position(
             view,
             flex_by_key.get((view.account_id, view.con_id)),
             alias_by_id.get(view.account_id),
+            live_fetched_by_key.get((view.account_id, view.con_id)),
         )
         for view in views
     ]
@@ -1158,7 +1168,7 @@ def _build_open_positions_overlay(
     )
 
 
-def _view_to_open_position(view, flex, account) -> TradeGroupOpenPositionItem:
+def _view_to_open_position(view, flex, account, live_fetched_at) -> TradeGroupOpenPositionItem:
     """Map a unified PositionView to the response item (settled fields kept additive)."""
     inferred_month = infer_contract_month_from_local_symbol(
         local_symbol=view.local_symbol,
@@ -1195,6 +1205,10 @@ def _view_to_open_position(view, flex, account) -> TradeGroupOpenPositionItem:
         mark=view.mark,
         mark_ts=view.mark_ts,
         live_unrealized=view.live_unrealized,
+        live_fetched_at=live_fetched_at,
+        # Stale when the live snapshot is from a prior MT day and the settled
+        # snapshot exists to fall back to (see ``is_live_stale``).
+        live_is_stale=is_live_stale(live_fetched_at, flex.fetched_at if flex else None),
         iv=view.iv,
         delta=view.delta,
         gamma=view.gamma,

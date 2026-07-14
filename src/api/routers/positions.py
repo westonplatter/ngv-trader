@@ -23,6 +23,7 @@ from src.models import (
 from src.services.cl_contracts import infer_contract_month_from_local_symbol
 from src.services.intraday_overlay import (
     compute_unrealized,
+    is_live_stale,
     normalize_live_mark,
     option_metric_fields,
     parse_multiplier,
@@ -82,6 +83,13 @@ class PositionResponse(BaseModel):
     mark: float | None = None
     mark_ts: datetime | None = None
     live_unrealized: float | None = None
+    # Staleness of the live TWS overlay — see ``is_live_stale``. True when the
+    # live snapshot is from a prior Mountain-Time calendar day and a settled
+    # FlexQuery import exists to fall back to. The frontend uses this to render
+    # the freshness badge as "stale" (not green "live") and to blank the live
+    # overlay columns.
+    live_fetched_at: datetime | None = None
+    live_is_stale: bool = False
     # Live option metrics (additive; from the separate option-metrics sync job).
     # None for non-options or when that job hasn't run.
     iv: float | None = None
@@ -236,9 +244,8 @@ def list_positions(db: Session = DB_SESSION_DEPENDENCY):
         position_qty = pos.position
         avg_cost = pos.avg_cost
         source = "settled"
-        mark = None
-        mark_ts = None
-        live_unrealized = None
+        mark = mark_ts = live_unrealized = live_fetched_at = None
+        live_is_stale = False
         if live is not None:
             quote = quotes.get(pos.con_id)
             mark = getattr(quote, "mark", None) if quote is not None else None
@@ -253,6 +260,10 @@ def list_positions(db: Session = DB_SESSION_DEPENDENCY):
             avg_cost = live.avg_cost
             source = "live"
             live_unrealized = compute_unrealized(live.position, live.avg_cost, mark, parse_multiplier(live.multiplier))
+            live_fetched_at = live.fetched_at
+            # Stale when the live snapshot is from a prior MT day and settled
+            # data exists to fall back to (see ``is_live_stale``).
+            live_is_stale = is_live_stale(live.fetched_at, pos.fetched_at)
         # Option metrics: split off the best available mark (live, else settled).
         opt_fields = option_metric_fields(
             pos.sec_type,
@@ -294,6 +305,8 @@ def list_positions(db: Session = DB_SESSION_DEPENDENCY):
                 mark=mark,
                 mark_ts=mark_ts,
                 live_unrealized=live_unrealized,
+                live_fetched_at=live_fetched_at,
+                live_is_stale=live_is_stale,
                 **opt_fields,
             )
         )
@@ -358,6 +371,10 @@ def list_positions(db: Session = DB_SESSION_DEPENDENCY):
                     mark,
                     parse_multiplier(live.multiplier),
                 ),
+                # Opened-today live-only row: no settled snapshot to fall back
+                # to, so never stale (settled ts is None → is_live_stale False).
+                live_fetched_at=live.fetched_at,
+                live_is_stale=is_live_stale(live.fetched_at, None),
                 **opt_fields,
             )
         )

@@ -26,8 +26,50 @@ the TWS UI during market hours; adjust here if avgCost semantics differ.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from typing import Any
+from zoneinfo import ZoneInfo
+
+# Reference timezone for the "prior calendar day" live-staleness boundary.
+# Mountain Time via zoneinfo so DST transitions are handled correctly (no
+# hardcoded UTC offset).
+_MT_ZONE = ZoneInfo("America/Denver")
+
+
+def _midnight_mt(moment: datetime) -> datetime:
+    """Most recent America/Denver midnight at or before ``moment``, tz-aware.
+
+    Converts ``moment`` into Mountain Time and floors to 00:00 of that MT
+    calendar day. The result stays tz-aware (in MT), so comparing it against
+    other tz-aware datetimes normalizes to the same instant.
+    """
+    local = moment.astimezone(_MT_ZONE)
+    return local.replace(hour=0, minute=0, second=0, microsecond=0)
+
+
+def is_live_stale(live_fetched_at: datetime | None, settled_fetched_at: datetime | None) -> bool:
+    """True when the live TWS overlay should not be presented as current.
+
+    Stale when the live snapshot is from a *prior Mountain-Time calendar day*
+    AND a settled/Flex import exists from the live-capture day or later::
+
+        is_live_stale =
+            live_fetched_at < midnight_MT(today)              # prior MT day
+            AND settled_fetched_at is not None
+            AND settled_fetched_at > midnight_MT(live_day)    # fallback data exists
+
+    The settled-import guard means we only flag the overlay stale when there is
+    settled data (from the live-capture day or later) to fall back to; without a
+    fallback there's nothing better to show, so the overlay is left as-is.
+
+    Timestamps are timezone-aware (``DateTime(timezone=True)``). None-guards: no
+    live snapshot → not stale; no settled snapshot → not stale.
+    """
+    if live_fetched_at is None or settled_fetched_at is None:
+        return False
+    if live_fetched_at >= _midnight_mt(datetime.now(timezone.utc)):
+        return False  # live snapshot is from today's MT calendar day — fresh
+    return settled_fetched_at > _midnight_mt(live_fetched_at)
 
 
 def parse_multiplier(value: Any) -> float:
