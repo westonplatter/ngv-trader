@@ -291,7 +291,10 @@ export default function TradeTaggingPage() {
         await readErrorMessage(response, "Unable to load strategies"),
       );
     }
-    const data: Tag[] = await response.json();
+    const raw: Tag[] = await response.json();
+    const data = [...raw].sort((a, b) =>
+      a.value.localeCompare(b.value, undefined, { sensitivity: "base" }),
+    );
     setStrategies(data);
     setSelectedStrategyId((current) => {
       if (data.length === 0) return null;
