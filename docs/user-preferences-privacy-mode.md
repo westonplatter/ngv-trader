@@ -24,4 +24,4 @@ A generic key-value user preferences system backed by a `user_preferences` table
   - **Identifiers** — perm IDs, exec IDs.
 - **Relative returns**: P&L is *not* masked — it is re-expressed as a percentage return (`formatRelativeReturn` in `privacy.ts`): `P&L ÷ |cost basis|`. Positions derive cost basis as `position_value − fifo_pnl_unrealized`, so no dollar figure leaks; the Unrealized / Live PnL header totals use the aggregate basis. Where a reliable per-row basis isn't available (e.g. individual trade executions), the P&L stays masked rather than showing a misleading percentage.
 - **Kept visible**: position *type* fields — symbol, sec type, contract, side, call/put, strike, expiry — since they describe the position, not its size or value.
-- **Affected components**: `OrdersTable`, `OrdersSideTable`, `TradesTable`, `PositionsTable`.
+- **Affected components**: `OrdersTable`, `OrdersSideTable`, `TradesTable`, `PositionsTable`, `TradeTaggingPage`.
