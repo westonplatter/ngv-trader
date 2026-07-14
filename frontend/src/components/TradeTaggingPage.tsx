@@ -1343,50 +1343,64 @@ export default function TradeTaggingPage() {
                             <span className="text-right">Realized</span>
                             <span className="text-right">Unrealized</span>
                           </div>
-                          {byAccount.map((acct) => {
-                            const total =
-                              acct.unrealized_pnl == null &&
-                              acct.realized_pnl == null
-                                ? null
-                                : (acct.unrealized_pnl ?? 0) +
-                                  (acct.realized_pnl ?? 0);
-                            const capital = capitalFor(acct.account_id);
-                            return (
-                              <div key={acct.account_id} className={gridCols}>
-                                <span className="font-medium text-gray-700">
-                                  {acct.account_alias ?? acct.account_id}
-                                </span>
-                                <span className="text-right text-gray-500">
-                                  {privacyMode ? PRIVACY_MASK : money(capital)}
-                                </span>
-                                <span className={`text-right ${cls(total)}`}>
-                                  {privacyMode
-                                    ? formatRelativeReturn(total, capital)
-                                    : money(total)}
-                                </span>
-                                <span
-                                  className={`text-right ${cls(acct.realized_pnl)}`}
-                                >
-                                  {privacyMode
-                                    ? formatRelativeReturn(
-                                        acct.realized_pnl,
-                                        capital,
-                                      )
-                                    : money(acct.realized_pnl)}
-                                </span>
-                                <span
-                                  className={`text-right ${cls(acct.unrealized_pnl)}`}
-                                >
-                                  {privacyMode
-                                    ? formatRelativeReturn(
-                                        acct.unrealized_pnl,
-                                        capital,
-                                      )
-                                    : money(acct.unrealized_pnl)}
-                                </span>
-                              </div>
-                            );
-                          })}
+                          {[...byAccount]
+                            .sort((a, b) => {
+                              // Sort by TOTAL P&L (realized + unrealized) desc;
+                              // rows with no P&L data sort last.
+                              const totalOf = (x: GroupAccountPnl) =>
+                                x.unrealized_pnl == null &&
+                                x.realized_pnl == null
+                                  ? -Infinity
+                                  : (x.unrealized_pnl ?? 0) +
+                                    (x.realized_pnl ?? 0);
+                              return totalOf(b) - totalOf(a);
+                            })
+                            .map((acct) => {
+                              const total =
+                                acct.unrealized_pnl == null &&
+                                acct.realized_pnl == null
+                                  ? null
+                                  : (acct.unrealized_pnl ?? 0) +
+                                    (acct.realized_pnl ?? 0);
+                              const capital = capitalFor(acct.account_id);
+                              return (
+                                <div key={acct.account_id} className={gridCols}>
+                                  <span className="font-medium text-gray-700">
+                                    {acct.account_alias ?? acct.account_id}
+                                  </span>
+                                  <span className="text-right text-gray-500">
+                                    {privacyMode
+                                      ? PRIVACY_MASK
+                                      : money(capital)}
+                                  </span>
+                                  <span className={`text-right ${cls(total)}`}>
+                                    {privacyMode
+                                      ? formatRelativeReturn(total, capital)
+                                      : money(total)}
+                                  </span>
+                                  <span
+                                    className={`text-right ${cls(acct.realized_pnl)}`}
+                                  >
+                                    {privacyMode
+                                      ? formatRelativeReturn(
+                                          acct.realized_pnl,
+                                          capital,
+                                        )
+                                      : money(acct.realized_pnl)}
+                                  </span>
+                                  <span
+                                    className={`text-right ${cls(acct.unrealized_pnl)}`}
+                                  >
+                                    {privacyMode
+                                      ? formatRelativeReturn(
+                                          acct.unrealized_pnl,
+                                          capital,
+                                        )
+                                      : money(acct.unrealized_pnl)}
+                                  </span>
+                                </div>
+                              );
+                            })}
                         </div>
                       );
                     })()}
