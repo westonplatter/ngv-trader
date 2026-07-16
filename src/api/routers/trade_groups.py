@@ -1334,6 +1334,10 @@ def trade_group_executions(trade_group_id: int, db: Session = DB_SESSION_DEPENDE
     # (FlexQuery `positions`) is the base; the live TWS overlay (`live_positions`
     # + `latest_quote` + `live_executions`) is merged on top at read time.
     account_con_pairs = {(execution.account_id, execution.con_id) for execution, _ref, _trade, _account in rows if execution.con_id is not None}
+    # Also surface positions whose only link to this group is a tagged *unsettled*
+    # live fill (a strike opened today, not yet in trade_executions). Without this,
+    # a freshly-opened position stays hidden from Open Positions until it settles.
+    account_con_pairs |= {(le.account_id, le.con_id) for le, _account in live_rows if le.con_id is not None}
     settled_exec_ids = {execution.ib_exec_id for execution, _ref, _trade, _account in rows if execution.ib_exec_id}
     overlay = _build_open_positions_overlay(db, account_con_pairs, settled_exec_ids, total_pnl, realized_by_account)
 
