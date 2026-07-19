@@ -1108,14 +1108,17 @@ export default function TradeTaggingPage() {
                   )}
 
                   {groupDetail.meta_yaml && (
-                    <div>
-                      <span className="text-xs text-gray-500">
+                    <details className="group">
+                      <summary className="cursor-pointer list-none text-xs text-gray-500 hover:text-gray-700">
+                        <span className="mr-1 inline-block transition-transform group-open:rotate-90">
+                          ▶
+                        </span>
                         Meta (YAML)
-                      </span>
+                      </summary>
                       <pre className="mt-0.5 overflow-x-auto rounded border border-gray-200 bg-gray-50 p-2 font-mono text-xs leading-relaxed text-gray-700">
                         {groupDetail.meta_yaml}
                       </pre>
-                    </div>
+                    </details>
                   )}
 
                   <div className="flex gap-2">
