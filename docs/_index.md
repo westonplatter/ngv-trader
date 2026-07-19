@@ -21,6 +21,7 @@ banner at the top.
 | [contract-ref-setup.md](contract-ref-setup.md)                       | `contracts` (SecRef) cache, `contracts.sync`, and the agent↔IBKR boundary                                                                    |
 | [contract-display-names.md](contract-display-names.md)               | How human-readable contract labels are built across positions/orders/trades/watchlists                                                       |
 | [trade-tagging.md](trade-tagging.md)                                 | Trade groups, tag catalogs, execution assignment, timeline, and tagging UI                                                                   |
+| [core/trade-group-meta-yaml.md](core/trade-group-meta-yaml.md)       | Free-form YAML "management spec" per trade group (target delta, entry/exit dates, dated profit targets): fields, validation, and CRUD         |
 | [tradebot-chatbot.md](tradebot-chatbot.md)                           | LangGraph chat agent: tools, guardrails, env vars (no order submission)                                                                      |
 | [core/semantic-queries.md](core/semantic-queries.md)                 | OSI semantic layer: fact grains, relationships, semantic views, `query_metric` tool + MCP server — analytics as read-only SQL by metric name |
 | [core/semantic-data-model.md](core/semantic-data-model.md)           | Analyst-facing catalog of the semantic layer: metrics, dimensions, grains, and worked MCP examples (premium/PnL/positions)                   |

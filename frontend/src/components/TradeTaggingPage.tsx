@@ -10,6 +10,7 @@ export type TradeGroup = {
   account_id: number | null;
   name: string;
   notes: string | null;
+  meta_yaml: string | null;
   status: "open" | "closed" | "archived";
   primary_strategy_value: string | null;
   opened_at: string;
@@ -1133,6 +1134,20 @@ export default function TradeTaggingPage() {
                         {linkify(groupDetail.notes)}
                       </p>
                     </div>
+                  )}
+
+                  {groupDetail.meta_yaml && (
+                    <details className="group">
+                      <summary className="cursor-pointer list-none text-xs text-gray-500 hover:text-gray-700">
+                        <span className="mr-1 inline-block transition-transform group-open:rotate-90">
+                          ▶
+                        </span>
+                        Meta (YAML)
+                      </summary>
+                      <pre className="mt-0.5 overflow-x-auto rounded border border-gray-200 bg-gray-50 p-2 font-mono text-xs leading-relaxed text-gray-700">
+                        {groupDetail.meta_yaml}
+                      </pre>
+                    </details>
                   )}
 
                   <div className="flex gap-2">
