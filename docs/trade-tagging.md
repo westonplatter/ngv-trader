@@ -48,7 +48,7 @@ Notes:
 1. `account_id` is nullable at creation
 2. when the first execution is assigned, the group auto-populates `account_id` from that execution
 3. assignment is intentionally cross-account in V1, so group membership is not limited by `account_id`
-4. `meta_yaml` holds an optional free-form YAML "management spec" (target delta, estimated entry/exit dates, dated profit targets, plus arbitrary keys). Stored verbatim; validated on write; `GET /trade-groups/{id}` returns the parsed form as `meta`. See [spec-trade-group-meta-yaml.md](spec-trade-group-meta-yaml.md).
+4. `meta_yaml` holds an optional free-form YAML "management spec" (target delta, estimated entry/exit dates, dated profit targets, plus arbitrary keys). Stored verbatim; validated on write; `GET /trade-groups/{id}` returns the parsed form as `meta`. See [core/trade-group-meta-yaml.md](core/trade-group-meta-yaml.md).
 
 ### `trade_group_executions`
 
