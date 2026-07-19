@@ -51,6 +51,11 @@ export interface Position {
   mark: number | null;
   mark_ts: string | null;
   live_unrealized: number | null;
+  // Staleness of the live TWS overlay: true when the settled FlexQuery snapshot
+  // was loaded more recently than the live snapshot. When stale, the overlay
+  // columns are blanked and the freshness badge reads "stale" (not green "live").
+  live_fetched_at: string | null;
+  live_is_stale: boolean;
   // Live option metrics (additive; from the separate option-metrics sync job).
   // null for non-options or when that job hasn't run.
   iv: number | null;
@@ -158,6 +163,26 @@ const LIVE_KEYS = new Set<keyof Position>([
   "intrinsic_value",
   "source",
 ]);
+
+// Live overlay *value* columns (excludes the "source"/Freshness badge column,
+// which renders its own stale state). Blanked when the row's live overlay is
+// stale so old TWS marks/greeks aren't shown as if current.
+const LIVE_OVERLAY_VALUE_KEYS = new Set<keyof Position>([
+  "mark",
+  "live_unrealized",
+  "iv",
+  "delta",
+  "gamma",
+  "theta",
+  "vega",
+  "extrinsic_value",
+  "intrinsic_value",
+]);
+
+// A row's live overlay is usable only when it's live-sourced AND not stale.
+function isLiveFresh(pos: Position): boolean {
+  return pos.source === "live" && !pos.live_is_stale;
+}
 
 const FLEX_KEYS = new Set<keyof Position>([
   "mark_price",
@@ -345,8 +370,7 @@ export default function PositionsTable() {
     let total = 0;
     let any = false;
     for (const p of sortedPositions) {
-      const val =
-        p.source === "live" ? p.live_unrealized : p.fifo_pnl_unrealized;
+      const val = isLiveFresh(p) ? p.live_unrealized : p.fifo_pnl_unrealized;
       if (val != null) {
         total += val;
         any = true;
@@ -374,7 +398,7 @@ export default function PositionsTable() {
     let newest: string | null = null;
     for (const p of sortedPositions) {
       if (
-        p.source === "live" &&
+        isLiveFresh(p) &&
         p.mark_ts &&
         (newest == null || p.mark_ts > newest)
       ) {
@@ -901,7 +925,15 @@ export default function PositionsTable() {
                     formatMoney(val);
                   let content: React.ReactNode;
                   let extraClass = "";
-                  if (col.key === "trade_groups") {
+                  if (
+                    pos.live_is_stale &&
+                    LIVE_OVERLAY_VALUE_KEYS.has(col.key)
+                  ) {
+                    // Stale live overlay: blank the value so old TWS marks/greeks
+                    // aren't presented as current. The Freshness badge (source
+                    // column) still renders and flags the row as stale.
+                    content = "—";
+                  } else if (col.key === "trade_groups") {
                     content = (
                       <span className="inline-flex items-center gap-1 whitespace-nowrap">
                         {pos.trade_groups.map((group) => (
@@ -1034,7 +1066,22 @@ export default function PositionsTable() {
                       ? PRIVACY_MASK
                       : renderNumeric(pos[col.key] as number | null);
                   } else if (col.key === "source") {
-                    if (pos.source === "live") {
+                    if (pos.source === "live" && pos.live_is_stale) {
+                      // Live snapshot predates the newer settled snapshot —
+                      // flag as stale (amber) with the age of the live data, so
+                      // it never reads as a current green "live" quote.
+                      const staleTs = formatMarkTime(
+                        pos.mark_ts ?? pos.live_fetched_at,
+                      );
+                      content = (
+                        <span
+                          className="rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-800"
+                          title="Live TWS overlay is older than the latest settled (FlexQuery) snapshot. Refresh Live (TWS) to update."
+                        >
+                          stale{staleTs ? ` ${staleTs}` : ""}
+                        </span>
+                      );
+                    } else if (pos.source === "live") {
                       const ts = formatMarkTime(pos.mark_ts);
                       content = (
                         <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-xs font-medium text-emerald-800">

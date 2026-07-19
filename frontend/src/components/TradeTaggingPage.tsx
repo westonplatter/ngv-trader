@@ -17,6 +17,9 @@ export type TradeGroup = {
   closed_at: string | null;
   opened_by: string | null;
   closed_by: string | null;
+  // Settled Total PnL (realized + settled unrealized) for the group. Matches the
+  // detail panel's "Total PnL" headline. Null when the group has no PnL data.
+  total_pnl: number | null;
 };
 
 export type TradeGroupDetail = TradeGroup & {
@@ -74,6 +77,11 @@ export type GroupOpenPosition = {
   mark: number | null;
   mark_ts: string | null;
   live_unrealized: number | null;
+  // Staleness of the live TWS overlay: true when the settled snapshot is newer
+  // (prior-MT-day live snapshot). When stale, the live overlay cells are blanked
+  // and the freshness badge reads "stale" (not green "live").
+  live_fetched_at: string | null;
+  live_is_stale: boolean;
 };
 
 export type GroupAccountPnl = {
@@ -292,7 +300,10 @@ export default function TradeTaggingPage() {
         await readErrorMessage(response, "Unable to load strategies"),
       );
     }
-    const data: Tag[] = await response.json();
+    const raw: Tag[] = await response.json();
+    const data = [...raw].sort((a, b) =>
+      a.value.localeCompare(b.value, undefined, { sensitivity: "base" }),
+    );
     setStrategies(data);
     setSelectedStrategyId((current) => {
       if (data.length === 0) return null;
@@ -1025,9 +1036,27 @@ export default function TradeTaggingPage() {
                             {group.status}
                           </span>
                         </div>
-                        <p className="mt-1 text-xs text-gray-500">
-                          #{group.id} · Opened {formatDate(group.opened_at)}
-                        </p>
+                        <div className="mt-1 flex items-baseline justify-between gap-3">
+                          <p className="text-xs text-gray-500">
+                            #{group.id} · Opened {formatDate(group.opened_at)}
+                          </p>
+                          {group.total_pnl != null && (
+                            <span
+                              className={`shrink-0 text-xs font-semibold ${
+                                group.total_pnl >= 0
+                                  ? "text-emerald-700"
+                                  : "text-red-700"
+                              }`}
+                            >
+                              {privacyMode
+                                ? PRIVACY_MASK
+                                : group.total_pnl.toLocaleString(undefined, {
+                                    style: "currency",
+                                    currency: "USD",
+                                  })}
+                            </span>
+                          )}
+                        </div>
                       </button>
                     </li>
                   ))}
@@ -1258,7 +1287,12 @@ export default function TradeTaggingPage() {
                           </span>
                           <span className="text-[11px] text-gray-400">
                             {marksAsOf
-                              ? `live as of ${formatMarkTime(marksAsOf)}`
+                              ? openPositions.some(
+                                  (p) =>
+                                    p.source === "live" && !p.live_is_stale,
+                                )
+                                ? `live as of ${formatMarkTime(marksAsOf)}`
+                                : `stale as of ${formatMarkTime(marksAsOf)}`
                               : "settled — no live data"}
                           </span>
                         </div>
@@ -1324,50 +1358,64 @@ export default function TradeTaggingPage() {
                             <span className="text-right">Realized</span>
                             <span className="text-right">Unrealized</span>
                           </div>
-                          {byAccount.map((acct) => {
-                            const total =
-                              acct.unrealized_pnl == null &&
-                              acct.realized_pnl == null
-                                ? null
-                                : (acct.unrealized_pnl ?? 0) +
-                                  (acct.realized_pnl ?? 0);
-                            const capital = capitalFor(acct.account_id);
-                            return (
-                              <div key={acct.account_id} className={gridCols}>
-                                <span className="font-medium text-gray-700">
-                                  {acct.account_alias ?? acct.account_id}
-                                </span>
-                                <span className="text-right text-gray-500">
-                                  {privacyMode ? PRIVACY_MASK : money(capital)}
-                                </span>
-                                <span className={`text-right ${cls(total)}`}>
-                                  {privacyMode
-                                    ? formatRelativeReturn(total, capital)
-                                    : money(total)}
-                                </span>
-                                <span
-                                  className={`text-right ${cls(acct.realized_pnl)}`}
-                                >
-                                  {privacyMode
-                                    ? formatRelativeReturn(
-                                        acct.realized_pnl,
-                                        capital,
-                                      )
-                                    : money(acct.realized_pnl)}
-                                </span>
-                                <span
-                                  className={`text-right ${cls(acct.unrealized_pnl)}`}
-                                >
-                                  {privacyMode
-                                    ? formatRelativeReturn(
-                                        acct.unrealized_pnl,
-                                        capital,
-                                      )
-                                    : money(acct.unrealized_pnl)}
-                                </span>
-                              </div>
-                            );
-                          })}
+                          {[...byAccount]
+                            .sort((a, b) => {
+                              // Sort by TOTAL P&L (realized + unrealized) desc;
+                              // rows with no P&L data sort last.
+                              const totalOf = (x: GroupAccountPnl) =>
+                                x.unrealized_pnl == null &&
+                                x.realized_pnl == null
+                                  ? -Infinity
+                                  : (x.unrealized_pnl ?? 0) +
+                                    (x.realized_pnl ?? 0);
+                              return totalOf(b) - totalOf(a);
+                            })
+                            .map((acct) => {
+                              const total =
+                                acct.unrealized_pnl == null &&
+                                acct.realized_pnl == null
+                                  ? null
+                                  : (acct.unrealized_pnl ?? 0) +
+                                    (acct.realized_pnl ?? 0);
+                              const capital = capitalFor(acct.account_id);
+                              return (
+                                <div key={acct.account_id} className={gridCols}>
+                                  <span className="font-medium text-gray-700">
+                                    {acct.account_alias ?? acct.account_id}
+                                  </span>
+                                  <span className="text-right text-gray-500">
+                                    {privacyMode
+                                      ? PRIVACY_MASK
+                                      : money(capital)}
+                                  </span>
+                                  <span className={`text-right ${cls(total)}`}>
+                                    {privacyMode
+                                      ? formatRelativeReturn(total, capital)
+                                      : money(total)}
+                                  </span>
+                                  <span
+                                    className={`text-right ${cls(acct.realized_pnl)}`}
+                                  >
+                                    {privacyMode
+                                      ? formatRelativeReturn(
+                                          acct.realized_pnl,
+                                          capital,
+                                        )
+                                      : money(acct.realized_pnl)}
+                                  </span>
+                                  <span
+                                    className={`text-right ${cls(acct.unrealized_pnl)}`}
+                                  >
+                                    {privacyMode
+                                      ? formatRelativeReturn(
+                                          acct.unrealized_pnl,
+                                          capital,
+                                        )
+                                      : money(acct.unrealized_pnl)}
+                                  </span>
+                                </div>
+                              );
+                            })}
                         </div>
                       );
                     })()}
@@ -1485,8 +1533,12 @@ export default function TradeTaggingPage() {
                                   : pos.fifo_pnl_unrealized >= 0
                                     ? "text-emerald-700"
                                     : "text-red-700";
+                              // A stale live overlay (settled snapshot is newer)
+                              // must not be shown as current: blank the live-only
+                              // cells and flag the badge as "stale".
+                              const liveStale = pos.live_is_stale;
                               const livePnlClass =
-                                pos.live_unrealized == null
+                                liveStale || pos.live_unrealized == null
                                   ? "text-gray-400"
                                   : pos.live_unrealized >= 0
                                     ? "text-emerald-700"
@@ -1527,7 +1579,7 @@ export default function TradeTaggingPage() {
                                   <td className="px-2 py-1 text-right font-mono text-gray-700">
                                     {privacyMode
                                       ? PRIVACY_MASK
-                                      : pos.mark == null
+                                      : liveStale || pos.mark == null
                                         ? "—"
                                         : pos.mark.toFixed(2)}
                                   </td>
@@ -1554,11 +1606,15 @@ export default function TradeTaggingPage() {
                                     className={`px-2 py-1 text-right font-mono ${livePnlClass}`}
                                   >
                                     {privacyMode
-                                      ? formatRelativeReturn(
-                                          pos.live_unrealized,
-                                          Math.abs(pos.avg_cost * pos.position),
-                                        )
-                                      : pos.live_unrealized == null
+                                      ? liveStale
+                                        ? PRIVACY_MASK
+                                        : formatRelativeReturn(
+                                            pos.live_unrealized,
+                                            Math.abs(
+                                              pos.avg_cost * pos.position,
+                                            ),
+                                          )
+                                      : liveStale || pos.live_unrealized == null
                                         ? "—"
                                         : pos.live_unrealized.toFixed(2)}
                                   </td>
@@ -1566,7 +1622,17 @@ export default function TradeTaggingPage() {
                                     {pos.as_of_date ?? "—"}
                                   </td>
                                   <td className="px-2 py-1">
-                                    {pos.source === "live" ? (
+                                    {pos.source === "live" && liveStale ? (
+                                      <span
+                                        className="rounded bg-amber-100 px-1.5 py-0.5 text-[11px] font-medium text-amber-800"
+                                        title="Live TWS overlay is older than the latest settled snapshot. Refresh Live (TWS) to update."
+                                      >
+                                        stale
+                                        {(pos.mark_ts ?? pos.live_fetched_at)
+                                          ? ` ${formatMarkTime(pos.mark_ts ?? pos.live_fetched_at)}`
+                                          : ""}
+                                      </span>
+                                    ) : pos.source === "live" ? (
                                       <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[11px] font-medium text-emerald-800">
                                         live
                                         {pos.mark_ts

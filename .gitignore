@@ -9,6 +9,9 @@
 *.duckdb.wal
 scripts/data/
 
+# Local scratch/temp working files (may contain real IBKR account data).
+scratchpad/
+
 # APS (Agentic Prompt Sync)
 .aps-backups/
 
