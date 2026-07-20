@@ -1,4 +1,4 @@
-# NextGenTrader
+# Next Gen Vol (NGV) Trader
 
 Agentic software enabling one person to operate as an quick and nimble quantative futures, vol. and options trade desk.
 

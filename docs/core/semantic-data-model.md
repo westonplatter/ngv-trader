@@ -67,6 +67,7 @@ per metric; an invalid pick errors with the valid options).
 | `right`, `strike`                   | position (native); execution (via `contracts`) | ⚠️ Complete on `position_facts` — see the caveat below for `execution_facts`.                                                                    |
 | `contract_month`                    | execution (via `contracts`)   | ⚠️ See the caveat below.                                                                                                                                        |
 | `exchange`, `side`, `status`        | see `describe`                | —                                                                                                                                                               |
+| `exec_role`                         | execution                     | `standalone` / `leg` / `combo_summary`. Used internally to exclude combo summaries from money metrics — see §5 of `core/semantic-queries.md`.                  |
 
 ⚠️ **On `execution_facts`, `strike` / `right` / `contract_month` / `symbol` all
 come from a join to the `contracts` security master, which is incomplete for
