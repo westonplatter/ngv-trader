@@ -375,8 +375,16 @@ def get_trade_group(trade_group_id: int, db: Session = DB_SESSION_DEPENDENCY):
     )
     execution_count = db.execute(select(func.count()).select_from(TradeGroupExecution).where(TradeGroupExecution.trade_group_id == trade_group_id)).scalar_one()
 
+    # Resolve the group's primary strategy value. This is a subquery-computed
+    # field (not a column on TradeGroup), so model_validate leaves it None;
+    # populate it explicitly so deep links carrying only a trade_group_id can
+    # resolve the owning strategy instead of falling back to the first one.
+    primary_strategy_value = db.execute(select(_primary_strategy_subquery()).where(TradeGroup.id == trade_group_id)).scalar_one_or_none()
+
+    base = TradeGroupResponse.model_validate(trade_group).model_dump()
+    base["primary_strategy_value"] = primary_strategy_value
     return TradeGroupDetailResponse(
-        **TradeGroupResponse.model_validate(trade_group).model_dump(),
+        **base,
         tags=[TagLinkResponse.model_validate(row) for row in tag_links],
         execution_count=execution_count,
         meta=_parse_meta_or_400(trade_group.meta_yaml),
@@ -1357,6 +1365,10 @@ def trade_group_executions(trade_group_id: int, db: Session = DB_SESSION_DEPENDE
     # (FlexQuery `positions`) is the base; the live TWS overlay (`live_positions`
     # + `latest_quote` + `live_executions`) is merged on top at read time.
     account_con_pairs = {(execution.account_id, execution.con_id) for execution, _ref, _trade, _account in rows if execution.con_id is not None}
+    # Also surface positions whose only link to this group is a tagged *unsettled*
+    # live fill (a strike opened today, not yet in trade_executions). Without this,
+    # a freshly-opened position stays hidden from Open Positions until it settles.
+    account_con_pairs |= {(le.account_id, le.con_id) for le, _account in live_rows if le.con_id is not None}
     settled_exec_ids = {execution.ib_exec_id for execution, _ref, _trade, _account in rows if execution.ib_exec_id}
     overlay = _build_open_positions_overlay(db, account_con_pairs, settled_exec_ids, total_pnl, realized_by_account)
 

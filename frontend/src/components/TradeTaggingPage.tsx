@@ -173,7 +173,21 @@ function statusClassName(status: TradeGroup["status"]): string {
   return "bg-amber-100 text-amber-800";
 }
 
+// Text color for the section headers (Open / Closed / Archived), keyed to the
+// same palette as the per-group status badges.
+function statusHeaderClassName(status: TradeGroup["status"]): string {
+  if (status === "open") return "text-emerald-700";
+  if (status === "closed") return "text-gray-600";
+  return "text-amber-700";
+}
+
 const GROUP_STATUSES: TradeGroup["status"][] = ["open", "closed", "archived"];
+
+const STATUS_LABELS: Record<TradeGroup["status"], string> = {
+  open: "Open",
+  closed: "Closed",
+  archived: "Archived",
+};
 
 type GroupFilter = "active" | "closed" | "archived" | "all";
 
@@ -184,12 +198,25 @@ const GROUP_FILTERS: { value: GroupFilter; label: string }[] = [
   { value: "all", label: "All" },
 ];
 
-type GroupSort = "name" | "opened_at";
+type GroupSort = "name" | "name_grouped" | "opened_at" | "opened_at_grouped";
 
 const GROUP_SORTS: { value: GroupSort; label: string }[] = [
   { value: "name", label: "A–Z" },
+  { value: "name_grouped", label: "A–Z Grouped" },
   { value: "opened_at", label: "Opened" },
+  { value: "opened_at_grouped", label: "Opened Grouped" },
 ];
+
+// The "*_grouped" sorts split the list into Open / Closed / Archived sections;
+// the plain sorts render one flat list. The sort key (name vs opened_at) is the
+// same in both.
+function sortIsGrouped(sort: GroupSort): boolean {
+  return sort.endsWith("_grouped");
+}
+
+function sortKey(sort: GroupSort): "name" | "opened_at" {
+  return sort.startsWith("opened_at") ? "opened_at" : "name";
+}
 
 function parseIdParam(value: string | null): number | null {
   if (!value) return null;
@@ -249,7 +276,7 @@ export default function TradeTaggingPage() {
   const [newGroupName, setNewGroupName] = useState("");
   const [newGroupNotes, setNewGroupNotes] = useState("");
   const [groupFilter, setGroupFilter] = useState<GroupFilter>("active");
-  const [groupSort, setGroupSort] = useState<GroupSort>("name");
+  const [groupSort, setGroupSort] = useState<GroupSort>("name_grouped");
 
   const [editingGroup, setEditingGroup] = useState(false);
   const [editName, setEditName] = useState("");
@@ -267,26 +294,45 @@ export default function TradeTaggingPage() {
     [selectedStrategyId, strategies],
   );
 
-  const visibleGroups = useMemo(() => {
-    const filtered =
-      groupFilter === "all"
-        ? groups
-        : groups.filter((group) => {
-            const status: TradeGroup["status"] =
-              groupFilter === "active" ? "open" : groupFilter;
-            return group.status === status;
-          });
-    return [...filtered].sort((a, b) => {
-      if (groupSort === "opened_at") {
-        // Most recently opened first; fall back to name for equal timestamps.
-        const diff = Date.parse(b.opened_at) - Date.parse(a.opened_at);
-        if (diff !== 0) return diff;
-      }
-      return a.name.localeCompare(b.name, undefined, {
-        numeric: true,
-        sensitivity: "base",
+  // Rendered as sections. The "*_grouped" sorts split into Open → Closed →
+  // Archived blocks (each with a colored header); the plain sorts render a
+  // single flat block with `status: null` (no header). A specific status filter
+  // narrows to that one status; "All" shows every non-empty status. Within a
+  // block, order by the sort key (name or opened_at).
+  const groupSections = useMemo<
+    { status: TradeGroup["status"] | null; groups: TradeGroup[] }[]
+  >(() => {
+    const key = sortKey(groupSort);
+    const sortGroups = (list: TradeGroup[]) =>
+      [...list].sort((a, b) => {
+        if (key === "opened_at") {
+          // Most recently opened first; fall back to name for equal timestamps.
+          const diff = Date.parse(b.opened_at) - Date.parse(a.opened_at);
+          if (diff !== 0) return diff;
+        }
+        return a.name.localeCompare(b.name, undefined, {
+          numeric: true,
+          sensitivity: "base",
+        });
       });
-    });
+    const statuses: TradeGroup["status"][] =
+      groupFilter === "all"
+        ? GROUP_STATUSES
+        : [groupFilter === "active" ? "open" : groupFilter];
+    const inScope = groups.filter((group) => statuses.includes(group.status));
+
+    if (!sortIsGrouped(groupSort)) {
+      // Flat: one unlabeled block sorted across all in-scope statuses.
+      return inScope.length
+        ? [{ status: null, groups: sortGroups(inScope) }]
+        : [];
+    }
+    return statuses
+      .map((status) => ({
+        status,
+        groups: sortGroups(inScope.filter((group) => group.status === status)),
+      }))
+      .filter((section) => section.groups.length > 0);
   }, [groups, groupFilter, groupSort]);
 
   const loadStrategies = useCallback(async () => {
@@ -1015,52 +1061,74 @@ export default function TradeTaggingPage() {
                   </li>
                 )}
                 {!loadingGroups &&
-                  visibleGroups.map((group) => (
-                    <li key={group.id}>
-                      <button
-                        type="button"
-                        className={`w-full rounded border px-2 py-2 text-left ${
-                          selectedGroupId === group.id
-                            ? "border-blue-300 bg-blue-50"
-                            : "border-gray-200 hover:bg-gray-50"
-                        }`}
-                        onClick={() => setSelectedGroupId(group.id)}
-                      >
-                        <div className="flex items-center justify-between gap-3">
-                          <p className="text-sm font-medium text-gray-900">
-                            {group.name}
-                          </p>
+                  groupSections.map((section) => (
+                    <li key={section.status ?? "flat"}>
+                      {section.status && (
+                        <div className="mb-2 mt-5 flex items-center gap-2 border-b border-gray-200 pb-1 first:mt-0">
                           <span
-                            className={`rounded px-2 py-0.5 text-[11px] font-semibold uppercase ${statusClassName(group.status)}`}
+                            className={`text-sm font-bold uppercase tracking-wide ${statusHeaderClassName(section.status)}`}
                           >
-                            {group.status}
+                            {STATUS_LABELS[section.status]}
+                          </span>
+                          <span className="text-xs font-semibold text-gray-400">
+                            {section.groups.length}
                           </span>
                         </div>
-                        <div className="mt-1 flex items-baseline justify-between gap-3">
-                          <p className="text-xs text-gray-500">
-                            #{group.id} · Opened {formatDate(group.opened_at)}
-                          </p>
-                          {group.total_pnl != null && (
-                            <span
-                              className={`shrink-0 text-xs font-semibold ${
-                                group.total_pnl >= 0
-                                  ? "text-emerald-700"
-                                  : "text-red-700"
+                      )}
+                      <ul className="space-y-1">
+                        {section.groups.map((group) => (
+                          <li key={group.id}>
+                            <button
+                              type="button"
+                              className={`w-full rounded border px-2 py-2 text-left ${
+                                selectedGroupId === group.id
+                                  ? "border-blue-300 bg-blue-50"
+                                  : "border-gray-200 hover:bg-gray-50"
                               }`}
+                              onClick={() => setSelectedGroupId(group.id)}
                             >
-                              {privacyMode
-                                ? PRIVACY_MASK
-                                : group.total_pnl.toLocaleString(undefined, {
-                                    style: "currency",
-                                    currency: "USD",
-                                  })}
-                            </span>
-                          )}
-                        </div>
-                      </button>
+                              <div className="flex items-center justify-between gap-3">
+                                <p className="text-sm font-medium text-gray-900">
+                                  {group.name}
+                                </p>
+                                <span
+                                  className={`rounded px-2 py-0.5 text-[11px] font-semibold uppercase ${statusClassName(group.status)}`}
+                                >
+                                  {group.status}
+                                </span>
+                              </div>
+                              <div className="mt-1 flex items-baseline justify-between gap-3">
+                                <p className="text-xs text-gray-500">
+                                  #{group.id} · Opened{" "}
+                                  {formatDate(group.opened_at)}
+                                </p>
+                                {group.total_pnl != null && (
+                                  <span
+                                    className={`shrink-0 text-xs font-semibold ${
+                                      group.total_pnl >= 0
+                                        ? "text-emerald-700"
+                                        : "text-red-700"
+                                    }`}
+                                  >
+                                    {privacyMode
+                                      ? PRIVACY_MASK
+                                      : group.total_pnl.toLocaleString(
+                                          undefined,
+                                          {
+                                            style: "currency",
+                                            currency: "USD",
+                                          },
+                                        )}
+                                  </span>
+                                )}
+                              </div>
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
                     </li>
                   ))}
-                {!loadingGroups && visibleGroups.length === 0 && (
+                {!loadingGroups && groupSections.length === 0 && (
                   <li className="rounded border border-dashed border-gray-300 px-2 py-3 text-xs text-gray-500">
                     {!selectedStrategy
                       ? "Select a strategy to view trade groups."

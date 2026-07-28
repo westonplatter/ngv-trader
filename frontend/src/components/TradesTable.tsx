@@ -362,6 +362,9 @@ export default function TradesTable() {
   const [syncError, setSyncError] = useState<string | null>(null);
   const [rangeStart, setRangeStart] = useState("");
   const [rangeEnd, setRangeEnd] = useState("");
+  // The id/reference columns (Parent Exec ID, Order Ref, Exec ID, Con ID) are
+  // hidden unless "More details" is toggled on, keeping the default view compact.
+  const [showDetails, setShowDetails] = useState(false);
   const [searchParams] = useSearchParams();
   const [symbolFilter, setSymbolFilter] = useState(
     () => searchParams.get("symbol") ?? "",
@@ -591,6 +594,44 @@ export default function TradesTable() {
     }
   };
 
+  const kickOffIntradaySync = async () => {
+    setSyncing(true);
+    setSyncMessage(null);
+    setSyncError(null);
+    try {
+      const res = await fetch(`${API_BASE_URL}/positions/sync/intraday-tws`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          source: "manual-ui",
+          request_text: "Intraday TWS sync from Trades page.",
+          max_attempts: 3,
+        }),
+      });
+      if (!res.ok) {
+        throw new Error(
+          await readErrorMessage(res, "Unable to queue intraday sync"),
+        );
+      }
+      const data: { job_id: number; status: string } = await res.json();
+      setSyncMessage(
+        `Queued intraday TWS sync job #${data.job_id} (${data.status}).`,
+      );
+      // TWS session + reqTickers take longer than a flex enqueue; poll twice.
+      window.setTimeout(() => {
+        void loadExecutions().catch(() => {});
+      }, 3000);
+      window.setTimeout(() => {
+        void loadExecutions().catch(() => {});
+      }, 8000);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unknown sync error";
+      setSyncError(message);
+    } finally {
+      setSyncing(false);
+    }
+  };
+
   const handleTradeAssigned = useCallback(() => {
     void loadExecutions().catch(() => {});
     void loadTradeGroups().catch(() => {});
@@ -614,8 +655,19 @@ export default function TradesTable() {
             {filteredRows.length} execution(s)
           </p>
         </div>
-        <div className="flex flex-col items-end gap-2">
+        <div className="relative flex flex-col items-end gap-2">
           <div className="flex items-center gap-2">
+            <span className="text-xs font-semibold text-gray-700">Sync</span>
+            <button
+              onClick={() => {
+                void kickOffIntradaySync();
+              }}
+              disabled={syncing}
+              title="Pull today's live fills, marks, and positions directly from TWS (does not hit FlexQuery)"
+              className="rounded border border-emerald-300 px-3 py-1 text-sm text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
+            >
+              {syncing ? "Queueing..." : "Intraday (TWS)"}
+            </button>
             <button
               onClick={() => {
                 void kickOffTradesSync("Quick sync", { days: 1 });
@@ -623,7 +675,7 @@ export default function TradesTable() {
               disabled={syncing}
               className="rounded border border-blue-300 px-3 py-1 text-sm text-blue-700 hover:bg-blue-50 disabled:opacity-50"
             >
-              {syncing ? "Queueing..." : "Quick Sync (1d)"}
+              {syncing ? "Queueing..." : "1 Day"}
             </button>
             <button
               onClick={() => {
@@ -632,7 +684,7 @@ export default function TradesTable() {
               disabled={syncing}
               className="rounded border border-blue-300 px-3 py-1 text-sm text-blue-700 hover:bg-blue-50 disabled:opacity-50"
             >
-              {syncing ? "Queueing..." : "Full Sync (7d)"}
+              {syncing ? "Queueing..." : "7 Days"}
             </button>
             <button
               onClick={() => {
@@ -641,24 +693,12 @@ export default function TradesTable() {
               disabled={syncing}
               className="rounded border border-blue-300 px-3 py-1 text-sm text-blue-700 hover:bg-blue-50 disabled:opacity-50"
             >
-              {syncing ? "Queueing..." : "Extended Sync (30d)"}
-            </button>
-            <button
-              onClick={() => {
-                void kickOffTradesSync("Sync since last trade", {
-                  sinceLastTrade: true,
-                });
-              }}
-              disabled={syncing}
-              title="Sync from the most recent trade date across all accounts through today"
-              className="rounded border border-blue-300 px-3 py-1 text-sm text-blue-700 hover:bg-blue-50 disabled:opacity-50"
-            >
-              {syncing ? "Queueing..." : "Sync Since Last Trade"}
+              {syncing ? "Queueing..." : "30 Days"}
             </button>
           </div>
           <div className="flex items-center gap-2">
             <span className="text-xs font-medium text-gray-500">
-              Sync range:
+              Custom range:
             </span>
             <input
               type="date"
@@ -688,9 +728,23 @@ export default function TradesTable() {
               title="Sync trades for an explicit date range (FlexQuery is T-1, so the end date must be the previous business day or earlier)"
               className="rounded border border-blue-300 px-3 py-1 text-sm text-blue-700 hover:bg-blue-50 disabled:opacity-50"
             >
-              {syncing ? "Queueing..." : "Sync Range"}
+              {syncing ? "Queueing..." : "Sync"}
             </button>
           </div>
+          {(syncMessage || syncError) && (
+            <div className="absolute right-0 top-full mt-1 max-w-md">
+              {syncMessage && (
+                <p className="text-right text-sm text-green-700">
+                  {syncMessage}
+                </p>
+              )}
+              {syncError && (
+                <p className="text-right text-sm text-red-600">
+                  Sync error: {syncError}
+                </p>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
@@ -777,6 +831,35 @@ export default function TradesTable() {
             ))}
           </div>
         </div>
+
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">
+            Columns
+          </span>
+          <div className="inline-flex items-center gap-0.5 rounded-md bg-gray-100 p-0.5">
+            {[
+              { id: "simple", label: "Simple" },
+              { id: "all", label: "All" },
+            ].map((opt) => (
+              <button
+                key={opt.id}
+                onClick={() => setShowDetails(opt.id === "all")}
+                title={
+                  opt.id === "all"
+                    ? "Show the Parent Exec ID, Order Ref, Exec ID, and Con ID columns"
+                    : "Hide the id/reference columns"
+                }
+                className={`rounded px-2.5 py-1 text-xs font-medium uppercase tracking-wide ${
+                  (showDetails ? "all" : "simple") === opt.id
+                    ? "bg-white text-gray-900 shadow-sm"
+                    : "text-gray-600 hover:text-gray-900"
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
 
       {conIdFilter !== null && (
@@ -789,10 +872,6 @@ export default function TradesTable() {
           </Link>
         </p>
       )}
-      {syncMessage && <p className="text-sm text-green-700">{syncMessage}</p>}
-      {syncError && (
-        <p className="text-sm text-red-600">Sync error: {syncError}</p>
-      )}
       {loading && <p className="text-gray-500">Loading executions...</p>}
       {error && <p className="text-red-600">Error: {error}</p>}
 
@@ -800,6 +879,9 @@ export default function TradesTable() {
         <table className="min-w-full border-collapse text-sm">
           <thead>
             <tr className="bg-gray-100 text-left">
+              <th className="whitespace-nowrap px-3 py-2 font-semibold text-gray-700">
+                Account
+              </th>
               <th className="whitespace-nowrap px-3 py-2 font-semibold text-gray-700">
                 Time
               </th>
@@ -836,9 +918,6 @@ export default function TradesTable() {
                 Realized PnL
               </th>
               <th className="whitespace-nowrap px-3 py-2 font-semibold text-gray-700">
-                Account
-              </th>
-              <th className="whitespace-nowrap px-3 py-2 font-semibold text-gray-700">
                 Status
               </th>
               <th className="w-48 min-w-[12rem] whitespace-nowrap px-3 py-2 font-semibold text-gray-700">
@@ -850,12 +929,16 @@ export default function TradesTable() {
               <th className="whitespace-nowrap px-3 py-2 font-semibold text-gray-700">
                 Order Ref
               </th>
-              <th className="whitespace-nowrap px-3 py-2 font-semibold text-gray-700">
-                Exec ID
-              </th>
-              <th className="whitespace-nowrap px-3 py-2 font-semibold text-gray-700">
-                Con ID
-              </th>
+              {showDetails && (
+                <>
+                  <th className="whitespace-nowrap px-3 py-2 font-semibold text-gray-700">
+                    Exec ID
+                  </th>
+                  <th className="whitespace-nowrap px-3 py-2 font-semibold text-gray-700">
+                    Con ID
+                  </th>
+                </>
+              )}
             </tr>
           </thead>
           <tbody>
@@ -888,6 +971,9 @@ export default function TradesTable() {
                     isHighlighted ? "bg-yellow-50" : "hover:bg-gray-50"
                   }`}
                 >
+                  <td className="whitespace-nowrap px-3 py-2 text-gray-800">
+                    {row.account_alias ?? `Account ${row.account_id}`}
+                  </td>
                   <td className="whitespace-nowrap px-3 py-2 text-gray-700">
                     {formatDateTime(row.executed_at)}
                   </td>
@@ -942,9 +1028,6 @@ export default function TradesTable() {
                     {privacyMode
                       ? PRIVACY_MASK
                       : formatMoney(row.realized_pnl, "-")}
-                  </td>
-                  <td className="whitespace-nowrap px-3 py-2 text-gray-800">
-                    {row.account_alias ?? `Account ${row.account_id}`}
                   </td>
                   <td className="whitespace-nowrap px-3 py-2">
                     <span
@@ -1013,12 +1096,16 @@ export default function TradesTable() {
                   <td className="max-w-[160px] truncate whitespace-nowrap px-3 py-2 text-xs text-gray-600">
                     {row.trade_order_ref ?? "-"}
                   </td>
-                  <td className="max-w-[200px] truncate whitespace-nowrap px-3 py-2 font-mono text-xs text-gray-600">
-                    {privacyMode ? PRIVACY_MASK : row.ib_exec_id}
-                  </td>
-                  <td className="whitespace-nowrap px-3 py-2 font-mono text-xs text-gray-600">
-                    {row.con_id ?? "-"}
-                  </td>
+                  {showDetails && (
+                    <>
+                      <td className="max-w-[200px] truncate whitespace-nowrap px-3 py-2 font-mono text-xs text-gray-600">
+                        {privacyMode ? PRIVACY_MASK : row.ib_exec_id}
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2 font-mono text-xs text-gray-600">
+                        {row.con_id ?? "-"}
+                      </td>
+                    </>
+                  )}
                 </tr>
               );
             })}

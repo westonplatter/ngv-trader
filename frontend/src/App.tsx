@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import {
   Navigate,
   NavLink,
@@ -56,6 +57,14 @@ function PrivacyToggle() {
 
 function App() {
   const location = useLocation();
+
+  useEffect(() => {
+    // Root ("/") redirects to /tradebot; match on the resolved path.
+    const path = location.pathname === "/" ? "/tradebot" : location.pathname;
+    const item = NAV_ITEMS.find((navItem) => navItem.path === path);
+    document.title = item ? `ngv-trader | ${item.label}` : "ngv-trader";
+  }, [location.pathname]);
+
   const isTradebotPage = location.pathname === "/tradebot";
   const isTaggingPage = location.pathname === "/tagging";
   const horizontalPaddingClass = isTradebotPage ? "px-2 md:px-3" : "px-6";
