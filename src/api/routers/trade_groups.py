@@ -357,8 +357,16 @@ def get_trade_group(trade_group_id: int, db: Session = DB_SESSION_DEPENDENCY):
     )
     execution_count = db.execute(select(func.count()).select_from(TradeGroupExecution).where(TradeGroupExecution.trade_group_id == trade_group_id)).scalar_one()
 
+    # Resolve the group's primary strategy value. This is a subquery-computed
+    # field (not a column on TradeGroup), so model_validate leaves it None;
+    # populate it explicitly so deep links carrying only a trade_group_id can
+    # resolve the owning strategy instead of falling back to the first one.
+    primary_strategy_value = db.execute(select(_primary_strategy_subquery()).where(TradeGroup.id == trade_group_id)).scalar_one_or_none()
+
+    base = TradeGroupResponse.model_validate(trade_group).model_dump()
+    base["primary_strategy_value"] = primary_strategy_value
     return TradeGroupDetailResponse(
-        **TradeGroupResponse.model_validate(trade_group).model_dump(),
+        **base,
         tags=[TagLinkResponse.model_validate(row) for row in tag_links],
         execution_count=execution_count,
     )
