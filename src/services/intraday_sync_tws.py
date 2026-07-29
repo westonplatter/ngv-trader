@@ -382,6 +382,48 @@ def _live_execution_values(
     }
 
 
+def _fetch_fills(ib: IB) -> list:
+    """Today's fills, re-requested from TWS rather than read from session cache.
+
+    ``ib.fills()`` returns only the *session* cache: the snapshot ib_async takes
+    at connect, plus whatever arrives afterwards on ``execDetails``. TWS pushes
+    ``execDetails`` only to the client that placed the order — manually-entered
+    orders go to client id 0 alone — so with the worker's own client id, a
+    manual fill placed *after* connect never reaches the long-lived pooled
+    session and stays invisible until it settles via FlexQuery.
+
+    ``reqExecutions`` with a default filter re-asks for all of the current day's
+    executions regardless of client id (it is the same call that builds the
+    connect-time snapshot) and refreshes the wrapper cache as a side effect. One
+    extra round-trip per sync; ``_write_fills`` is idempotent on ``ib_exec_id``.
+    """
+    try:
+        return ib.reqExecutions()
+    except Exception:
+        logger.exception("reqExecutions failed; falling back to the session fill cache")
+        return ib.fills()
+
+
+def _fetch_positions(ib: IB) -> list:
+    """Current positions, re-requested from TWS rather than read from the cache.
+
+    ``ib.positions()`` returns the wrapper cache: the snapshot ib_async takes at
+    connect plus whatever arrives afterwards on ``position`` events. TWS updates
+    that cache a moment *after* it reports the execution, so a sync fired right
+    after a fill can record the fill while the position it created is still
+    missing — leaving a tagged trade whose position never shows up in its group.
+
+    ``reqPositions`` re-asks TWS for the current book and refreshes the wrapper
+    cache as a side effect, mirroring ``_fetch_fills``. One extra round-trip per
+    sync; ``_write_live_positions`` replaces per account either way.
+    """
+    try:
+        return ib.reqPositions()
+    except Exception:
+        logger.exception("reqPositions failed; falling back to the session position cache")
+        return ib.positions()
+
+
 def _write_fills(
     session: Session,
     fills: list,
@@ -449,16 +491,22 @@ def run_intraday_sync(engine: Engine, ib: IB) -> dict:
     now = _now_utc()
     window_start = session_start_utc(now)
 
+    # Fills first, positions second: TWS updates its position book a moment after
+    # it reports an execution, so the positions snapshot must be the *newer* of
+    # the two. Reading positions first (with the slow ticker fetch in between)
+    # meant a fill could be recorded while the position it created was still
+    # missing, leaving a tagged trade whose position never surfaced in its group.
+    fills = _fetch_fills(ib)
+
     # Current positions = authoritative current state, covering every held
     # instrument including ones opened today — no ContractRef-cache dependency.
-    # ib.positions() contracts carry a conId but no exchange, so qualify them to
-    # fill the exchange before requesting market data.
-    positions = ib.positions()
+    # Position contracts carry a conId but no exchange, so qualify them to fill
+    # the exchange before requesting market data.
+    positions = _fetch_positions(ib)
     position_accounts = {p.account for p in positions if getattr(p, "account", None)}
     held_contracts = [p.contract for p in positions if getattr(p.contract, "conId", None)]
     held_contracts = _ensure_market_data_exchange(ib, held_contracts)
     tickers_by_con_id = _fetch_tickers(ib, held_contracts)
-    fills = ib.fills()
 
     with Session(engine) as session:
         account_lookup = get_or_create_accounts(session, position_accounts) if position_accounts else {}
