@@ -32,7 +32,10 @@ from src.models import (
     TradeExecution,
 )
 from src.services.contract_sync import _upsert_contract
-from src.services.group_link_carryover import carry_over_settled_group_links
+from src.services.group_link_carryover import (
+    carry_over_link_to_execution,
+    carry_over_settled_group_links,
+)
 from src.services.sync_common import get_or_create_accounts
 
 logger = logging.getLogger(__name__)
@@ -487,16 +490,65 @@ def _write_fills(
     return written
 
 
+def _settled_combo_summaries(session: Session) -> dict[str, int]:
+    """Map live BAG ``ib_exec_id`` -> settled ``trade_executions.id`` for the same combo.
+
+    TWS reports a combo's BAG summary under an ``execId`` of its own, drawn from
+    a different id family than its legs. FlexQuery, by contrast, synthesizes the
+    settled summary *from* the legs. The two rows describe the same fill but can
+    never share an ``ib_exec_id``, so the id-equality purge cannot retire the
+    live one: the legs settle and disappear while the summary lingers, and the
+    combo shows twice in the UI — once ``unsettled``, once ``filled``.
+
+    Match on identity instead: same account, same instant, both BAG. Two distinct
+    combos filling on one account within the same second is not worth
+    distinguishing — both live rows are superseded either way. Matching on price
+    or side would be wrong: TWS may report a combo as several partial BAG fills
+    that FlexQuery reports netted into one, and the two sides disagree on sign.
+
+    Recomputed on every sync, so a summary that settles between runs still gets
+    retired rather than having to be caught in the one run where its legs did.
+    """
+    live_bags = session.execute(
+        select(LiveExecution.ib_exec_id, LiveExecution.account_id, LiveExecution.exec_time).where(LiveExecution.sec_type == "BAG")
+    ).all()
+    if not live_bags:
+        return {}
+    settled = session.execute(
+        select(TradeExecution.account_id, TradeExecution.executed_at, TradeExecution.id).where(
+            TradeExecution.sec_type == "BAG",
+            TradeExecution.executed_at.in_({exec_time for _, _, exec_time in live_bags}),
+        )
+    ).all()
+    settled_by_key = {(account_id, executed_at): trade_execution_id for account_id, executed_at, trade_execution_id in settled}
+    return {
+        ib_exec_id: trade_execution_id
+        for ib_exec_id, account_id, exec_time in live_bags
+        if (trade_execution_id := settled_by_key.get((account_id, exec_time))) is not None
+    }
+
+
 def _purge_settled(session: Session) -> int:
-    """Drop live fills whose ib_exec_id has since settled (settled wins).
+    """Drop live fills that have since settled (settled wins).
+
+    A live fill counts as settled two ways: an exact ``ib_exec_id`` match — legs
+    and standalone fills, whose ids TWS and FlexQuery agree on — and the
+    combo-summary identity match in ``_settled_combo_summaries`` for BAG rows,
+    whose ids they do not.
 
     Carries any live trade-group assignment over to the settled execution first.
     """
     settled_ids = set(session.execute(select(TradeExecution.ib_exec_id).where(TradeExecution.ib_exec_id.in_(select(LiveExecution.ib_exec_id)))).scalars())
-    if not settled_ids:
+    combo_summaries = _settled_combo_summaries(session)
+    if not settled_ids and not combo_summaries:
         return 0
     carry_over_settled_group_links(session, settled_ids)
-    return session.execute(delete(LiveExecution).where(LiveExecution.ib_exec_id.in_(settled_ids))).rowcount or 0
+    for live_exec_id, trade_execution_id in combo_summaries.items():
+        # Ids differ across the handoff, so the id-equality carry-over above
+        # cannot see these — resolve each one explicitly.
+        carry_over_link_to_execution(session, live_exec_id, trade_execution_id)
+    purge_ids = settled_ids | set(combo_summaries)
+    return session.execute(delete(LiveExecution).where(LiveExecution.ib_exec_id.in_(purge_ids))).rowcount or 0
 
 
 def run_intraday_sync(engine: Engine, ib: IB) -> dict:
