@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import logging
 import math
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from numbers import Real
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -39,10 +39,16 @@ logger = logging.getLogger(__name__)
 
 BATCH_SIZE = 100
 
-# The trading "day" boundary for "today's fills" is the US-Eastern session date
-# (exchange time), regardless of server timezone. Fills at/after ET midnight of
-# the current ET date are considered intraday.
+# The trading "day" boundary for "today's fills" is the exchange trade date, in
+# US-Eastern (exchange time), regardless of server timezone.
 MARKET_TZ = ZoneInfo("America/New_York")
+
+# CME's trade date opens at 18:00 ET and runs to 17:00 ET the next day, so a fill
+# at 19:00 ET Monday belongs to Tuesday's trade date. Anchoring the intraday
+# window here (rather than at ET midnight) keeps it aligned with the trade date
+# IBKR itself assigns — which is both what ``reqExecutions`` returns as "the
+# current trading day" and how FlexQuery later files the fill.
+SESSION_OPEN_HOUR_ET = 18
 
 
 def _now_utc() -> datetime:
@@ -64,14 +70,27 @@ def _safe_int(value: object) -> int | None:
 
 
 def session_start_utc(now: datetime | None = None) -> datetime:
-    """UTC instant of ET-midnight for the current ET session date.
+    """UTC instant the current exchange trade date opened (most recent 18:00 ET).
 
     Used as the lower bound for "today's" fills. ``now`` is for testability.
+
+    Previously anchored at ET midnight, which disagreed with the exchange by six
+    hours in the worst direction: a fill between 18:00 and 24:00 ET belongs to
+    the *next* trade date, so the overlay filed it under the current calendar day
+    and then dropped it at ET midnight — while FlexQuery, which files it under
+    the next trade date, would not report it for another full day. Evening fills
+    were therefore recoverable for only ~6 hours, then invisible for ~30.
+
+    Re-including the prior evening's fills is safe: ``_write_fills`` upserts on
+    ``ib_exec_id`` and ``_purge_settled`` drops anything that has since settled.
     """
     now = now or _now_utc()
     et_now = now.astimezone(MARKET_TZ)
-    et_midnight = et_now.replace(hour=0, minute=0, second=0, microsecond=0)
-    return et_midnight.astimezone(timezone.utc)
+    session_open = et_now.replace(hour=SESSION_OPEN_HOUR_ET, minute=0, second=0, microsecond=0)
+    if et_now < session_open:
+        # Before 18:00 ET we are still inside the session that opened yesterday.
+        session_open -= timedelta(days=1)
+    return session_open.astimezone(timezone.utc)
 
 
 def select_mark(bid: float | None, ask: float | None, last: float | None, close: float | None) -> float | None:
