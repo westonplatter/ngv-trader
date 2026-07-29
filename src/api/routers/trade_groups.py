@@ -1,5 +1,6 @@
 """Trade groups API router."""
 
+from collections.abc import Iterable
 from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
@@ -375,8 +376,16 @@ def get_trade_group(trade_group_id: int, db: Session = DB_SESSION_DEPENDENCY):
     )
     execution_count = db.execute(select(func.count()).select_from(TradeGroupExecution).where(TradeGroupExecution.trade_group_id == trade_group_id)).scalar_one()
 
+    # Resolve the group's primary strategy value. This is a subquery-computed
+    # field (not a column on TradeGroup), so model_validate leaves it None;
+    # populate it explicitly so deep links carrying only a trade_group_id can
+    # resolve the owning strategy instead of falling back to the first one.
+    primary_strategy_value = db.execute(select(_primary_strategy_subquery()).where(TradeGroup.id == trade_group_id)).scalar_one_or_none()
+
+    base = TradeGroupResponse.model_validate(trade_group).model_dump()
+    base["primary_strategy_value"] = primary_strategy_value
     return TradeGroupDetailResponse(
-        **TradeGroupResponse.model_validate(trade_group).model_dump(),
+        **base,
         tags=[TagLinkResponse.model_validate(row) for row in tag_links],
         execution_count=execution_count,
         meta=_parse_meta_or_400(trade_group.meta_yaml),
@@ -779,6 +788,32 @@ def unassign_positions(
     broadcaster.publish(make_coarse_event(TOPIC_TRADES, "trades.changed"))
 
 
+def _live_combo_siblings(db: Session, live_execs: Iterable[LiveExecution]) -> dict[str, LiveExecution]:
+    """Every other live fill belonging to the same combo order(s).
+
+    A combo is tagged as a unit: naming any one of its fills pulls in the BAG
+    summary and all legs. This matters beyond tidiness — position attribution is
+    keyed by ``con_id``, and the BAG summary carries a placeholder conId that
+    matches no position, so tagging the summary alone would attribute nothing.
+
+    Returns ``{ib_exec_id: LiveExecution}`` for the siblings only (the inputs are
+    not re-included). Empty when none of the inputs belong to a combo.
+    """
+    perm_ids = {le.ib_perm_id for le in live_execs if le.exec_role in {"combo_summary", "leg"} and le.ib_perm_id}
+    order_ids = {le.ib_order_id for le in live_execs if le.exec_role in {"combo_summary", "leg"} and not le.ib_perm_id and le.ib_order_id}
+    if not perm_ids and not order_ids:
+        return {}
+
+    clauses = []
+    if perm_ids:
+        clauses.append(LiveExecution.ib_perm_id.in_(perm_ids))
+    if order_ids:
+        clauses.append(and_(LiveExecution.ib_perm_id.is_(None), LiveExecution.ib_order_id.in_(order_ids)))
+    named = {le.ib_exec_id for le in live_execs}
+    siblings = db.execute(select(LiveExecution).where(or_(*clauses))).scalars().all()
+    return {le.ib_exec_id: le for le in siblings if le.ib_exec_id not in named}
+
+
 @router.post("/trade-groups/{trade_group_id}/live-executions:assign", status_code=204)
 def assign_live_executions(
     trade_group_id: int,
@@ -801,6 +836,7 @@ def assign_live_executions(
     missing = [eid for eid in body.ib_exec_ids if eid not in live_by_exec_id]
     if missing:
         raise HTTPException(status_code=404, detail=f"Unknown live execution(s): {', '.join(missing)}")
+    live_by_exec_id.update(_live_combo_siblings(db, live_by_exec_id.values()))
 
     if trade_group.account_id is None and live_by_exec_id:
         trade_group.account_id = next(iter(live_by_exec_id.values())).account_id
@@ -846,12 +882,15 @@ def unassign_live_executions(
         raise HTTPException(status_code=400, detail="Invalid source")
 
     _ensure_group(db, trade_group_id)
+    # Unassign the whole combo when any of its fills is named, mirroring assign.
+    named = db.execute(select(LiveExecution).where(LiveExecution.ib_exec_id.in_(body.ib_exec_ids))).scalars().all()
+    exec_ids = set(body.ib_exec_ids) | set(_live_combo_siblings(db, named))
     links = (
         db.execute(
             select(TradeGroupLiveExecution).where(
                 and_(
                     TradeGroupLiveExecution.trade_group_id == trade_group_id,
-                    TradeGroupLiveExecution.ib_exec_id.in_(body.ib_exec_ids),
+                    TradeGroupLiveExecution.ib_exec_id.in_(exec_ids),
                 )
             )
         )
@@ -1327,7 +1366,7 @@ def trade_group_executions(trade_group_id: int, db: Session = DB_SESSION_DEPENDE
                 price=live_exec.price,
                 commission=None,
                 realized_pnl=live_exec.realized_pnl,
-                exec_role="standalone",
+                exec_role=live_exec.exec_role,
                 sec_type=live_exec.sec_type,
                 contract_display=contract_display_name(
                     symbol=live_exec.symbol,
@@ -1357,6 +1396,10 @@ def trade_group_executions(trade_group_id: int, db: Session = DB_SESSION_DEPENDE
     # (FlexQuery `positions`) is the base; the live TWS overlay (`live_positions`
     # + `latest_quote` + `live_executions`) is merged on top at read time.
     account_con_pairs = {(execution.account_id, execution.con_id) for execution, _ref, _trade, _account in rows if execution.con_id is not None}
+    # Also surface positions whose only link to this group is a tagged *unsettled*
+    # live fill (a strike opened today, not yet in trade_executions). Without this,
+    # a freshly-opened position stays hidden from Open Positions until it settles.
+    account_con_pairs |= {(le.account_id, le.con_id) for le, _account in live_rows if le.con_id is not None}
     settled_exec_ids = {execution.ib_exec_id for execution, _ref, _trade, _account in rows if execution.ib_exec_id}
     overlay = _build_open_positions_overlay(db, account_con_pairs, settled_exec_ids, total_pnl, realized_by_account)
 
