@@ -20,7 +20,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from ib_async import IB
-from sqlalchemy import Engine, delete, select
+from sqlalchemy import Engine, delete, func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
@@ -136,9 +136,18 @@ def _parse_exec_time(value: Any) -> datetime | None:
 
 
 def _fill_realized_pnl(fill: Any) -> float | None:
-    """Realized P&L for a live fill from its commissionReport (TWS shape)."""
+    """Realized P&L for a live fill from its commissionReport (TWS shape).
+
+    ``None`` when no report has arrived yet, which is distinct from a report
+    saying zero. ib_async attaches a default-constructed ``CommissionReport`` to
+    every ``Fill`` at creation and fills it in later from the separate
+    ``commissionReport`` callback, so "not yet known" presents as a zeroed report
+    rather than a missing one. Its empty ``execId`` is the discriminator — real
+    reports always carry the execution's id. Without this a closing fill reads as
+    a hard 0.00 realized until its report lands.
+    """
     report = getattr(fill, "commissionReport", None)
-    if report is None:
+    if report is None or not getattr(report, "execId", ""):
         return None
     return _safe_float(getattr(report, "realizedPNL", None))
 
@@ -416,14 +425,27 @@ def _fetch_fills(ib: IB) -> list:
 
     ``reqExecutions`` with a default filter re-asks for all of the current day's
     executions regardless of client id (it is the same call that builds the
-    connect-time snapshot) and refreshes the wrapper cache as a side effect. One
-    extra round-trip per sync; ``_write_fills`` is idempotent on ``ib_exec_id``.
+    connect-time snapshot) and registers anything new into that cache. One extra
+    round-trip per sync; ``_write_fills`` is idempotent on ``ib_exec_id``.
+
+    We call it for that side effect and then read the *cache* back, rather than
+    using its return value. ib_async builds a fresh ``Fill`` with an empty
+    ``CommissionReport`` for every execution it reports and returns those, so for
+    an execution already in the cache the returned object is a stripped copy —
+    taking it would discard the realized P&L that the ``commissionReport``
+    callback merged into the cached ``Fill``. Reading the cache back gets
+    discovery and commission data both.
+
+    Realized P&L still lands one sync late for a newly-discovered fill: TWS sends
+    ``commissionReport`` after ``execDetailsEnd``, so the report arrives once this
+    call has already returned. It merges into the cached ``Fill`` in the
+    background and the next sync picks it up.
     """
     try:
-        return ib.reqExecutions()
+        ib.reqExecutions()
     except Exception:
         logger.exception("reqExecutions failed; falling back to the session fill cache")
-        return ib.fills()
+    return ib.fills()
 
 
 def _fetch_positions(ib: IB) -> list:
@@ -478,14 +500,14 @@ def _write_fills(
             now,
             exec_role=roles.get(execution.execId, "standalone"),
         )
-        session.execute(
-            insert(LiveExecution)
-            .values(**vals)
-            .on_conflict_do_update(
-                index_elements=["ib_exec_id"],
-                set_={k: v for k, v in vals.items() if k != "ib_exec_id"},
-            )
-        )
+        stmt = insert(LiveExecution).values(**vals)
+        updates = {k: v for k, v in vals.items() if k != "ib_exec_id"}
+        # A commissionReport arrives after the execution it belongs to, so a
+        # re-fetch of an already-stored fill can carry a null realized P&L where
+        # the row already holds the real one. Keep what we have in that case;
+        # every other column is safe to overwrite with the newer value.
+        updates["realized_pnl"] = func.coalesce(stmt.excluded.realized_pnl, LiveExecution.realized_pnl)
+        session.execute(stmt.on_conflict_do_update(index_elements=["ib_exec_id"], set_=updates))
         written += 1
     return written
 
