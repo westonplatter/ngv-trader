@@ -800,6 +800,41 @@ def list_all_trade_executions(  # noqa: C901, PLR0912, PLR0915
     return results
 
 
+def _live_contract_display(le: LiveExecution) -> str | None:
+    """Display name for an unsettled live fill, at parity with settled rows.
+
+    The live feed stores no expiry column, so a bare ``contract_display_name``
+    call renders "SPCX 100 PUT" where the settled row reads "SPCX Dec18'26 100
+    PUT". Routing a TWS-shaped ``raw`` through ``_contract_display_from_raw``
+    inherits the settled path's full fallback chain — explicit expiry, then
+    local-symbol month inference, then OCC parsing — rather than duplicating it
+    here. ``LiveExecution.local_symbol`` holds the OCC symbol
+    (``SPCX  261218P00100000``), which is where the expiry comes from.
+    """
+    raw = {
+        "contract": {
+            "symbol": le.symbol,
+            "secType": le.sec_type,
+            "localSymbol": le.local_symbol,
+            "multiplier": le.multiplier,
+            "right": le.right,
+            "strike": le.strike,
+            "conId": le.con_id,
+        }
+    }
+    return _contract_display_from_raw(raw, None) or contract_display_name(
+        symbol=le.symbol,
+        sec_type=le.sec_type,
+        local_symbol=le.local_symbol,
+        right=le.right,
+        strike=le.strike,
+        contract_expiry=None,
+        contract_month=None,
+        exchange=None,
+        trading_class=None,
+    )
+
+
 def _live_order_group_key(le: LiveExecution) -> tuple[str, int] | None:
     """Key grouping a live combo's BAG summary with its legs.
 
@@ -888,17 +923,7 @@ def _unsettled_live_executions(
     for le in live_rows:
         acct = account_by_id.get(le.account_id)
         alias = (acct.alias if acct.alias else acct.account) if acct else None
-        display = contract_display_name(
-            symbol=le.symbol,
-            sec_type=le.sec_type,
-            local_symbol=le.local_symbol,
-            right=le.right,
-            strike=le.strike,
-            contract_expiry=None,
-            contract_month=None,
-            exchange=None,
-            trading_class=None,
-        )
+        display = _live_contract_display(le)
         items.append(
             TradeExecutionListItem(
                 id=-le.id,  # negative id space so it can't collide with settled rows
