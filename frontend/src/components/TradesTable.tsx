@@ -61,6 +61,15 @@ function rowGroupId(row: TradeExecutionRow): number | null {
     : row.trade_assigned_trade_group_id;
 }
 
+// The unit a row belongs to for display, tagging, and highlighting. Settled
+// rows group by their parent trade; unsettled live fills have no trade, so a
+// live combo groups by its BAG summary's ib_exec_id (legs carry it as
+// parent_ib_exec_id). Standalone live fills are their own group.
+function rowGroupKey(row: TradeExecutionRow): string {
+  if (row.trade_id !== null) return `t:${row.trade_id}`;
+  return `l:${row.parent_ib_exec_id ?? row.ib_exec_id}`;
+}
+
 function formatDateTime(value: string | null | undefined): string {
   if (!value) return "-";
   const parsed = Date.parse(value);
@@ -378,7 +387,7 @@ export default function TradesTable() {
   const [tagStatus, setTagStatus] = useState<"all" | "tagged" | "untagged">(
     "all",
   );
-  const [highlightedTradeId, setHighlightedTradeId] = useState<number | null>(
+  const [highlightedGroupKey, setHighlightedGroupKey] = useState<string | null>(
     null,
   );
   const [highlightedSymbol, setHighlightedSymbol] = useState<string | null>(
@@ -510,30 +519,30 @@ export default function TradesTable() {
     return [...next].sort((a, b) => execMs(b) - execMs(a));
   }, [executions, accountFilter, symbolRegex, timeRange, tagStatus]);
 
-  // For each trade_id, the row that owns the Tag Group cell.
-  // Prefer combo_summary; otherwise the earliest row in the filtered view.
-  const tagGroupRowIdByTradeId = useMemo(() => {
-    const map = new Map<number, number>();
+  // For each group (settled trade or live combo), the row that owns the Tag
+  // Group cell. Prefer combo_summary; otherwise the earliest row in the
+  // filtered view. One cell per group, so a spread is tagged as one trade
+  // rather than once per leg.
+  const tagGroupRowIdByGroupKey = useMemo(() => {
+    const map = new Map<string, number>();
     for (const row of filteredRows) {
-      // Live fills have no parent trade; each owns its own tag cell (below).
-      if (row.trade_id === null) continue;
       if (row.exec_role === "combo_summary") {
-        map.set(row.trade_id, row.id);
+        map.set(rowGroupKey(row), row.id);
       }
     }
     for (const row of filteredRows) {
-      if (row.trade_id === null) continue;
-      if (!map.has(row.trade_id)) {
-        map.set(row.trade_id, row.id);
+      const key = rowGroupKey(row);
+      if (!map.has(key)) {
+        map.set(key, row.id);
       } else {
-        const currentId = map.get(row.trade_id)!;
+        const currentId = map.get(key)!;
         const current = filteredRows.find((r) => r.id === currentId);
         if (
           current &&
           current.exec_role !== "combo_summary" &&
           Date.parse(row.executed_at) < Date.parse(current.executed_at)
         ) {
-          map.set(row.trade_id, row.id);
+          map.set(key, row.id);
         }
       }
     }
@@ -637,8 +646,10 @@ export default function TradesTable() {
     void loadTradeGroups().catch(() => {});
   }, [loadExecutions, loadTradeGroups]);
 
-  const toggleHighlight = (tradeId: number) => {
-    setHighlightedTradeId((current) => (current === tradeId ? null : tradeId));
+  const toggleHighlight = (groupKey: string) => {
+    setHighlightedGroupKey((current) =>
+      current === groupKey ? null : groupKey,
+    );
   };
 
   const toggleSymbolHighlight = (symbol: string | null) => {
@@ -953,12 +964,10 @@ export default function TradesTable() {
               </tr>
             )}
             {filteredRows.map((row) => {
+              const groupKey = rowGroupKey(row);
               const ownsTagCell =
-                row.settled === false ||
-                (row.trade_id !== null &&
-                  tagGroupRowIdByTradeId.get(row.trade_id) === row.id);
-              const isHighlighted =
-                row.trade_id !== null && highlightedTradeId === row.trade_id;
+                tagGroupRowIdByGroupKey.get(groupKey) === row.id;
+              const isHighlighted = highlightedGroupKey === groupKey;
               const symbol =
                 row.contract_display ?? row.trade_contract_display_name ?? "-";
               const isSymbolHighlighted =
@@ -1072,10 +1081,7 @@ export default function TradesTable() {
                           : "text-blue-600 hover:text-blue-800";
                       return (
                         <button
-                          onClick={() =>
-                            row.trade_id !== null &&
-                            toggleHighlight(row.trade_id)
-                          }
+                          onClick={() => toggleHighlight(groupKey)}
                           className={`rounded px-1.5 py-0.5 hover:bg-yellow-100 ${baseClass}`}
                           title={
                             isParentRow

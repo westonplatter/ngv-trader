@@ -898,11 +898,22 @@ class LiveExecution(Base):
     """
 
     __tablename__ = "live_executions"
-    __table_args__ = (Index("ix_live_executions_account_id_con_id", "account_id", "con_id"),)
+    __table_args__ = (
+        Index("ix_live_executions_account_id_con_id", "account_id", "con_id"),
+        Index("ix_live_executions_ib_perm_id", "ib_perm_id"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     ib_exec_id: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
     account_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    # Broker order identity, used to group a combo's BAG summary fill with its
+    # leg fills within a sync batch. ``ib_perm_id`` is stable across the order
+    # lifecycle; ``ib_order_id`` is the fallback when permId is absent.
+    ib_perm_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    ib_order_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # "combo_summary" (the BAG fill), "leg" (a constituent of a combo), or
+    # "standalone". Mirrors TradeExecution.exec_role on the settled path.
+    exec_role: Mapped[str] = mapped_column(Text, nullable=False, default="standalone", server_default="standalone")
     con_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     symbol: Mapped[str | None] = mapped_column(String)
     sec_type: Mapped[str | None] = mapped_column(String)

@@ -1,6 +1,7 @@
 """Trades API router."""
 
 import re
+from collections.abc import Sequence
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -799,6 +800,51 @@ def list_all_trade_executions(  # noqa: C901, PLR0912, PLR0915
     return results
 
 
+def _live_order_group_key(le: LiveExecution) -> tuple[str, int] | None:
+    """Key grouping a live combo's BAG summary with its legs.
+
+    Mirrors ``intraday_sync_tws._order_group_key`` — ``ib_perm_id`` preferred,
+    ``ib_order_id`` as fallback. ``None`` for fills carrying neither, which are
+    never grouped.
+    """
+    if le.ib_perm_id:
+        return ("perm", le.ib_perm_id)
+    if le.ib_order_id:
+        return ("order", le.ib_order_id)
+    return None
+
+
+def _live_combo_index(
+    live_rows: Sequence[LiveExecution],
+    group_by_exec_id: dict[str, int],
+) -> tuple[dict[tuple[str, int], str], dict[tuple[str, int], int]]:
+    """Per-combo lookups over a batch of live fills, keyed by order key.
+
+    Returns ``(combo_exec_id_by_order_key, group_by_order_key)``:
+
+    - A live combo arrives as a BAG summary fill plus one fill per leg, tied
+      together at ingest by the order key. The first map lets each leg point at
+      its summary's ``ib_exec_id`` so the Trades table renders one combo rather
+      than N loose rows.
+    - Membership is per-fill in the DB, but a combo is tagged as a unit. The
+      second map surfaces one group for the whole order, so a leg never reads as
+      untagged next to a tagged summary (e.g. when only part of the order was
+      linked, as happens for rows tagged before this grouping existed).
+    """
+    combo_exec_id_by_order_key: dict[tuple[str, int], str] = {}
+    group_by_order_key: dict[tuple[str, int], int] = {}
+    for le in live_rows:
+        key = _live_order_group_key(le)
+        if key is None or le.exec_role not in {"combo_summary", "leg"}:
+            continue
+        if le.exec_role == "combo_summary":
+            combo_exec_id_by_order_key[key] = le.ib_exec_id
+        group_id = group_by_exec_id.get(le.ib_exec_id)
+        if group_id is not None and key not in group_by_order_key:
+            group_by_order_key[key] = group_id
+    return combo_exec_id_by_order_key, group_by_order_key
+
+
 def _unsettled_live_executions(
     db: Session,
     *,
@@ -836,6 +882,8 @@ def _unsettled_live_executions(
         a.id: a for a in db.execute(select(Account).where(Account.id.in_({le.account_id for le in live_rows}))).scalars().all()
     }
 
+    combo_exec_id_by_order_key, group_by_order_key = _live_combo_index(live_rows, group_by_exec_id)
+
     items: list[TradeExecutionListItem] = []
     for le in live_rows:
         acct = account_by_id.get(le.account_id)
@@ -859,7 +907,7 @@ def _unsettled_live_executions(
                 account_id=le.account_id,
                 account_alias=alias,
                 ib_exec_id=le.ib_exec_id,
-                exec_role="standalone",
+                exec_role=le.exec_role,
                 sec_type=le.sec_type,
                 executed_at=le.exec_time,
                 quantity=le.quantity,
@@ -870,7 +918,7 @@ def _unsettled_live_executions(
                 realized_pnl=le.realized_pnl,
                 is_canonical=True,
                 contract_display=display,
-                parent_ib_exec_id=None,
+                parent_ib_exec_id=(combo_exec_id_by_order_key.get(_live_order_group_key(le)) if le.exec_role == "leg" else None),
                 data_source="tws-live",
                 trade_ib_perm_id=None,
                 trade_order_ref=None,
@@ -882,7 +930,7 @@ def _unsettled_live_executions(
                 trade_first_executed_at=None,
                 trade_last_executed_at=None,
                 settled=False,
-                live_trade_group_id=group_by_exec_id.get(le.ib_exec_id),
+                live_trade_group_id=(group_by_exec_id.get(le.ib_exec_id) or group_by_order_key.get(_live_order_group_key(le))),
             )
         )
     return items

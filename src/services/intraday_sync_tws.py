@@ -58,6 +58,11 @@ def _safe_float(value: object) -> float | None:
     return parsed
 
 
+def _safe_int(value: object) -> int | None:
+    parsed = _safe_float(value)
+    return int(parsed) if parsed is not None else None
+
+
 def session_start_utc(now: datetime | None = None) -> datetime:
     """UTC instant of ET-midnight for the current ET session date.
 
@@ -281,12 +286,86 @@ def _write_quotes(session: Session, tickers_by_con_id: dict[int, Any], now: date
     return written
 
 
-def _live_execution_values(fill: Any, account_id: int, exec_time: datetime, now: datetime) -> dict:
+def _order_group_key(execution: Any) -> tuple[str, int] | None:
+    """Key grouping a combo's BAG summary fill with its leg fills.
+
+    Prefers ``permId`` (stable across the order lifecycle), falling back to
+    ``orderId``. ``None`` when the fill carries neither — such fills stay
+    ``standalone`` rather than being grouped by a weaker signal.
+    """
+    perm_id = _safe_int(getattr(execution, "permId", None))
+    if perm_id:
+        return ("perm", perm_id)
+    order_id = _safe_int(getattr(execution, "orderId", None))
+    if order_id:
+        return ("order", order_id)
+    return None
+
+
+def _exec_roles_by_exec_id(fills: list) -> dict[str, str]:
+    """Resolve COMBO/LEG roles across one ``ib.fills()`` batch.
+
+    The intraday feed delivers a combo order as one ``BAG`` summary fill plus
+    one fill per leg, all sharing an order key. Within each order group, the BAG
+    fill becomes ``combo_summary`` and its non-BAG siblings become ``leg``;
+    everything else stays ``standalone``.
+
+    Mirrors the settled path (``trade_sync_tws._retag_combo_roles``) but computes
+    the roles in-memory over the current batch, keeping the intraday sync
+    self-contained and idempotent on ``ib_exec_id``. Like FlexQuery's
+    ``_combo_groups``, a group must span at least 2 distinct leg conIds to
+    qualify — so a lone BAG fill or a single-leg order is not mislabeled.
+    """
+    groups: dict[tuple[str, int], list[Any]] = {}
+    for fill in fills:
+        execution = getattr(fill, "execution", None)
+        exec_id = getattr(execution, "execId", None) if execution else None
+        if not exec_id:
+            continue
+        key = _order_group_key(execution)
+        if key is None:
+            continue
+        groups.setdefault(key, []).append(fill)
+
+    roles: dict[str, str] = {}
+    for group_fills in groups.values():
+        bag_fills = [f for f in group_fills if _fill_sec_type(f) == "BAG"]
+        leg_fills = [f for f in group_fills if _fill_sec_type(f) != "BAG"]
+        leg_con_ids = {cid for f in leg_fills if (cid := _fill_con_id(f)) is not None}
+        if not bag_fills or len(leg_con_ids) < 2:
+            continue
+        for fill in bag_fills:
+            roles[fill.execution.execId] = "combo_summary"
+        for fill in leg_fills:
+            roles[fill.execution.execId] = "leg"
+    return roles
+
+
+def _fill_sec_type(fill: Any) -> str | None:
+    contract = getattr(fill, "contract", None)
+    return getattr(contract, "secType", None) if contract else None
+
+
+def _fill_con_id(fill: Any) -> int | None:
+    contract = getattr(fill, "contract", None)
+    return _safe_int(getattr(contract, "conId", None)) if contract else None
+
+
+def _live_execution_values(
+    fill: Any,
+    account_id: int,
+    exec_time: datetime,
+    now: datetime,
+    exec_role: str = "standalone",
+) -> dict:
     execution = fill.execution
     contract = getattr(fill, "contract", None)
     return {
         "ib_exec_id": execution.execId,
         "account_id": account_id,
+        "ib_perm_id": _safe_int(getattr(execution, "permId", None)),
+        "ib_order_id": _safe_int(getattr(execution, "orderId", None)),
+        "exec_role": exec_role,
         "con_id": getattr(contract, "conId", None) if contract else None,
         "symbol": getattr(contract, "symbol", None) if contract else None,
         "sec_type": getattr(contract, "secType", None) if contract else None,
@@ -312,6 +391,9 @@ def _write_fills(
 ) -> int:
     """Upsert today's fills into live_executions, keyed by ib_exec_id."""
     written = 0
+    # Roles are resolved across the whole batch first: a fill's COMBO/LEG role
+    # depends on its siblings, not on the fill alone.
+    roles = _exec_roles_by_exec_id(fills)
     for fill in fills:
         execution = getattr(fill, "execution", None)
         if execution is None or not getattr(execution, "execId", None):
@@ -326,7 +408,13 @@ def _write_fills(
         if account_code not in account_lookup:
             account_lookup.update(get_or_create_accounts(session, {account_code}))
 
-        vals = _live_execution_values(fill, account_lookup[account_code], exec_time, now)
+        vals = _live_execution_values(
+            fill,
+            account_lookup[account_code],
+            exec_time,
+            now,
+            exec_role=roles.get(execution.execId, "standalone"),
+        )
         session.execute(
             insert(LiveExecution)
             .values(**vals)
