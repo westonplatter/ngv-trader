@@ -32,15 +32,15 @@ Shared helpers (id parsing, account upsert, canonical flags, aggregates) live in
 
 ### Key columns on `trade_executions`
 
-| Column | Purpose |
-| --- | --- |
-| `ib_exec_id` | Unique fill identity (idempotency key) |
+| Column                | Purpose                                                                                                             |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `ib_exec_id`          | Unique fill identity (idempotency key)                                                                              |
 | `flex_transaction_id` | BIGINT fallback id for Flex BookTrade rows (assignments/exercises/expirations) that lack an execID; idempotency net |
-| `data_source` | `'flex'` or `'tws'` |
-| `sec_type` | Contract secType (`FUT`, `FOP`, `BAG`, …) |
-| `con_id` | IB contract id; joins to `contracts` (`ContractRef`) for leg enrichment |
-| `exec_role` | `standalone` \| `leg` \| `combo_summary` — drives spread aggregation |
-| `is_canonical` | Highest revision wins; older correction revisions retained as history |
+| `data_source`         | `'flex'` or `'tws'`                                                                                                 |
+| `sec_type`            | Contract secType (`FUT`, `FOP`, `BAG`, …)                                                                           |
+| `con_id`              | IB contract id; joins to `contracts` (`ContractRef`) for leg enrichment                                             |
+| `exec_role`           | `standalone` \| `leg` \| `combo_summary` — drives spread aggregation                                                |
+| `is_canonical`        | Highest revision wins; older correction revisions retained as history                                               |
 
 `ib_perm_id` and `ib_order_id` are `BIGINT` (IBKR perm ids exceed 32-bit range).
 
@@ -93,6 +93,10 @@ FlexQuery has no native combo-summary row, so the sync **synthesizes** one per
 combo by grouping on `brokerageOrderID`, with a deterministic
 `ib_exec_id = "{brokerage_order_id}.combo"`. TWS receives a native BAG fill and
 re-tags sibling legs in a post-insert pass to handle late-arriving combos.
+
+The unsettled intraday path applies the same `exec_role` vocabulary to
+`live_executions`, grouping by broker order key instead of `brokerageOrderID`;
+see [core/intraday-tws-overlay.md](core/intraday-tws-overlay.md).
 
 ## Sync behavior
 
