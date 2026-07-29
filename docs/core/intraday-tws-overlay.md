@@ -23,11 +23,11 @@ quantity.
 Three additive tables hold the overlay; the FlexQuery `positions` /
 `trade_executions` tables are never touched.
 
-| Table             | Holds                                                              | Key                                    |
-| ----------------- | ------------------------------------------------------------------ | -------------------------------------- |
-| `live_positions`  | current TWS qty + blended `avg_cost` per holding                   | unique `(account_id, con_id)`          |
-| `latest_quote`    | live marks (bid/ask/last/close + selected `mark`) for any sec type | `con_id` (supplied, not generated)     |
-| `live_executions` | today's fills with `realized_pnl`                                  | unique `ib_exec_id` (dedup vs settled) |
+| Table             | Holds                                                               | Key                                    |
+| ----------------- | ------------------------------------------------------------------- | -------------------------------------- |
+| `live_positions`  | current TWS qty + blended `avg_cost` per holding                    | unique `(account_id, con_id)`          |
+| `latest_quote`    | live marks (bid/ask/last/close + selected `mark`) for any sec type  | `con_id` (supplied, not generated)     |
+| `live_executions` | today's fills with `realized_pnl`, order key, and combo `exec_role` | unique `ib_exec_id` (dedup vs settled) |
 
 `latest_quote` is sec-type-agnostic (FUT/FOP/STK/OPT) and intentionally **not**
 FK'd to the futures-only `contracts` table — distinct from `latest_futures*`
@@ -64,6 +64,13 @@ Key rules (defined once in the service):
 - **Settle handoff:** a live fill whose `ib_exec_id` already exists in settled
   `trade_executions` is purged; the read-time merge also drops such duplicates.
   Tomorrow's FlexQuery sync ingests today's fills as settled — no double count.
+- **Combo roles:** the feed delivers a combo order as one `BAG` summary fill
+  plus one fill per leg. Each fill stores its order key (`ib_perm_id`, falling
+  back to `ib_order_id`) and `_exec_roles_by_exec_id` resolves `exec_role` over
+  the whole batch — within an order group the BAG becomes `combo_summary` and
+  its siblings `leg`. Mirrors FlexQuery's `_combo_groups` ≥2-distinct-conid
+  guard, so a lone BAG or single-leg order stays `standalone`. Roles are
+  recomputed per batch, keeping the upsert idempotent on `ib_exec_id`.
 
 ## Read-time merge
 
@@ -119,6 +126,13 @@ they settle**, keyed by `ib_exec_id` in `trade_group_live_executions`. The
 Trades page surfaces unsettled fills (flagged `settled:false`, `data_source =
 "tws-live"`) alongside settled executions and tags them per-fill via
 `POST /trade-groups/{id}/live-executions:assign|unassign`.
+
+A live combo is tagged as **one unit**, not once per fill. Legs carry their
+summary's `parent_ib_exec_id` so the Trades table renders one combo owning a
+single Tag Group cell, and assign/unassign fan out across the whole order via
+`_live_combo_siblings`. That fan-out is load-bearing, not cosmetic: position
+attribution is keyed by `con_id` and a BAG carries a placeholder conId matching
+no position, so tagging the summary alone would attribute nothing.
 
 On settlement, the shared carry-over (`src/services/group_link_carryover.py`)
 folds the live link into the canonical `trade_group_executions` and drops it —

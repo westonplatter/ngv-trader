@@ -3,6 +3,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { API_BASE_URL } from "../config";
 import { type TradeGroupResult, tradeGroupLabel } from "../lib/tradeGroups";
 
+// `fetch` has no default timeout: a request the server accepts but never answers
+// — an API restart dropping an in-flight connection, say — leaves its promise
+// pending forever, so the picker would sit on "Searching..." with no way back.
+// Bounding it turns that into an ordinary rejection the caller can recover from.
+const SEARCH_TIMEOUT_MS = 8000;
+
 // The contract's symbol root — the first whitespace-delimited token of the
 // display name. Works for shares ("GLD" → "GLD") and options
 // ("GLD Dec31'25 412 CALL" → "GLD"), so it can seed a recommended-group search
@@ -39,6 +45,9 @@ export default function TradeGroupSearchSelect({
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<TradeGroupResult[]>([]);
   const [loading, setLoading] = useState(false);
+  // A failed search is not an empty one: without this, a dropped request reads
+  // as "No trade groups found" and invites creating a duplicate group.
+  const [failed, setFailed] = useState(false);
   const [highlightedIndex, setHighlightedIndex] = useState(0);
   const [dropdownPos, setDropdownPos] = useState<{
     top: number;
@@ -72,6 +81,7 @@ export default function TradeGroupSearchSelect({
     if (searchQuery.trim()) params.set("q", searchQuery.trim());
     const response = await fetch(
       `${API_BASE_URL}/trade-groups?${params.toString()}`,
+      { signal: AbortSignal.timeout(SEARCH_TIMEOUT_MS) },
     );
     if (!response.ok) {
       throw new Error(`Unable to search trade groups (${response.status})`);
@@ -84,6 +94,13 @@ export default function TradeGroupSearchSelect({
   const applyResults = useCallback((data: TradeGroupResult[]) => {
     setResults(data);
     setHighlightedIndex(0);
+    setFailed(false);
+  }, []);
+
+  const applyFailure = useCallback(() => {
+    setResults([]);
+    setHighlightedIndex(0);
+    setFailed(true);
   }, []);
 
   const handleQueryChange = useCallback(
@@ -98,14 +115,14 @@ export default function TradeGroupSearchSelect({
             if (searchVersionRef.current === version) applyResults(data);
           })
           .catch(() => {
-            if (searchVersionRef.current === version) applyResults([]);
+            if (searchVersionRef.current === version) applyFailure();
           })
           .finally(() => {
             if (searchVersionRef.current === version) setLoading(false);
           });
       }, 250);
     },
-    [searchGroups, applyResults],
+    [searchGroups, applyResults, applyFailure],
   );
 
   const openSearch = useCallback(() => {
@@ -129,12 +146,12 @@ export default function TradeGroupSearchSelect({
         applyResults([...topRecs, ...rest]);
       })
       .catch(() => {
-        if (searchVersionRef.current === version) applyResults([]);
+        if (searchVersionRef.current === version) applyFailure();
       })
       .finally(() => {
         if (searchVersionRef.current === version) setLoading(false);
       });
-  }, [searchGroups, applyResults, contractDisplayName]);
+  }, [searchGroups, applyResults, applyFailure, contractDisplayName]);
 
   // Focus the input and position the popover once we've entered search mode.
   useEffect(() => {
@@ -152,6 +169,7 @@ export default function TradeGroupSearchSelect({
     setMode("display");
     setQuery("");
     setResults([]);
+    setFailed(false);
     setDropdownPos(null);
   }, []);
 
@@ -243,7 +261,18 @@ export default function TradeGroupSearchSelect({
           {loading && (
             <div className="px-3 py-2 text-xs text-gray-500">Searching...</div>
           )}
-          {!loading && results.length === 0 && (
+          {!loading && failed && (
+            <div className="px-3 py-2 text-xs text-red-600">
+              Search failed.
+              <button
+                onClick={openSearch}
+                className="ml-1 underline hover:text-red-800"
+              >
+                Retry
+              </button>
+            </div>
+          )}
+          {!loading && !failed && results.length === 0 && (
             <div className="px-3 py-2 text-xs text-gray-500">
               No trade groups found.
               <button
