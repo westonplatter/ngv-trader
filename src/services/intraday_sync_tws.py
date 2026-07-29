@@ -405,23 +405,22 @@ def _fetch_fills(ib: IB) -> list:
 
 
 def _fetch_positions(ib: IB) -> list:
-    """Current positions, re-requested from TWS rather than read from the cache.
+    """Current positions, read from the wrapper cache.
 
-    ``ib.positions()`` returns the wrapper cache: the snapshot ib_async takes at
-    connect plus whatever arrives afterwards on ``position`` events. TWS updates
-    that cache a moment *after* it reports the execution, so a sync fired right
-    after a fill can record the fill while the position it created is still
-    missing — leaving a tagged trade whose position never shows up in its group.
+    Deliberately *not* ``reqPositions``. Unlike executions, positions are not
+    client-scoped: ``connect`` subscribes via ``reqPositionsAsync`` and TWS pushes
+    every subsequent update to the cache, so it self-heals within a second or two.
+    ``reqPositions`` would buy a sub-second freshness gain and pay for it twice —
+    its result list is appended to unconditionally, so it (a) returns closed
+    ``position == 0`` rows that the cache pops, which would resurrect net-closed
+    positions as phantom flat rows, and (b) can carry the same ``conId`` twice when
+    an update lands mid-request, violating ``uq_live_positions_account_id_con_id``
+    and rolling back the whole sync. The cache is a dict keyed by conId, so it is
+    structurally immune to both.
 
-    ``reqPositions`` re-asks TWS for the current book and refreshes the wrapper
-    cache as a side effect, mirroring ``_fetch_fills``. One extra round-trip per
-    sync; ``_write_live_positions`` replaces per account either way.
+    Freshness comes from *when* this is called instead: see ``run_intraday_sync``.
     """
-    try:
-        return ib.reqPositions()
-    except Exception:
-        logger.exception("reqPositions failed; falling back to the session position cache")
-        return ib.positions()
+    return ib.positions()
 
 
 def _write_fills(
@@ -503,10 +502,16 @@ def run_intraday_sync(engine: Engine, ib: IB) -> dict:
     # Position contracts carry a conId but no exchange, so qualify them to fill
     # the exchange before requesting market data.
     positions = _fetch_positions(ib)
-    position_accounts = {p.account for p in positions if getattr(p, "account", None)}
     held_contracts = [p.contract for p in positions if getattr(p.contract, "conId", None)]
     held_contracts = _ensure_market_data_exchange(ib, held_contracts)
     tickers_by_con_id = _fetch_tickers(ib, held_contracts)
+
+    # Re-read the cache now that the slow ticker fetch is done: TWS pushed any
+    # position update that landed during it, and this snapshot is what gets
+    # written. Free (no round-trip). Marks stay keyed off the earlier read — a
+    # position opened in the gap lands without a mark and degrades to settled.
+    positions = _fetch_positions(ib)
+    position_accounts = {p.account for p in positions if getattr(p, "account", None)}
 
     with Session(engine) as session:
         account_lookup = get_or_create_accounts(session, position_accounts) if position_accounts else {}
