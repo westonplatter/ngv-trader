@@ -183,6 +183,21 @@ function statusHeaderClassName(status: TradeGroup["status"]): string {
 
 const GROUP_STATUSES: TradeGroup["status"][] = ["open", "closed", "archived"];
 
+// Shown as placeholder text in the empty meta editor, so the recognized blocks
+// are discoverable without leaving the page. See docs/core/trade-group-meta-yaml.md.
+const META_YAML_PLACEHOLDER = `targets:
+  delta:
+    target: 120
+    tolerance: 10
+dates:
+  entry_estimate: 2026-06-12
+  exit_estimate: 2026-09-19
+profit_targets:
+  - date: 2026-08-15
+    amount: 1500
+    note: roll up calls if this clears
+thesis: arbitrary keys pass through`;
+
 const STATUS_LABELS: Record<TradeGroup["status"], string> = {
   open: "Open",
   closed: "Closed",
@@ -281,7 +296,11 @@ export default function TradeTaggingPage() {
   const [editingGroup, setEditingGroup] = useState(false);
   const [editName, setEditName] = useState("");
   const [editNotes, setEditNotes] = useState("");
+  const [editMetaYaml, setEditMetaYaml] = useState("");
   const [editStatus, setEditStatus] = useState<TradeGroup["status"]>("open");
+  // Save errors surface inside the edit form rather than the page-level banner:
+  // a malformed-YAML 400 needs to be read next to the field that caused it.
+  const [editError, setEditError] = useState<string | null>(null);
 
   const [loading, setLoading] = useState(true);
   const [loadingGroups, setLoadingGroups] = useState(false);
@@ -699,6 +718,11 @@ export default function TradeTaggingPage() {
     if (editNotes !== (groupDetail?.notes ?? "")) {
       body.notes = editNotes || null;
     }
+    // Send "" (not null) to clear: the API reads a null meta_yaml as "field not
+    // provided" and only an empty string as an explicit clear.
+    if (editMetaYaml !== (groupDetail?.meta_yaml ?? "")) {
+      body.meta_yaml = editMetaYaml;
+    }
     if (editStatus !== groupDetail?.status) {
       body.status = editStatus;
       if (editStatus === "closed") {
@@ -737,7 +761,9 @@ export default function TradeTaggingPage() {
     if (!groupDetail) return;
     setEditName(groupDetail.name);
     setEditNotes(groupDetail.notes ?? "");
+    setEditMetaYaml(groupDetail.meta_yaml ?? "");
     setEditStatus(groupDetail.status);
+    setEditError(null);
     setEditingGroup(true);
   };
 
@@ -1892,6 +1918,24 @@ export default function TradeTaggingPage() {
                   </div>
                   <div>
                     <label className="mb-1 block text-xs text-gray-600">
+                      Meta (YAML)
+                    </label>
+                    <textarea
+                      value={editMetaYaml}
+                      onChange={(e) => setEditMetaYaml(e.target.value)}
+                      spellCheck={false}
+                      placeholder={META_YAML_PLACEHOLDER}
+                      className="w-full rounded border border-gray-300 px-2 py-1 font-mono text-xs leading-relaxed placeholder:text-gray-300"
+                      rows={10}
+                    />
+                    <p className="mt-1 text-xs text-gray-500">
+                      Optional management spec — <code>targets.delta</code>,{" "}
+                      <code>dates</code>, <code>profit_targets</code>. Other
+                      keys pass through. Leave empty to clear.
+                    </p>
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs text-gray-600">
                       Status
                     </label>
                     <div className="flex gap-2">
@@ -1910,11 +1954,17 @@ export default function TradeTaggingPage() {
                       ))}
                     </div>
                   </div>
+                  {editError && (
+                    <p className="rounded border border-red-200 bg-red-50 px-2 py-1 text-xs text-red-700">
+                      {editError}
+                    </p>
+                  )}
                   <div className="flex gap-2">
                     <button
                       onClick={() => {
+                        setEditError(null);
                         void saveGroupEdits().catch((err: unknown) => {
-                          setError(
+                          setEditError(
                             err instanceof Error
                               ? err.message
                               : "Failed to save changes.",
