@@ -84,7 +84,11 @@ def contract_display_name(
     exch_suffix = f" @{exch}" if exch else ""
 
     if stype == "BAG":
-        if local:
+        # TWS stamps a live combo's localSymbol with the placeholder combo conId
+        # (e.g. "28812380") rather than a label, so an all-digit local symbol is
+        # noise — fall back to the underlying symbol, matching how FlexQuery's
+        # synthesized combo summaries render.
+        if local and not local.isdigit():
             return f"{local}{exch_suffix}"
         return f"{sym}{exch_suffix}"
 

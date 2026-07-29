@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import { API_BASE_URL } from "../config";
 import { useSSE, type ConnectionStatus } from "../lib/events";
 
@@ -6,6 +7,7 @@ interface Job {
   id: number;
   job_type: string;
   status: string;
+  payload: Record<string, unknown> | null;
   attempts: number;
   max_attempts: number;
   created_at: string;
@@ -57,6 +59,47 @@ function computeTotalMs(job: Job, nowMs: number): number {
   const createdMs = parseTime(job.created_at) ?? nowMs;
   const completedMs = parseTime(job.completed_at);
   return (completedMs ?? nowMs) - createdMs;
+}
+
+function formatParamValue(value: unknown): string {
+  if (value === null || value === undefined) return "";
+  if (typeof value === "object") return JSON.stringify(value);
+  return String(value);
+}
+
+// Render a job's payload as compact key=value chips. trade_group_id is special-
+// cased to a deep link into the tagging page for that group.
+function ParamsCell({ payload }: { payload: Job["payload"] }) {
+  const entries = Object.entries(payload ?? {});
+  if (entries.length === 0) {
+    return <span className="text-gray-400">—</span>;
+  }
+  return (
+    <div className="flex flex-wrap gap-1">
+      {entries.map(([key, value]) => {
+        if (key === "trade_group_id" && value != null) {
+          return (
+            <Link
+              key={key}
+              to={`/tagging?trade_group_id=${String(value)}`}
+              className="rounded bg-indigo-100 px-1.5 py-0.5 font-mono text-[11px] text-indigo-700 hover:bg-indigo-200 hover:underline"
+            >
+              trade-group-{String(value)}
+            </Link>
+          );
+        }
+        return (
+          <span
+            key={key}
+            className="rounded bg-gray-100 px-1.5 py-0.5 font-mono text-[11px] text-gray-600"
+            title={`${key}=${formatParamValue(value)}`}
+          >
+            {key}={formatParamValue(value)}
+          </span>
+        );
+      })}
+    </div>
+  );
 }
 
 export default function JobsTable() {
@@ -174,6 +217,7 @@ export default function JobsTable() {
             <tr className="bg-gray-100 text-left">
               <th className="px-2 py-1 font-semibold text-gray-700">ID</th>
               <th className="px-2 py-1 font-semibold text-gray-700">Type</th>
+              <th className="px-2 py-1 font-semibold text-gray-700">Params</th>
               <th className="px-2 py-1 font-semibold text-gray-700">Status</th>
               <th className="px-2 py-1 font-semibold text-gray-700">Queue</th>
               <th className="px-2 py-1 font-semibold text-gray-700">Run</th>
@@ -184,7 +228,7 @@ export default function JobsTable() {
           <tbody>
             {jobs.length === 0 && (
               <tr>
-                <td className="px-2 py-2 text-gray-500" colSpan={7}>
+                <td className="px-2 py-2 text-gray-500" colSpan={8}>
                   No jobs yet.
                 </td>
               </tr>
@@ -193,6 +237,9 @@ export default function JobsTable() {
               <tr key={job.id} className="border-b border-gray-200 align-top">
                 <td className="px-2 py-1 font-mono text-gray-800">{job.id}</td>
                 <td className="px-2 py-1 text-gray-700">{job.job_type}</td>
+                <td className="px-2 py-1">
+                  <ParamsCell payload={job.payload} />
+                </td>
                 <td className="px-2 py-1">
                   <span
                     className={`rounded px-1.5 py-0.5 ${STATUS_CLASS[job.status] ?? "text-gray-700 bg-gray-100"}`}

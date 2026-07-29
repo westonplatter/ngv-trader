@@ -1,11 +1,15 @@
 # Spec: First-Class Realized PnL on Trades
 
-> **Status: NOT IMPLEMENTED (as of 2026-06-06).** Realized PnL is currently
+> **Status: NOT IMPLEMENTED (as of 2026-07-27).** Realized PnL is currently
 > computed on read by parsing `trade_executions.raw`
 > (`_execution_realized_pnl()` / `_trade_realized_pnl_from_executions()` in
 > `src/api/routers/trades.py`). The response schemas already expose
-> `realized_pnl`, but no DB columns, migration, sync-time population, or backfill
-> exist yet. This spec proposes making it first-class.
+> `realized_pnl`, but no DB columns, sync-time population, or backfill exist
+> yet. A read-only `v_trade_realized_pnl` SQL view (migration
+> `20260626130000_add_trade_realized_pnl_view.py`) now computes realized PnL
+> via `SUM(fifoPnlRealized)` for the semantic layer — a parallel, view-based
+> answer to the "SQL reporting is harder than necessary" problem below, but it
+> does not add first-class columns. This spec proposes making it first-class.
 
 ## Purpose
 
