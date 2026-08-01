@@ -176,15 +176,23 @@ not a bug.
 ## Orphan reconciliation
 
 The exact-id purge only clears live rows whose `ib_exec_id` settled verbatim.
-`src/services/live_reconcile.py` runs after each FlexQuery sync and clears the
-rows that would otherwise linger as phantom "unsettled" fills (and, for the
-first class, double-count realized P&L). Three classes, in order:
+`src/services/live_reconcile.py` runs at the end of **both** sync paths — the
+FlexQuery trade sync and the intraday sync, in the same transaction as
+`_purge_settled` — and clears the rows that would otherwise linger as phantom
+"unsettled" fills (and, for the first class, double-count realized P&L). Three
+classes, in order:
 
 | Class         | Divergence                                                                      | How it clears                                                                           |
 | ------------- | ------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
 | `leg_strip`   | live combo leg carries an extra trailing segment (`…03.01.01`)                  | strip the last segment → exact settled id                                               |
 | `book_event`  | expiry/assignment/exercise books as `FLEX-TX-…` with an `Ep`/`A`/`Ex` note      | match on account, conId, qty, side, price and trade date                                |
 | `bag_summary` | live BAG summary has **no** settled counterpart — FlexQuery synthesizes its own | purge once no live sibling shares its order key and settled legs exist at its timestamp |
+
+Running it on the intraday path too is load-bearing, not belt-and-braces: the
+fills window is a rolling `FILLS_LOOKBACK_DAYS` lookback, so TWS keeps
+re-reporting these fills for days. Their ids never equal the settled ones, so
+`_purge_settled` can't see them and every intraday sync re-created the exact
+rows a prior FlexQuery-side reconcile had just cleared.
 
 `bag_summary` is a redundancy purge, not a match: the live BAG shares no id,
 contract or order key with anything settled. "No live siblings left" is the

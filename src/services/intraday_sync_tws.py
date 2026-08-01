@@ -35,6 +35,7 @@ from src.services.group_link_carryover import (
     carry_over_link_to_execution,
     carry_over_settled_group_links,
 )
+from src.services.live_reconcile import reconcile_orphaned_live_executions
 from src.services.sync_common import get_or_create_accounts
 
 logger = logging.getLogger(__name__)
@@ -580,7 +581,7 @@ def run_intraday_sync(engine: Engine, ib: IB) -> dict:
 
     The IB session is provided by the caller (worker pool), matching
     ``market_data.fetch_snapshot``. Returns counts
-    ``{positions, quotes, fills, purged}``.
+    ``{contracts, positions, quotes, fills, purged, reconciled}``.
     """
     now = _now_utc()
     window_start = fills_window_start(now)
@@ -617,6 +618,15 @@ def run_intraday_sync(engine: Engine, ib: IB) -> dict:
             "fills": _write_fills(session, fills, account_lookup, window_start, now),
         }
         counts["purged"] = _purge_settled(session)
+        # Same-transaction reconciliation of the id-divergent classes (combo-leg
+        # id normalization, book events, redundant BAG summaries). Without it the
+        # rolling fills window re-creates every row a prior FlexQuery-side
+        # reconcile had already cleared: those fills stay in the TWS window for
+        # ``FILLS_LOOKBACK_DAYS`` and their ids never equal the settled ones, so
+        # ``_purge_settled`` can't see them and they resurface as phantom
+        # "unsettled" rows on each intraday sync. Idempotent and cheap.
+        reconciled = reconcile_orphaned_live_executions(session)
+        counts["reconciled"] = reconciled["leg_strip"] + reconciled["book_event"] + reconciled["bag_summary"]
         session.commit()
 
     logger.info("Intraday sync complete: %s", counts)
