@@ -398,6 +398,8 @@ def _live_execution_values(
         "multiplier": getattr(contract, "multiplier", None) if contract else None,
         "right": getattr(contract, "right", None) if contract else None,
         "strike": _safe_float(getattr(contract, "strike", None)) if contract else None,
+        # Raw IBKR string ("YYYYMMDD" or "YYYYMM"); normalized at display, not here.
+        "last_trade_date": (getattr(contract, "lastTradeDateOrContractMonth", None) or None) if contract else None,
         "side": getattr(execution, "side", None),
         "quantity": _safe_float(getattr(execution, "shares", None)) or 0.0,
         "price": _safe_float(getattr(execution, "price", None)) or 0.0,

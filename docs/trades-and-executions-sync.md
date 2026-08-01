@@ -98,6 +98,11 @@ The unsettled intraday path applies the same `exec_role` vocabulary to
 `live_executions`, grouping by broker order key instead of `brokerageOrderID`;
 see [core/intraday-tws-overlay.md](core/intraday-tws-overlay.md).
 
+FlexQuery's `Open/CloseIndicator` is the authoritative Action (Open/Close) and
+the only source of the **Expired** action. Unsettled rows have neither — TWS
+does not stamp fills with cover-vs-add — so they show a derived best-effort
+Action that this indicator supersedes at settlement.
+
 ## Sync behavior
 
 1. Fetch executions for the lookback window.

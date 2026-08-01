@@ -808,8 +808,12 @@ def _live_contract_display(le: LiveExecution) -> str | None:
     PUT". Routing a TWS-shaped ``raw`` through ``_contract_display_from_raw``
     inherits the settled path's full fallback chain — explicit expiry, then
     local-symbol month inference, then OCC parsing — rather than duplicating it
-    here. ``LiveExecution.local_symbol`` holds the OCC symbol
-    (``SPCX  261218P00100000``), which is where the expiry comes from.
+    here. ``LiveExecution.last_trade_date`` carries IBKR's authoritative expiry
+    when ingest captured it and wins over inference; otherwise
+    ``LiveExecution.local_symbol`` holds the OCC symbol
+    (``SPCX  261218P00100000``), which is where the expiry comes from. The
+    local-symbol fallback is only month-precise for futures options, whose local
+    symbol carries no day.
     """
     raw = {
         "contract": {
@@ -820,6 +824,7 @@ def _live_contract_display(le: LiveExecution) -> str | None:
             "right": le.right,
             "strike": le.strike,
             "conId": le.con_id,
+            "lastTradeDateOrContractMonth": le.last_trade_date,
         }
     }
     return _contract_display_from_raw(raw, None) or contract_display_name(
@@ -833,6 +838,30 @@ def _live_contract_display(le: LiveExecution) -> str | None:
         exchange=None,
         trading_class=None,
     )
+
+
+def _lifecycle_from_live_execution(le: LiveExecution) -> str | None:
+    """Open/Close for an unsettled live fill, derived from realized P&L.
+
+    The real-time ``ib_async.Execution`` carries no ``openClose`` or
+    ``positionEffect`` — the indicator settled rows show comes from FlexQuery's
+    ``Open/CloseIndicator``, a post-trade FIFO netting determination IBKR does
+    not stamp on the fill. So it has to be derived here rather than read, and
+    ``_trade_lifecycle_from_execution`` (raw-based) cannot be reused.
+
+    IBKR reports a non-zero ``realizedPNL`` only when a fill *reduces* a
+    position, which makes it a serviceable proxy for Close. Best-effort by
+    design: an exact-breakeven scratch close misclassifies as Open, and
+    FlexQuery's authoritative indicator supersedes this at settlement.
+
+    The Expired action is unreachable from this feed — an option expiration
+    produces no fill — so unsettled rows never show it.
+    """
+    if le.exec_role == "combo_summary":
+        return "Roll"
+    if le.realized_pnl is not None and le.realized_pnl != 0:
+        return "Close"
+    return "Open"
 
 
 def _live_order_group_key(le: LiveExecution) -> tuple[str, int] | None:
@@ -948,7 +977,7 @@ def _unsettled_live_executions(
                 trade_ib_perm_id=None,
                 trade_order_ref=None,
                 trade_status="unsettled",
-                trade_lifecycle=None,
+                trade_lifecycle=_lifecycle_from_live_execution(le),
                 trade_contract_display_name=display,
                 trade_realized_pnl=None,
                 trade_assigned_trade_group_id=None,

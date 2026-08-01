@@ -921,6 +921,10 @@ class LiveExecution(Base):
     multiplier: Mapped[str | None] = mapped_column(String)
     right: Mapped[str | None] = mapped_column(String)
     strike: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # IBKR's ``lastTradeDateOrContractMonth``, stored raw ("YYYYMMDD" or
+    # "YYYYMM"). Authoritative expiry; the display layer normalizes both shapes
+    # and falls back to inferring from ``local_symbol`` when this is null.
+    last_trade_date: Mapped[str | None] = mapped_column(String, nullable=True)
     side: Mapped[str | None] = mapped_column(Text, nullable=True)
     quantity: Mapped[float] = mapped_column(Float, nullable=False)
     price: Mapped[float] = mapped_column(Float, nullable=False)
