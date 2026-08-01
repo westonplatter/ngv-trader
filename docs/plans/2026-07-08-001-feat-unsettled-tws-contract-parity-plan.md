@@ -24,10 +24,10 @@ order key, unit tagging) and
 [trades-and-executions-sync.md](../trades-and-executions-sync.md) (shared
 `exec_role` vocabulary).
 
-**Also unblocked:** C's order key was the hard dependency of the leg-anchored
-purge in
+**Also unblocked (and now shipped):** C's order key was the hard dependency of
+the leg-anchored purge in
 [2026-07-14-001-feat-bag-summary-live-reconciliation-plan.md](2026-07-14-001-feat-bag-summary-live-reconciliation-plan.md),
-which can now proceed with Option 1 rather than the timestamp-heuristic Option 2.
+which landed 2026-08-01 as Option 1 rather than the timestamp-heuristic Option 2.
 
 **Not achievable from this feed:** the **Expired** action. An option expiration
 produces no execution/fill, so it never appears in the real-time TWS fills feed —

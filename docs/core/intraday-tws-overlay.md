@@ -149,6 +149,26 @@ It runs in **both** sync paths: the intraday purge and, robustly, at the end of
 the FlexQuery trade sync (so a fill that settles overnight is reconciled even if
 no intraday sync runs).
 
+## Orphan reconciliation
+
+The exact-id purge only clears live rows whose `ib_exec_id` settled verbatim.
+`src/services/live_reconcile.py` runs after each FlexQuery sync and clears the
+rows that would otherwise linger as phantom "unsettled" fills (and, for the
+first class, double-count realized P&L). Three classes, in order:
+
+| Class         | Divergence                                                                      | How it clears                                                                           |
+| ------------- | ------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `leg_strip`   | live combo leg carries an extra trailing segment (`…03.01.01`)                  | strip the last segment → exact settled id                                               |
+| `book_event`  | expiry/assignment/exercise books as `FLEX-TX-…` with an `Ep`/`A`/`Ex` note      | match on account, conId, qty, side, price and trade date                                |
+| `bag_summary` | live BAG summary has **no** settled counterpart — FlexQuery synthesizes its own | purge once no live sibling shares its order key and settled legs exist at its timestamp |
+
+`bag_summary` is a redundancy purge, not a match: the live BAG shares no id,
+contract or order key with anything settled. "No live siblings left" is the
+proof its legs settled (a leg only leaves `live_executions` by settling), and
+the settled-legs check guards a summary that arrived with no legs at all. Its
+group tag fans out onto those settled legs before the row is deleted, so
+membership is never lost.
+
 ## Option metrics overlay (separate job)
 
 Held option positions (OPT/FOP) also carry live greeks/IV and a derived

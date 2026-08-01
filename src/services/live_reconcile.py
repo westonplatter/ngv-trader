@@ -26,15 +26,21 @@ Two id-divergence patterns are reconciled here:
      settled *book event* — bounded because a position can expire/assign/exercise
      at most once per contract per day, and the price must agree.
 
-Not handled (left in place, all carry zero realized P&L): live BAG combo-summary
-rows on a placeholder ``con_id`` have no settled counterpart keyed by
-``con_id`` and need an order/perm-id key ``live_executions`` does not yet
-capture (see docs/plans/2026-07-08-001-feat-unsettled-tws-contract-parity-plan.md,
-Fix C). Reconciling those is a follow-up gated on that migration.
+A third pattern is not an id divergence at all but a redundant row:
+
+  C. **BAG combo summaries.** The intraday feed delivers a combo as one BAG
+     summary fill plus one fill per leg. FlexQuery does not persist the broker's
+     BAG fill — it *synthesizes its own* combo summary off a leg's exec id, with
+     ``con_id``/``symbol`` NULL — so the live BAG row (on placeholder
+     ``con_id`` 28812380) shares no id, contract or order key with anything
+     settled. Rather than match it, we establish that its combo settled and drop
+     it as pure display redundancy: purge once no live sibling shares its order
+     key (every leg has already reconciled out) *and* settled legs exist at its
+     timestamp. Its group tag fans out onto those settled legs first.
 
 When a match is found, any preemptive trade-group tag on the live fill is
-carried onto the settled execution before the live row is deleted, so grouping
-survives the handoff with no gap and no double-count.
+carried onto the settled execution(s) before the live row is deleted, so
+grouping survives the handoff with no gap and no double-count.
 """
 
 from __future__ import annotations
@@ -43,11 +49,14 @@ import logging
 import re
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from src.models import LiveExecution, TradeExecution
-from src.services.group_link_carryover import carry_over_link_to_execution
+from src.services.group_link_carryover import (
+    carry_over_link_to_execution,
+    carry_over_link_to_executions,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -154,20 +163,103 @@ def _match_book_event(session: Session, live: LiveExecution) -> TradeExecution |
     return None
 
 
+def _is_bag_summary(live: LiveExecution) -> bool:
+    """The live BAG summary fill of a combo order.
+
+    Prefers ``exec_role`` (set at ingest since the combo-role work) and falls
+    back to ``sec_type`` for rows written before it.
+    """
+    return live.exec_role == "combo_summary" or (live.sec_type or "").strip().upper() == "BAG"
+
+
+def _order_group_key(live: LiveExecution) -> tuple[str, int] | None:
+    """Key grouping a live BAG summary with its live legs.
+
+    Mirrors ``intraday_sync_tws._order_group_key`` — prefers ``permId``, falls
+    back to ``orderId`` — so the two stay in step. ``None`` when the row carries
+    neither, in which case its legs cannot be identified and it is left alone.
+    """
+    if live.ib_perm_id:
+        return ("perm", live.ib_perm_id)
+    if live.ib_order_id:
+        return ("order", live.ib_order_id)
+    return None
+
+
+def _has_live_siblings(session: Session, live: LiveExecution) -> bool:
+    """True while any other live row still shares this row's order key.
+
+    A live leg only leaves ``live_executions`` by settling (the exact-id purge
+    or the leg-strip matcher above), so "no siblings left" is the proof that the
+    combo's legs have settled. A summary whose legs are still live is deferred
+    to a later run, after they reconcile.
+    """
+    key = _order_group_key(live)
+    if key is None:
+        return True
+    kind, value = key
+    column = LiveExecution.ib_perm_id if kind == "perm" else LiveExecution.ib_order_id
+    remaining = session.execute(select(func.count()).select_from(LiveExecution).where(column == value, LiveExecution.id != live.id)).scalar_one()
+    return remaining > 0
+
+
+def _settled_legs_at(session: Session, live: LiveExecution) -> list[TradeExecution]:
+    """Settled combo legs booked at this summary's account and timestamp.
+
+    The BAG summary and its legs share an ``exec_time`` on both feeds, so this
+    corroborates that a combo really did settle here — guarding the case where a
+    summary arrives with no legs in the live batch at all, which would otherwise
+    satisfy the sibling check vacuously and purge before settlement.
+    """
+    return list(
+        session.execute(
+            select(TradeExecution).where(
+                TradeExecution.account_id == live.account_id,
+                TradeExecution.exec_role == "leg",
+                TradeExecution.executed_at == live.exec_time,
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+
+def _match_bag_summary(session: Session, live: LiveExecution) -> list[TradeExecution] | None:
+    """Class C: a redundant live BAG summary whose combo has settled.
+
+    Returns the settled legs to hand the group tag to, or ``None`` to leave the
+    row in place. Unlike the other matchers this resolves no single settled twin
+    — FlexQuery synthesizes its own combo summary, and there is no key to pair
+    them on.
+    """
+    if not _is_bag_summary(live):
+        return None
+    if _order_group_key(live) is None:
+        return None
+    if _has_live_siblings(session, live):
+        return None
+    legs = _settled_legs_at(session, live)
+    return legs or None
+
+
 def reconcile_orphaned_live_executions(session: Session) -> dict[str, int]:
     """Purge live fills whose settled twin exists under a different ``ib_exec_id``.
 
-    Runs after a FlexQuery sync (the authoritative source for both id-divergence
-    classes) and is safe to run repeatedly — it only ever acts on live rows not
-    already present in ``trade_executions``. Returns counts
-    ``{leg_strip, book_event, links_carried, unmatched}``.
+    Runs after a FlexQuery sync (the authoritative source for every class here)
+    and is safe to run repeatedly — it only ever acts on live rows not already
+    present in ``trade_executions``. Returns counts
+    ``{leg_strip, book_event, bag_summary, links_carried, unmatched}``.
+
+    Order matters: BAG summaries are considered last, so a summary is only
+    purged once this same pass has had the chance to reconcile its legs.
     """
     settled_subq = select(TradeExecution.ib_exec_id)
     orphans = session.execute(select(LiveExecution).where(LiveExecution.ib_exec_id.not_in(settled_subq))).scalars().all()
+    counts = {"leg_strip": 0, "book_event": 0, "bag_summary": 0, "links_carried": 0, "unmatched": 0}
     if not orphans:
-        return {"leg_strip": 0, "book_event": 0, "links_carried": 0, "unmatched": 0}
+        return counts
 
-    counts = {"leg_strip": 0, "book_event": 0, "links_carried": 0, "unmatched": 0}
+    deferred: list[LiveExecution] = []
     for live in orphans:
         settled = _match_leg_strip(session, live)
         kind = "leg_strip"
@@ -175,17 +267,32 @@ def reconcile_orphaned_live_executions(session: Session) -> dict[str, int]:
             settled = _match_book_event(session, live)
             kind = "book_event"
         if settled is None:
-            counts["unmatched"] += 1
+            deferred.append(live)
             continue
         counts["links_carried"] += carry_over_link_to_execution(session, live.ib_exec_id, settled.id)
         session.delete(live)
         counts[kind] += 1
 
+    # Legs purged above are still pending in the session; flush so the sibling
+    # check below sees the post-reconcile state rather than the stale rows.
     if counts["leg_strip"] or counts["book_event"]:
+        session.flush()
+
+    for live in deferred:
+        legs = _match_bag_summary(session, live)
+        if legs is None:
+            counts["unmatched"] += 1
+            continue
+        counts["links_carried"] += carry_over_link_to_executions(session, live.ib_exec_id, [leg.id for leg in legs])
+        session.delete(live)
+        counts["bag_summary"] += 1
+
+    if counts["leg_strip"] or counts["book_event"] or counts["bag_summary"]:
         logger.info(
-            "[live_reconcile] purged orphaned live fills: leg_strip=%d book_event=%d " "links_carried=%d unmatched=%d",
+            "[live_reconcile] purged orphaned live fills: leg_strip=%d book_event=%d bag_summary=%d links_carried=%d unmatched=%d",
             counts["leg_strip"],
             counts["book_event"],
+            counts["bag_summary"],
             counts["links_carried"],
             counts["unmatched"],
         )

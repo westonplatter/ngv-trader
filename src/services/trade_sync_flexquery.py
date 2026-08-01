@@ -554,8 +554,9 @@ def sync_flex_trades(
 
         # Purge orphaned live fills whose settled twin exists under a DIFFERENT
         # ib_exec_id (combo-leg id normalization; expiration/assignment book
-        # events), which the id-equality carry-over above cannot see. Prevents
-        # phantom "unsettled" rows and intraday realized-P&L double-counts.
+        # events), which the id-equality carry-over above cannot see, plus live
+        # BAG combo summaries whose legs have settled. Prevents phantom
+        # "unsettled" rows and intraday realized-P&L double-counts.
         reconciled = reconcile_orphaned_live_executions(session)
 
         log_row = session.get(FlexSyncLog, log_id)
@@ -572,7 +573,7 @@ def sync_flex_trades(
         "touched_trade_ids": sorted(touched_trade_ids),
         "touched_trades_count": len(touched_trade_ids),
         "carried_group_links_count": carried_group_links,
-        "reconciled_orphan_live_count": reconciled["leg_strip"] + reconciled["book_event"],
+        "reconciled_orphan_live_count": reconciled["leg_strip"] + reconciled["book_event"] + reconciled["bag_summary"],
         "start_date": start_date.isoformat(),
         "end_date": end_date.isoformat(),
         "flex_sync_log_id": log_id,
