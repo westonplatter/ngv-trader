@@ -85,6 +85,16 @@ After any doc change, run `scripts/doc_check.py` to catch broken links, missing 
 
 Exits 1 on hard failures (`FAIL`). Route warnings are `WARN` only — not blockers.
 
+## IBKR Data Check
+
+Before staging, scan changes for real IBKR identifiers that must never be committed (see **Sample Data** above).
+
+- Staged changes: `uv run python scripts/ibkr_check.py`
+- Include untracked files: `uv run python scripts/ibkr_check.py --untracked`
+- Specific files in full: `uv run python scripts/ibkr_check.py --paths <file> ...`
+
+Flags account IDs, contract IDs, and execution/transaction/order IDs against the patterns in `prompts/prompt-ibkr-sample-data.md`. Prices, quantities, symbols, and exchanges are intentionally not flagged — those stay real. Exits 1 on findings.
+
 ## Codebase Survey
 
 ### Repository Layout
@@ -94,6 +104,7 @@ Exits 1 on hard failures (`FAIL`). Route warnings are `WARN` only — not blocke
 - `alembic/` + `alembic.ini`: database migrations for Postgres schema.
 - `frontend/`: React + Vite UI (positions, orders, trades, tagging, pricing, tradebot chat).
 - `docs/`: current-state docs and specs; see `docs/_index.md`.
+- `CONCEPTS.md`: shared domain vocabulary (entities, named processes, status concepts) — relevant when orienting to the codebase or discussing domain concepts.
 - `Taskfile.yaml`: common dev commands for API, frontend, and migrations.
 
 ### Primitives
