@@ -15,7 +15,7 @@ task worker:jobs
 task worker:orders
 ```
 
-Pass `ENV=prod` to target production: `ENV=prod task worker:jobs`.
+`ENV` defaults to `prod` (see `Taskfile.yaml`) — pass `ENV=dev` to target your local/dev environment instead: `ENV=dev task worker:jobs`.
 
 ## Jobs worker (`worker:jobs`)
 
