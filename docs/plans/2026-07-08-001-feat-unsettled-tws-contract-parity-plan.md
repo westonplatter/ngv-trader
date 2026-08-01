@@ -26,9 +26,8 @@ covering B and D) and
 `exec_role` vocabulary; FlexQuery as the authoritative Open/Close source).
 
 **Also unblocked (and shipped):** C's order key was the hard dependency of the
-leg-anchored purge in
-[2026-07-14-001-feat-bag-summary-live-reconciliation-plan.md](2026-07-14-001-feat-bag-summary-live-reconciliation-plan.md),
-which landed 2026-08-01 as Option 1 rather than the timestamp-heuristic Option 2.
+leg-anchored purge in the bag-summary live-reconciliation work, which landed
+2026-08-01 as Option 1 rather than the timestamp-heuristic Option 2.
 
 **Not achievable from this feed:** the **Expired** action. An option expiration
 produces no execution/fill, so it never appears in the real-time TWS fills feed —
