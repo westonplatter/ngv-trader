@@ -42,6 +42,9 @@ interface TradeExecutionRow {
   live_trade_group_id?: number | null;
 }
 
+const JOB_POLL_INTERVAL_MS = 2000;
+const JOB_POLL_TIMEOUT_MS = 5 * 60 * 1000;
+
 const STATUS_CLASS: Record<string, string> = {
   filled: "bg-emerald-100 text-emerald-800",
   partial: "bg-blue-100 text-blue-800",
@@ -549,6 +552,60 @@ export default function TradesTable() {
     return map;
   }, [filteredRows]);
 
+  const notifyJobDone = (message: string) => {
+    if (typeof Notification === "undefined") return;
+    if (Notification.permission === "granted") {
+      new Notification("NextGenTrader", { body: message });
+    }
+  };
+
+  // Polls the job until it reaches a terminal state, then surfaces a
+  // notification and refreshes the table (no full page reload needed).
+  const pollJobUntilDone = (jobId: number, label: string) => {
+    if (
+      typeof Notification !== "undefined" &&
+      Notification.permission === "default"
+    ) {
+      void Notification.requestPermission().catch(() => {});
+    }
+    const deadline = Date.now() + JOB_POLL_TIMEOUT_MS;
+    const poll = async () => {
+      if (Date.now() > deadline) return;
+      try {
+        const res = await fetch(`${API_BASE_URL}/jobs/${jobId}`);
+        if (res.ok) {
+          const job: { status: string; last_error?: string | null } =
+            await res.json();
+          if (job.status === "completed" || job.status === "failed") {
+            const finished =
+              job.status === "completed"
+                ? `${label} job #${jobId} completed.`
+                : `${label} job #${jobId} failed${
+                    job.last_error ? `: ${job.last_error}` : "."
+                  }`;
+            if (job.status === "completed") {
+              setSyncMessage(finished);
+            } else {
+              setSyncError(finished);
+            }
+            notifyJobDone(finished);
+            void loadExecutions().catch(() => {});
+            void loadTradeGroups().catch(() => {});
+            return;
+          }
+        }
+      } catch {
+        // transient network error; keep polling until the deadline
+      }
+      window.setTimeout(() => {
+        void poll();
+      }, JOB_POLL_INTERVAL_MS);
+    };
+    window.setTimeout(() => {
+      void poll();
+    }, JOB_POLL_INTERVAL_MS);
+  };
+
   const kickOffTradesSync = async (
     label: string,
     options: {
@@ -592,9 +649,12 @@ export default function TradesTable() {
       setSyncMessage(
         `Queued ${label.toLowerCase()} job #${data.job_id} (${data.status}).${rangeNote}`,
       );
+      // Give the worker a moment to pick up the row, then poll to
+      // completion so we can reload the table and notify once it's done.
       window.setTimeout(() => {
         void loadExecutions().catch(() => {});
       }, 2000);
+      pollJobUntilDone(data.job_id, label);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unknown sync error";
       setSyncError(message);
@@ -633,6 +693,7 @@ export default function TradesTable() {
       window.setTimeout(() => {
         void loadExecutions().catch(() => {});
       }, 8000);
+      pollJobUntilDone(data.job_id, "Intraday TWS sync");
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unknown sync error";
       setSyncError(message);
@@ -667,15 +728,17 @@ export default function TradesTable() {
           </p>
         </div>
         <div className="relative flex flex-col items-end gap-2">
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-semibold text-gray-700">Sync</span>
+          <div className="flex flex-nowrap items-center gap-2">
+            <span className="whitespace-nowrap text-xs font-semibold text-gray-700">
+              Sync
+            </span>
             <button
               onClick={() => {
                 void kickOffIntradaySync();
               }}
               disabled={syncing}
               title="Pull today's live fills, marks, and positions directly from TWS (does not hit FlexQuery)"
-              className="rounded border border-emerald-300 px-3 py-1 text-sm text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
+              className="whitespace-nowrap rounded border border-emerald-300 px-3 py-1 text-sm text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
             >
               {syncing ? "Queueing..." : "Intraday (TWS)"}
             </button>
@@ -684,7 +747,7 @@ export default function TradesTable() {
                 void kickOffTradesSync("Quick sync", { days: 1 });
               }}
               disabled={syncing}
-              className="rounded border border-blue-300 px-3 py-1 text-sm text-blue-700 hover:bg-blue-50 disabled:opacity-50"
+              className="whitespace-nowrap rounded border border-blue-300 px-3 py-1 text-sm text-blue-700 hover:bg-blue-50 disabled:opacity-50"
             >
               {syncing ? "Queueing..." : "1 Day"}
             </button>
@@ -693,7 +756,7 @@ export default function TradesTable() {
                 void kickOffTradesSync("Full sync", { days: 7 });
               }}
               disabled={syncing}
-              className="rounded border border-blue-300 px-3 py-1 text-sm text-blue-700 hover:bg-blue-50 disabled:opacity-50"
+              className="whitespace-nowrap rounded border border-blue-300 px-3 py-1 text-sm text-blue-700 hover:bg-blue-50 disabled:opacity-50"
             >
               {syncing ? "Queueing..." : "7 Days"}
             </button>
@@ -702,13 +765,25 @@ export default function TradesTable() {
                 void kickOffTradesSync("Extended sync", { days: 30 });
               }}
               disabled={syncing}
-              className="rounded border border-blue-300 px-3 py-1 text-sm text-blue-700 hover:bg-blue-50 disabled:opacity-50"
+              className="whitespace-nowrap rounded border border-blue-300 px-3 py-1 text-sm text-blue-700 hover:bg-blue-50 disabled:opacity-50"
             >
               {syncing ? "Queueing..." : "30 Days"}
             </button>
+            <button
+              onClick={() => {
+                void kickOffTradesSync("Sync since last trade", {
+                  sinceLastTrade: true,
+                });
+              }}
+              disabled={syncing}
+              title="Sync from the most recent trade date across all accounts through today"
+              className="whitespace-nowrap rounded border border-blue-300 px-3 py-1 text-sm text-blue-700 hover:bg-blue-50 disabled:opacity-50"
+            >
+              {syncing ? "Queueing..." : "Since Last Trade"}
+            </button>
           </div>
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-medium text-gray-500">
+          <div className="flex flex-nowrap items-center gap-2">
+            <span className="whitespace-nowrap text-xs font-medium text-gray-500">
               Custom range:
             </span>
             <input
@@ -737,7 +812,7 @@ export default function TradesTable() {
                 syncing || !rangeStart || !rangeEnd || rangeStart > rangeEnd
               }
               title="Sync trades for an explicit date range (FlexQuery is T-1, so the end date must be the previous business day or earlier)"
-              className="rounded border border-blue-300 px-3 py-1 text-sm text-blue-700 hover:bg-blue-50 disabled:opacity-50"
+              className="whitespace-nowrap rounded border border-blue-300 px-3 py-1 text-sm text-blue-700 hover:bg-blue-50 disabled:opacity-50"
             >
               {syncing ? "Queueing..." : "Sync"}
             </button>
