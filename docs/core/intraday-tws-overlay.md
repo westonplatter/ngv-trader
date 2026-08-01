@@ -23,11 +23,11 @@ quantity.
 Three additive tables hold the overlay; the FlexQuery `positions` /
 `trade_executions` tables are never touched.
 
-| Table             | Holds                                                                        | Key                                    |
-| ----------------- | ---------------------------------------------------------------------------- | -------------------------------------- |
-| `live_positions`  | current TWS qty + blended `avg_cost` per holding                             | unique `(account_id, con_id)`          |
-| `latest_quote`    | live marks (bid/ask/last/close + selected `mark`) for any sec type           | `con_id` (supplied, not generated)     |
-| `live_executions` | recent unsettled fills with `realized_pnl`, order key, and combo `exec_role` | unique `ib_exec_id` (dedup vs settled) |
+| Table             | Holds                                                                      | Key                                    |
+| ----------------- | -------------------------------------------------------------------------- | -------------------------------------- |
+| `live_positions`  | current TWS qty + blended `avg_cost` per holding                           | unique `(account_id, con_id)`          |
+| `latest_quote`    | live marks (bid/ask/last/close + selected `mark`) for any sec type         | `con_id` (supplied, not generated)     |
+| `live_executions` | recent unsettled fills with `realized_pnl`, expiry, order key, `exec_role` | unique `ib_exec_id` (dedup vs settled) |
 
 `latest_quote` is sec-type-agnostic (FUT/FOP/STK/OPT) and intentionally **not**
 FK'd to the futures-only `contracts` table — distinct from `latest_futures*`
@@ -149,18 +149,50 @@ It runs in **both** sync paths: the intraday purge and, robustly, at the end of
 the FlexQuery trade sync (so a fill that settles overnight is reconciled even if
 no intraday sync runs).
 
+## Display parity with settled rows
+
+Unsettled rows render with the same contract label and Action column as settled
+FlexQuery rows. Two values the live feed doesn't hand over directly:
+
+- **Expiry.** Ingest stores IBKR's `lastTradeDateOrContractMonth` raw on
+  `live_executions.last_trade_date` (either `YYYYMMDD` or `YYYYMM`); the display
+  layer normalizes both. When it's absent the label falls back to inferring the
+  month from `local_symbol` — exact for OCC-style equity options, month-only for
+  futures options, whose local symbol carries no day.
+- **Action (Open/Close).** The real-time `ib_async.Execution` has no `openClose`
+  or `positionEffect` — the settled indicator comes from FlexQuery's
+  `Open/CloseIndicator`, a post-trade FIFO netting determination IBKR never
+  stamps on a fill. So it is **derived**: `combo_summary` → "Roll", else non-zero
+  `realized_pnl` → "Close" (IBKR reports realized P&L only on a
+  position-reducing fill), else "Open". Best-effort by design — an exact
+  breakeven scratch close reads as Open, and FlexQuery's authoritative indicator
+  supersedes it at settlement.
+
+**Expired is unreachable here.** An option expiration produces no fill, so it
+never appears in the real-time feed; it books only via FlexQuery (see
+`book_event` below). Unsettled rows never show Expired — a data-source limit,
+not a bug.
+
 ## Orphan reconciliation
 
 The exact-id purge only clears live rows whose `ib_exec_id` settled verbatim.
-`src/services/live_reconcile.py` runs after each FlexQuery sync and clears the
-rows that would otherwise linger as phantom "unsettled" fills (and, for the
-first class, double-count realized P&L). Three classes, in order:
+`src/services/live_reconcile.py` runs at the end of **both** sync paths — the
+FlexQuery trade sync and the intraday sync, in the same transaction as
+`_purge_settled` — and clears the rows that would otherwise linger as phantom
+"unsettled" fills (and, for the first class, double-count realized P&L). Three
+classes, in order:
 
 | Class         | Divergence                                                                      | How it clears                                                                           |
 | ------------- | ------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
 | `leg_strip`   | live combo leg carries an extra trailing segment (`…03.01.01`)                  | strip the last segment → exact settled id                                               |
 | `book_event`  | expiry/assignment/exercise books as `FLEX-TX-…` with an `Ep`/`A`/`Ex` note      | match on account, conId, qty, side, price and trade date                                |
 | `bag_summary` | live BAG summary has **no** settled counterpart — FlexQuery synthesizes its own | purge once no live sibling shares its order key and settled legs exist at its timestamp |
+
+Running it on the intraday path too is load-bearing, not belt-and-braces: the
+fills window is a rolling `FILLS_LOOKBACK_DAYS` lookback, so TWS keeps
+re-reporting these fills for days. Their ids never equal the settled ones, so
+`_purge_settled` can't see them and every intraday sync re-created the exact
+rows a prior FlexQuery-side reconcile had just cleared.
 
 `bag_summary` is a redundancy purge, not a match: the live BAG shares no id,
 contract or order key with anything settled. "No live siblings left" is the

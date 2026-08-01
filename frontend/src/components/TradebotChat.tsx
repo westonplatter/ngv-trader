@@ -80,6 +80,14 @@ export default function TradebotChat() {
   return (
     <div className="w-full h-full min-h-0 overflow-y-auto lg:overflow-hidden">
       <div className="grid h-auto min-h-0 gap-4 lg:h-full lg:overflow-hidden lg:grid-cols-[minmax(0,3fr)_minmax(400px,2fr)]">
+        <div className="min-w-0 min-h-0 lg:h-full flex flex-col gap-4 lg:overflow-y-auto">
+          <div className="h-[440px] shrink-0">
+            <JobsTable />
+          </div>
+          <div className="h-[360px] shrink-0">
+            <OrdersSideTable />
+          </div>
+        </div>
         <div className="min-w-0 min-h-0 lg:h-full flex flex-col">
           <div className="mb-3 flex flex-wrap gap-2">
             <button
@@ -159,14 +167,6 @@ export default function TradebotChat() {
           {error && (
             <p className="mt-1 text-xs text-red-600">Error: {error.message}</p>
           )}
-        </div>
-        <div className="min-w-0 min-h-0 lg:h-full flex flex-col gap-4">
-          <div className="min-h-0 flex-1">
-            <OrdersSideTable />
-          </div>
-          <div className="min-h-0 flex-1">
-            <JobsTable />
-          </div>
         </div>
       </div>
     </div>
