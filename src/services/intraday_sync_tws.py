@@ -17,7 +17,6 @@ import math
 from datetime import datetime, timedelta, timezone
 from numbers import Real
 from typing import Any
-from zoneinfo import ZoneInfo
 
 from ib_async import IB
 from sqlalchemy import Engine, delete, func, select
@@ -42,16 +41,18 @@ logger = logging.getLogger(__name__)
 
 BATCH_SIZE = 100
 
-# The trading "day" boundary for "today's fills" is the exchange trade date, in
-# US-Eastern (exchange time), regardless of server timezone.
-MARKET_TZ = ZoneInfo("America/New_York")
-
-# CME's trade date opens at 18:00 ET and runs to 17:00 ET the next day, so a fill
-# at 19:00 ET Monday belongs to Tuesday's trade date. Anchoring the intraday
-# window here (rather than at ET midnight) keeps it aligned with the trade date
-# IBKR itself assigns — which is both what ``reqExecutions`` returns as "the
-# current trading day" and how FlexQuery later files the fill.
-SESSION_OPEN_HOUR_ET = 18
+# How far back to ingest TWS fills, as a rolling duration rather than an anchor.
+#
+# This was previously anchored at the most recent 18:00 ET CME session roll, which
+# made the effective lookback a sawtooth: ~24h just before a roll, near zero just
+# after. A fill placed during the day session left the overlay at 18:00 ET and did
+# not reappear until FlexQuery filed it roughly a day later, so same-day fills were
+# unassignable for most of that gap. Measured on a real book, a sync shortly after a
+# roll kept 6 of the 72 fills TWS offered and discarded the rest.
+#
+# Two days covers that gap with margin. TWS will serve up to 7 (governed by the
+# Trade Log's "Show trades for ..." setting), so this is our bound, not IBKR's.
+FILLS_LOOKBACK_DAYS = 2
 
 
 def _now_utc() -> datetime:
@@ -72,28 +73,21 @@ def _safe_int(value: object) -> int | None:
     return int(parsed) if parsed is not None else None
 
 
-def session_start_utc(now: datetime | None = None) -> datetime:
-    """UTC instant the current exchange trade date opened (most recent 18:00 ET).
+def fills_window_start(now: datetime | None = None) -> datetime:
+    """Lower bound (UTC) for fills written to the overlay. ``now`` is for testability.
 
-    Used as the lower bound for "today's" fills. ``now`` is for testability.
+    Reaching back past the current trade date is safe because settled data always
+    wins, on both sides of the handoff: ``_write_fills`` upserts on ``ib_exec_id``
+    and ``_purge_settled`` then deletes anything FlexQuery has already filed, in
+    the same transaction — so an already-settled fill is never visible. The read
+    path in ``trades._unsettled_live_executions`` filters against ``trade_executions``
+    a second time independently.
 
-    Previously anchored at ET midnight, which disagreed with the exchange by six
-    hours in the worst direction: a fill between 18:00 and 24:00 ET belongs to
-    the *next* trade date, so the overlay filed it under the current calendar day
-    and then dropped it at ET midnight — while FlexQuery, which files it under
-    the next trade date, would not report it for another full day. Evening fills
-    were therefore recoverable for only ~6 hours, then invisible for ~30.
-
-    Re-including the prior evening's fills is safe: ``_write_fills`` upserts on
-    ``ib_exec_id`` and ``_purge_settled`` drops anything that has since settled.
+    The window therefore only decides how much *unsettled* tail is visible; it
+    cannot let TWS data override FlexQuery.
     """
     now = now or _now_utc()
-    et_now = now.astimezone(MARKET_TZ)
-    session_open = et_now.replace(hour=SESSION_OPEN_HOUR_ET, minute=0, second=0, microsecond=0)
-    if et_now < session_open:
-        # Before 18:00 ET we are still inside the session that opened yesterday.
-        session_open -= timedelta(days=1)
-    return session_open.astimezone(timezone.utc)
+    return now - timedelta(days=FILLS_LOOKBACK_DAYS)
 
 
 def select_mark(bid: float | None, ask: float | None, last: float | None, close: float | None) -> float | None:
@@ -423,10 +417,16 @@ def _fetch_fills(ib: IB) -> list:
     manual fill placed *after* connect never reaches the long-lived pooled
     session and stays invisible until it settles via FlexQuery.
 
-    ``reqExecutions`` with a default filter re-asks for all of the current day's
-    executions regardless of client id (it is the same call that builds the
-    connect-time snapshot) and registers anything new into that cache. One extra
-    round-trip per sync; ``_write_fills`` is idempotent on ``ib_exec_id``.
+    ``reqExecutions`` with a default filter re-asks for executions regardless of
+    client id (it is the same call that builds the connect-time snapshot) and
+    registers anything new into that cache. One extra round-trip per sync;
+    ``_write_fills`` is idempotent on ``ib_exec_id``.
+
+    How far back it reaches is a TWS-side setting, not an API limit: per IBKR's
+    docs the default is executions since midnight, and the Trade Log's "Show
+    trades for ..." setting widens it to as much as 7 days. (IB Gateway cannot
+    change that setting and is stuck at since-midnight.) So the practical bound
+    is ``FILLS_LOOKBACK_DAYS``, applied by ``_write_fills``, not this request.
 
     We call it for that side effect and then read the *cache* back, rather than
     using its return value. ib_async builds a fresh ``Fill`` with an empty
@@ -581,7 +581,7 @@ def run_intraday_sync(engine: Engine, ib: IB) -> dict:
     ``{positions, quotes, fills, purged}``.
     """
     now = _now_utc()
-    window_start = session_start_utc(now)
+    window_start = fills_window_start(now)
 
     # Fills first, positions second: TWS updates its position book a moment after
     # it reports an execution, so the positions snapshot must be the *newer* of

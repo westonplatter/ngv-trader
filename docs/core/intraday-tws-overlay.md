@@ -23,11 +23,11 @@ quantity.
 Three additive tables hold the overlay; the FlexQuery `positions` /
 `trade_executions` tables are never touched.
 
-| Table             | Holds                                                               | Key                                    |
-| ----------------- | ------------------------------------------------------------------- | -------------------------------------- |
-| `live_positions`  | current TWS qty + blended `avg_cost` per holding                    | unique `(account_id, con_id)`          |
-| `latest_quote`    | live marks (bid/ask/last/close + selected `mark`) for any sec type  | `con_id` (supplied, not generated)     |
-| `live_executions` | today's fills with `realized_pnl`, order key, and combo `exec_role` | unique `ib_exec_id` (dedup vs settled) |
+| Table             | Holds                                                                        | Key                                    |
+| ----------------- | ---------------------------------------------------------------------------- | -------------------------------------- |
+| `live_positions`  | current TWS qty + blended `avg_cost` per holding                             | unique `(account_id, con_id)`          |
+| `latest_quote`    | live marks (bid/ask/last/close + selected `mark`) for any sec type           | `con_id` (supplied, not generated)     |
+| `live_executions` | recent unsettled fills with `realized_pnl`, order key, and combo `exec_role` | unique `ib_exec_id` (dedup vs settled) |
 
 `latest_quote` is sec-type-agnostic (FUT/FOP/STK/OPT) and intentionally **not**
 FK'd to the futures-only `contracts` table — distinct from `latest_futures*`
@@ -43,7 +43,8 @@ One manual-triggered job does all three fetches in a single IB session.
    ─► worker: handle_intraday_sync_tws → run_intraday_sync(engine, ib)
         ib.positions()          → live_positions  (replace per account scope)
         qualifyContracts + reqTickers(held) → latest_quote (mark rule)
-        ib.fills() (today, ET)  → live_executions, purge settled by ib_exec_id
+        reqExecutions() + ib.fills() (rolling lookback)
+                                → live_executions, purge settled by ib_exec_id
 ```
 
 Service: `src/services/intraday_sync_tws.py` (`run_intraday_sync`). Job type
@@ -53,8 +54,11 @@ Key rules (defined once in the service):
 
 - **Mark selection:** `last` if present; else midpoint `(bid+ask)/2` when both
   sides exist; else `close`; else null (degrades to the snapshot mark).
-- **Day boundary:** "today's fills" = at/after US-Eastern (exchange) midnight of
-  the current session date, regardless of server timezone.
+- **Fills window:** a rolling lookback of `FILLS_LOOKBACK_DAYS` (2) ending now —
+  not an anchor at a session or calendar boundary. An anchor makes the effective
+  window oscillate between ~full and ~zero depending on when the sync runs, which
+  silently dropped day-session fills. Reaching back past the current trade date is
+  safe because settled data wins (see **Settle handoff**).
 - **Exchange qualification:** `ib.positions()` returns contracts without an
   exchange, which `reqTickers` rejects. Held contracts are run through
   `qualifyContracts` first (real exchange for futures/index options; SMART
@@ -64,6 +68,10 @@ Key rules (defined once in the service):
 - **Settle handoff:** a live fill whose `ib_exec_id` already exists in settled
   `trade_executions` is purged; the read-time merge also drops such duplicates.
   Tomorrow's FlexQuery sync ingests today's fills as settled — no double count.
+  This is load-bearing, not just a dedup nicety: because the fills window reaches
+  back past settlement, `_purge_settled` (write path, same transaction) and the
+  read-path filter are what keep FlexQuery authoritative. See
+  [the fills-window learning](../solutions/logic-errors/tws-fills-window-anchored-to-session-roll.md).
 - **Combo roles:** the feed delivers a combo order as one `BAG` summary fill
   plus one fill per leg. Each fill stores its order key (`ib_perm_id`, falling
   back to `ib_order_id`) and `_exec_roles_by_exec_id` resolves `exec_role` over
