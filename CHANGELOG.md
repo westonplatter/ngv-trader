@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.1.8](https://github.com/westonplatter/ngv-trader/compare/v0.1.7...v0.1.8) (2026-08-01)
+
+
+### Features
+
+* **trades:** bring unsettled TWS fills to display parity with settled rows ([#100](https://github.com/westonplatter/ngv-trader/issues/100)) ([caf92af](https://github.com/westonplatter/ngv-trader/commit/caf92af21cc293e1119c50d95c98c95cdd660cb9))
+
+
+### Bug Fixes
+
+* **trades:** purge redundant live BAG summaries once their combo settles ([#98](https://github.com/westonplatter/ngv-trader/issues/98)) ([1dc5f6c](https://github.com/westonplatter/ngv-trader/commit/1dc5f6c36cf8f50cbfd883fed60f32085e357f6a))
+
+
+### Miscellaneous Chores
+
+* **ci:** use simple vX.Y.Z release tags ([#101](https://github.com/westonplatter/ngv-trader/issues/101)) ([cf3c3d5](https://github.com/westonplatter/ngv-trader/commit/cf3c3d54917ed5ac8365e3e9e4374675defde22a))
+
 ## [0.1.7](https://github.com/westonplatter/ngv-trader/compare/ngv-trader-v0.1.6...ngv-trader-v0.1.7) (2026-08-01)
 
 
