@@ -1,5 +1,34 @@
 # Changelog
 
+## [0.1.7](https://github.com/westonplatter/ngv-trader/compare/ngv-trader-v0.1.6...ngv-trader-v0.1.7) (2026-08-01)
+
+
+### Features
+
+* **positions:** add real-time option metrics overlay ([#83](https://github.com/westonplatter/ngv-trader/issues/83)) ([3d40cc8](https://github.com/westonplatter/ngv-trader/commit/3d40cc8c1f19f6d0ba4fd5252ccec1063a6cfd3a))
+* **tagging:** add YAML management spec to trade groups ([#87](https://github.com/westonplatter/ngv-trader/issues/87)) ([1c37960](https://github.com/westonplatter/ngv-trader/commit/1c3796050df27cc1bc5641c2dcbe48f0b829daa9))
+* **tagging:** apply privacy mode to trade tagging view ([#78](https://github.com/westonplatter/ngv-trader/issues/78)) ([f60e802](https://github.com/westonplatter/ngv-trader/commit/f60e80241eab1f741cafd3657279538c7208141c))
+* Trade booking refinements: reconcile orphaned fills, tagging/trades UI, jobs params ([#93](https://github.com/westonplatter/ngv-trader/issues/93)) ([60849bf](https://github.com/westonplatter/ngv-trader/commit/60849bf903596182a9ab1efab5539d97d159f87b))
+* trade-booking improvements for unsettled fills and tagging ([#94](https://github.com/westonplatter/ngv-trader/issues/94)) ([803ae9a](https://github.com/westonplatter/ngv-trader/commit/803ae9ad0c5becebfbd245a650b18a313a8ee89e))
+
+
+### Bug Fixes
+
+* **intraday:** widen the TWS fills window to a rolling two-day lookback ([#95](https://github.com/westonplatter/ngv-trader/issues/95)) ([c160918](https://github.com/westonplatter/ngv-trader/commit/c160918df75e149c42821ba1559634903432a8cc))
+
+
+### Documentation
+
+* condense the unsettled-TWS contract-parity plan ([#96](https://github.com/westonplatter/ngv-trader/issues/96)) ([77c1b83](https://github.com/westonplatter/ngv-trader/commit/77c1b8372bbf5417dc02ce16fbf77a8d9902a64e))
+* fix stale details found in doc review pass ([#82](https://github.com/westonplatter/ngv-trader/issues/82)) ([8f760cb](https://github.com/westonplatter/ngv-trader/commit/8f760cb5e1a437a578401d0287b7ae8fd6f70930))
+* fix stale worker handler table; sync frontend lockfile ([#88](https://github.com/westonplatter/ngv-trader/issues/88)) ([215083a](https://github.com/westonplatter/ngv-trader/commit/215083ab487c4526a7957ac10b827ad045ef8db8))
+* routine doc review — realized-PnL spec banner update ([#92](https://github.com/westonplatter/ngv-trader/issues/92)) ([e38893d](https://github.com/westonplatter/ngv-trader/commit/e38893d1589aee6b9328bed73e43d83cb4b50fe5))
+
+
+### Miscellaneous Chores
+
+* default Taskfile ENV to prod; doc review fixes ([#80](https://github.com/westonplatter/ngv-trader/issues/80)) ([99d39cc](https://github.com/westonplatter/ngv-trader/commit/99d39cc14c2cf7b4c45b7882e7eb5304dc032969))
+
 ## [0.1.6](https://github.com/westonplatter/ngv-trader/compare/ngv-trader-v0.1.5...ngv-trader-v0.1.6) (2026-07-05)
 
 
