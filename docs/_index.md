@@ -49,7 +49,7 @@ banner at the top.
 
 ## Open specs (proposed / in progress)
 
-Each carries a status banner; none is fully shipped.
+Each carries a status banner; status ranges from proposed to substantially implemented with a small pending item.
 
 | Spec                                                                                         | Status                                                                                                                          |
 | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
