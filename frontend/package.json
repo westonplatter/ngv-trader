@@ -19,7 +19,7 @@
     "ai": "^6.0.91",
     "plotly.js": "^3.4.0",
     "react": "^19.2.0",
-    "react-dom": "^19.2.0",
+    "react-dom": "^19.2.8",
     "react-plotly.js": "^2.6.0",
     "react-router-dom": "^7.13.0"
   },
