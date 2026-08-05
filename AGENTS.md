@@ -117,7 +117,7 @@ Flags account IDs, contract IDs, and execution/transaction/order IDs against the
 
 ### Components
 
-- `src/models.py`: SQLAlchemy `Base` plus all entities (single source for table structure). Beyond `Position`: `ContractRef`, `ActivatedProduct`, `Account`, `Order`/`OrderEvent`, `Job`, `Trade`/`TradeExecution`, `FlexSyncLog`, `TradeGroup*`/`Tag*` (tagging), `WatchList*`, market-data `LatestFutures*`/`TsFutures*`, `OptionChainMeta`, `SavedStructure`, `UserPreference`, `WorkerHeartbeat`, intraday overlay `LivePosition`/`LatestQuote`/`LiveExecution`.
+- `src/models.py`: SQLAlchemy `Base` plus all entities (single source for table structure). Beyond `Position`: `ContractRef`, `ActivatedProduct`, `Account`, `Order`/`OrderEvent`, `Job`, `Trade`/`TradeExecution`, `FlexSyncLog`, `TradeGroup*`/`Tag*` (tagging), `WatchList*`, market-data `LatestFutures*`/`TsFutures*`, `OptionChainMeta`, `SavedStructure`, `UserPreference`, `WorkerHeartbeat`, intraday overlay `LivePosition`/`LatestQuote`/`LiveExecution`/`LatestOptionMetrics`.
 - `src/schemas.py`: Pandera DataFrame schema for positions validation shape.
 - `src/api/deps.py`: FastAPI DB session dependency (`get_db`).
 - `src/api/routers/*.py`: REST surface — `positions`, `orders`, `trades`, `futures` (market data), `activated_products`, `jobs`, `workers`, `events` (SSE), `tradebot` (chat), `watch_lists`, `tags`, `trade_groups`, `accounts`, `structures`, `reports`, `admin`, `user_preferences`.
