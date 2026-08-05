@@ -10,7 +10,7 @@
 > axis. The resolver compiles the SQL. `describe_semantic_model` is always the
 > live source of truth; this doc explains what those names are _for_.
 
-## 1. Start here — the three tools
+## 1. Start here — the four tools
 
 | Tool                                                                               | Use it for                                                                                                                                                        |
 | ---------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
