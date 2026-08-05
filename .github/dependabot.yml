@@ -13,11 +13,6 @@ updates:
     commit-message:
       prefix: "chore(deps)"
       prefix-development: "chore(deps-dev)"
-    groups:
-      python-minor-patch:
-        update-types:
-          - "minor"
-          - "patch"
 
   # Frontend (bun: frontend/package.json + frontend/bun.lock)
   - package-ecosystem: "bun"
@@ -31,11 +26,6 @@ updates:
     commit-message:
       prefix: "chore(deps)"
       prefix-development: "chore(deps-dev)"
-    groups:
-      frontend-minor-patch:
-        update-types:
-          - "minor"
-          - "patch"
 
   # GitHub Actions workflows (.github/workflows/)
   - package-ecosystem: "github-actions"
@@ -47,8 +37,3 @@ updates:
     open-pull-requests-limit: 10
     commit-message:
       prefix: "ci(deps)"
-    groups:
-      actions-minor-patch:
-        update-types:
-          - "minor"
-          - "patch"
