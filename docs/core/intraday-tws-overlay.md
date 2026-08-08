@@ -113,7 +113,7 @@ the responses match prior behavior.
 
 ## UI
 
-Both the Tagging page (`/tagging`) and the Positions page show a **"Refresh Live (TWS)"**
+Both the Strategies page (`/strategies`) and the Positions page show a **"Refresh Live (TWS)"**
 button that enqueues `intraday.sync.tws` and re-fetches after the job runs. Live
 mark / live-unrealized columns and intraday P&L totals render alongside the
 settled values, with a freshness indicator (`live as of HH:MM` when marks are
@@ -182,11 +182,11 @@ FlexQuery trade sync and the intraday sync, in the same transaction as
 "unsettled" fills (and, for the first class, double-count realized P&L). Three
 classes, in order:
 
-| Class         | Divergence                                                                      | How it clears                                                                           |
-| ------------- | ------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| `leg_strip`   | live combo leg carries an extra trailing segment (`…03.01.01`)                  | strip the last segment → exact settled id                                               |
-| `book_event`  | expiry/assignment/exercise books as `FLEX-TX-…` with an `Ep`/`A`/`Ex` note      | match on account, conId, qty, side, price and trade date                                |
-| `bag_summary` | live BAG summary has **no** settled counterpart — FlexQuery synthesizes its own | purge once no live sibling shares its order key and settled legs exist at its timestamp |
+| Class         | Divergence                                                                      | How it clears                                                                         |
+| ------------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| `leg_strip`   | live combo leg carries an extra trailing segment (`…03.01.01`)                  | strip the last segment → exact settled id                                             |
+| `book_event`  | expiry/assignment/exercise books as `FLEX-TX-…` with an `Ep`/`A`/`Ex` note      | match on account, conId, qty, side, price and trade date                              |
+| `bag_summary` | live BAG summary has **no** settled counterpart — FlexQuery synthesizes its own | purge once no live _leg_ shares its order key and settled legs exist at its timestamp |
 
 Running it on the intraday path too is load-bearing, not belt-and-braces: the
 fills window is a rolling `FILLS_LOOKBACK_DAYS` lookback, so TWS keeps
@@ -195,11 +195,17 @@ re-reporting these fills for days. Their ids never equal the settled ones, so
 rows a prior FlexQuery-side reconcile had just cleared.
 
 `bag_summary` is a redundancy purge, not a match: the live BAG shares no id,
-contract or order key with anything settled. "No live siblings left" is the
+contract or order key with anything settled. "No live _legs_ left" is the
 proof its legs settled (a leg only leaves `live_executions` by settling), and
 the settled-legs check guards a summary that arrived with no legs at all. Its
 group tag fans out onto those settled legs before the row is deleted, so
 membership is never lost.
+
+Peer BAG summaries are excluded from that count. A combo filling in several
+partial executions emits one summary per partial, all sharing the order's
+`permId`; counting those as siblings deadlocked them against each other and
+left both as permanent phantom "unsettled" rows. A peer summary is never
+evidence that a leg is still outstanding.
 
 ## Option metrics overlay (separate job)
 

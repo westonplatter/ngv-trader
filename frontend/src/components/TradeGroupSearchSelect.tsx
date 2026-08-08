@@ -282,7 +282,7 @@ export default function TradeGroupSearchSelect({
                     prefill_group_name: `${contractDisplayName ?? "Trade"} Lifecycle Group`,
                   });
                   window.open(
-                    `/tagging?${params.toString()}`,
+                    `/strategies?${params.toString()}`,
                     "_blank",
                     "noopener,noreferrer",
                   );

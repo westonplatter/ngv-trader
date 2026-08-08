@@ -1,2 +1,7 @@
 # Prettier friendly markdownlint config (all formatting rules disabled)
 extends: markdownlint/style/prettier
+
+# docs/solutions/*.md carry a YAML `title:` plus a matching H1 by convention.
+# Don't count the front-matter title as a second top-level heading.
+MD025:
+  front_matter_title: ""

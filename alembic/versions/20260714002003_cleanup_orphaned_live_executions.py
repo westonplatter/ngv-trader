@@ -29,6 +29,7 @@ Create Date: 2026-07-14 00:20:03.000000
 
 from typing import Sequence, Union
 
+import sqlalchemy as sa
 from sqlalchemy.orm import Session
 
 from alembic import op
@@ -42,7 +43,15 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    session = Session(bind=op.get_bind())
+    bind = op.get_bind()
+    # Fresh database (e.g. the test DB): `live_executions` is empty, so the
+    # reconcile below is a no-op by definition. Skip it — the shipped reconcile
+    # reads `live_executions` columns added by LATER revisions, which do not
+    # exist yet at this point in the chain.
+    if bind.execute(sa.text("SELECT 1 FROM live_executions LIMIT 1")).first() is None:
+        return
+
+    session = Session(bind=bind)
     counts = reconcile_orphaned_live_executions(session)
     session.flush()
     print(

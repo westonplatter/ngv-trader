@@ -43,7 +43,7 @@ const AS_OF = "2026-06-21";
 const LIVE_MARK_TS = "2026-06-21T14:29:55Z";
 
 // Trade groups the demo positions roll up to. Names render as links in the
-// Positions table's "Trade Group" column and as the list on the Tagging page.
+// Positions table's "Trade Group" column and as the list on the Strategies page.
 const GROUP_NQ: TradeGroupRef = { id: 101, name: "NQ Momentum" };
 const GROUP_ES_DIAGONAL: TradeGroupRef = { id: 102, name: "ES Call Diagonal" };
 const GROUP_GLD_CC: TradeGroupRef = { id: 103, name: "GLD Covered Calls" };
@@ -447,7 +447,7 @@ export const DEMO_POSITIONS: Position[] = [
   },
 ];
 
-// ── Tagging workspace ─────────────────────────────────────────────────────────
+// ── Strategies workspace ──────────────────────────────────────────────────────
 
 // A single umbrella strategy keeps the demo coherent and ensures Trade Group
 // links from the Positions page always resolve to a populated group.
