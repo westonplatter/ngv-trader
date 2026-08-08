@@ -9,8 +9,9 @@ flagged — the prompt keeps those real so examples stay realistic.
 Usage:
     uv run python scripts/ibkr_check.py              # staged changes, else unstaged
     uv run python scripts/ibkr_check.py --unstaged   # force unstaged diff
-    uv run python scripts/ibkr_check.py --paths a.md b.py   # whole files
+    uv run python scripts/ibkr_check.py --paths a.md src/   # whole files/dirs
     uv run python scripts/ibkr_check.py --untracked  # include untracked files
+    uv run python scripts/ibkr_check.py --quiet      # result only, no file list
 
 Exits 1 when anything is flagged, so it can gate a commit hook.
 """
@@ -22,6 +23,7 @@ import re
 import subprocess
 import sys
 from dataclasses import dataclass
+from pathlib import Path
 
 # Values the anonymization prompt hands out as examples. Seeing these is the
 # desired end state, not a finding.
@@ -143,6 +145,30 @@ def scan_diff(diff: str) -> list[Finding]:
     return findings
 
 
+def _expand_paths(paths: list[str]) -> list[str]:
+    """Expand directories into the files under them, deduped and ordered.
+
+    Directories are resolved through git so ignored trees (`.venv/`,
+    `node_modules/`, `scripts/data/`) are skipped; both tracked and untracked
+    files are included. Falls back to a plain walk outside a git repo.
+    """
+    expanded: list[str] = []
+    seen: set[str] = set()
+    for path in paths:
+        if Path(path).is_dir():
+            listing = _run(["git", "ls-files", "--cached", "--others", "--exclude-standard", "--", path]).split()
+            if not listing:
+                listing = [str(p) for p in sorted(Path(path).rglob("*")) if p.is_file()]
+            candidates = listing
+        else:
+            candidates = [path]
+        for candidate in candidates:
+            if candidate not in seen:
+                seen.add(candidate)
+                expanded.append(candidate)
+    return expanded
+
+
 def _scan_files(paths: list[str]) -> list[Finding]:
     findings: list[Finding] = []
     for path in paths:
@@ -154,26 +180,38 @@ def _scan_files(paths: list[str]) -> list[Finding]:
     return findings
 
 
-def collect(args: argparse.Namespace) -> tuple[list[Finding], str]:
+def collect(args: argparse.Namespace) -> tuple[list[Finding], str, list[str]]:
     if args.paths:
-        return _scan_files(args.paths), f"{len(args.paths)} file(s)"
+        paths = _expand_paths(args.paths)
+        return _scan_files(paths), f"{len(paths)} file(s)", paths
 
-    diff = "" if args.unstaged else _run(["git", "diff", "--cached", "--no-color"])
+    diff_args = ["git", "diff", "--cached"]
+    diff = "" if args.unstaged else _run([*diff_args, "--no-color"])
     scanned = "staged changes"
     if not diff.strip():
-        diff = _run(["git", "diff", "--no-color"])
+        diff_args = ["git", "diff"]
+        diff = _run([*diff_args, "--no-color"])
         scanned = "unstaged changes"
 
+    files = _run([*diff_args, "--name-only"]).split()
     findings = scan_diff(diff)
     if args.untracked:
         untracked = _run(["git", "ls-files", "--others", "--exclude-standard"]).split()
         findings.extend(_scan_files(untracked))
+        files.extend(path for path in untracked if path not in set(files))
         scanned += " + untracked files"
-    return findings, scanned
+    return findings, scanned, files
 
 
-def report(findings: list[Finding], scanned: str) -> int:
+def report(findings: list[Finding], scanned: str, files: list[str], quiet: bool = False) -> int:
     print(f"IBKR data check — scanned {scanned}")
+    if not quiet:
+        for path in files:
+            print(f"  · {path}")
+        if not files:
+            print("  (nothing to scan)")
+    if not quiet:
+        print()
     if not findings:
         print("OK: no real IBKR account IDs, contract IDs, or execution/order IDs found.")
         return 0
@@ -195,11 +233,22 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--unstaged", action="store_true", help="scan the unstaged diff instead of staged")
     parser.add_argument("--untracked", action="store_true", help="also scan untracked files in full")
-    parser.add_argument("--paths", nargs="*", default=None, help="scan these files in full instead of a diff")
+    parser.add_argument(
+        "--paths",
+        nargs="*",
+        default=None,
+        help="scan these files/directories in full instead of a diff (directories recurse)",
+    )
+    parser.add_argument(
+        "-q",
+        "--quiet",
+        action="store_true",
+        help="suppress the per-file list; print only the header and the result",
+    )
     args = parser.parse_args()
 
-    findings, scanned = collect(args)
-    return report(findings, scanned)
+    findings, scanned, files = collect(args)
+    return report(findings, scanned, files, quiet=args.quiet)
 
 
 if __name__ == "__main__":

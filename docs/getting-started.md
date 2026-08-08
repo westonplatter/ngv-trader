@@ -48,6 +48,15 @@ git clone <repo-url> ngv-trader
 cd ngv-trader
 ```
 
+Most of the repo's history is committed UI screenshots. If you don't need it,
+`--depth 1` clones ~1.7M instead of ~6.5M:
+
+```bash
+git clone --depth 1 <repo-url> ngv-trader
+```
+
+Unshallow later with `git fetch --unshallow`.
+
 Install Python dependencies:
 
 ```bash

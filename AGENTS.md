@@ -103,7 +103,10 @@ Before staging, scan changes for real IBKR identifiers that must never be commit
 
 - Staged changes: `uv run python scripts/ibkr_check.py`
 - Include untracked files: `uv run python scripts/ibkr_check.py --untracked`
-- Specific files in full: `uv run python scripts/ibkr_check.py --paths <file> ...`
+- Specific files/dirs in full: `uv run python scripts/ibkr_check.py --paths <path> ...` (directories recurse, honoring `.gitignore`)
+- Result only, no per-file list: `uv run python scripts/ibkr_check.py --quiet`
+
+Every scanned file is listed by default so the output is evidence of what was checked; `--quiet` drops that list but still prints findings.
 
 Flags account IDs, contract IDs, and execution/transaction/order IDs against the patterns in `prompts/prompt-ibkr-sample-data.md`. Prices, quantities, symbols, and exchanges are intentionally not flagged — those stay real. Exits 1 on findings.
 

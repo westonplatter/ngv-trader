@@ -27,11 +27,13 @@ TASKFILE = ROOT / "Taskfile.yaml"
 
 # ── doc collection ────────────────────────────────────────────────────────────
 
+
 def collect_doc_files() -> list[Path]:
     files: set[Path] = {ROOT / "README.md", ROOT / "AGENTS.md"}
     for pattern in ("docs/*.md", "docs/**/*.md"):
         files.update(ROOT.glob(pattern))
     return sorted(f for f in files if f.exists())
+
 
 # ── individual checks ─────────────────────────────────────────────────────────
 
@@ -64,11 +66,22 @@ def check_internal_links(doc_files: list[Path]) -> list[Issue]:
     return issues
 
 
+def _is_plan(doc: Path) -> bool:
+    """`docs/plans/*.md` are dated historical artifacts (AGENTS.md), not current-state docs."""
+    return doc.parent == ROOT / "docs" / "plans"
+
+
 def check_script_paths(doc_files: list[Path]) -> list[Issue]:
-    """Every scripts/<name> cited in docs must exist on disk."""
+    """Every scripts/<name> cited in current-state docs must exist on disk.
+
+    Plans are exempt: they record what a script was called at the time, and may
+    name scripts that were later renamed, moved to `tests/`, or never written.
+    """
     issues: list[Issue] = []
     script_re = re.compile(r"scripts/([\w\-\.]+)")
     for doc in doc_files:
+        if _is_plan(doc):
+            continue
         for m in script_re.finditer(doc.read_text()):
             name = m.group(1)
             # Check root scripts/ and frontend/scripts/ (AGENTS.md documents both)
@@ -124,16 +137,17 @@ def check_undocumented_routes(doc_files: list[Path]) -> list[Issue]:
 # ── registry ──────────────────────────────────────────────────────────────────
 
 CHECKS: dict[str, tuple] = {
-    "links":   (check_internal_links,     "Internal links"),
-    "scripts": (check_script_paths,       "Script paths"),
-    "tasks":   (check_task_commands,      "Task commands"),
-    "specs":   (check_spec_banners,       "Spec status banners"),
-    "routes":  (check_undocumented_routes, "Undocumented routes (informational)"),
+    "links": (check_internal_links, "Internal links"),
+    "scripts": (check_script_paths, "Script paths"),
+    "tasks": (check_task_commands, "Task commands"),
+    "specs": (check_spec_banners, "Spec status banners"),
+    "routes": (check_undocumented_routes, "Undocumented routes (informational)"),
 }
 
 DEFAULT_CHECKS = {"links", "scripts", "tasks", "specs"}
 
 # ── runner ────────────────────────────────────────────────────────────────────
+
 
 def main() -> None:
     args = [a for a in sys.argv[1:] if not a.startswith("-")]
