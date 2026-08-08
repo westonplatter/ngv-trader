@@ -762,6 +762,10 @@ function toOpenPosition(pos: Position): GroupOpenPosition {
     local_symbol: pos.local_symbol,
     contract_display: pos.contract_display_name,
     sec_type: pos.sec_type,
+    right: pos.right,
+    option_expiry_date: pos.option_expiry_date,
+    dte: pos.dte,
+    strike: pos.strike,
     position: pos.position,
     avg_cost: pos.avg_cost,
     multiplier: pos.multiplier,
@@ -773,6 +777,8 @@ function toOpenPosition(pos: Position): GroupOpenPosition {
     mark: pos.mark,
     mark_ts: pos.mark_ts,
     live_unrealized: pos.live_unrealized,
+    delta: pos.delta,
+    gamma: pos.gamma,
   };
 }
 
