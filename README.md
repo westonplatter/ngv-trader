@@ -16,6 +16,14 @@ New to the project? Follow the [Getting Started guide](docs/getting-started.md) 
 
 **You assume all risk.**
 
+## Tests
+
+```bash
+task test
+```
+
+Runs the pytest suite against a dedicated `ngv_trader_test` database, created and migrated on demand — dev and prod data are never touched.
+
 ## Screenshots
 
 ### Positions
@@ -24,12 +32,12 @@ Track unrealized PnL across accounts, with positions grouped into trades.
 
 ![Positions](docs/screenshots/positions-demo.png)
 
-### Trade Tagging
+### Strategies
 
 Organize executions into strategies and trade groups, with realized/unrealized
 PnL rolled up per group.
 
-![Trade Tagging](docs/screenshots/tagging-demo.png)
+![Strategies](docs/screenshots/tagging-demo.png)
 
 ### Assigning Positions to Trade Groups
 
