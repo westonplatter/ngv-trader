@@ -1,18 +1,19 @@
-"""Fetch the IBKR FlexQuery daily report, save it, and print a summary.
+"""Fetch an IBKR FlexQuery report, save it, and print a summary.
 
 Usage:
-    op run --env-file=.env.prod -- uv run python scripts/fetch_flex_trades.py [--days 14] [--name <ib_json_name>]
+    uv run python scripts/fetch_flex_trades.py [--days 14] [--name <token-name>]
 
 Notes:
-- Hardcoded to the `daily` query_id from IB_JSON. `weekly`/`annual` are unused.
+- Credentials come from the `flexquery_tokens` table, not the environment.
+  Seed them with scripts/manage_flex_tokens.py; the token is decrypted with
+  FLEX_TOKEN_ENCRYPTION_KEY.
+- Without --name, the first active token is used.
 - scripts/data/ is gitignored (contains real account/exec data).
 """
 
 from __future__ import annotations
 
 import argparse
-import json
-import os
 import re
 import sys
 from collections import Counter
@@ -22,23 +23,10 @@ from pathlib import Path
 from loguru import logger
 from ngv_reports_ibkr.flex_client import DateRange
 
+from src.db import get_engine
 from src.services.flex_client_factory import make_flex_client
+from src.services.flex_credentials import load_credential, mark_used
 from src.utils.ibkr_account import mask_ibkr_account
-
-
-def _ib_json_entry(name: str | None) -> dict:
-    raw = os.environ.get("IB_JSON")
-    if not raw:
-        raise RuntimeError("IB_JSON environment variable is not set")
-    accounts = json.loads(raw).get("accounts", [])
-    if not accounts:
-        raise RuntimeError("IB_JSON has no accounts configured")
-    if name:
-        match = next((a for a in accounts if a.get("name") == name), None)
-        if match is None:
-            raise RuntimeError(f"IB_JSON has no entry for name={name!r}")
-        return match
-    return accounts[0]
 
 
 def print_summary(xml_text: str, start_date: date, end_date: date) -> None:
@@ -66,7 +54,7 @@ def print_summary(xml_text: str, start_date: date, end_date: date) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Fetch FlexQuery daily report and print a trade-count summary")
     parser.add_argument("--days", type=int, default=14)
-    parser.add_argument("--name", type=str, default=None, help="IB_JSON entry name (default: first entry)")
+    parser.add_argument("--name", type=str, default=None, help="flexquery_tokens.name (default: first active token)")
     parser.add_argument(
         "--end-date",
         type=str,
@@ -75,12 +63,8 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    entry = _ib_json_entry(args.name)
-    flex_token = entry.get("flex_token")
-    query_id = entry.get("daily")
-    if not (flex_token and query_id):
-        logger.error("IB_JSON entry name={!r} missing flex_token or daily query_id", entry.get("name"))
-        return 1
+    engine = get_engine()
+    credential = load_credential(engine, args.name)
 
     if args.end_date is None:
         end_date = date.today() - timedelta(days=1)
@@ -89,13 +73,14 @@ def main() -> int:
     else:
         end_date = date.fromisoformat(args.end_date)
     start_date = end_date - timedelta(days=args.days)
-    logger.info(f"Fetching daily report: {start_date} → {end_date}")
+    logger.info(f"Fetching report for token {credential.name!r}: {start_date} → {end_date}")
 
     xml_text = make_flex_client().fetch_flex_report(
-        token=flex_token,
-        query_id=query_id,
+        token=credential.token,
+        query_id=credential.report_id,
         date_range=DateRange(from_date=start_date, to_date=end_date),
     )
+    mark_used(engine, credential.token_id)
     logger.info(f"XML length: {len(xml_text):,} bytes")
 
     output_dir = Path(__file__).parent / "data"

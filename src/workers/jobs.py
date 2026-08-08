@@ -12,11 +12,18 @@ from __future__ import annotations
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import date
+from typing import Any
 
 from ib_async import IB
 from sqlalchemy.engine import Engine
 
 from src.models import Job
+from src.services.flex_credentials import (
+    FlexCredential,
+    load_active_credentials,
+    mark_used,
+)
 from src.services.jobs import (
     JOB_TYPE_CONTRACTS_CHAIN_SYNC,
     JOB_TYPE_CONTRACTS_QUALIFY_AND_SNAPSHOT,
@@ -332,39 +339,60 @@ def handle_trades_sync_tws(job: Job, engine: Engine, ib_pool: IBSessionPool) -> 
     }
 
 
-def _resolve_flex_credentials(payload: dict, account_code: str | None) -> tuple[str, str, str]:
-    """Look up (account_code, flex_token, query_id) from IB_JSON env / payload.
+def _run_flexquery_sync(
+    engine: Engine,
+    start_date: date,
+    end_date: date,
+    filter_account: str | None,
+    sync_account: Callable[[str, Any, FlexCredential], dict],
+) -> dict:
+    """Fetch every active token's report and sync the accounts each one covers.
 
-    Payload may override flex_token/query_id; otherwise pulled from the matching
-    account in IB_JSON. If account_code is None, the first IB_JSON account is used.
+    One token can return several accounts, and several tokens can be configured,
+    so this runs the whole active set rather than the first entry. A token whose
+    fetch fails is recorded and skipped; the run only fails outright when no
+    token produced a report. Token values never reach the returned dict — the
+    result is persisted to ``jobs.result``, which is plaintext.
     """
-    import json
-    import os
+    from src.services.trade_sync_flexquery import fetch_flex_report
 
-    ib_json_raw = os.environ.get("IB_JSON")
-    if not ib_json_raw:
-        raise RuntimeError("IB_JSON environment variable is not set")
-    ib_json = json.loads(ib_json_raw)
-    accounts = ib_json.get("accounts", [])
-    if not accounts:
-        raise RuntimeError("IB_JSON has no accounts configured")
+    credentials = load_active_credentials(engine)
 
-    def _code(entry: dict) -> str | None:
-        return entry.get("name") or entry.get("account") or entry.get("account_code")
+    per_account: dict[str, dict] = {}
+    tokens_synced: list[str] = []
+    token_errors: dict[str, str] = {}
+    duplicate_accounts: list[str] = []
 
-    if account_code:
-        account_entry = next((a for a in accounts if _code(a) == account_code), None)
-        if account_entry is None:
-            raise RuntimeError(f"IB_JSON has no entry for account {account_code!r}")
-    else:
-        account_entry = accounts[0]
-        account_code = _code(account_entry)
+    for credential in credentials:
+        try:
+            report = fetch_flex_report(credential.token, credential.report_id, start_date, end_date)
+        except Exception as exc:  # noqa: BLE001 — one bad token must not stop the rest
+            token_errors[credential.name] = credential.redact(f"{type(exc).__name__}: {exc}")
+            continue
 
-    flex_token = payload.get("flex_token") or account_entry.get("flex_token")
-    query_id = payload.get("query_id") or account_entry.get("daily")
-    if not flex_token or not query_id:
-        raise RuntimeError(f"Missing flex_token or query_id for account {account_code!r}")
-    return account_code, flex_token, query_id
+        mark_used(engine, credential.token_id)
+        tokens_synced.append(credential.name)
+
+        for account_id in report.account_ids():
+            if filter_account and account_id != filter_account:
+                continue
+            if account_id in per_account:
+                # Two tokens cover the same account. Last writer wins, matching
+                # the account-stamping rule, but the overlap is worth surfacing.
+                duplicate_accounts.append(account_id)
+            per_account[account_id] = sync_account(account_id, report, credential)
+
+    if not tokens_synced:
+        detail = "; ".join(f"{name}: {message}" for name, message in token_errors.items())
+        raise RuntimeError(f"No FlexQuery token returned a report. {detail}")
+
+    return {
+        "per_account": per_account,
+        "accounts_synced": list(per_account),
+        "tokens_synced": tokens_synced,
+        "token_errors": token_errors,
+        "duplicate_accounts": sorted(set(duplicate_accounts)),
+    }
 
 
 def handle_trades_sync_flexquery(job: Job, engine: Engine, ib_pool: IBSessionPool) -> dict:
@@ -372,7 +400,6 @@ def handle_trades_sync_flexquery(job: Job, engine: Engine, ib_pool: IBSessionPoo
     from datetime import timedelta as _td
 
     from src.services.trade_sync_flexquery import (
-        fetch_flex_report,
         previous_business_day,
         sync_flex_trades,
     )
@@ -380,7 +407,6 @@ def handle_trades_sync_flexquery(job: Job, engine: Engine, ib_pool: IBSessionPoo
     payload = job.payload or {}
     # account_code in payload is optional; when set, only that IBKR account is synced
     filter_account = payload.get("account_code")
-    _, flex_token, query_id = _resolve_flex_credentials(payload, None)
 
     if "start_date" in payload and "end_date" in payload:
         start_date = _date.fromisoformat(payload["start_date"])
@@ -390,33 +416,27 @@ def handle_trades_sync_flexquery(job: Job, engine: Engine, ib_pool: IBSessionPoo
         end_date = previous_business_day()
         start_date = end_date - _td(days=days)
 
-    report = fetch_flex_report(flex_token, query_id, start_date, end_date)
-    per_account: dict[str, dict] = {}
-    for account_id in report.account_ids():
-        if filter_account and account_id != filter_account:
-            continue
-        per_account[account_id] = sync_flex_trades(
+    def _sync(account_id: str, report: Any, credential: FlexCredential) -> dict:
+        return sync_flex_trades(
             engine=engine,
             account_code=account_id,
             report=report,
             start_date=start_date,
             end_date=end_date,
+            flex_query_token_id=credential.token_id,
         )
-    return {"per_account": per_account, "accounts_synced": list(per_account)}
+
+    return _run_flexquery_sync(engine, start_date, end_date, filter_account, _sync)
 
 
 def handle_positions_sync_flexquery(job: Job, engine: Engine, ib_pool: IBSessionPool) -> dict:
     from datetime import date as _date
 
     from src.services.position_sync_flexquery import sync_flex_positions
-    from src.services.trade_sync_flexquery import (
-        fetch_flex_report,
-        previous_business_day,
-    )
+    from src.services.trade_sync_flexquery import previous_business_day
 
     payload = job.payload or {}
     filter_account = payload.get("account_code")
-    _, flex_token, query_id = _resolve_flex_credentials(payload, None)
 
     if "start_date" in payload and "end_date" in payload:
         start_date = _date.fromisoformat(payload["start_date"])
@@ -425,24 +445,20 @@ def handle_positions_sync_flexquery(job: Job, engine: Engine, ib_pool: IBSession
         end_date = previous_business_day()
         start_date = end_date
 
-    report = fetch_flex_report(flex_token, query_id, start_date, end_date)
-
-    per_account: dict[str, dict] = {}
-    for account_id in report.account_ids():
-        if filter_account and account_id != filter_account:
-            continue
+    def _sync(account_id: str, report: Any, credential: FlexCredential) -> dict:
         result = sync_flex_positions(
             engine=engine,
             account_code=account_id,
             report=report,
+            flex_query_token_id=credential.token_id,
         )
         as_of = result.get("as_of_date")
-        per_account[account_id] = {
+        return {
             "upserted_count": result.get("upserted_count", 0),
             "as_of_date": as_of.isoformat() if as_of else None,
         }
 
-    return {"per_account": per_account, "accounts_synced": list(per_account)}
+    return _run_flexquery_sync(engine, start_date, end_date, filter_account, _sync)
 
 
 def handle_contracts_chain_sync(job: Job, engine: Engine, ib_pool: IBSessionPool) -> dict:
