@@ -35,6 +35,12 @@ lint:
     - taplo@0.10.0
     - trufflehog@3.93.4
     - yamllint@1.38.0
+  ignore:
+    # bandit B101 flags every `assert`, which is how pytest expresses its
+    # checks. Tests are not shipped and never run under `python -O`.
+    - linters: [bandit]
+      paths:
+        - tests/**
 actions:
   enabled:
     - trunk-announce
