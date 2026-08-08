@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.1.12](https://github.com/westonplatter/ngv-trader/compare/v0.1.11...v0.1.12) (2026-08-08)
+
+
+### Features
+
+* **scripts:** block commits carrying real IBKR data ([#148](https://github.com/westonplatter/ngv-trader/issues/148)) ([8e3147c](https://github.com/westonplatter/ngv-trader/commit/8e3147c796aa5d6f7572776982dac660a390a3e1))
+* **ux:** make strategy workspace panes horizontally resizable ([#151](https://github.com/westonplatter/ngv-trader/issues/151)) ([e394d34](https://github.com/westonplatter/ngv-trader/commit/e394d34da12d99286ad90b5a613cbf24f9f88b4a))
+* **workers:** split flexquery sync into request and fetch phases ([#149](https://github.com/westonplatter/ngv-trader/issues/149)) ([fa613c9](https://github.com/westonplatter/ngv-trader/commit/fa613c94566db0e49ce1e609f96febd17242ac44))
+
+
+### Documentation
+
+* move ibkr sample-data guide into docs/, drop prompts/ ([#147](https://github.com/westonplatter/ngv-trader/issues/147)) ([1ce23e4](https://github.com/westonplatter/ngv-trader/commit/1ce23e4d8985a61ceaad25e62efa71e32601e2fc))
+* **orders:** plan working-orders overlay on strategies ([#152](https://github.com/westonplatter/ngv-trader/issues/152)) ([337b81e](https://github.com/westonplatter/ngv-trader/commit/337b81ec8a3a542cfc4c61486743019fbc424d75))
+* **plans:** plan tax-adjusted cost basis reporting ([#150](https://github.com/westonplatter/ngv-trader/issues/150)) ([073e054](https://github.com/westonplatter/ngv-trader/commit/073e05449141e21d7587b11fe774226a7664c9a2))
+
+
+### Miscellaneous Chores
+
+* **deps-dev:** bump vite, eslint, globals, and @vitejs/plugin-react in /frontend ([#144](https://github.com/westonplatter/ngv-trader/issues/144)) ([2a391f3](https://github.com/westonplatter/ngv-trader/commit/2a391f3dda0f677dac5585aa98b2615bb9500fe0))
+* **scripts:** remove obsolete scripts and unreferenced screenshots ([#146](https://github.com/westonplatter/ngv-trader/issues/146)) ([88c6e3a](https://github.com/westonplatter/ngv-trader/commit/88c6e3a38817ac36cbf00ddb8c7f6fb8bea1c547))
+
 ## [0.1.11](https://github.com/westonplatter/ngv-trader/compare/v0.1.10...v0.1.11) (2026-08-08)
 
 
