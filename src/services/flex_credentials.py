@@ -1,8 +1,8 @@
 """Resolve IBKR FlexQuery credentials from the database.
 
-This replaces the old ``IB_JSON`` environment blob. Tokens live in
-``flexquery_tokens`` encrypted at rest; a job payload can no longer supply one.
-Seed and rotate rows with ``scripts/manage_flex_tokens.py``.
+Tokens live in ``flexquery_tokens`` encrypted at rest — not in the environment,
+and not in a job payload. Seed and rotate rows with
+``scripts/manage_flex_tokens.py``.
 
 A token value must never reach a log line, an exception message, or a job
 result — use ``FlexCredential.name`` to identify a token, and ``redact`` on any

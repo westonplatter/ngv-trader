@@ -94,9 +94,9 @@ BROKER_TWS_PORT=7497
 # CL futures near-expiry safety window (days)
 BROKER_CL_MIN_DAYS_TO_EXPIRY=7
 
-# IBKR Flex Query credentials (JSON string with account flex_token and query IDs)
+# Encryption key for the IBKR Flex Query tokens stored in the database.
 # Required for trades/positions FlexQuery sync — see workers.md
-# IB_JSON={"accounts": [{"flex_token": "your_flex_token_here", "daily": 123456, "annual": 234567, "weekly": 345678}]}
+# FLEX_TOKEN_ENCRYPTION_KEY=op://Vault/FLEX_TOKEN_ENCRYPTION_KEY/value
 
 # Tradebot LLM (optional — needed only for the chat feature)
 # TRADEBOT_LLM_API_KEY=sk-...
@@ -125,6 +125,36 @@ op run --env-file=.env.dev -- uv run python scripts/setup_db.py --env dev
 See [secrets-using-1password.md](secrets-using-1password.md) for details.
 
 If you do **not** use 1Password, just use plain values in `.env.dev` and run commands directly.
+
+### FlexQuery tokens
+
+IBKR FlexQuery credentials are **not** environment variables. Each token lives
+as a row in the `flexquery_tokens` table, encrypted at rest with Fernet, next to
+the report id it requests. `FLEX_TOKEN_ENCRYPTION_KEY` — a comma-separated list
+of Fernet keys, newest first — is the only related value in `.env.<env>`.
+
+One token can cover several IBKR accounts. Sync stamps each account row with the
+token it was discovered under (`accounts.flex_query_token_id`), so the mapping
+lives in the database rather than in an operator's head. Every active token is
+used on each sync run.
+
+`scripts/manage_flex_tokens.py` is the only supported way to seed, list,
+deactivate, verify, and re-key tokens — run it with `--help`. First-time setup,
+after the database exists:
+
+```bash
+uv run python scripts/manage_flex_tokens.py generate-key --out newkey.txt
+# put that value in 1Password, point FLEX_TOKEN_ENCRYPTION_KEY at it, delete the file
+uv run python scripts/manage_flex_tokens.py add --name main --report-id <flexquery-report-id>
+uv run python scripts/manage_flex_tokens.py verify
+```
+
+The token value is read from a hidden prompt or stdin, never from an argument,
+and is never printed back. To rotate the encryption key, prepend a new key to
+`FLEX_TOKEN_ENCRYPTION_KEY`, run `rotate-key`, confirm `verify` passes, then drop
+the old key. Losing the key with no copy makes every stored token unreadable —
+IBKR tokens are re-issuable from the client portal, so that means re-seeding, not
+permanent data loss.
 
 ## 3. Set Up PostgreSQL
 
@@ -236,7 +266,7 @@ Workers are background processes that sync data with IBKR. Run in its own termin
 ENV=dev task worker:jobs
 ```
 
-TWS/Gateway is only required for contract-metadata sync and watchlist quotes; FlexQuery trade/position sync (the active sync path) works without it as long as `IB_JSON` is set. The UI header shows worker health lights (green/yellow/red) based on heartbeat freshness.
+TWS/Gateway is only required for contract-metadata sync and watchlist quotes; FlexQuery trade/position sync (the active sync path) works without it as long as at least one token is seeded (see [FlexQuery tokens](#flexquery-tokens) below). The UI header shows worker health lights (green/yellow/red) based on heartbeat freshness.
 
 See [workers.md](workers.md) for worker architecture details.
 
