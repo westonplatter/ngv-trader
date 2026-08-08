@@ -1,5 +1,36 @@
 # Changelog
 
+## [0.1.9](https://github.com/westonplatter/ngv-trader/compare/v0.1.8...v0.1.9) (2026-08-08)
+
+
+### Features
+
+* rename Tagging to Strategies, add pytest suite and CI ([#128](https://github.com/westonplatter/ngv-trader/issues/128)) ([dbf5484](https://github.com/westonplatter/ngv-trader/commit/dbf54841345d8dd8c5f7474766efab2aaa793504))
+
+
+### Documentation
+
+* clarify worker task defaults and simplify plan reference ([#102](https://github.com/westonplatter/ngv-trader/issues/102)) ([96b6753](https://github.com/westonplatter/ngv-trader/commit/96b67534b90ec338a39cf1a8428c28da6644d6dd))
+* fix stale spec banner, index wording, and small omissions ([#104](https://github.com/westonplatter/ngv-trader/issues/104)) ([3390ad4](https://github.com/westonplatter/ngv-trader/commit/3390ad420db2b3366021179449de44603709b714))
+* simplify readme ([61edff6](https://github.com/westonplatter/ngv-trader/commit/61edff6e735296c289e63a0a54c8c4df07531402))
+
+
+### Miscellaneous Chores
+
+* **ci:** add dependabot for uv, bun, and github-actions ([#105](https://github.com/westonplatter/ngv-trader/issues/105)) ([800bf48](https://github.com/westonplatter/ngv-trader/commit/800bf488405ee3d8c3108a25bfb9ae8dade77e52))
+* **deps-dev:** bump ruff from 0.15.2 to 0.16.0 ([#123](https://github.com/westonplatter/ngv-trader/issues/123)) ([472e223](https://github.com/westonplatter/ngv-trader/commit/472e223d3db8fda2706ed52452340a71b71bacd9))
+* **deps-dev:** bump typer from 0.24.1 to 0.27.0 ([#114](https://github.com/westonplatter/ngv-trader/issues/114)) ([d6e8ea6](https://github.com/westonplatter/ngv-trader/commit/d6e8ea67f2b5cfdc61b639020cb05223784a8427))
+* **deps:** bump alembic from 1.18.4 to 1.18.5 ([#125](https://github.com/westonplatter/ngv-trader/issues/125)) ([d746fb3](https://github.com/westonplatter/ngv-trader/commit/d746fb3b2ede3c5d92bd999c1d13b317e32a63c6))
+* **deps:** bump fastapi from 0.135.1 to 0.139.2 ([#110](https://github.com/westonplatter/ngv-trader/issues/110)) ([8587c7f](https://github.com/westonplatter/ngv-trader/commit/8587c7f6be57b81ea6e238edc013808d02f71581))
+* **deps:** bump langgraph from 1.0.9 to 1.2.9 ([#127](https://github.com/westonplatter/ngv-trader/issues/127)) ([a56035f](https://github.com/westonplatter/ngv-trader/commit/a56035f16fee40433b28871b26e9bc898d500f62))
+* **deps:** bump python-dotenv from 1.2.1 to 1.2.2 ([#118](https://github.com/westonplatter/ngv-trader/issues/118)) ([04d53c2](https://github.com/westonplatter/ngv-trader/commit/04d53c2d7ff51e49f4b651906324de9d5ae4a584))
+* **deps:** update uvicorn[standard] requirement from &gt;=0.34 to &gt;=0.51.0 ([#121](https://github.com/westonplatter/ngv-trader/issues/121)) ([93b0176](https://github.com/westonplatter/ngv-trader/commit/93b0176c11edcfe11cb54ce9c1653b8167b8bb9e))
+
+
+### Continuous Integration
+
+* pin github actions to commit shas and harden workflows ([#129](https://github.com/westonplatter/ngv-trader/issues/129)) ([6119bde](https://github.com/westonplatter/ngv-trader/commit/6119bdecbd9bb68efee0ffbb2c71235a703f72c3))
+
 ## [0.1.8](https://github.com/westonplatter/ngv-trader/compare/v0.1.7...v0.1.8) (2026-08-01)
 
 
