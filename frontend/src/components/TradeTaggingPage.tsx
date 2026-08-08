@@ -477,7 +477,7 @@ export default function TradeTaggingPage() {
         const nextMessage =
           loadError instanceof Error
             ? loadError.message
-            : "Failed to load trade tagging workspace.";
+            : "Failed to load strategies workspace.";
         setError(nextMessage);
       } finally {
         if (active) setLoading(false);
@@ -848,9 +848,9 @@ export default function TradeTaggingPage() {
   return (
     <div className="flex min-h-0 flex-1 flex-col space-y-4">
       <div>
-        <h2 className="text-lg font-semibold text-gray-900">Trade Tagging</h2>
+        <h2 className="text-lg font-semibold text-gray-900">Strategies</h2>
         <p className="text-xs text-gray-500">
-          Manage strategies and trade groups. Assign trades from the{" "}
+          Manage strategies and their trade groups. Assign trades from the{" "}
           <a
             href="/trades"
             className="text-blue-600 underline hover:text-blue-800"
@@ -869,7 +869,7 @@ export default function TradeTaggingPage() {
         {/* Column 1: Strategies */}
         <section className="flex min-h-0 flex-col rounded border border-gray-200 bg-white p-3">
           <div className="mb-3 flex items-center justify-between">
-            <h3 className="text-sm font-semibold">Strategies</h3>
+            <h3 className="text-sm font-semibold">Strategy List</h3>
             <div className="flex items-center gap-2">
               <label className="flex items-center gap-1 text-xs text-gray-500">
                 <input

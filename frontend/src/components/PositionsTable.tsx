@@ -942,7 +942,7 @@ export default function PositionsTable() {
                             className="inline-flex items-center gap-0.5 rounded bg-gray-100 px-1.5 py-0.5"
                           >
                             <Link
-                              to={`/tagging?trade_group_id=${group.id}`}
+                              to={`/strategies?trade_group_id=${group.id}`}
                               className="text-blue-600 hover:underline"
                             >
                               {group.name}
