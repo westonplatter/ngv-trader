@@ -128,8 +128,9 @@ Worker/job (handled by `worker:jobs`, see [workers.md](workers.md)):
 
 - `trades.sync.flexquery` → `handle_trades_sync_flexquery` (active)
 - `trades.sync.tws` → `handle_trades_sync_tws` (dormant, unregistered)
-- Flex payload options: `lookback_days`, `start_date`/`end_date`, `account_code`,
-  `token_id`.
+- Flex payload options: `days`, `start_date`/`end_date`, `account_code`,
+  `token_id`. (`lookback_days` is the _TWS_ handler's field — the Flex handler
+  ignores it and falls back to a 7-day default.)
   Credentials are **not** payload-supplied — by default every active row in
   `flexquery_tokens` is used, decrypted with `FLEX_TOKEN_ENCRYPTION_KEY`. See
   [getting-started.md](getting-started.md#flexquery-tokens).
