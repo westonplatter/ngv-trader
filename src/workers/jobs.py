@@ -21,11 +21,15 @@ from sqlalchemy.orm import Session
 
 from src.models import Job
 from src.services.flex_credentials import (
+    RATE_LIMIT_ERROR_CODE,
+    RATE_LIMIT_PAUSE_SECONDS,
     SEED_HINT,
     FlexCredential,
+    is_rate_limit_error,
     load_active_credentials,
     load_credential_by_id,
     mark_used,
+    pause_token,
 )
 from src.services.jobs import (
     JOB_TYPE_CONTRACTS_CHAIN_SYNC,
@@ -518,9 +522,15 @@ def handle_trades_flexquery_initiate_request(job: Job, engine: Engine, ib_pool: 
             date_range=DateRange(from_date=start_date, to_date=end_date),
         )
     except FlexClientError as exc:
-        # IBKR is busy or cooling us off. Wait at the window's cadence and try
-        # the send again — deferring costs no attempt and, crucially, no extra
-        # SendRequest in the meantime.
+        # A 1025 means IBKR has cooled this token off. Record the pause so the
+        # fetch phase holds back and the UI can show why, then wait out the
+        # window rather than re-sending on the short cadence.
+        if is_rate_limit_error(exc):
+            until = pause_token(engine, credential.token_id, f"IBKR rate-limited this token ({RATE_LIMIT_ERROR_CODE}).")
+            raise JobDeferred(
+                credential.redact(f"token rate-limited; paused until {until.isoformat()}"),
+                RATE_LIMIT_PAUSE_SECONDS,
+            ) from None
         raise JobDeferred(
             credential.redact(f"send_flex_request not accepted yet: {type(exc).__name__}: {exc}"),
             first_check_delay_seconds(span_days),
@@ -591,11 +601,28 @@ def handle_trades_flexquery_fetch_report(job: Job, engine: Engine, ib_pool: IBSe
     checks = int(payload.get("checks", 0))
 
     credential = load_credential_by_id(engine, int(token_id))
+
+    # A paused token makes no report fetches at all until its cooldown expires.
+    # Deferring here costs nothing: the reference code is already issued, so the
+    # only thing waiting buys is not adding load while IBKR is annoyed with us.
+    paused_for = credential.pause_remaining_seconds()
+    if paused_for > 0:
+        raise JobDeferred(
+            f"token {credential.name!r} is paused for another {paused_for}s",
+            paused_for,
+        )
+
     client = make_flex_client(span_days=(end_date - start_date).days, max_retries=1)
 
     try:
         xml_data = client.get_flex_statement(token=credential.token, reference_code=reference_code)
     except FlexClientError as exc:
+        if is_rate_limit_error(exc):
+            until = pause_token(engine, credential.token_id, f"IBKR rate-limited this token ({RATE_LIMIT_ERROR_CODE}).")
+            raise JobDeferred(
+                credential.redact(f"token rate-limited; paused until {until.isoformat()}"),
+                RATE_LIMIT_PAUSE_SECONDS,
+            ) from None
         if checks + 1 >= MAX_STATEMENT_CHECKS:
             raise RuntimeError(credential.redact(f"Statement never became ready after {MAX_STATEMENT_CHECKS} checks: {type(exc).__name__}: {exc}")) from None
         # Record the check on the job itself so the count survives the requeue.

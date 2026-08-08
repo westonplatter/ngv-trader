@@ -461,6 +461,8 @@ export const DEMO_FLEXQUERY_TOKENS: FlexQueryToken[] = [
     notes: null,
     last_used_at: "2026-06-21T14:30:00Z",
     account_count: 2,
+    paused_until: null,
+    pause_reason: null,
   },
   {
     id: 2,
@@ -470,6 +472,8 @@ export const DEMO_FLEXQUERY_TOKENS: FlexQueryToken[] = [
     notes: null,
     last_used_at: "2026-06-21T14:30:00Z",
     account_count: 1,
+    paused_until: "2099-01-01T00:10:00Z",
+    pause_reason: "IBKR rate-limited this token (1025).",
   },
   {
     id: 3,
@@ -479,6 +483,8 @@ export const DEMO_FLEXQUERY_TOKENS: FlexQueryToken[] = [
     notes: null,
     last_used_at: null,
     account_count: 0,
+    paused_until: null,
+    pause_reason: null,
   },
 ];
 

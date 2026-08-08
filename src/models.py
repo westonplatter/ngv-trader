@@ -188,6 +188,11 @@ class FlexQueryToken(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=text("true"))
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Cooldown after IBKR rate-limits this token. While set in the future, report
+    # fetches for it are held back rather than sent. Set automatically on a 1025
+    # and clearable from the Accounts UI.
+    paused_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    pause_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

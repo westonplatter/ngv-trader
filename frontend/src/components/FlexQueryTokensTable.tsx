@@ -11,6 +11,18 @@ export interface FlexQueryToken {
   notes: string | null;
   last_used_at: string | null;
   account_count: number;
+  paused_until: string | null;
+  pause_reason: string | null;
+}
+
+// How long a manual pause lasts, matching the automatic cooldown applied when
+// IBKR answers 1025.
+const MANUAL_PAUSE_MINUTES = 20;
+
+function pauseRemainingMinutes(token: FlexQueryToken): number {
+  if (!token.paused_until) return 0;
+  const remainingMs = new Date(token.paused_until).getTime() - Date.now();
+  return remainingMs > 0 ? Math.ceil(remainingMs / 60000) : 0;
 }
 
 interface EditState {
@@ -113,6 +125,14 @@ export default function FlexQueryTokensTable() {
   function toggleActive(token: FlexQueryToken) {
     send(`/flexquery-tokens/${token.id}`, "PATCH", {
       is_active: !token.is_active,
+    });
+  }
+
+  // 0 minutes clears the cooldown; anything else starts one.
+  function togglePause(token: FlexQueryToken) {
+    send(`/flexquery-tokens/${token.id}`, "PATCH", {
+      pause_minutes:
+        pauseRemainingMinutes(token) > 0 ? 0 : MANUAL_PAUSE_MINUTES,
     });
   }
 
@@ -295,13 +315,22 @@ export default function FlexQueryTokensTable() {
                     {formatLastUsed(token.last_used_at)}
                   </td>
                   <td className="px-3 py-2">
-                    {token.is_active ? (
-                      <span className="inline-flex rounded bg-green-100 px-2 py-0.5 text-xs text-green-800">
-                        active
-                      </span>
-                    ) : (
+                    {!token.is_active ? (
                       <span className="inline-flex rounded bg-gray-200 px-2 py-0.5 text-xs text-gray-600">
                         inactive
+                      </span>
+                    ) : pauseRemainingMinutes(token) > 0 ? (
+                      <span
+                        className="inline-flex rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800"
+                        title={
+                          token.pause_reason ?? "Report fetches are held back"
+                        }
+                      >
+                        paused {pauseRemainingMinutes(token)}m
+                      </span>
+                    ) : (
+                      <span className="inline-flex rounded bg-green-100 px-2 py-0.5 text-xs text-green-800">
+                        active
                       </span>
                     )}
                   </td>
@@ -333,6 +362,20 @@ export default function FlexQueryTokensTable() {
                           className="text-sm text-blue-600 hover:underline"
                         >
                           Edit
+                        </button>
+                        <button
+                          onClick={() => togglePause(token)}
+                          disabled={saving}
+                          className="text-sm text-gray-600 hover:underline disabled:opacity-50"
+                          title={
+                            pauseRemainingMinutes(token) > 0
+                              ? "Resume report fetches now"
+                              : `Hold report fetches for ${MANUAL_PAUSE_MINUTES} minutes`
+                          }
+                        >
+                          {pauseRemainingMinutes(token) > 0
+                            ? "Resume"
+                            : "Pause"}
                         </button>
                         <button
                           onClick={() => toggleActive(token)}

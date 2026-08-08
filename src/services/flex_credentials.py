@@ -12,7 +12,7 @@ third-party message that might have echoed the value back.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import Engine, select
 from sqlalchemy.orm import Session
@@ -28,6 +28,12 @@ class NoFlexCredentialsError(RuntimeError):
     """No usable FlexQuery token is configured in the database."""
 
 
+# How long a token sits out after IBKR rate-limits it.
+RATE_LIMIT_PAUSE_SECONDS = 20 * 60
+# The IBKR error that means "you have hammered this token; back off".
+RATE_LIMIT_ERROR_CODE = "1025"
+
+
 @dataclass(frozen=True)
 class FlexCredential:
     """One token row, decrypted, ready to hand to the Flex client."""
@@ -36,6 +42,15 @@ class FlexCredential:
     name: str
     token: str
     report_id: str
+    paused_until: datetime | None = None
+
+    def pause_remaining_seconds(self, now: datetime | None = None) -> int:
+        """Seconds left on the cooldown, or 0 when the token is usable."""
+        if self.paused_until is None:
+            return 0
+        reference = now or datetime.now(timezone.utc)
+        remaining = (self.paused_until - reference).total_seconds()
+        return max(0, int(remaining))
 
     def redact(self, message: str) -> str:
         """Strip the token value out of a message before it is logged or stored."""
@@ -54,7 +69,44 @@ def _to_credential(row: FlexQueryToken) -> FlexCredential:
         name=row.name,
         token=row.token_encrypted,
         report_id=row.report_id,
+        paused_until=row.paused_until,
     )
+
+
+def is_rate_limit_error(exc: BaseException) -> bool:
+    """Whether an exception is IBKR telling us to back off this token.
+
+    Matched on the message because the client flattens the error code into the
+    text by the time a `FlexRequestError` surfaces from its retry loop.
+    """
+    return RATE_LIMIT_ERROR_CODE in str(exc)
+
+
+def pause_token(engine: Engine, token_id: int, reason: str, seconds: int = RATE_LIMIT_PAUSE_SECONDS) -> datetime:
+    """Sit a token out for ``seconds``. Returns when it becomes usable again."""
+    now = datetime.now(timezone.utc)
+    until = now + timedelta(seconds=seconds)
+    with Session(engine) as session:
+        row = session.get(FlexQueryToken, token_id)
+        if row is None:
+            return until
+        row.paused_until = until
+        row.pause_reason = reason
+        row.updated_at = now
+        session.commit()
+    return until
+
+
+def resume_token(engine: Engine, token_id: int) -> None:
+    """Clear a cooldown early."""
+    with Session(engine) as session:
+        row = session.get(FlexQueryToken, token_id)
+        if row is None:
+            return
+        row.paused_until = None
+        row.pause_reason = None
+        row.updated_at = datetime.now(timezone.utc)
+        session.commit()
 
 
 def list_active_credentials(session: Session) -> list[FlexCredential]:

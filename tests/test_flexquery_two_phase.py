@@ -82,3 +82,27 @@ def test_job_deferred_carries_its_delay() -> None:
     assert exc.retry_after_seconds == 45
     assert exc.reason == "not ready"
     assert "not ready" in str(exc)
+
+
+# ── Token pause window ────────────────────────────────────────────────────────
+
+
+def test_rate_limit_error_is_recognized_from_the_flattened_message() -> None:
+    """The client folds the error code into the text before it reaches us."""
+    from src.services.flex_credentials import is_rate_limit_error
+
+    assert is_rate_limit_error(RuntimeError("Failed after 1 attempts: 1025: Too many failed attempts."))
+    assert not is_rate_limit_error(RuntimeError("1001: Statement could not be generated at this time."))
+
+
+def test_pause_remaining_counts_down_and_floors_at_zero() -> None:
+    from src.services.flex_credentials import FlexCredential
+
+    now = datetime.now(timezone.utc)
+    usable = FlexCredential(token_id=1, name="lp", token="t", report_id="1", paused_until=None)
+    paused = FlexCredential(token_id=1, name="lp", token="t", report_id="1", paused_until=now + timedelta(minutes=20))
+    expired = FlexCredential(token_id=1, name="lp", token="t", report_id="1", paused_until=now - timedelta(minutes=1))
+
+    assert usable.pause_remaining_seconds(now) == 0
+    assert 1190 <= paused.pause_remaining_seconds(now) <= 1200
+    assert expired.pause_remaining_seconds(now) == 0
