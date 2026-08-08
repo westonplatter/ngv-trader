@@ -3,9 +3,9 @@
 Background processes that run separately from the API and consume DB-backed
 queues. Two workers exist.
 
-| Worker | Entrypoint | Queue | Status |
-| --- | --- | --- | --- |
-| `worker:jobs` | `scripts/work_jobs.py` | `jobs` table | Active |
+| Worker          | Entrypoint                    | Queue          | Status                                     |
+| --------------- | ----------------------------- | -------------- | ------------------------------------------ |
+| `worker:jobs`   | `scripts/work_jobs.py`        | `jobs` table   | Active                                     |
 | `worker:orders` | `scripts/work_order_queue.py` | `orders` table | Scaffold only — **submission is disabled** |
 
 Start commands:
@@ -26,22 +26,26 @@ retries up to `max_attempts`. Queue primitive: `src/services/jobs.py`.
 
 ### Registered handlers (`get_handler`)
 
-| Job type | Handler | Notes |
-| --- | --- | --- |
-| `contracts.sync` | `handle_contracts_sync` | Qualify + cache contract metadata |
-| `contracts.chain_sync` | `handle_contracts_chain_sync` | IND → FUT → option chain catalog |
-| `contracts.qualify_and_snapshot` | `handle_contracts_qualify_and_snapshot` | On-demand single-contract qualify + price |
-| `order.fetch_sync` | `handle_order_fetch_sync` | Pull broker order state (read-only) |
-| `watchlist.add_instrument` | `handle_watchlist_add_instrument` | Resolve/qualify + add to watch list |
-| `watchlist.quotes_refresh` | `handle_watchlist_quotes_refresh` | Refresh live quotes for watch lists |
-| `trades.sync.flexquery` | `handle_trades_sync_flexquery` | Primary trade sync ([trades-and-executions-sync.md](trades-and-executions-sync.md)) |
-| `positions.sync.flexquery` | `handle_positions_sync_flexquery` | Primary position sync |
-| `market_data.futures_prices` | `handle_market_data_futures_prices` | See [security-data.md](security-data.md) |
-| `market_data.futures_options` | `handle_market_data_futures_options` | See [security-data.md](security-data.md) |
-| `market_data.snapshot` | `handle_market_data_snapshot` | Targeted price snapshot |
-| `intraday.sync.tws` | `handle_intraday_sync_tws` | Live intraday overlay: `ib.positions()` + marks + today's fills → `live_positions`/`latest_quote`/`live_executions` (read-time merge in the TradeGroup view). Requires a TWS/Gateway session during market hours; if unavailable, the overlay simply shows no live data and the view degrades to settled FlexQuery values. |
-| `contracts.sync_activated` | `handle_contracts_sync_activated` | Discover exchange/metadata + sync next-12-calendar-month FUT contracts for each row in `activated_products`. See [spec-activated-products-security-master.md](spec-activated-products-security-master.md). |
-| `option_metrics.sync.tws` | `handle_option_metrics_sync_tws` | Live option metrics overlay. See [option-metrics-overlay.md](core/option-metrics-overlay.md). |
+| Job type                               | Handler                                       | Notes                                                                                                                                                                                                                                                                                                                      |
+| -------------------------------------- | --------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `contracts.sync`                       | `handle_contracts_sync`                       | Qualify + cache contract metadata                                                                                                                                                                                                                                                                                          |
+| `contracts.chain_sync`                 | `handle_contracts_chain_sync`                 | IND → FUT → option chain catalog                                                                                                                                                                                                                                                                                           |
+| `contracts.qualify_and_snapshot`       | `handle_contracts_qualify_and_snapshot`       | On-demand single-contract qualify + price                                                                                                                                                                                                                                                                                  |
+| `order.fetch_sync`                     | `handle_order_fetch_sync`                     | Pull broker order state (read-only)                                                                                                                                                                                                                                                                                        |
+| `watchlist.add_instrument`             | `handle_watchlist_add_instrument`             | Resolve/qualify + add to watch list                                                                                                                                                                                                                                                                                        |
+| `watchlist.quotes_refresh`             | `handle_watchlist_quotes_refresh`             | Refresh live quotes for watch lists                                                                                                                                                                                                                                                                                        |
+| `trades.sync.flexquery`                | `handle_trades_sync_flexquery`                | Trade sync entrypoint — fans out to one `initiate_request` per active token ([trades-and-executions-sync.md](trades-and-executions-sync.md))                                                                                                                                                                               |
+| `trades.flexquery.initiate_request`    | `handle_trades_flexquery_initiate_request`    | Phase 1: ask IBKR for the statement, schedule the collection                                                                                                                                                                                                                                                               |
+| `trades.flexquery.fetch_report`        | `handle_trades_flexquery_fetch_report`        | Phase 2: collect the statement and sync trades                                                                                                                                                                                                                                                                             |
+| `positions.sync.flexquery`             | `handle_positions_sync_flexquery`             | Position sync entrypoint — same fan-out, default window is one day                                                                                                                                                                                                                                                         |
+| `positions.flexquery.initiate_request` | `handle_positions_flexquery_initiate_request` | Phase 1 for positions                                                                                                                                                                                                                                                                                                      |
+| `positions.flexquery.fetch_report`     | `handle_positions_flexquery_fetch_report`     | Phase 2 for positions                                                                                                                                                                                                                                                                                                      |
+| `market_data.futures_prices`           | `handle_market_data_futures_prices`           | See [security-data.md](security-data.md)                                                                                                                                                                                                                                                                                   |
+| `market_data.futures_options`          | `handle_market_data_futures_options`          | See [security-data.md](security-data.md)                                                                                                                                                                                                                                                                                   |
+| `market_data.snapshot`                 | `handle_market_data_snapshot`                 | Targeted price snapshot                                                                                                                                                                                                                                                                                                    |
+| `intraday.sync.tws`                    | `handle_intraday_sync_tws`                    | Live intraday overlay: `ib.positions()` + marks + today's fills → `live_positions`/`latest_quote`/`live_executions` (read-time merge in the TradeGroup view). Requires a TWS/Gateway session during market hours; if unavailable, the overlay simply shows no live data and the view degrades to settled FlexQuery values. |
+| `contracts.sync_activated`             | `handle_contracts_sync_activated`             | Discover exchange/metadata + sync next-12-calendar-month FUT contracts for each row in `activated_products`. See [spec-activated-products-security-master.md](spec-activated-products-security-master.md).                                                                                                                 |
+| `option_metrics.sync.tws`              | `handle_option_metrics_sync_tws`              | Live option metrics overlay. See [option-metrics-overlay.md](core/option-metrics-overlay.md).                                                                                                                                                                                                                              |
 
 ### Defined but NOT registered (dormant)
 

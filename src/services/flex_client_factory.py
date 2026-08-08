@@ -37,15 +37,47 @@ def backoff_scale(span_days: int | None) -> float:
     return min(span_days / SHORT_RANGE_DAYS, MAX_BACKOFF_SCALE)
 
 
-def make_flex_client(span_days: int | None = None) -> FlexClient:
+# How long to wait before first asking IBKR whether a statement is ready, by
+# window width. Grounded in real runs — a month-wide pull completes in ~22s end
+# to end — so these are patience budgets, not work estimates. The floor above a
+# week is deliberate: checking a wide window too eagerly is what turns
+# ``1001: Statement could not be generated`` into a ``1025`` lockout.
+FIRST_CHECK_LADDER: tuple[tuple[int, int], ...] = (
+    (SHORT_RANGE_DAYS, 20),
+    (31, 60),
+    (92, 120),
+)
+FIRST_CHECK_FALLBACK_SECONDS = 180
+# Gap between later checks once the first finds the statement still building.
+RECHECK_DELAY_SECONDS = 30
+# Stop checking eventually so a statement that never lands still terminates.
+MAX_STATEMENT_CHECKS = 20
+
+
+def first_check_delay_seconds(span_days: int | None) -> int:
+    """Seconds to wait after sending a request before the first readiness check."""
+    if span_days is None:
+        return FIRST_CHECK_FALLBACK_SECONDS
+    for max_days, delay in FIRST_CHECK_LADDER:
+        if span_days <= max_days:
+            return delay
+    return FIRST_CHECK_FALLBACK_SECONDS
+
+
+def make_flex_client(span_days: int | None = None, max_retries: int = 10) -> FlexClient:
     """A client tuned for a fetch covering ``span_days``.
 
     Pass the width of the date range being requested; omit it only when the
     window is unknown, which keeps the short-range cadence.
+
+    Lower ``max_retries`` when the *caller* owns the waiting — the two-phase
+    job flow reschedules itself between checks, so it wants the client to
+    surface "not ready" immediately rather than block a worker slot sleeping
+    through an internal retry loop.
     """
     scale = backoff_scale(span_days)
     return FlexClient(
-        max_retries=10,
+        max_retries=max_retries,
         base_retry_delay=BASE_RETRY_DELAY_SECONDS * scale,
         max_retry_delay=MAX_RETRY_DELAY_SECONDS * scale,
         statement_poll_delay=STATEMENT_POLL_DELAY_SECONDS * scale,

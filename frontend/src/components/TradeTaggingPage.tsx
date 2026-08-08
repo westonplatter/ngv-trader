@@ -3,6 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import { API_BASE_URL } from "../config";
 import { usePrivacy } from "../contexts/PrivacyContext";
 import { linkify } from "../utils/linkify";
+import { formatGreek } from "../utils/number";
 import { PRIVACY_MASK, formatRelativeReturn } from "../utils/privacy";
 
 export type TradeGroup = {
@@ -65,6 +66,11 @@ export type GroupOpenPosition = {
   local_symbol: string | null;
   contract_display: string | null;
   sec_type: string | null;
+  // Option contract detail (null for non-options / no settled snapshot yet).
+  right: string | null;
+  option_expiry_date: string | null;
+  dte: number | null;
+  strike: number | null;
   position: number;
   avg_cost: number;
   multiplier: string | null;
@@ -82,6 +88,10 @@ export type GroupOpenPosition = {
   // and the freshness badge reads "stale" (not green "live").
   live_fetched_at: string | null;
   live_is_stale: boolean;
+  // Per-contract greeks from the live option-metrics sync (null for non-options
+  // or when that job hasn't run). The table shows them scaled by position size.
+  delta: number | null;
+  gamma: number | null;
 };
 
 export type GroupAccountPnl = {
@@ -1729,8 +1739,23 @@ export default function TradeTaggingPage() {
                               <th className="px-2 py-1 font-medium">
                                 Contract
                               </th>
+                              <th className="px-2 py-1 font-medium">
+                                Call/Put
+                              </th>
+                              <th className="px-2 py-1 text-right font-medium">
+                                DTE
+                              </th>
+                              <th className="px-2 py-1 text-right font-medium">
+                                Strike
+                              </th>
                               <th className="px-2 py-1 text-right font-medium">
                                 Qty
+                              </th>
+                              <th className="px-2 py-1 text-right font-medium">
+                                Live Delta
+                              </th>
+                              <th className="px-2 py-1 text-right font-medium">
+                                Live Gamma
                               </th>
                               <th className="px-2 py-1 text-right font-medium">
                                 Avg Cost
@@ -1778,6 +1803,18 @@ export default function TradeTaggingPage() {
                                   : pos.live_unrealized >= 0
                                     ? "text-emerald-700"
                                     : "text-red-700";
+                              // Position-level greeks: the per-contract value
+                              // scaled by signed quantity (4 long calls at 0.30
+                              // delta -> 1.2). Live-sourced, so blanked when the
+                              // overlay is stale, like the other live columns.
+                              const positionDelta =
+                                liveStale || pos.delta == null
+                                  ? null
+                                  : pos.delta * pos.position;
+                              const positionGamma =
+                                liveStale || pos.gamma == null
+                                  ? null
+                                  : pos.gamma * pos.position;
                               return (
                                 <tr
                                   key={`${pos.account_id}-${pos.con_id}`}
@@ -1794,10 +1831,29 @@ export default function TradeTaggingPage() {
                                   <td className="px-2 py-1 text-gray-800">
                                     {positionContractLabel(pos)}
                                   </td>
+                                  <td className="px-2 py-1 text-gray-700">
+                                    {pos.right ?? "—"}
+                                  </td>
+                                  <td className="px-2 py-1 text-right font-mono text-gray-700">
+                                    {pos.dte ?? "—"}
+                                  </td>
+                                  <td className="px-2 py-1 text-right font-mono text-gray-700">
+                                    {pos.strike ?? "—"}
+                                  </td>
                                   <td
                                     className={`px-2 py-1 text-right font-mono ${qtyClass}`}
                                   >
                                     {privacyMode ? PRIVACY_MASK : pos.position}
+                                  </td>
+                                  <td className="px-2 py-1 text-right font-mono text-gray-700">
+                                    {privacyMode
+                                      ? PRIVACY_MASK
+                                      : formatGreek(positionDelta)}
+                                  </td>
+                                  <td className="px-2 py-1 text-right font-mono text-gray-700">
+                                    {privacyMode
+                                      ? PRIVACY_MASK
+                                      : formatGreek(positionGamma)}
                                   </td>
                                   <td className="px-2 py-1 text-right font-mono text-gray-700">
                                     {privacyMode

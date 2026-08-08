@@ -8,7 +8,7 @@ plain listing needs no encryption key at all — only writes do.
 encryption key itself, which never passes through the API.
 """
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, SecretStr
@@ -34,6 +34,10 @@ class FlexQueryTokenResponse(BaseModel):
     notes: str | None
     last_used_at: datetime | None
     account_count: int
+    # Cooldown after IBKR rate-limits the token. Report fetches are held back
+    # until this passes; null means the token is usable.
+    paused_until: datetime | None
+    pause_reason: str | None
 
 
 class FlexQueryTokenCreate(BaseModel):
@@ -51,6 +55,10 @@ class FlexQueryTokenUpdate(BaseModel):
     is_active: bool | None = None
     notes: str | None = None
     token: SecretStr | None = None
+    # Minutes to hold report fetches back, or 0 to resume immediately. Sent as a
+    # duration rather than a timestamp so the client never has to agree with the
+    # server about "now".
+    pause_minutes: int | None = Field(default=None, ge=0, le=24 * 60)
 
 
 def _account_counts(db: Session) -> dict[int, int]:
@@ -69,6 +77,8 @@ def _to_response(row: FlexQueryToken, counts: dict[int, int]) -> FlexQueryTokenR
         notes=row.notes,
         last_used_at=row.last_used_at,
         account_count=counts.get(row.id, 0),
+        paused_until=row.paused_until,
+        pause_reason=row.pause_reason,
     )
 
 
@@ -95,6 +105,16 @@ def _commit(db: Session, name: str) -> None:
             status_code=500,
             detail=f"Could not store the token ({type(exc.orig).__name__ if exc.orig else type(exc).__name__}).",
         ) from None
+
+
+def _apply_pause(row: FlexQueryToken, minutes: int) -> None:
+    """Start or clear a token's cooldown. Zero minutes means resume now."""
+    if minutes == 0:
+        row.paused_until = None
+        row.pause_reason = None
+        return
+    row.paused_until = datetime.now(timezone.utc) + timedelta(minutes=minutes)
+    row.pause_reason = "Paused by operator."
 
 
 @router.get("/flexquery-tokens", response_model=list[FlexQueryTokenResponse])
@@ -138,6 +158,8 @@ def update_flexquery_token(token_id: int, body: FlexQueryTokenUpdate, db: Sessio
         row.notes = body.notes
     if body.token is not None and body.token.get_secret_value().strip():
         row.token_encrypted = body.token.get_secret_value().strip()
+    if body.pause_minutes is not None:
+        _apply_pause(row, body.pause_minutes)
     row.updated_at = datetime.now(timezone.utc)
 
     _commit(db, row.name)

@@ -14,6 +14,7 @@ interface Job {
   started_at: string | null;
   completed_at: string | null;
   archived_at: string | null;
+  available_at: string | null;
   last_error: string | null;
 }
 
@@ -22,7 +23,24 @@ const STATUS_CLASS: Record<string, string> = {
   running: "text-blue-700 bg-blue-100",
   completed: "text-green-700 bg-green-100",
   failed: "text-red-700 bg-red-100",
+  deferred: "text-amber-800 bg-amber-100",
 };
+
+// A job held back until `available_at` is waiting on something external — an
+// IBKR statement still building, or a token in cooldown — not queued behind
+// other work. It reports "queued" server-side; the distinction only matters
+// here, where "why isn't this running?" is the question being asked.
+function isDeferred(job: Job, nowMs: number): boolean {
+  if (job.status !== "queued") return false;
+  const availableMs = parseTime(job.available_at);
+  return availableMs !== null && availableMs > nowMs;
+}
+
+function retryInMs(job: Job, nowMs: number): number | null {
+  const availableMs = parseTime(job.available_at);
+  if (availableMs === null || availableMs <= nowMs) return null;
+  return availableMs - nowMs;
+}
 
 function parseTime(value: string | null): number | null {
   if (!value) return null;
@@ -53,12 +71,6 @@ function computeRunMs(job: Job, nowMs: number): number | null {
   if (startedMs === null) return null;
   const completedMs = parseTime(job.completed_at);
   return (completedMs ?? nowMs) - startedMs;
-}
-
-function computeTotalMs(job: Job, nowMs: number): number {
-  const createdMs = parseTime(job.created_at) ?? nowMs;
-  const completedMs = parseTime(job.completed_at);
-  return (completedMs ?? nowMs) - createdMs;
 }
 
 function formatParamValue(value: unknown): string {
@@ -218,10 +230,18 @@ export default function JobsTable() {
               <th className="px-2 py-1 font-semibold text-gray-700">ID</th>
               <th className="px-2 py-1 font-semibold text-gray-700">Type</th>
               <th className="px-2 py-1 font-semibold text-gray-700">Params</th>
-              <th className="px-2 py-1 font-semibold text-gray-700">Status</th>
-              <th className="px-2 py-1 font-semibold text-gray-700">Queue</th>
-              <th className="px-2 py-1 font-semibold text-gray-700">Run</th>
-              <th className="px-2 py-1 font-semibold text-gray-700">Total</th>
+              {/* Status, Queue, and Run hold live countdowns. Their widths are
+                  pinned to the widest value each can reach so a ticking digit
+                  never reflows the columns beside it. */}
+              <th className="w-52 px-2 py-1 font-semibold text-gray-700">
+                Status
+              </th>
+              <th className="w-20 px-2 py-1 text-right font-semibold text-gray-700">
+                Queue
+              </th>
+              <th className="w-20 px-2 py-1 text-right font-semibold text-gray-700">
+                Run
+              </th>
               <th className="px-2 py-1 font-semibold text-gray-700">Actions</th>
             </tr>
           </thead>
@@ -240,25 +260,39 @@ export default function JobsTable() {
                 <td className="px-2 py-1">
                   <ParamsCell payload={job.payload} />
                 </td>
-                <td className="px-2 py-1">
-                  <span
-                    className={`rounded px-1.5 py-0.5 ${STATUS_CLASS[job.status] ?? "text-gray-700 bg-gray-100"}`}
-                    title={
-                      job.last_error ??
-                      `attempts ${job.attempts}/${job.max_attempts}`
-                    }
-                  >
-                    {job.status}
-                  </span>
+                <td className="w-52 px-2 py-1">
+                  {(() => {
+                    const deferred = isDeferred(job, nowMs);
+                    const label = deferred ? "deferred" : job.status;
+                    const retryIn = retryInMs(job, nowMs);
+                    return (
+                      <span
+                        className={`rounded px-1.5 py-0.5 whitespace-nowrap tabular-nums ${STATUS_CLASS[label] ?? "text-gray-700 bg-gray-100"}`}
+                        title={
+                          job.last_error ??
+                          `attempts ${job.attempts}/${job.max_attempts}`
+                        }
+                      >
+                        {label}
+                        {deferred && retryIn !== null && (
+                          <span className="ml-1 font-normal opacity-75">
+                            · retry in
+                            {/* Fixed-width slot: the pill must not breathe as
+                                the countdown ticks past a digit boundary. */}
+                            <span className="ml-1 inline-block w-14 text-right">
+                              {formatDuration(retryIn)}
+                            </span>
+                          </span>
+                        )}
+                      </span>
+                    );
+                  })()}
                 </td>
-                <td className="px-2 py-1 text-gray-700">
+                <td className="w-20 px-2 py-1 text-right text-gray-700 tabular-nums">
                   {formatDuration(computeQueueMs(job, nowMs))}
                 </td>
-                <td className="px-2 py-1 text-gray-700">
+                <td className="w-20 px-2 py-1 text-right text-gray-700 tabular-nums">
                   {formatDuration(computeRunMs(job, nowMs))}
-                </td>
-                <td className="px-2 py-1 text-gray-700">
-                  {formatDuration(computeTotalMs(job, nowMs))}
                 </td>
                 <td className="px-2 py-1 whitespace-nowrap">
                   <div className="flex gap-1">

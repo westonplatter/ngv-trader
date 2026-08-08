@@ -9,6 +9,7 @@ from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
 from src.api.deps import get_db
+from src.api.routers.positions import _derive_option_expiry_and_dte
 from src.api.routers.tags import TagLinkResponse, _normalize_tag_value
 from src.api.routers.trades import _contract_display_from_raw, _execution_realized_pnl
 from src.models import (
@@ -1070,6 +1071,12 @@ class TradeGroupOpenPositionItem(BaseModel):
     local_symbol: str | None
     contract_display: str | None
     sec_type: str | None
+    # Option contract detail (null for non-options / no settled snapshot yet),
+    # mirroring the Positions table's columns.
+    right: str | None = None
+    option_expiry_date: str | None = None
+    dte: int | None = None
+    strike: float | None = None
     position: float
     avg_cost: float
     multiplier: str | None
@@ -1242,22 +1249,34 @@ def _build_open_positions_overlay(
 
 def _view_to_open_position(view, flex, account, live_fetched_at) -> TradeGroupOpenPositionItem:
     """Map a unified PositionView to the response item (settled fields kept additive)."""
+    # Build the Contract label exactly like the Positions table does: off the
+    # settled snapshot row when there is one (its symbol/local_symbol carry the
+    # OSI form and the expiry), falling back to the unified view for positions
+    # opened today that have no snapshot yet.
+    display_symbol = (flex.symbol if flex else None) or view.symbol
+    display_local_symbol = (flex.local_symbol if flex else None) or view.local_symbol
+    display_sec_type = (flex.sec_type if flex else None) or view.sec_type
+    display_right = (flex.right if flex else None) or view.right
+    display_strike = (flex.strike if flex else None) if flex and flex.strike is not None else view.strike
     inferred_month = infer_contract_month_from_local_symbol(
-        local_symbol=view.local_symbol,
+        local_symbol=display_local_symbol,
         contract_expiry=flex.last_trade_date if flex else None,
-        sec_type=view.sec_type,
+        sec_type=display_sec_type,
     )
     display_name = contract_display_name(
-        symbol=view.symbol,
-        sec_type=view.sec_type,
-        local_symbol=view.local_symbol,
-        right=view.right,
-        strike=view.strike,
+        symbol=display_symbol,
+        sec_type=display_sec_type,
+        local_symbol=display_local_symbol,
+        right=display_right,
+        strike=display_strike,
         contract_expiry=flex.last_trade_date if flex else None,
         contract_month=inferred_month,
         exchange=flex.exchange if flex else None,
         trading_class=flex.trading_class if flex else None,
     )
+    # Expiry/DTE come off the settled snapshot's last_trade_date; a live-only
+    # row (opened today, no snapshot) has no expiry to derive from.
+    option_expiry_date, dte = _derive_option_expiry_and_dte(flex) if flex else (None, None)
     return TradeGroupOpenPositionItem(
         account_id=view.account_id,
         account_alias=(account.alias if account else None) or (account.account if account else None),
@@ -1266,6 +1285,10 @@ def _view_to_open_position(view, flex, account, live_fetched_at) -> TradeGroupOp
         local_symbol=view.local_symbol,
         contract_display=display_name,
         sec_type=view.sec_type,
+        right=display_right,
+        option_expiry_date=option_expiry_date,
+        dte=dte,
+        strike=display_strike,
         position=view.position,
         avg_cost=view.avg_cost,
         multiplier=view.multiplier,

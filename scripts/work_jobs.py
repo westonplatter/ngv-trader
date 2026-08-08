@@ -23,8 +23,10 @@ from sqlalchemy.orm import Session
 from src.db import get_engine
 from src.models import Job
 from src.services.jobs import (
+    JobDeferred,
     claim_next_job,
     complete_job,
+    defer_job,
     fail_or_retry_job,
 )
 from src.services.position_sync_tws import check_positions_tables_ready
@@ -167,6 +169,18 @@ def main() -> int:
                         complete_job(session, job, result)
                         completed_ok = True
                         logger.info("job #%d: completed %s", job_id, job_type_str)
+                    except JobDeferred as deferred:
+                        # Not a failure — the handler is waiting on something
+                        # slow and asked to run again shortly. Requeue without
+                        # spending an attempt.
+                        defer_job(session, job, deferred.reason, deferred.retry_after_seconds)
+                        logger.info(
+                            "job #%d: deferred %s for %ds — %s",
+                            job_id,
+                            job_type_str,
+                            deferred.retry_after_seconds,
+                            deferred.reason,
+                        )
                     except Exception as exc:
                         fail_or_retry_job(session, job, str(exc))
                         logger.error("job #%d: failed %s — %s", job_id, job_type_str, exc)

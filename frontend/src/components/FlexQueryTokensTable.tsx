@@ -11,6 +11,25 @@ export interface FlexQueryToken {
   notes: string | null;
   last_used_at: string | null;
   account_count: number;
+  paused_until: string | null;
+  pause_reason: string | null;
+}
+
+// How long a manual pause lasts, matching the automatic cooldown applied when
+// IBKR answers 1025.
+const MANUAL_PAUSE_MINUTES = 20;
+
+// Row actions render as buttons rather than links: they perform an action on
+// this page, they do not navigate.
+const ACTION_BUTTON =
+  "rounded border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50";
+const PRIMARY_ACTION_BUTTON =
+  "rounded border border-blue-600 bg-blue-600 px-2 py-1 text-xs font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50";
+
+function pauseRemainingMinutes(token: FlexQueryToken): number {
+  if (!token.paused_until) return 0;
+  const remainingMs = new Date(token.paused_until).getTime() - Date.now();
+  return remainingMs > 0 ? Math.ceil(remainingMs / 60000) : 0;
 }
 
 interface EditState {
@@ -116,6 +135,14 @@ export default function FlexQueryTokensTable() {
     });
   }
 
+  // 0 minutes clears the cooldown; anything else starts one.
+  function togglePause(token: FlexQueryToken) {
+    send(`/flexquery-tokens/${token.id}`, "PATCH", {
+      pause_minutes:
+        pauseRemainingMinutes(token) > 0 ? 0 : MANUAL_PAUSE_MINUTES,
+    });
+  }
+
   function startEdit(token: FlexQueryToken) {
     setEditingId(token.id);
     setEdit({ name: token.name, report_id: token.report_id, token: "" });
@@ -131,10 +158,7 @@ export default function FlexQueryTokensTable() {
           IBKR FlexQuery Tokens
         </h2>
         {!adding && (
-          <button
-            onClick={() => setAdding(true)}
-            className="text-sm text-blue-600 hover:underline"
-          >
+          <button onClick={() => setAdding(true)} className={ACTION_BUTTON}>
             Add token
           </button>
         )}
@@ -191,7 +215,7 @@ export default function FlexQueryTokensTable() {
           <button
             onClick={createToken}
             disabled={saving || !canCreate}
-            className="rounded bg-blue-600 px-3 py-1 text-sm text-white hover:bg-blue-700 disabled:opacity-50"
+            className={PRIMARY_ACTION_BUTTON}
           >
             Save
           </button>
@@ -201,7 +225,7 @@ export default function FlexQueryTokensTable() {
               setNewToken(EMPTY_EDIT);
             }}
             disabled={saving}
-            className="px-2 py-1 text-sm text-gray-500 hover:underline disabled:opacity-50"
+            className={ACTION_BUTTON}
           >
             Cancel
           </button>
@@ -295,54 +319,79 @@ export default function FlexQueryTokensTable() {
                     {formatLastUsed(token.last_used_at)}
                   </td>
                   <td className="px-3 py-2">
-                    {token.is_active ? (
-                      <span className="inline-flex rounded bg-green-100 px-2 py-0.5 text-xs text-green-800">
-                        active
-                      </span>
-                    ) : (
+                    {!token.is_active ? (
                       <span className="inline-flex rounded bg-gray-200 px-2 py-0.5 text-xs text-gray-600">
                         inactive
                       </span>
+                    ) : pauseRemainingMinutes(token) > 0 ? (
+                      <span
+                        className="inline-flex rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800"
+                        title={
+                          token.pause_reason ?? "Report fetches are held back"
+                        }
+                      >
+                        paused {pauseRemainingMinutes(token)}m
+                      </span>
+                    ) : (
+                      <span className="inline-flex rounded bg-green-100 px-2 py-0.5 text-xs text-green-800">
+                        active
+                      </span>
                     )}
                   </td>
-                  <td className="space-x-2 px-3 py-2 whitespace-nowrap">
-                    {editingId === token.id ? (
-                      <>
-                        <button
-                          onClick={() => saveEdit(token.id)}
-                          disabled={saving}
-                          className="text-sm text-green-700 hover:underline disabled:opacity-50"
-                        >
-                          Save
-                        </button>
-                        <button
-                          onClick={() => {
-                            setEditingId(null);
-                            setEdit(EMPTY_EDIT);
-                          }}
-                          disabled={saving}
-                          className="text-sm text-gray-500 hover:underline disabled:opacity-50"
-                        >
-                          Cancel
-                        </button>
-                      </>
-                    ) : (
-                      <>
-                        <button
-                          onClick={() => startEdit(token)}
-                          className="text-sm text-blue-600 hover:underline"
-                        >
-                          Edit
-                        </button>
-                        <button
-                          onClick={() => toggleActive(token)}
-                          disabled={saving}
-                          className="text-sm text-gray-600 hover:underline disabled:opacity-50"
-                        >
-                          {token.is_active ? "Deactivate" : "Activate"}
-                        </button>
-                      </>
-                    )}
+                  <td className="px-3 py-2 whitespace-nowrap">
+                    <div className="flex gap-2">
+                      {editingId === token.id ? (
+                        <>
+                          <button
+                            onClick={() => saveEdit(token.id)}
+                            disabled={saving}
+                            className={PRIMARY_ACTION_BUTTON}
+                          >
+                            Save
+                          </button>
+                          <button
+                            onClick={() => {
+                              setEditingId(null);
+                              setEdit(EMPTY_EDIT);
+                            }}
+                            disabled={saving}
+                            className={ACTION_BUTTON}
+                          >
+                            Cancel
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <button
+                            onClick={() => startEdit(token)}
+                            className={ACTION_BUTTON}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            onClick={() => togglePause(token)}
+                            disabled={saving}
+                            className={ACTION_BUTTON}
+                            title={
+                              pauseRemainingMinutes(token) > 0
+                                ? "Resume report fetches now"
+                                : `Hold report fetches for ${MANUAL_PAUSE_MINUTES} minutes`
+                            }
+                          >
+                            {pauseRemainingMinutes(token) > 0
+                              ? "Resume"
+                              : "Pause"}
+                          </button>
+                          <button
+                            onClick={() => toggleActive(token)}
+                            disabled={saving}
+                            className={ACTION_BUTTON}
+                          >
+                            {token.is_active ? "Deactivate" : "Activate"}
+                          </button>
+                        </>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}

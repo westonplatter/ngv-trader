@@ -126,7 +126,14 @@ recorded with `status='error'`. View via `GET /api/v1/admin/flex-sync-log`.
 
 Worker/job (handled by `worker:jobs`, see [workers.md](workers.md)):
 
-- `trades.sync.flexquery` → `handle_trades_sync_flexquery` (active)
+- `trades.sync.flexquery` → `handle_trades_sync_flexquery` (active). An
+  entrypoint, not a fetch: it queues one `trades.flexquery.initiate_request`
+  per active token. Positions follow the identical three-job shape.
+- `trades.flexquery.initiate_request` → sends the request, gets a reference
+  code, and schedules the collection after a window-scaled wait (20s up to a
+  week, 60s to a month, 120s to a quarter, 180s beyond).
+- `trades.flexquery.fetch_report` → collects that reference code and syncs.
+  Re-checks every 30s while the statement is still building, up to 20 checks.
 - `trades.sync.tws` → `handle_trades_sync_tws` (dormant, unregistered)
 - Flex payload options: `days`, `start_date`/`end_date`, `account_code`,
   `token_id`. (`lookback_days` is the _TWS_ handler's field — the Flex handler
@@ -138,7 +145,26 @@ Worker/job (handled by `worker:jobs`, see [workers.md](workers.md)):
   queued job survives a rename). Use it for backfills so a token that is
   erroring or rate-limited is not dragged through every job in the series.
 
+### Token pause window
+
+`1025: Too many failed attempts` means IBKR has cooled a token off, and it is
+earned almost entirely by repeated **SendRequest** calls. On a 1025 the token's
+`paused_until` is set 20 minutes out with a `pause_reason`; while it holds,
+**both** phases defer for that token rather than calling IBKR. The Accounts UI
+shows the countdown and offers Pause / Resume.
+
+Gating both phases matters: a send that ignores the pause earns a fresh 1025 and
+re-pauses from _then_, so an unchecked sender slides the cooldown forward
+indefinitely and the token never recovers.
+
+Splitting the fetch is what keeps this rare: one SendRequest per window, with
+the waiting done between jobs rather than inside a blocked worker slot.
+
 ### Retry cadence
+
+Applies to the in-process client retries that remain (the TWS paths and any
+direct `fetch_flex_report` caller); the two-phase job flow waits between jobs
+instead.
 
 IBKR takes longer to build a statement the wider the window, answering
 `1001: Statement could not be generated at this time` while it works. Retrying a
