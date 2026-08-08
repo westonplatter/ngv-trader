@@ -239,6 +239,11 @@ function parseIdParam(value: string | null): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+// Focus mode collapses both list panes (Strategies + Trade Groups) so the
+// selected group's detail fills the width. Persisted like privacy_mode so it
+// survives reload. Toggled with the header button, `F`, or `Escape`.
+const FOCUS_PREF_KEY = "trade_tagging_focus_mode";
+
 export default function TradeTaggingPage() {
   const { privacyMode } = usePrivacy();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -306,6 +311,17 @@ export default function TradeTaggingPage() {
   const [loadingGroups, setLoadingGroups] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const [focusMode, setFocusMode] = useState(false);
+  // Set once the user toggles focus mode. Guards against the async mount-time
+  // preference GET clobbering a toggle the user made before it resolved.
+  const focusTouchedRef = useRef(false);
+  // Chains preference PUTs so rapid toggles persist in order (last write wins).
+  const focusWriteChainRef = useRef<Promise<void>>(Promise.resolve());
+  // Only collapse the panes when there is a detail to fill the space — a focus
+  // toggle with nothing selected would hide both lists and leave an empty pane
+  // with no way back to pick a group.
+  const focusActive = focusMode && selectedGroupId != null;
 
   const selectedStrategy = useMemo(
     () =>
@@ -577,6 +593,73 @@ export default function TradeTaggingPage() {
       setError(nextMessage);
     });
   }, [loadGroupDetail, loadExecutions, selectedGroupId]);
+
+  // Load the persisted focus-mode preference once at mount. If the user has
+  // already toggled by the time this resolves, their action wins — don't let a
+  // stale GET overwrite it.
+  useEffect(() => {
+    let active = true;
+    fetch(`${API_BASE_URL}/user-preferences/${FOCUS_PREF_KEY}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (active && !focusTouchedRef.current && data?.value === true) {
+          setFocusMode(true);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const toggleFocusMode = useCallback(() => {
+    focusTouchedRef.current = true;
+    setFocusMode((current) => {
+      const next = !current;
+      // Serialize writes so a slow earlier PUT can't land after a later one and
+      // leave the persisted value out of sync with the last user action.
+      focusWriteChainRef.current = focusWriteChainRef.current
+        .catch(() => {})
+        .then(() =>
+          fetch(`${API_BASE_URL}/user-preferences/${FOCUS_PREF_KEY}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ value: next }),
+          }).then(() => undefined),
+        );
+      return next;
+    });
+  }, []);
+
+  // Keyboard shortcuts: `F` toggles focus mode, `Escape` exits it. Ignore both
+  // while typing in a form field so they don't hijack text entry.
+  useEffect(() => {
+    const isEditableTarget = (target: EventTarget | null): boolean => {
+      if (!(target instanceof HTMLElement)) return false;
+      const tag = target.tagName;
+      return (
+        tag === "INPUT" ||
+        tag === "TEXTAREA" ||
+        tag === "SELECT" ||
+        target.isContentEditable
+      );
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      if (isEditableTarget(event.target)) return;
+      if (event.key === "Escape" && focusMode) {
+        event.preventDefault();
+        toggleFocusMode();
+      } else if ((event.key === "f" || event.key === "F") && !event.repeat) {
+        // Only meaningful when a group is selected to fill the freed space.
+        if (selectedGroupId == null) return;
+        event.preventDefault();
+        toggleFocusMode();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [focusMode, selectedGroupId, toggleFocusMode]);
 
   const kickOffIntradaySync = async () => {
     setLiveSyncing(true);
@@ -865,9 +948,26 @@ export default function TradeTaggingPage() {
       {error && <p className="text-sm text-red-600">{error}</p>}
       {message && <p className="text-sm text-green-700">{message}</p>}
 
-      <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-[minmax(220px,25%)_1fr]">
-        {/* Column 1: Strategies */}
-        <section className="flex min-h-0 flex-col rounded border border-gray-200 bg-white p-3">
+      <div
+        className={`grid min-h-0 flex-1 grid-cols-1 transition-[grid-template-columns,column-gap] duration-300 ease-in-out ${
+          focusActive
+            ? "gap-0 lg:grid-cols-[0fr_1fr]"
+            : "gap-4 lg:grid-cols-[minmax(220px,25%)_1fr]"
+        }`}
+      >
+        {/* Column 1: Strategies — collapses to zero width in focus mode. The
+            card padding/border are dropped while collapsed so the 0fr track
+            reaches true zero (padding+border are its min-content floor).
+            `inert` while collapsed keeps its hidden controls out of the tab
+            order (overflow-hidden alone does not). */}
+        <section
+          inert={focusActive}
+          className={`flex min-h-0 min-w-0 flex-col ${
+            focusActive
+              ? "overflow-hidden border-0 p-0"
+              : "rounded border border-gray-200 bg-white p-3"
+          }`}
+        >
           <div className="mb-3 flex items-center justify-between">
             <h3 className="text-sm font-semibold">Strategy List</h3>
             <div className="flex items-center gap-2">
@@ -979,9 +1079,21 @@ export default function TradeTaggingPage() {
 
         {/* Column 2: Trade Groups + Detail */}
         <section className="flex min-h-0 flex-col rounded border border-gray-200 bg-white p-3">
-          <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 xl:grid-cols-[minmax(280px,35%)_1fr]">
-            {/* Group list */}
-            <div className="flex min-h-0 flex-col">
+          <div
+            className={`grid min-h-0 flex-1 grid-cols-1 transition-[grid-template-columns,column-gap] duration-300 ease-in-out ${
+              focusActive
+                ? "gap-0 xl:grid-cols-[0fr_1fr]"
+                : "gap-4 xl:grid-cols-[minmax(280px,35%)_1fr]"
+            }`}
+          >
+            {/* Group list — collapses to zero width in focus mode. `inert`
+                keeps its hidden controls out of the tab order while collapsed. */}
+            <div
+              inert={focusActive}
+              className={`flex min-h-0 min-w-0 flex-col ${
+                focusActive ? "overflow-hidden" : ""
+              }`}
+            >
               <div className="mb-2 flex items-center justify-between gap-2">
                 <h3 className="text-sm font-semibold">
                   Trade Groups
@@ -1176,19 +1288,48 @@ export default function TradeTaggingPage() {
 
               {groupDetail && !editingGroup && (
                 <div className="space-y-4">
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <h4 className="text-base font-semibold text-gray-900">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      {/* Breadcrumb keeps the hidden lists' context in view while
+                          focused (the strategy/group panes are collapsed). */}
+                      {focusActive && (
+                        <p className="mb-0.5 truncate text-xs text-gray-400">
+                          {selectedStrategy && (
+                            <span>{selectedStrategy.value} › </span>
+                          )}
+                          <span className="text-gray-500">
+                            {groupDetail.name}
+                          </span>
+                        </p>
+                      )}
+                      <h4 className="truncate text-base font-semibold text-gray-900">
                         {groupDetail.name}
                       </h4>
                       <p className="text-xs text-gray-500">#{groupDetail.id}</p>
                     </div>
-                    <div className="flex items-center gap-1">
+                    <div className="flex shrink-0 items-center gap-1">
                       <span
                         className={`rounded px-2 py-0.5 text-xs font-semibold uppercase ${statusClassName(groupDetail.status)}`}
                       >
                         {groupDetail.status}
                       </span>
+                      <button
+                        type="button"
+                        onClick={toggleFocusMode}
+                        aria-pressed={focusActive}
+                        title={
+                          focusActive
+                            ? "Exit focus mode (F or Esc)"
+                            : "Focus mode — hide lists, full-width detail (F)"
+                        }
+                        className={`rounded border px-1.5 py-0.5 text-xs ${
+                          focusActive
+                            ? "border-blue-300 bg-blue-50 text-blue-700"
+                            : "border-gray-300 text-gray-500 hover:bg-gray-50"
+                        }`}
+                      >
+                        {focusActive ? "⤡" : "⤢"}
+                      </button>
                     </div>
                   </div>
 
