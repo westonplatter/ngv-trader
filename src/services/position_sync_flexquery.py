@@ -35,7 +35,7 @@ logger = logging.getLogger("flex_position_sync")
 def _fetch_flex_xml(token: str, query_id: str, start_date: date, end_date: date) -> str:
     from src.services.flex_client_factory import make_flex_client
 
-    client = make_flex_client()
+    client = make_flex_client(span_days=(end_date - start_date).days)
     date_range = DateRange(from_date=start_date, to_date=end_date)
     try:
         return client.fetch_flex_report(token=token, query_id=query_id, date_range=date_range)

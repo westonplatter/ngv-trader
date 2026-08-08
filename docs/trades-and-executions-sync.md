@@ -128,10 +128,28 @@ Worker/job (handled by `worker:jobs`, see [workers.md](workers.md)):
 
 - `trades.sync.flexquery` → `handle_trades_sync_flexquery` (active)
 - `trades.sync.tws` → `handle_trades_sync_tws` (dormant, unregistered)
-- Flex payload options: `lookback_days`, `start_date`/`end_date`, `account_code`.
-  Credentials are **not** payload-supplied — every active row in
+- Flex payload options: `days`, `start_date`/`end_date`, `account_code`,
+  `token_id`. (`lookback_days` is the _TWS_ handler's field — the Flex handler
+  ignores it and falls back to a 7-day default.)
+  Credentials are **not** payload-supplied — by default every active row in
   `flexquery_tokens` is used, decrypted with `FLEX_TOKEN_ENCRYPTION_KEY`. See
   [getting-started.md](getting-started.md#flexquery-tokens).
+- `token_id` narrows a run to one `flexquery_tokens.id` (the primary key, so a
+  queued job survives a rename). Use it for backfills so a token that is
+  erroring or rate-limited is not dragged through every job in the series.
+
+### Retry cadence
+
+IBKR takes longer to build a statement the wider the window, answering
+`1001: Statement could not be generated at this time` while it works. Retrying a
+month-wide pull on the one-week cadence exhausts the attempt budget before the
+statement is ready — and enough wasted attempts earns a `1025: Too many failed
+attempts` lockout that outlives the job.
+
+`src/services/flex_client_factory.py` is the single place every sync path builds
+its client, and it scales retry delays with the requested span: unchanged at or
+under 7 days, then linearly (`span / 7`), capped at 6x. A 7-day window keeps its
+~8-minute budget across 10 attempts; a monthly backfill gets ~35 minutes.
 
 Read API (`src/api/routers/trades.py`):
 

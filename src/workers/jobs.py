@@ -345,6 +345,7 @@ def _run_flexquery_sync(
     end_date: date,
     filter_account: str | None,
     sync_account: Callable[[str, Any, FlexCredential], dict],
+    filter_token_id: int | None = None,
 ) -> dict:
     """Fetch every active token's report and sync the accounts each one covers.
 
@@ -353,10 +354,19 @@ def _run_flexquery_sync(
     fetch fails is recorded and skipped; the run only fails outright when no
     token produced a report. Token values never reach the returned dict — the
     result is persisted to ``jobs.result``, which is plaintext.
+
+    ``filter_token_id`` narrows the run to one ``flexquery_tokens.id``. Use it for
+    backfills so a token that is erroring or rate-limited is not dragged through
+    every job in the series. It keys on the primary key rather than the name so a
+    queued job still points at the same token after a rename.
     """
     from src.services.trade_sync_flexquery import fetch_flex_report
 
     credentials = load_active_credentials(engine)
+    if filter_token_id is not None:
+        credentials = [c for c in credentials if c.token_id == filter_token_id]
+        if not credentials:
+            raise RuntimeError(f"No active FlexQuery token with id {filter_token_id}.")
 
     per_account: dict[str, dict] = {}
     tokens_synced: list[str] = []
@@ -407,6 +417,8 @@ def handle_trades_sync_flexquery(job: Job, engine: Engine, ib_pool: IBSessionPoo
     payload = job.payload or {}
     # account_code in payload is optional; when set, only that IBKR account is synced
     filter_account = payload.get("account_code")
+    # token_id is optional; when set, only that FlexQuery token (by primary key) is fetched
+    filter_token_id = payload.get("token_id")
 
     if "start_date" in payload and "end_date" in payload:
         start_date = _date.fromisoformat(payload["start_date"])
@@ -426,7 +438,7 @@ def handle_trades_sync_flexquery(job: Job, engine: Engine, ib_pool: IBSessionPoo
             flex_query_token_id=credential.token_id,
         )
 
-    return _run_flexquery_sync(engine, start_date, end_date, filter_account, _sync)
+    return _run_flexquery_sync(engine, start_date, end_date, filter_account, _sync, filter_token_id)
 
 
 def handle_positions_sync_flexquery(job: Job, engine: Engine, ib_pool: IBSessionPool) -> dict:
@@ -437,6 +449,7 @@ def handle_positions_sync_flexquery(job: Job, engine: Engine, ib_pool: IBSession
 
     payload = job.payload or {}
     filter_account = payload.get("account_code")
+    filter_token_id = payload.get("token_id")
 
     if "start_date" in payload and "end_date" in payload:
         start_date = _date.fromisoformat(payload["start_date"])
@@ -458,7 +471,7 @@ def handle_positions_sync_flexquery(job: Job, engine: Engine, ib_pool: IBSession
             "as_of_date": as_of.isoformat() if as_of else None,
         }
 
-    return _run_flexquery_sync(engine, start_date, end_date, filter_account, _sync)
+    return _run_flexquery_sync(engine, start_date, end_date, filter_account, _sync, filter_token_id)
 
 
 def handle_contracts_chain_sync(job: Job, engine: Engine, ib_pool: IBSessionPool) -> dict:
