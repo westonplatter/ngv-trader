@@ -227,7 +227,9 @@ With TWS/Gateway running, pull your current positions into the database:
 uv run python scripts/download_positions.py --env dev
 ```
 
-This connects to IBKR, fetches all positions across your managed accounts, creates `Account` rows, and upserts positions into the `positions` table. This is a one-time bootstrap; ongoing position and trade sync runs through the FlexQuery jobs in `worker:jobs` (see [workers.md](workers.md)).
+This connects to IBKR, fetches all positions across your managed accounts, creates `Account` rows, and upserts positions into the `positions` table. This is a one-time bootstrap; ongoing settled position and trade sync runs through the FlexQuery jobs in `worker:jobs` (see [workers.md](workers.md)).
+
+A live TWS/Gateway session also powers the on-demand **real-time intraday overlay** (live quantity, marks, and today's realized P&L layered on the settled FlexQuery snapshot), triggered by the **Refresh Live (TWS)** button on the Positions and Strategies pages. See [intraday TWS overlay](core/intraday-tws-overlay.md).
 
 ## 6. Start the Application
 
@@ -269,13 +271,13 @@ Returns `{"status": "ok", "database": "connected"}` when everything is working.
 
 Workers are background processes that sync data with IBKR. Run in its own terminal:
 
-**Terminal 3 — Jobs worker** (position sync, contract sync, watchlist quotes):
+**Terminal 3 — Jobs worker** (FlexQuery trade/position sync, contract sync, watchlist quotes, real-time TWS overlay):
 
 ```bash
 ENV=dev task worker:jobs
 ```
 
-TWS/Gateway is only required for contract-metadata sync and watchlist quotes; FlexQuery trade/position sync (the active sync path) works without it as long as at least one token is seeded (see [FlexQuery tokens](#flexquery-tokens) below). The UI header shows worker health lights (green/yellow/red) based on heartbeat freshness.
+`worker:jobs` dispatches every job type by `job_type`. A live TWS/Gateway session is required for contract-metadata sync, watchlist quotes, and the real-time intraday TWS overlay (`intraday.sync.tws`, triggered by the **Refresh Live (TWS)** button on the Positions and Strategies pages — see [intraday TWS overlay](core/intraday-tws-overlay.md)). FlexQuery trade/position sync (the active settled-sync path) works without a session as long as at least one token is seeded (see [FlexQuery tokens](#flexquery-tokens) above). The UI header shows worker health lights (green/yellow/red) based on heartbeat freshness.
 
 See [workers.md](workers.md) for worker architecture details.
 
@@ -307,6 +309,12 @@ See [workers.md](workers.md) for worker architecture details.
 - Create a watchlist on the Watch Lists page
 - Add instruments (stocks, futures, options)
 - Quotes auto-refresh while the page is open (requires `worker:jobs` running)
+
+**View live intraday P&L (real-time TWS overlay):**
+
+- Click **Refresh Live (TWS)** on the Positions or Strategies page
+- Requires a running TWS/Gateway session and `worker:jobs`
+- Overlays live quantity, blended cost, marks, and today's realized P&L on the settled (T-1) FlexQuery snapshot; degrades silently to settled values when no session is available (see [intraday TWS overlay](core/intraday-tws-overlay.md))
 
 **Fetch contract metadata:**
 
