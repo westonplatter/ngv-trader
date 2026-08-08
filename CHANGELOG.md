@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.1.11](https://github.com/westonplatter/ngv-trader/compare/v0.1.10...v0.1.11) (2026-08-08)
+
+
+### Features
+
+* **ux:** add focus mode to trade tagging page ([#143](https://github.com/westonplatter/ngv-trader/issues/143)) ([2921c3b](https://github.com/westonplatter/ngv-trader/commit/2921c3baeae01604c3483be0eafb81be1d031f09))
+
+
+### Documentation
+
+* cover real-time TWS overlay in getting-started guide ([#138](https://github.com/westonplatter/ngv-trader/issues/138)) ([6bcd9a4](https://github.com/westonplatter/ngv-trader/commit/6bcd9a48aef8910226e1be98c9bce67c198bd39f))
+
+
+### Miscellaneous Chores
+
+* **deps-dev:** bump @eslint/js from 9.39.4 to 10.0.1 in /frontend ([#124](https://github.com/westonplatter/ngv-trader/issues/124)) ([f84444c](https://github.com/westonplatter/ngv-trader/commit/f84444cea59091c8426e4c28a102132a6d365f60))
+* **deps-dev:** bump typescript-eslint from 8.57.1 to 8.65.0 in /frontend ([#126](https://github.com/westonplatter/ngv-trader/issues/126)) ([5163aea](https://github.com/westonplatter/ngv-trader/commit/5163aea571278dd057839d3847bd1ddb6aa680dc))
+* **deps:** bump ai from 6.0.116 to 7.0.37 in /frontend ([#117](https://github.com/westonplatter/ngv-trader/issues/117)) ([3b24c00](https://github.com/westonplatter/ngv-trader/commit/3b24c009f333685b944dc1df30a6728dc77e3629))
+* **deps:** bump cryptography from 49.0.0 to 50.0.0 ([#136](https://github.com/westonplatter/ngv-trader/issues/136)) ([fa3bc2a](https://github.com/westonplatter/ngv-trader/commit/fa3bc2acf71a59dcf92fb2180562c5f061d038f4))
+* **deps:** bump idna from 3.11 to 3.15 ([#133](https://github.com/westonplatter/ngv-trader/issues/133)) ([0ba3b33](https://github.com/westonplatter/ngv-trader/commit/0ba3b33209931477db185f99a38f22b47d30cdfe))
+* **deps:** bump langsmith from 0.7.5 to 0.8.18 ([#134](https://github.com/westonplatter/ngv-trader/issues/134)) ([7c322f6](https://github.com/westonplatter/ngv-trader/commit/7c322f6db928f86a0af1eb66203c3761cd01d52b))
+* **deps:** bump mako from 1.3.10 to 1.3.12 ([#141](https://github.com/westonplatter/ngv-trader/issues/141)) ([9d2b141](https://github.com/westonplatter/ngv-trader/commit/9d2b14175b29a450ec72321c57ac94d4299bf0a3))
+* **deps:** bump pygments from 2.19.2 to 2.20.0 ([#140](https://github.com/westonplatter/ngv-trader/issues/140)) ([d7e0fc2](https://github.com/westonplatter/ngv-trader/commit/d7e0fc2727163057f6b12af506590bc871db9e86))
+* **deps:** bump requests from 2.32.5 to 2.33.0 ([#142](https://github.com/westonplatter/ngv-trader/issues/142)) ([bdac2b9](https://github.com/westonplatter/ngv-trader/commit/bdac2b93487934cab2161e28e1e4394d273ef710))
+* **deps:** bump starlette from 0.52.1 to 1.3.1 ([#137](https://github.com/westonplatter/ngv-trader/issues/137)) ([2f32cb0](https://github.com/westonplatter/ngv-trader/commit/2f32cb05e7ecf7a2d767ae22c99aba82d62b3375))
+* **deps:** bump urllib3 from 2.6.3 to 2.7.0 ([#135](https://github.com/westonplatter/ngv-trader/issues/135)) ([17fa0ea](https://github.com/westonplatter/ngv-trader/commit/17fa0ea7b49812871178b980841a1c335eb988c1))
+
 ## [0.1.10](https://github.com/westonplatter/ngv-trader/compare/v0.1.9...v0.1.10) (2026-08-08)
 
 
