@@ -264,6 +264,7 @@ def sync_flex_trades(
     end_date: date,
     report: CustomFlexReport | None = None,
     skip_aggregate_recompute: bool = False,
+    flex_query_token_id: int | None = None,
 ) -> dict[str, Any]:
     """Fetch FlexQuery trades for one account in [start_date, end_date] and upsert.
 
@@ -274,6 +275,8 @@ def sync_flex_trades(
         skip_aggregate_recompute: When True, skip per-trade aggregate recompute
             during ingest. Use during backfill to avoid O(n^2) churn; the caller
             must run recompute_aggregates_for_trades() once at the end.
+        flex_query_token_id: The token this report came from; stamped onto the
+            account row so the token-to-account mapping is recorded.
 
     Returns metrics dict with counts and window info.
     """
@@ -330,7 +333,9 @@ def sync_flex_trades(
     combo_count = 0
 
     with Session(engine) as session:
-        account = _ensure_account(session, account_code)
+        # Stamp the owning token here rather than in the log-row transaction
+        # above, so a sync that fails leaves no stamp behind.
+        account = _ensure_account(session, account_code, flex_query_token_id)
         df = report.trades_by_account_id(account_code)
         if df is None or len(df.index) == 0:
             logger.info(

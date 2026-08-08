@@ -52,13 +52,15 @@ Before any hard-to-reverse DB change (destructive/data-mutating migration, backf
 
 ## Secrets (1Password)
 
-`.env.*` files store secrets as 1Password URIs (`IB_JSON=op://ngtrader_pro/IB_JSON/value`). `load_dotenv` yields the literal string; only `op run` resolves it at exec time. Launch any script reading `IB_JSON`, `OPENAI_API_KEY`, or other `op://` secrets via:
+`.env.*` files store secrets as 1Password URIs (`OPENAI_API_KEY=op://ngtrader_pro/OPENAI_API_KEY/value`). `load_dotenv` yields the literal string; vars read through raw `os.environ` need `op run` to resolve them at exec time:
 
 ```bash
 op run --env-file=.env.<env> -- uv run python scripts/<script>.py
 ```
 
-Covers `scripts/fetch_flex_trades.py`, the worker (`scripts/work_jobs.py`), and anything reading `IB_JSON`. A `JSONDecodeError` on `_resolve_flex_credentials` means "started without `op run`", not a code bug. Migrations are exempt (plain `DB_*` vars). See [docs/secrets-using-1password.md](docs/secrets-using-1password.md).
+Vars read through `src/utils/env_vars.py` — `FLEX_TOKEN_ENCRYPTION_KEY`, `BROKER_TWS_PORT`, `TRADEBOT_LLM_API_KEY` — self-resolve `op://` and need no wrapper. Migrations are exempt (plain `DB_*` vars). See [docs/secrets-using-1password.md](docs/secrets-using-1password.md).
+
+IBKR FlexQuery tokens are **not** environment variables. They live encrypted at rest in the `flexquery_tokens` table; `FLEX_TOKEN_ENCRYPTION_KEY` is what decrypts them, and a job payload cannot supply one. Manage them with `scripts/manage_flex_tokens.py`.
 
 ## Sample Data (IBKR anonymization)
 

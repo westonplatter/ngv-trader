@@ -9,6 +9,7 @@ cross-import the other.
 
 from __future__ import annotations
 
+import logging
 import re
 from datetime import datetime
 from typing import Any
@@ -16,7 +17,10 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from src.models import Account, Trade, TradeExecution
+from src.models import Account, FlexQueryToken, Trade, TradeExecution
+from src.utils.ibkr_account import mask_ibkr_account
+
+logger = logging.getLogger("sync_common")
 
 # IBKR Flex "notes/codes" split on any comma/semicolon/whitespace run. A single
 # execution can carry several codes (e.g. "L;P"), so we tokenize before matching
@@ -112,25 +116,60 @@ def _parse_exec_id(ib_exec_id: str) -> tuple[str, int]:
     return base, revision
 
 
-def _ensure_account(session: Session, account_code: str) -> Account:
+def _token_name(session: Session, token_id: int | None) -> str:
+    if token_id is None:
+        return "none"
+    row = session.get(FlexQueryToken, token_id)
+    return row.name if row is not None else f"id={token_id}"
+
+
+def _stamp_token(session: Session, account: Account, flex_query_token_id: int | None) -> None:
+    """Record which FlexQuery token this account was discovered under.
+
+    Last writer wins: an account genuinely moving between tokens is likelier
+    than a misconfiguration, and refusing the change would stall the sync run.
+    The move is logged with the account masked so a genuine misconfiguration is
+    still visible. Callers outside the FlexQuery path pass nothing and the
+    existing stamp is left alone.
+    """
+    if flex_query_token_id is None or account.flex_query_token_id == flex_query_token_id:
+        return
+    if account.flex_query_token_id is not None:
+        logger.warning(
+            "account=%s re-stamped from FlexQuery token %s to %s",
+            mask_ibkr_account(account.account),
+            _token_name(session, account.flex_query_token_id),
+            _token_name(session, flex_query_token_id),
+        )
+    account.flex_query_token_id = flex_query_token_id
+
+
+def _ensure_account(session: Session, account_code: str, flex_query_token_id: int | None = None) -> Account:
     stmt = select(Account).where(Account.account == account_code).limit(1)
     existing = session.execute(stmt).scalars().first()
     if existing is not None:
+        _stamp_token(session, existing, flex_query_token_id)
         return existing
-    account = Account(account=account_code, alias=None)
+    account = Account(account=account_code, alias=None, flex_query_token_id=flex_query_token_id)
     session.add(account)
     session.flush()
     return account
 
 
-def get_or_create_accounts(session: Session, account_strings: set[str]) -> dict[str, int]:
+def get_or_create_accounts(
+    session: Session,
+    account_strings: set[str],
+    flex_query_token_id: int | None = None,
+) -> dict[str, int]:
     lookup: dict[str, int] = {}
     for account_string in account_strings:
         row = session.execute(select(Account).where(Account.account == account_string)).scalar_one_or_none()
         if row is None:
-            row = Account(account=account_string)
+            row = Account(account=account_string, flex_query_token_id=flex_query_token_id)
             session.add(row)
             session.flush()
+        else:
+            _stamp_token(session, row, flex_query_token_id)
         lookup[account_string] = row.id
     return lookup
 
