@@ -32,7 +32,7 @@ related_components:
 
 Replaying the chain on an empty database therefore dies mid-way:
 
-```
+```text
 sqlalchemy.exc.ProgrammingError: (psycopg2.errors.UndefinedColumn)
 column live_executions.ib_perm_id does not exist
 ```
