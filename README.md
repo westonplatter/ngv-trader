@@ -24,12 +24,12 @@ Track unrealized PnL across accounts, with positions grouped into trades.
 
 ![Positions](docs/screenshots/positions-demo.png)
 
-### Trade Tagging
+### Strategies
 
 Organize executions into strategies and trade groups, with realized/unrealized
 PnL rolled up per group.
 
-![Trade Tagging](docs/screenshots/tagging-demo.png)
+![Strategies](docs/screenshots/tagging-demo.png)
 
 ### Assigning Positions to Trade Groups
 

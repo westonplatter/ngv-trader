@@ -102,7 +102,7 @@ Flags account IDs, contract IDs, and execution/transaction/order IDs against the
 - `src/`: Python backend application code (current import root is `src`).
 - `scripts/`: operator-facing workflows and broker/database utilities.
 - `alembic/` + `alembic.ini`: database migrations for Postgres schema.
-- `frontend/`: React + Vite UI (positions, orders, trades, tagging, pricing, tradebot chat).
+- `frontend/`: React + Vite UI (positions, orders, trades, strategies, pricing, tradebot chat).
 - `docs/`: current-state docs and specs; see `docs/_index.md`.
 - `CONCEPTS.md`: shared domain vocabulary (entities, named processes, status concepts) — relevant when orienting to the codebase or discussing domain concepts.
 - `Taskfile.yaml`: common dev commands for API, frontend, and migrations.
@@ -121,7 +121,7 @@ Flags account IDs, contract IDs, and execution/transaction/order IDs against the
 - `src/schemas.py`: Pandera DataFrame schema for positions validation shape.
 - `src/api/deps.py`: FastAPI DB session dependency (`get_db`).
 - `src/api/routers/*.py`: REST surface — `positions`, `orders`, `trades`, `futures` (market data), `activated_products`, `jobs`, `workers`, `events` (SSE), `tradebot` (chat), `watch_lists`, `tags`, `trade_groups`, `accounts`, `structures`, `reports`, `admin`, `user_preferences`.
-- `frontend/src/components/*.tsx`: React UI (positions, orders, trades, tagging, pricing, tradebot chat) consuming `/api/v1/*`.
+- `frontend/src/components/*.tsx`: React UI (positions, orders, trades, strategies, pricing, tradebot chat) consuming `/api/v1/*`.
 
 ### Services
 
