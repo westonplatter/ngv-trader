@@ -230,9 +230,18 @@ export default function JobsTable() {
               <th className="px-2 py-1 font-semibold text-gray-700">ID</th>
               <th className="px-2 py-1 font-semibold text-gray-700">Type</th>
               <th className="px-2 py-1 font-semibold text-gray-700">Params</th>
-              <th className="px-2 py-1 font-semibold text-gray-700">Status</th>
-              <th className="px-2 py-1 font-semibold text-gray-700">Queue</th>
-              <th className="px-2 py-1 font-semibold text-gray-700">Run</th>
+              {/* Status, Queue, and Run hold live countdowns. Their widths are
+                  pinned to the widest value each can reach so a ticking digit
+                  never reflows the columns beside it. */}
+              <th className="w-52 px-2 py-1 font-semibold text-gray-700">
+                Status
+              </th>
+              <th className="w-20 px-2 py-1 text-right font-semibold text-gray-700">
+                Queue
+              </th>
+              <th className="w-20 px-2 py-1 text-right font-semibold text-gray-700">
+                Run
+              </th>
               <th className="px-2 py-1 font-semibold text-gray-700">Actions</th>
             </tr>
           </thead>
@@ -251,14 +260,14 @@ export default function JobsTable() {
                 <td className="px-2 py-1">
                   <ParamsCell payload={job.payload} />
                 </td>
-                <td className="px-2 py-1">
+                <td className="w-52 px-2 py-1">
                   {(() => {
                     const deferred = isDeferred(job, nowMs);
                     const label = deferred ? "deferred" : job.status;
                     const retryIn = retryInMs(job, nowMs);
                     return (
                       <span
-                        className={`rounded px-1.5 py-0.5 whitespace-nowrap ${STATUS_CLASS[label] ?? "text-gray-700 bg-gray-100"}`}
+                        className={`rounded px-1.5 py-0.5 whitespace-nowrap tabular-nums ${STATUS_CLASS[label] ?? "text-gray-700 bg-gray-100"}`}
                         title={
                           job.last_error ??
                           `attempts ${job.attempts}/${job.max_attempts}`
@@ -267,17 +276,22 @@ export default function JobsTable() {
                         {label}
                         {deferred && retryIn !== null && (
                           <span className="ml-1 font-normal opacity-75">
-                            · retry in {formatDuration(retryIn)}
+                            · retry in
+                            {/* Fixed-width slot: the pill must not breathe as
+                                the countdown ticks past a digit boundary. */}
+                            <span className="ml-1 inline-block w-14 text-right">
+                              {formatDuration(retryIn)}
+                            </span>
                           </span>
                         )}
                       </span>
                     );
                   })()}
                 </td>
-                <td className="px-2 py-1 text-gray-700">
+                <td className="w-20 px-2 py-1 text-right text-gray-700 tabular-nums">
                   {formatDuration(computeQueueMs(job, nowMs))}
                 </td>
-                <td className="px-2 py-1 text-gray-700">
+                <td className="w-20 px-2 py-1 text-right text-gray-700 tabular-nums">
                   {formatDuration(computeRunMs(job, nowMs))}
                 </td>
                 <td className="px-2 py-1 whitespace-nowrap">
