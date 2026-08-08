@@ -1,6 +1,6 @@
 [project]
 name = "ngv-trader"
-version = "0.1.8"
+version = "0.1.9"
 description = "Review market price action, monitor portfolio strategies, and execute live trades with AI"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -8,15 +8,16 @@ license = { file = "LICENSE" }
 dependencies = [
   "ib-async>=2.1.0",
   "langgraph>=1.2.9",
-  "python-dotenv>=1.2.1",
+  "python-dotenv>=1.2.2",
   "ngv_reports_ibkr @ git+https://github.com/westonplatter/ngv_reports_ibkr.git@v0.5.0",
-  "sqlalchemy>=2.0",
+  "sqlalchemy>=2.0.51",
   "alembic>=1.18.5",
-  "psycopg2-binary>=2.9",
+  "psycopg2-binary>=2.9.12",
   "pandera[pandas]>=0.20",
   "fastapi>=0.139.2",
   "uvicorn[standard]>=0.51.0",
   "defusedxml>=0.7.1",
+  "cryptography>=49.0.0",
 ]
 
 [project.optional-dependencies]

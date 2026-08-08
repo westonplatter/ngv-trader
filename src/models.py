@@ -20,6 +20,8 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
+from src.db_types import EncryptedString
+
 
 class Base(DeclarativeBase):
     pass
@@ -167,12 +169,52 @@ class OptionChainMeta(Base):
     )
 
 
+class FlexQueryToken(Base):
+    """One IBKR FlexQuery token, encrypted at rest, plus the report it requests.
+
+    A single token can return several IBKR accounts. Those accounts are stamped
+    with this row's id as sync discovers them (see ``Account.flex_query_token_id``),
+    so the token-to-account mapping lives in the database rather than in the
+    operator's head. Seed and rotate rows with ``scripts/manage_flex_tokens.py``.
+    """
+
+    __tablename__ = "flexquery_tokens"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String, unique=True, nullable=False)
+    # Fernet ciphertext on disk; a plain string on the Python side.
+    token_encrypted: Mapped[str] = mapped_column(EncryptedString, nullable=False)
+    report_id: Mapped[str] = mapped_column(String, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=text("true"))
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+
+
 class Account(Base):
     __tablename__ = "accounts"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     account: Mapped[str] = mapped_column(String, unique=True, nullable=False)
     alias: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Which FlexQuery token this account was last discovered under. Nullable:
+    # accounts predating the token table have no known token until their next
+    # sync. ON DELETE SET NULL so a retired token can be deleted outright.
+    flex_query_token_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("flexquery_tokens.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
 
 
 class Position(Base):

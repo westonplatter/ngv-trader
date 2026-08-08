@@ -7,6 +7,7 @@ import {
   useLocation,
 } from "react-router-dom";
 import AccountsTable from "./components/AccountsTable";
+import FlexQueryTokensTable from "./components/FlexQueryTokensTable";
 import MarketDataPage from "./components/MarketDataPage";
 import PricingPage from "./components/PricingPage";
 import OrdersTable from "./components/OrdersTable";
@@ -106,7 +107,18 @@ function App() {
         <Routes>
           <Route path="/" element={<Navigate to="/tradebot" replace />} />
           <Route path="/positions" element={<PositionsTable />} />
-          <Route path="/accounts" element={<AccountsTable />} />
+          <Route
+            path="/accounts"
+            element={
+              <>
+                <FlexQueryTokensTable />
+                <h2 className="mb-2 text-base font-semibold text-gray-800">
+                  Accounts
+                </h2>
+                <AccountsTable />
+              </>
+            }
+          />
           <Route path="/orders" element={<OrdersTable />} />
           <Route path="/trades" element={<TradesTable />} />
           <Route path="/strategies" element={<TradeTaggingPage />} />
