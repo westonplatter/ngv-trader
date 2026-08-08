@@ -32,7 +32,7 @@ if (!routePath || !outPath) {
   process.exit(1);
 }
 
-const baseUrl = process.env.SCREENSHOT_BASE_URL ?? "http://127.0.0.1:5173";
+const baseUrl = process.env.SCREENSHOT_BASE_URL ?? "http://localhost:5173";
 const width = Number(widthArg ?? 2240);
 const height = Number(heightArg ?? 900);
 
