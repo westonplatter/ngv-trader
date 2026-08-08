@@ -39,14 +39,14 @@ banner at the top.
 
 ## Planning & process
 
-| Doc                                                    | What it covers                                                                                              |
-| ------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------- |
-| [db-snapshots.md](db-snapshots.md)                     | Postgres snapshot/verify/restore before hard-to-reverse DB changes                                          |
-| [planning-spec-format.md](planning-spec-format.md)     | Template and conventions for writing a new `spec-*.md`                                                      |
-| [planning-agents-quorum.md](planning-agents-quorum.md) | Agent quorum roles used to shape trade-tagging requirements                                                 |
-| [doc-review.md](doc-review.md)                         | Checklist and conventions for reviewing and refining project docs                                           |
-| [ibkr-sample-data.md](ibkr-sample-data.md)             | Anonymization patterns for any IBKR data bound for the repo; enforced by `scripts/ibkr_check.py`            |
-| [solutions/](solutions/)                               | Documented solutions to past problems, by category with YAML frontmatter (`module`, `tags`, `problem_type`) |
+| Doc                                                    | What it covers                                                                                                  |
+| ------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------- |
+| [db-snapshots.md](db-snapshots.md)                     | Postgres snapshot/verify/restore before hard-to-reverse DB changes                                              |
+| [planning-spec-format.md](planning-spec-format.md)     | Template and conventions for writing a new `spec-*.md`                                                          |
+| [planning-agents-quorum.md](planning-agents-quorum.md) | Agent quorum roles used to shape trade-tagging requirements                                                     |
+| [doc-review.md](doc-review.md)                         | Checklist and conventions for reviewing and refining project docs                                               |
+| [ibkr-sample-data.md](ibkr-sample-data.md)             | Anonymization patterns for any IBKR data bound for the repo; enforced by `scripts/ibkr_sensitive_data_check.py` |
+| [solutions/](solutions/)                               | Documented solutions to past problems, by category with YAML frontmatter (`module`, `tags`, `problem_type`)     |
 
 ## Open specs (proposed / in progress)
 

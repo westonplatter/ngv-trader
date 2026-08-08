@@ -7,11 +7,11 @@ Symbols, exchanges, sec types, prices, and quantities are deliberately NOT
 flagged — the prompt keeps those real so examples stay realistic.
 
 Usage:
-    uv run python scripts/ibkr_check.py              # staged changes, else unstaged
-    uv run python scripts/ibkr_check.py --unstaged   # force unstaged diff
-    uv run python scripts/ibkr_check.py --paths a.md src/   # whole files/dirs
-    uv run python scripts/ibkr_check.py --untracked  # include untracked files
-    uv run python scripts/ibkr_check.py --quiet      # result only, no file list
+    uv run python scripts/ibkr_sensitive_data_check.py              # staged changes, else unstaged
+    uv run python scripts/ibkr_sensitive_data_check.py --unstaged   # force unstaged diff
+    uv run python scripts/ibkr_sensitive_data_check.py --paths a.md src/   # whole files/dirs
+    uv run python scripts/ibkr_sensitive_data_check.py --untracked  # include untracked files
+    uv run python scripts/ibkr_sensitive_data_check.py --quiet      # result only, no file list
 
 Exits 1 when anything is flagged, so it can gate a commit hook.
 """

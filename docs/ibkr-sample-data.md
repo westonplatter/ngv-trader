@@ -9,7 +9,7 @@ account data.
 ### Account & Identity Information
 
 - **Account IDs**: `U1234567`, `U9999999`, `U8675309`, `U7654321` — the full set
-  `scripts/ibkr_check.py` accepts. A fixture needing more distinct accounts adds
+  `scripts/ibkr_sensitive_data_check.py` accepts. A fixture needing more distinct accounts adds
   to both places together.
 - **Client IDs**: Use sequential or generic values
 - **Trader IDs**: Generic alphanumeric if needed
