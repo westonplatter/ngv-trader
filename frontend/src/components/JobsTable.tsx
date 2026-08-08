@@ -14,6 +14,7 @@ interface Job {
   started_at: string | null;
   completed_at: string | null;
   archived_at: string | null;
+  available_at: string | null;
   last_error: string | null;
 }
 
@@ -22,7 +23,24 @@ const STATUS_CLASS: Record<string, string> = {
   running: "text-blue-700 bg-blue-100",
   completed: "text-green-700 bg-green-100",
   failed: "text-red-700 bg-red-100",
+  deferred: "text-amber-800 bg-amber-100",
 };
+
+// A job held back until `available_at` is waiting on something external — an
+// IBKR statement still building, or a token in cooldown — not queued behind
+// other work. It reports "queued" server-side; the distinction only matters
+// here, where "why isn't this running?" is the question being asked.
+function isDeferred(job: Job, nowMs: number): boolean {
+  if (job.status !== "queued") return false;
+  const availableMs = parseTime(job.available_at);
+  return availableMs !== null && availableMs > nowMs;
+}
+
+function retryInMs(job: Job, nowMs: number): number | null {
+  const availableMs = parseTime(job.available_at);
+  if (availableMs === null || availableMs <= nowMs) return null;
+  return availableMs - nowMs;
+}
 
 function parseTime(value: string | null): number | null {
   if (!value) return null;
@@ -234,15 +252,27 @@ export default function JobsTable() {
                   <ParamsCell payload={job.payload} />
                 </td>
                 <td className="px-2 py-1">
-                  <span
-                    className={`rounded px-1.5 py-0.5 ${STATUS_CLASS[job.status] ?? "text-gray-700 bg-gray-100"}`}
-                    title={
-                      job.last_error ??
-                      `attempts ${job.attempts}/${job.max_attempts}`
-                    }
-                  >
-                    {job.status}
-                  </span>
+                  {(() => {
+                    const deferred = isDeferred(job, nowMs);
+                    const label = deferred ? "deferred" : job.status;
+                    const retryIn = retryInMs(job, nowMs);
+                    return (
+                      <span
+                        className={`rounded px-1.5 py-0.5 whitespace-nowrap ${STATUS_CLASS[label] ?? "text-gray-700 bg-gray-100"}`}
+                        title={
+                          job.last_error ??
+                          `attempts ${job.attempts}/${job.max_attempts}`
+                        }
+                      >
+                        {label}
+                        {deferred && retryIn !== null && (
+                          <span className="ml-1 font-normal opacity-75">
+                            · retry in {formatDuration(retryIn)}
+                          </span>
+                        )}
+                      </span>
+                    );
+                  })()}
                 </td>
                 <td className="px-2 py-1 text-gray-700">
                   {formatDuration(computeQueueMs(job, nowMs))}
