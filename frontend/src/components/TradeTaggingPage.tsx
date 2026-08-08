@@ -1,7 +1,9 @@
+import type { CSSProperties } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { API_BASE_URL } from "../config";
 import { usePrivacy } from "../contexts/PrivacyContext";
+import { useResizableColumn } from "../hooks/useResizableColumn";
 import { linkify } from "../utils/linkify";
 import { formatGreek } from "../utils/number";
 import { PRIVACY_MASK, formatRelativeReturn } from "../utils/privacy";
@@ -332,6 +334,22 @@ export default function TradeTaggingPage() {
   // toggle with nothing selected would hide both lists and leave an empty pane
   // with no way back to pick a group.
   const focusActive = focusMode && selectedGroupId != null;
+
+  // Draggable widths for the two list panes. Fed into each grid's leading
+  // `grid-template-columns` track via a CSS custom property so the responsive
+  // and focus-mode collapse behavior is preserved. Persisted per-device.
+  const strategyColumn = useResizableColumn({
+    storageKey: "trade_tagging_strategy_col_width",
+    defaultWidth: 240,
+    minWidth: 180,
+    maxWidth: 520,
+  });
+  const groupsColumn = useResizableColumn({
+    storageKey: "trade_tagging_groups_col_width",
+    defaultWidth: 320,
+    minWidth: 240,
+    maxWidth: 680,
+  });
 
   const selectedStrategy = useMemo(
     () =>
@@ -959,11 +977,20 @@ export default function TradeTaggingPage() {
       {message && <p className="text-sm text-green-700">{message}</p>}
 
       <div
-        className={`grid min-h-0 flex-1 grid-cols-1 transition-[grid-template-columns,column-gap] duration-300 ease-in-out ${
+        className={`grid min-h-0 flex-1 grid-cols-1 ${
+          strategyColumn.isDragging
+            ? ""
+            : "transition-[grid-template-columns,column-gap] duration-300 ease-in-out"
+        } ${
           focusActive
             ? "gap-0 lg:grid-cols-[0fr_1fr]"
-            : "gap-4 lg:grid-cols-[minmax(220px,25%)_1fr]"
+            : "gap-4 lg:grid-cols-[var(--col-strategy)_1fr]"
         }`}
+        style={
+          focusActive
+            ? undefined
+            : ({ "--col-strategy": `${strategyColumn.width}px` } as CSSProperties)
+        }
       >
         {/* Column 1: Strategies — collapses to zero width in focus mode. The
             card padding/border are dropped while collapsed so the 0fr track
@@ -972,7 +999,7 @@ export default function TradeTaggingPage() {
             order (overflow-hidden alone does not). */}
         <section
           inert={focusActive}
-          className={`flex min-h-0 min-w-0 flex-col ${
+          className={`relative flex min-h-0 min-w-0 flex-col ${
             focusActive
               ? "overflow-hidden border-0 p-0"
               : "rounded border border-gray-200 bg-white p-3"
@@ -1085,22 +1112,53 @@ export default function TradeTaggingPage() {
               </li>
             )}
           </ul>
+
+          {/* Divider — drag to resize the Strategy List pane, double-click to
+              reset. Hidden below `lg` where the layout stacks vertically. */}
+          {!focusActive && (
+            <div
+              role="separator"
+              aria-orientation="vertical"
+              aria-label="Resize strategy list"
+              onPointerDown={strategyColumn.onHandlePointerDown}
+              onDoubleClick={strategyColumn.reset}
+              title="Drag to resize · double-click to reset"
+              className="group absolute -right-4 top-0 z-10 hidden h-full w-4 cursor-col-resize items-center justify-center lg:flex"
+            >
+              <div
+                className={`h-10 w-1 rounded-full transition-colors ${
+                  strategyColumn.isDragging
+                    ? "bg-blue-400"
+                    : "bg-gray-200 group-hover:bg-blue-300"
+                }`}
+              />
+            </div>
+          )}
         </section>
 
         {/* Column 2: Trade Groups + Detail */}
         <section className="flex min-h-0 flex-col rounded border border-gray-200 bg-white p-3">
           <div
-            className={`grid min-h-0 flex-1 grid-cols-1 transition-[grid-template-columns,column-gap] duration-300 ease-in-out ${
+            className={`grid min-h-0 flex-1 grid-cols-1 ${
+              groupsColumn.isDragging
+                ? ""
+                : "transition-[grid-template-columns,column-gap] duration-300 ease-in-out"
+            } ${
               focusActive
                 ? "gap-0 xl:grid-cols-[0fr_1fr]"
-                : "gap-4 xl:grid-cols-[minmax(280px,35%)_1fr]"
+                : "gap-4 xl:grid-cols-[var(--col-groups)_1fr]"
             }`}
+            style={
+              focusActive
+                ? undefined
+                : ({ "--col-groups": `${groupsColumn.width}px` } as CSSProperties)
+            }
           >
             {/* Group list — collapses to zero width in focus mode. `inert`
                 keeps its hidden controls out of the tab order while collapsed. */}
             <div
               inert={focusActive}
-              className={`flex min-h-0 min-w-0 flex-col ${
+              className={`relative flex min-h-0 min-w-0 flex-col ${
                 focusActive ? "overflow-hidden" : ""
               }`}
             >
@@ -1286,6 +1344,28 @@ export default function TradeTaggingPage() {
                   </li>
                 )}
               </ul>
+
+              {/* Divider — drag to resize the Trade Groups pane, double-click
+                  to reset. Hidden below `xl` where the panes stack. */}
+              {!focusActive && (
+                <div
+                  role="separator"
+                  aria-orientation="vertical"
+                  aria-label="Resize trade groups list"
+                  onPointerDown={groupsColumn.onHandlePointerDown}
+                  onDoubleClick={groupsColumn.reset}
+                  title="Drag to resize · double-click to reset"
+                  className="group absolute -right-4 top-0 z-10 hidden h-full w-4 cursor-col-resize items-center justify-center xl:flex"
+                >
+                  <div
+                    className={`h-10 w-1 rounded-full transition-colors ${
+                      groupsColumn.isDragging
+                        ? "bg-blue-400"
+                        : "bg-gray-200 group-hover:bg-blue-300"
+                    }`}
+                  />
+                </div>
+              )}
             </div>
 
             {/* Group detail */}
