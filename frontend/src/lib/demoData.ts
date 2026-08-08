@@ -447,6 +447,54 @@ export const DEMO_POSITIONS: Position[] = [
   },
 ];
 
+// ── Accounts ──────────────────────────────────────────────────────────────────
+
+// Two FlexQuery tokens covering four accounts, including one not yet seen under
+// any token — the states the Accounts page has to render.
+export interface DemoAccount {
+  id: number;
+  account: string;
+  masked_account: string;
+  alias: string | null;
+  flex_query_token_id: number | null;
+  flex_query_token_name: string | null;
+}
+
+export const DEMO_ACCOUNTS: DemoAccount[] = [
+  {
+    id: 1,
+    account: "U1234567",
+    masked_account: "U****567",
+    alias: "main",
+    flex_query_token_id: 1,
+    flex_query_token_name: "main",
+  },
+  {
+    id: 2,
+    account: "U2345678",
+    masked_account: "U****678",
+    alias: "sep",
+    flex_query_token_id: 1,
+    flex_query_token_name: "main",
+  },
+  {
+    id: 3,
+    account: "U3456789",
+    masked_account: "U****789",
+    alias: "lsc",
+    flex_query_token_id: 2,
+    flex_query_token_name: "lp",
+  },
+  {
+    id: 5,
+    account: "U4567890",
+    masked_account: "U****890",
+    alias: "mini",
+    flex_query_token_id: null,
+    flex_query_token_name: null,
+  },
+];
+
 // ── Strategies workspace ──────────────────────────────────────────────────────
 
 // A single umbrella strategy keeps the demo coherent and ensures Trade Group
