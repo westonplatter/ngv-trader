@@ -26,7 +26,7 @@ const NAV_ITEMS = [
   { label: "Orders", path: "/orders" },
   { label: "Positions", path: "/positions" },
   { label: "Trades", path: "/trades" },
-  { label: "Tagging", path: "/tagging" },
+  { label: "Strategies", path: "/strategies" },
   { label: "Watch Lists", path: "/watchlists" },
   { label: "Market Data", path: "/market-data" },
   { label: "Structures", path: "/structures" },
@@ -66,11 +66,11 @@ function App() {
   }, [location.pathname]);
 
   const isTradebotPage = location.pathname === "/tradebot";
-  const isTaggingPage = location.pathname === "/tagging";
+  const isStrategiesPage = location.pathname === "/strategies";
   const horizontalPaddingClass = isTradebotPage ? "px-2 md:px-3" : "px-6";
   const contentClass = isTradebotPage
     ? `${horizontalPaddingClass} py-3 flex-1 min-h-0 overflow-y-auto lg:overflow-hidden`
-    : isTaggingPage
+    : isStrategiesPage
       ? `${horizontalPaddingClass} py-6 flex-1 min-h-0 flex flex-col`
       : `${horizontalPaddingClass} py-6`;
 
@@ -109,7 +109,7 @@ function App() {
           <Route path="/accounts" element={<AccountsTable />} />
           <Route path="/orders" element={<OrdersTable />} />
           <Route path="/trades" element={<TradesTable />} />
-          <Route path="/tagging" element={<TradeTaggingPage />} />
+          <Route path="/strategies" element={<TradeTaggingPage />} />
           <Route path="/watchlists" element={<WatchListsPage />} />
           <Route path="/market-data" element={<MarketDataPage />} />
           <Route path="/structures" element={<PricingPage />} />

@@ -194,10 +194,11 @@ credentials _are_ the boundary, not the prompt. Create a least-privilege role:
 
 ```sql
 CREATE ROLE ngv_analyst LOGIN PASSWORD '<strong-password>';
-GRANT CONNECT ON DATABASE ngtrader_prod TO ngv_analyst;
+GRANT CONNECT ON DATABASE ngtrader_pro_prod TO ngv_analyst;
 GRANT USAGE ON SCHEMA public TO ngv_analyst;
 -- the fact views + the conformed dimension tables they join to:
-GRANT SELECT ON v_execution_facts, v_trade_facts, accounts, contracts,
+GRANT SELECT ON v_execution_facts, v_trade_facts, v_position_facts,
+                v_position_trade_group, accounts, contracts,
                 trade_group_executions, trade_groups TO ngv_analyst;
 -- plus the tables trade_group_pnl reads (the live overlay) — see §9:
 GRANT SELECT ON trades, trade_executions, positions, live_positions,
@@ -227,7 +228,7 @@ holds the connection string) and point the URL at `ngv_analyst`:
       ],
       "cwd": "/Users/you/code/ngv-trader",
       "env": {
-        "NGV_SEMANTIC_DATABASE_URL": "postgresql://ngv_analyst:<pw>@host:5432/ngtrader_prod"
+        "NGV_SEMANTIC_DATABASE_URL": "postgresql://ngv_analyst:<pw>@host:5432/ngtrader_pro_prod"
       }
     }
   }
@@ -256,13 +257,23 @@ different homes:
 
 **`trade_group_pnl(group)`** (tradebot + MCP) takes a group name or id and returns
 `realized_pnl`, `settled_unrealized_pnl`, `intraday_unrealized_pnl`,
-`intraday_realized_pnl`, `intraday_total_pnl`, and `marks_as_of` — the same numbers
-as the detail UI.
+`intraday_realized_pnl`, `intraday_total_pnl`, and `marks_as_of` — the detail-view
+figures, subject to the input-side gaps below.
 
-Single source of truth: both the API endpoint (`GET /trade-groups/{id}/executions`)
-and the tool call `compute_trade_group_pnl()` →
-`intraday_overlay.overlay_totals()` + `trade_group_realized_pnl()`. There is one
-implementation of each formula; the tool and the UI cannot diverge.
+Shared formulas: the API endpoint (`GET /trade-groups/{id}/executions`) and
+`compute_trade_group_pnl()` both go through `intraday_overlay.overlay_totals()` +
+`trade_group_realized_pnl()`, so each formula has exactly one implementation. The
+math cannot diverge, but the **inputs** can, in two ways:
+
+- the API loads `price_magnifier` and `latest_option_metrics` and passes them into
+  `merge_positions()`; the tool calls it without either, and both default to
+  `None` — so cents-quoted marks (e.g. grain futures) are left un-normalized in
+  the tool;
+- the API widens position attribution with pairs reached only via tagged
+  **unsettled** live fills (`trade_group_live_executions`); the tool derives its
+  pairs from settled executions alone.
+
+Both are input-assembly differences at the call sites, not competing formulas.
 
 **Two properties to keep in mind:**
 

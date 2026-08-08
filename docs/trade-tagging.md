@@ -2,6 +2,10 @@
 
 Current-state documentation for strategy tags, trade groups, execution assignment, and the tagging UI.
 
+The UI surface for all of this is the **Strategies** page at `/strategies`
+(`frontend/src/components/TradeTaggingPage.tsx`). "Tagging" remains the name of the
+underlying mechanism — tags, tag links, and trade groups — and of this doc.
+
 ## Purpose
 
 The trade-tagging system lets the desk organize executions into lifecycle groups and label those groups with strategy metadata.
@@ -295,7 +299,7 @@ Typical live workflow:
 
 1. executions appear in `/trades`
 2. operator assigns a trade's executions to a trade group from the trades page
-3. operator manages strategy and trade-group metadata in `/tagging`
+3. operator manages strategy and trade-group metadata in `/strategies`
 4. timeline and counts update from the group detail endpoints
 
 ## Important Constraints

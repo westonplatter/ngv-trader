@@ -5,7 +5,7 @@
 //
 // Examples (Vite dev server running on :5173, see `task frontend`):
 //   node scripts/screenshot.mjs "/positions?demo=1" ../docs/screenshots/positions-demo.png
-//   node scripts/screenshot.mjs "/tagging?demo=1&trade_group_id=103" out.png 1600 900
+//   node scripts/screenshot.mjs "/strategies?demo=1&trade_group_id=103" out.png 1600 900
 //
 // Always pass `?demo=1` so the page renders the static demo fixtures
 // (frontend/src/lib/demoData.ts) with no backend required.
@@ -55,10 +55,7 @@ function resolvePlaywright() {
     return require("playwright-core");
   } catch {
     // Fall back to the Bun global install cache.
-    const cacheRoot = join(
-      process.env.HOME ?? "/root",
-      ".bun/install/cache",
-    );
+    const cacheRoot = join(process.env.HOME ?? "/root", ".bun/install/cache");
     if (existsSync(cacheRoot)) {
       const entry = readdirSync(cacheRoot).find((d) =>
         d.startsWith("playwright-core@"),
