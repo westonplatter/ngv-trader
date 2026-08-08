@@ -75,7 +75,7 @@ def main() -> int:
     start_date = end_date - timedelta(days=args.days)
     logger.info(f"Fetching report for token {credential.name!r}: {start_date} → {end_date}")
 
-    xml_text = make_flex_client().fetch_flex_report(
+    xml_text = make_flex_client(span_days=args.days).fetch_flex_report(
         token=credential.token,
         query_id=credential.report_id,
         date_range=DateRange(from_date=start_date, to_date=end_date),
