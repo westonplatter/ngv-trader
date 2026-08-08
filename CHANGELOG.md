@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.1.10](https://github.com/westonplatter/ngv-trader/compare/v0.1.9...v0.1.10) (2026-08-08)
+
+
+### Features
+
+* **secrets:** store flexquery tokens encrypted in postgres ([#130](https://github.com/westonplatter/ngv-trader/issues/130)) ([49d3a01](https://github.com/westonplatter/ngv-trader/commit/49d3a01ae9de1630c24f0ac12f6887203a144922))
+* **workers:** scope flexquery syncs to one token and scale retry backoff ([#132](https://github.com/westonplatter/ngv-trader/issues/132)) ([491cbeb](https://github.com/westonplatter/ngv-trader/commit/491cbeb51d276c9df0807831ad38e37d836d44e5))
+
+
+### Miscellaneous Chores
+
+* **deps-dev:** bump @tailwindcss/vite from 4.2.1 to 4.3.3 in /frontend ([#115](https://github.com/westonplatter/ngv-trader/issues/115)) ([de606c5](https://github.com/westonplatter/ngv-trader/commit/de606c569f60abbffb5cbd245157d3a54beb7490))
+* **deps:** bump psycopg2-binary from 2.9.11 to 2.9.12 ([#112](https://github.com/westonplatter/ngv-trader/issues/112)) ([180c7c1](https://github.com/westonplatter/ngv-trader/commit/180c7c1feb10a10db74311de6b600f0c027cc079))
+* **deps:** bump react-dom from 19.2.4 to 19.2.8 in /frontend ([#120](https://github.com/westonplatter/ngv-trader/issues/120)) ([5d43340](https://github.com/westonplatter/ngv-trader/commit/5d433407c5cfbb4fffe99a4c7844870273ae6533))
+* **deps:** bump react-router-dom from 7.13.1 to 7.18.1 in /frontend ([#116](https://github.com/westonplatter/ngv-trader/issues/116)) ([7a06b39](https://github.com/westonplatter/ngv-trader/commit/7a06b3984b9caf5dfcad0dac1a960294b79fe63c))
+* **deps:** bump sqlalchemy from 2.0.46 to 2.0.51 ([#111](https://github.com/westonplatter/ngv-trader/issues/111)) ([77c8f72](https://github.com/westonplatter/ngv-trader/commit/77c8f7250165c084d4a248dbf0349560248069eb))
+
+
+### Continuous Integration
+
+* **deps:** bump actions/checkout from 4.4.0 to 7.0.1 ([#107](https://github.com/westonplatter/ngv-trader/issues/107)) ([2b27146](https://github.com/westonplatter/ngv-trader/commit/2b27146af765604e43b8cfc94bf87420e1f204d0))
+* **deps:** bump astral-sh/setup-uv from 5.4.2 to 9.0.0 ([#108](https://github.com/westonplatter/ngv-trader/issues/108)) ([4289b97](https://github.com/westonplatter/ngv-trader/commit/4289b97047ade8652562f248ecb8feb370f8d74a))
+* **deps:** bump googleapis/release-please-action from 4.4.1 to 5.0.0 ([#106](https://github.com/westonplatter/ngv-trader/issues/106)) ([90c4581](https://github.com/westonplatter/ngv-trader/commit/90c4581468a3505cd6aba55011d2d9d0e7234c57))
+
 ## [0.1.9](https://github.com/westonplatter/ngv-trader/compare/v0.1.8...v0.1.9) (2026-08-08)
 
 
