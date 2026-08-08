@@ -1242,17 +1242,26 @@ def _build_open_positions_overlay(
 
 def _view_to_open_position(view, flex, account, live_fetched_at) -> TradeGroupOpenPositionItem:
     """Map a unified PositionView to the response item (settled fields kept additive)."""
+    # Build the Contract label exactly like the Positions table does: off the
+    # settled snapshot row when there is one (its symbol/local_symbol carry the
+    # OSI form and the expiry), falling back to the unified view for positions
+    # opened today that have no snapshot yet.
+    display_symbol = (flex.symbol if flex else None) or view.symbol
+    display_local_symbol = (flex.local_symbol if flex else None) or view.local_symbol
+    display_sec_type = (flex.sec_type if flex else None) or view.sec_type
+    display_right = (flex.right if flex else None) or view.right
+    display_strike = (flex.strike if flex else None) if flex and flex.strike is not None else view.strike
     inferred_month = infer_contract_month_from_local_symbol(
-        local_symbol=view.local_symbol,
+        local_symbol=display_local_symbol,
         contract_expiry=flex.last_trade_date if flex else None,
-        sec_type=view.sec_type,
+        sec_type=display_sec_type,
     )
     display_name = contract_display_name(
-        symbol=view.symbol,
-        sec_type=view.sec_type,
-        local_symbol=view.local_symbol,
-        right=view.right,
-        strike=view.strike,
+        symbol=display_symbol,
+        sec_type=display_sec_type,
+        local_symbol=display_local_symbol,
+        right=display_right,
+        strike=display_strike,
         contract_expiry=flex.last_trade_date if flex else None,
         contract_month=inferred_month,
         exchange=flex.exchange if flex else None,

@@ -148,11 +148,14 @@ Worker/job (handled by `worker:jobs`, see [workers.md](workers.md)):
 ### Token pause window
 
 `1025: Too many failed attempts` means IBKR has cooled a token off, and it is
-earned almost entirely by repeated **SendRequest** calls — collecting an
-already-issued reference code keeps working through it. On a 1025 the token's
+earned almost entirely by repeated **SendRequest** calls. On a 1025 the token's
 `paused_until` is set 20 minutes out with a `pause_reason`; while it holds,
-`fetch_report` jobs for that token defer instead of calling IBKR. The Accounts
-UI shows the countdown and offers Pause / Resume.
+**both** phases defer for that token rather than calling IBKR. The Accounts UI
+shows the countdown and offers Pause / Resume.
+
+Gating both phases matters: a send that ignores the pause earns a fresh 1025 and
+re-pauses from _then_, so an unchecked sender slides the cooldown forward
+indefinitely and the token never recovers.
 
 Splitting the fetch is what keeps this rare: one SendRequest per window, with
 the waiting done between jobs rather than inside a blocked worker slot.

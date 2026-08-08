@@ -446,6 +446,17 @@ def _initiate_flexquery_request(job: Job, engine: Engine, fetch_job_type: str) -
     span_days = (end_date - start_date).days
 
     credential = load_credential_by_id(engine, int(token_id))
+
+    # A paused token makes no IBKR calls at all. Sending anyway would earn
+    # another 1025 and re-pause from *now*, so an unchecked send slides the
+    # cooldown forward indefinitely and the token never recovers.
+    paused_for = credential.pause_remaining_seconds()
+    if paused_for > 0:
+        raise JobDeferred(
+            f"token {credential.name!r} is paused for another {paused_for}s",
+            paused_for,
+        )
+
     client = make_flex_client(span_days=span_days, max_retries=1)
 
     try:
