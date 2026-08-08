@@ -1,4 +1,4 @@
-# NextGenTrader
+# ngv-trader
 
 Agentic software enabling one person to operate as an quick and nimble quantative futures, vol. and options trade desk.
 
@@ -75,6 +75,16 @@ Always use `uv run python scripts/check.py <module>` to verify imports. Never us
 
 Exits 1 on failure.
 
+## Tests
+
+`task test` runs the pytest suite (`tests/`). Pass pytest args after `--`, e.g. `task test -- -k api -v`.
+
+Tests never touch dev or prod data. `tests/conftest.py` reads connection settings from `.env.dev` (override with `TEST_ENV_FILE`), then forces `DB_NAME` to **`ngv_trader_test`** (override with `TEST_DB_NAME`) and aborts if the name does not end in `_test`. The database is created if missing and migrated with `alembic upgrade head`; each test runs in a transaction that is rolled back.
+
+The suite is a dependency-bump canary (see `.github/dependabot.yml`): every `src/` module imports, migrations reach head and cover every model table, an ORM round-trip works, and the API serves `/api/v1/health` and `/openapi.json`. Because `[tool.uv] default-groups = []`, tests must run as `uv run --group dev --extra mcp pytest` — a bare `uv run pytest` prunes pytest and the `mcp` extra.
+
+CI runs the same suite on every PR and push to `main` via `.github/workflows/tests.yml`, against a Postgres 17 service container. There, `TEST_ENV_FILE` points at a nonexistent file so no `.env` is loaded and `DB_*` come from the workflow env.
+
 ## Doc Validation
 
 After any doc change, run `scripts/doc_check.py` to catch broken links, missing script paths, bad task commands, and missing spec banners.
@@ -106,7 +116,8 @@ Flags account IDs, contract IDs, and execution/transaction/order IDs against the
 - `docs/`: current-state docs and specs; see `docs/_index.md`.
 - `docs/solutions/`: documented solutions to past problems (bugs, best practices, workflow patterns), organized by category with YAML frontmatter (`module`, `tags`, `problem_type`) — relevant when implementing or debugging in documented areas.
 - `CONCEPTS.md`: shared domain vocabulary (entities, named processes, status concepts) — relevant when orienting to the codebase or discussing domain concepts.
-- `Taskfile.yaml`: common dev commands for API, frontend, and migrations.
+- `tests/`: pytest suite run via `task test` against a dedicated `ngv_trader_test` database.
+- `Taskfile.yaml`: common dev commands for API, frontend, migrations, and tests.
 
 ### Primitives
 
@@ -152,7 +163,7 @@ Flags account IDs, contract IDs, and execution/transaction/order IDs against the
 
 ### Active Architecture Direction
 
-- Current import root is `src` (`from src...`). A previously-planned migration to an installable `src/ngtrader/...` package layout has no active spec on disk; re-add one under `docs/spec-*.md` before resuming that work.
+- Current import root is `src` (`from src...`). A previously-planned migration to an installable `src/ngv_trader/...` package layout has no active spec on disk; re-add one under `docs/spec-*.md` before resuming that work.
 
 ## Python
 

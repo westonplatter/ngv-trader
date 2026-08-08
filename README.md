@@ -16,6 +16,14 @@ New to the project? Follow the [Getting Started guide](docs/getting-started.md) 
 
 **You assume all risk.**
 
+## Tests
+
+```bash
+task test
+```
+
+Runs the pytest suite against a dedicated `ngv_trader_test` database, created and migrated on demand — dev and prod data are never touched.
+
 ## Screenshots
 
 ### Positions
