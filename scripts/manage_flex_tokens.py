@@ -199,27 +199,31 @@ def cmd_generate_key(engine: Engine | None, args: argparse.Namespace) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--env", choices=["dev", "prod"], default=os.environ.get("ENV", "prod"))
+    # --env is accepted on either side of the subcommand. SUPPRESS keeps the
+    # subparser copy from clobbering a value given before the subcommand.
+    common = argparse.ArgumentParser(add_help=False)
+    common.add_argument("--env", choices=["dev", "prod"], default=argparse.SUPPRESS, help="Env file to load (default: $ENV, else prod)")
+
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter, parents=[common])
     sub = parser.add_subparsers(dest="action", required=True)
 
-    p_add = sub.add_parser("add", help="Create a token row")
+    p_add = sub.add_parser("add", help="Create a token row", parents=[common])
     p_add.add_argument("--name", required=True, help="Operator label, unique")
     p_add.add_argument("--report-id", required=True, help="IBKR FlexQuery report id")
     p_add.add_argument("--notes", default=None)
     p_add.set_defaults(func=cmd_add)
 
-    p_list = sub.add_parser("list", help="Show configured tokens (values are never printed)")
+    p_list = sub.add_parser("list", help="Show configured tokens (values are never printed)", parents=[common])
     p_list.set_defaults(func=cmd_list)
 
-    p_deactivate = sub.add_parser("deactivate", help="Stop using a token without deleting it")
+    p_deactivate = sub.add_parser("deactivate", help="Stop using a token without deleting it", parents=[common])
     p_deactivate.add_argument("--name", required=True)
     p_deactivate.set_defaults(func=cmd_deactivate)
 
-    p_rotate = sub.add_parser("rotate-key", help="Re-encrypt every token under the current primary key")
+    p_rotate = sub.add_parser("rotate-key", help="Re-encrypt every token under the current primary key", parents=[common])
     p_rotate.set_defaults(func=cmd_rotate_key)
 
-    p_verify = sub.add_parser("verify", help="Check the key resolves and every stored token decrypts")
+    p_verify = sub.add_parser("verify", help="Check the key resolves and every stored token decrypts", parents=[common])
     p_verify.set_defaults(func=cmd_verify)
 
     p_generate = sub.add_parser("generate-key", help="Mint a new Fernet key")
@@ -239,7 +243,8 @@ def main() -> int:
             parser.error("generate-key needs --out <path> (recommended) or --stdout")
         return cmd_generate_key(None, args)
 
-    load_dotenv(f".env.{args.env}")
+    env = getattr(args, "env", None) or os.environ.get("ENV", "prod")
+    load_dotenv(f".env.{env}")
     return args.func(get_engine(), args)
 
 
