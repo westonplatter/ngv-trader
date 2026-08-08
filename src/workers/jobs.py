@@ -12,16 +12,19 @@ from __future__ import annotations
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 from typing import Any
 
 from ib_async import IB
 from sqlalchemy.engine import Engine
+from sqlalchemy.orm import Session
 
 from src.models import Job
 from src.services.flex_credentials import (
+    SEED_HINT,
     FlexCredential,
     load_active_credentials,
+    load_credential_by_id,
     mark_used,
 )
 from src.services.jobs import (
@@ -36,9 +39,12 @@ from src.services.jobs import (
     JOB_TYPE_OPTION_METRICS_SYNC_TWS,
     JOB_TYPE_ORDER_FETCH_SYNC,
     JOB_TYPE_POSITIONS_SYNC_FLEXQUERY,
+    JOB_TYPE_TRADES_FLEXQUERY_FETCH_REPORT,
+    JOB_TYPE_TRADES_FLEXQUERY_INITIATE_REQUEST,
     JOB_TYPE_TRADES_SYNC_FLEXQUERY,
     JOB_TYPE_WATCHLIST_ADD_INSTRUMENT,
     JOB_TYPE_WATCHLIST_QUOTES_REFRESH,
+    JobDeferred,
 )
 from src.utils.env_vars import get_int_env
 
@@ -405,31 +411,208 @@ def _run_flexquery_sync(
     }
 
 
-def handle_trades_sync_flexquery(job: Job, engine: Engine, ib_pool: IBSessionPool) -> dict:
-    from datetime import date as _date
+def _flexquery_window(payload: dict) -> tuple[date, date]:
+    """Resolve the requested window, defaulting to the trailing `days` span."""
     from datetime import timedelta as _td
 
-    from src.services.trade_sync_flexquery import (
-        previous_business_day,
-        sync_flex_trades,
+    from src.services.trade_sync_flexquery import previous_business_day
+
+    if "start_date" in payload and "end_date" in payload:
+        return (
+            date.fromisoformat(payload["start_date"]),
+            date.fromisoformat(payload["end_date"]),
+        )
+    days = int(payload.get("days", 7))
+    end_date = previous_business_day()
+    return end_date - _td(days=days), end_date
+
+
+def handle_trades_sync_flexquery(job: Job, engine: Engine, ib_pool: IBSessionPool) -> dict:
+    """Entrypoint: fan out to one `initiate_request` job per active token.
+
+    Kept so existing callers, schedules, and already-queued jobs keep working
+    after the split. It no longer fetches anything itself — asking IBKR for a
+    statement and collecting it are separate jobs now, so a worker slot is never
+    held open sleeping through statement generation.
+    """
+    from src.services.jobs import (
+        JOB_TYPE_TRADES_FLEXQUERY_INITIATE_REQUEST,
+        enqueue_job,
     )
 
     payload = job.payload or {}
-    # account_code in payload is optional; when set, only that IBKR account is synced
     filter_account = payload.get("account_code")
-    # token_id is optional; when set, only that FlexQuery token (by primary key) is fetched
     filter_token_id = payload.get("token_id")
+    start_date, end_date = _flexquery_window(payload)
 
-    if "start_date" in payload and "end_date" in payload:
-        start_date = _date.fromisoformat(payload["start_date"])
-        end_date = _date.fromisoformat(payload["end_date"])
-    else:
-        days = int(payload.get("days", 7))
-        end_date = previous_business_day()
-        start_date = end_date - _td(days=days)
+    credentials = load_active_credentials(engine)
+    if filter_token_id is not None:
+        credentials = [c for c in credentials if c.token_id == filter_token_id]
+        if not credentials:
+            raise RuntimeError(f"No active FlexQuery token with id {filter_token_id}.")
 
-    def _sync(account_id: str, report: Any, credential: FlexCredential) -> dict:
-        return sync_flex_trades(
+    enqueued: list[dict] = []
+    with Session(engine) as session:
+        for credential in credentials:
+            child_payload: dict[str, Any] = {
+                "token_id": credential.token_id,
+                "start_date": start_date.isoformat(),
+                "end_date": end_date.isoformat(),
+            }
+            if filter_account:
+                child_payload["account_code"] = filter_account
+            child = enqueue_job(
+                session=session,
+                job_type=JOB_TYPE_TRADES_FLEXQUERY_INITIATE_REQUEST,
+                payload=child_payload,
+                source=f"job:{job.id}",
+                request_text=None,
+            )
+            enqueued.append({"job_id": child.id, "token": credential.name})
+        session.commit()
+
+    if not enqueued:
+        raise RuntimeError(f"No active FlexQuery tokens are configured. {SEED_HINT}")
+
+    return {
+        "phase": "fan_out",
+        "window": {"start_date": start_date.isoformat(), "end_date": end_date.isoformat()},
+        "initiated": enqueued,
+    }
+
+
+def handle_trades_flexquery_initiate_request(job: Job, engine: Engine, ib_pool: IBSessionPool) -> dict:
+    """Phase 1: ask IBKR to build the statement, then schedule the collection.
+
+    Returns as soon as IBKR hands back a reference code. The wait happens
+    between jobs, not inside this one, so repeated `1001` responses can never
+    pile up into the `1025: Too many failed attempts` lockout that repeated
+    SendRequests cause.
+    """
+    from ngv_reports_ibkr.flex_client import DateRange, FlexClientError
+
+    from src.services.flex_client_factory import (
+        first_check_delay_seconds,
+        make_flex_client,
+    )
+    from src.services.jobs import (
+        JOB_TYPE_TRADES_FLEXQUERY_FETCH_REPORT,
+        enqueue_job,
+        now_utc,
+    )
+
+    payload = job.payload or {}
+    token_id = payload.get("token_id")
+    if token_id is None:
+        raise RuntimeError("initiate_request requires a token_id in the payload.")
+    start_date, end_date = _flexquery_window(payload)
+    span_days = (end_date - start_date).days
+
+    credential = load_credential_by_id(engine, int(token_id))
+    client = make_flex_client(span_days=span_days, max_retries=1)
+
+    try:
+        reference_code = client.send_flex_request(
+            token=credential.token,
+            query_id=credential.report_id,
+            date_range=DateRange(from_date=start_date, to_date=end_date),
+        )
+    except FlexClientError as exc:
+        # IBKR is busy or cooling us off. Wait at the window's cadence and try
+        # the send again — deferring costs no attempt and, crucially, no extra
+        # SendRequest in the meantime.
+        raise JobDeferred(
+            credential.redact(f"send_flex_request not accepted yet: {type(exc).__name__}: {exc}"),
+            first_check_delay_seconds(span_days),
+        ) from None
+
+    mark_used(engine, credential.token_id)
+    check_in = first_check_delay_seconds(span_days)
+
+    collect_payload: dict[str, Any] = {
+        "token_id": credential.token_id,
+        "reference_code": reference_code,
+        "start_date": start_date.isoformat(),
+        "end_date": end_date.isoformat(),
+        "checks": 0,
+    }
+    if payload.get("account_code"):
+        collect_payload["account_code"] = payload["account_code"]
+
+    with Session(engine) as session:
+        follow_up = enqueue_job(
+            session=session,
+            job_type=JOB_TYPE_TRADES_FLEXQUERY_FETCH_REPORT,
+            payload=collect_payload,
+            source=f"job:{job.id}",
+            request_text=None,
+        )
+        # Hold the collection back until IBKR has plausibly finished building.
+        follow_up.available_at = now_utc() + timedelta(seconds=check_in)
+        follow_up_id = follow_up.id
+        session.commit()
+
+    return {
+        "phase": "initiate_request",
+        "token": credential.name,
+        "reference_code": reference_code,
+        "span_days": span_days,
+        "fetch_report_job_id": follow_up_id,
+        "first_check_in_seconds": check_in,
+    }
+
+
+def handle_trades_flexquery_fetch_report(job: Job, engine: Engine, ib_pool: IBSessionPool) -> dict:
+    """Phase 2: collect the statement for a reference code and sync it.
+
+    Defers itself while IBKR is still building. Each deferral costs a bounded
+    check rather than a retry attempt, so a slow statement does not exhaust the
+    budget that exists for real failures.
+    """
+    from defusedxml import ElementTree as ET
+    from ngv_reports_ibkr.custom_flex_report import CustomFlexReport
+    from ngv_reports_ibkr.flex_client import FlexClientError
+
+    from src.services.flex_client_factory import (
+        MAX_STATEMENT_CHECKS,
+        RECHECK_DELAY_SECONDS,
+        make_flex_client,
+    )
+    from src.services.trade_sync_flexquery import sync_flex_trades
+
+    payload = job.payload or {}
+    reference_code = payload.get("reference_code")
+    token_id = payload.get("token_id")
+    if not reference_code or token_id is None:
+        raise RuntimeError("fetch_report requires token_id and reference_code in the payload.")
+
+    filter_account = payload.get("account_code")
+    start_date, end_date = _flexquery_window(payload)
+    checks = int(payload.get("checks", 0))
+
+    credential = load_credential_by_id(engine, int(token_id))
+    client = make_flex_client(span_days=(end_date - start_date).days, max_retries=1)
+
+    try:
+        xml_data = client.get_flex_statement(token=credential.token, reference_code=reference_code)
+    except FlexClientError as exc:
+        if checks + 1 >= MAX_STATEMENT_CHECKS:
+            raise RuntimeError(credential.redact(f"Statement never became ready after {MAX_STATEMENT_CHECKS} checks: {type(exc).__name__}: {exc}")) from None
+        # Record the check on the job itself so the count survives the requeue.
+        job.payload = {**payload, "checks": checks + 1}
+        raise JobDeferred(
+            credential.redact(f"statement not ready (check {checks + 1}/{MAX_STATEMENT_CHECKS}): {type(exc).__name__}: {exc}"),
+            RECHECK_DELAY_SECONDS,
+        ) from None
+
+    report = CustomFlexReport()
+    report.root = ET.fromstring(xml_data)
+
+    per_account: dict[str, dict] = {}
+    for account_id in report.account_ids():
+        if filter_account and account_id != filter_account:
+            continue
+        per_account[account_id] = sync_flex_trades(
             engine=engine,
             account_code=account_id,
             report=report,
@@ -438,7 +621,15 @@ def handle_trades_sync_flexquery(job: Job, engine: Engine, ib_pool: IBSessionPoo
             flex_query_token_id=credential.token_id,
         )
 
-    return _run_flexquery_sync(engine, start_date, end_date, filter_account, _sync, filter_token_id)
+    return {
+        "phase": "fetch_report",
+        "per_account": per_account,
+        "accounts_synced": list(per_account),
+        "tokens_synced": [credential.name],
+        "token_errors": {},
+        "duplicate_accounts": [],
+        "checks": checks,
+    }
 
 
 def handle_positions_sync_flexquery(job: Job, engine: Engine, ib_pool: IBSessionPool) -> dict:
@@ -700,6 +891,8 @@ def get_handler(job_type: str) -> Callable[[Job, Engine, IBSessionPool], dict] |
         JOB_TYPE_WATCHLIST_ADD_INSTRUMENT: handle_watchlist_add_instrument,
         JOB_TYPE_WATCHLIST_QUOTES_REFRESH: handle_watchlist_quotes_refresh,
         JOB_TYPE_TRADES_SYNC_FLEXQUERY: handle_trades_sync_flexquery,
+        JOB_TYPE_TRADES_FLEXQUERY_INITIATE_REQUEST: handle_trades_flexquery_initiate_request,
+        JOB_TYPE_TRADES_FLEXQUERY_FETCH_REPORT: handle_trades_flexquery_fetch_report,
         JOB_TYPE_POSITIONS_SYNC_FLEXQUERY: handle_positions_sync_flexquery,
         JOB_TYPE_MARKET_DATA_FUTURES_PRICES: handle_market_data_futures_prices,
         JOB_TYPE_MARKET_DATA_FUTURES_OPTIONS: handle_market_data_futures_options,

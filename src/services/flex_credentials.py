@@ -91,6 +91,19 @@ def load_credential(engine: Engine, name: str | None = None) -> FlexCredential:
     return credentials[0]
 
 
+def load_credential_by_id(engine: Engine, token_id: int) -> FlexCredential:
+    """One active credential by primary key.
+
+    Keyed on the id rather than the name so a job queued before a rename still
+    resolves to the token it was created for.
+    """
+    with Session(engine) as session:
+        row = session.get(FlexQueryToken, token_id)
+        if row is None or not row.is_active:
+            raise NoFlexCredentialsError(f"No active FlexQuery token with id {token_id}. {SEED_HINT}")
+        return _to_credential(row)
+
+
 def mark_used(engine: Engine, token_id: int) -> None:
     """Record that a token successfully returned a report."""
     now = datetime.now(timezone.utc)
