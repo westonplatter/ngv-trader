@@ -42,6 +42,8 @@ from src.services.jobs import (
     JOB_TYPE_MARKET_DATA_SNAPSHOT,
     JOB_TYPE_OPTION_METRICS_SYNC_TWS,
     JOB_TYPE_ORDER_FETCH_SYNC,
+    JOB_TYPE_POSITIONS_FLEXQUERY_FETCH_REPORT,
+    JOB_TYPE_POSITIONS_FLEXQUERY_INITIATE_REQUEST,
     JOB_TYPE_POSITIONS_SYNC_FLEXQUERY,
     JOB_TYPE_TRADES_FLEXQUERY_FETCH_REPORT,
     JOB_TYPE_TRADES_FLEXQUERY_INITIATE_REQUEST,
@@ -349,76 +351,13 @@ def handle_trades_sync_tws(job: Job, engine: Engine, ib_pool: IBSessionPool) -> 
     }
 
 
-def _run_flexquery_sync(
-    engine: Engine,
-    start_date: date,
-    end_date: date,
-    filter_account: str | None,
-    sync_account: Callable[[str, Any, FlexCredential], dict],
-    filter_token_id: int | None = None,
-) -> dict:
-    """Fetch every active token's report and sync the accounts each one covers.
+def _flexquery_window(payload: dict, default_days: int = 7) -> tuple[date, date]:
+    """Resolve the requested window.
 
-    One token can return several accounts, and several tokens can be configured,
-    so this runs the whole active set rather than the first entry. A token whose
-    fetch fails is recorded and skipped; the run only fails outright when no
-    token produced a report. Token values never reach the returned dict — the
-    result is persisted to ``jobs.result``, which is plaintext.
-
-    ``filter_token_id`` narrows the run to one ``flexquery_tokens.id``. Use it for
-    backfills so a token that is erroring or rate-limited is not dragged through
-    every job in the series. It keys on the primary key rather than the name so a
-    queued job still points at the same token after a rename.
+    Falls back to a trailing span ending on the previous business day.
+    ``default_days=0`` yields that single day, which is what an end-of-day
+    position snapshot wants.
     """
-    from src.services.trade_sync_flexquery import fetch_flex_report
-
-    credentials = load_active_credentials(engine)
-    if filter_token_id is not None:
-        credentials = [c for c in credentials if c.token_id == filter_token_id]
-        if not credentials:
-            raise RuntimeError(f"No active FlexQuery token with id {filter_token_id}.")
-
-    per_account: dict[str, dict] = {}
-    tokens_synced: list[str] = []
-    token_errors: dict[str, str] = {}
-    duplicate_accounts: list[str] = []
-
-    for credential in credentials:
-        try:
-            report = fetch_flex_report(credential.token, credential.report_id, start_date, end_date)
-        except Exception as exc:  # noqa: BLE001 — one bad token must not stop the rest
-            token_errors[credential.name] = credential.redact(f"{type(exc).__name__}: {exc}")
-            continue
-
-        mark_used(engine, credential.token_id)
-        tokens_synced.append(credential.name)
-
-        for account_id in report.account_ids():
-            if filter_account and account_id != filter_account:
-                continue
-            if account_id in per_account:
-                # Two tokens cover the same account. Last writer wins, matching
-                # the account-stamping rule, but the overlap is worth surfacing.
-                duplicate_accounts.append(account_id)
-            per_account[account_id] = sync_account(account_id, report, credential)
-
-    if not tokens_synced:
-        detail = "; ".join(f"{name}: {message}" for name, message in token_errors.items())
-        raise RuntimeError(f"No FlexQuery token returned a report. {detail}")
-
-    return {
-        "per_account": per_account,
-        "accounts_synced": list(per_account),
-        "tokens_synced": tokens_synced,
-        "token_errors": token_errors,
-        "duplicate_accounts": sorted(set(duplicate_accounts)),
-    }
-
-
-def _flexquery_window(payload: dict) -> tuple[date, date]:
-    """Resolve the requested window, defaulting to the trailing `days` span."""
-    from datetime import timedelta as _td
-
     from src.services.trade_sync_flexquery import previous_business_day
 
     if "start_date" in payload and "end_date" in payload:
@@ -426,28 +365,26 @@ def _flexquery_window(payload: dict) -> tuple[date, date]:
             date.fromisoformat(payload["start_date"]),
             date.fromisoformat(payload["end_date"]),
         )
-    days = int(payload.get("days", 7))
+    days = int(payload.get("days", default_days))
     end_date = previous_business_day()
-    return end_date - _td(days=days), end_date
+    return end_date - timedelta(days=days), end_date
 
 
-def handle_trades_sync_flexquery(job: Job, engine: Engine, ib_pool: IBSessionPool) -> dict:
-    """Entrypoint: fan out to one `initiate_request` job per active token.
+def _fan_out_flexquery(job: Job, engine: Engine, initiate_job_type: str, default_days: int = 7) -> dict:
+    """Queue one `initiate_request` per active token for the requested window.
 
-    Kept so existing callers, schedules, and already-queued jobs keep working
-    after the split. It no longer fetches anything itself — asking IBKR for a
-    statement and collecting it are separate jobs now, so a worker slot is never
-    held open sleeping through statement generation.
+    Both `*.sync.flexquery` entrypoints funnel through here so existing callers,
+    schedules, and already-queued jobs keep working after the split. Neither
+    fetches anything itself — asking IBKR for a statement and collecting it are
+    separate jobs now, so a worker slot is never held open sleeping through
+    statement generation.
     """
-    from src.services.jobs import (
-        JOB_TYPE_TRADES_FLEXQUERY_INITIATE_REQUEST,
-        enqueue_job,
-    )
+    from src.services.jobs import enqueue_job
 
     payload = job.payload or {}
     filter_account = payload.get("account_code")
     filter_token_id = payload.get("token_id")
-    start_date, end_date = _flexquery_window(payload)
+    start_date, end_date = _flexquery_window(payload, default_days)
 
     credentials = load_active_credentials(engine)
     if filter_token_id is not None:
@@ -467,7 +404,7 @@ def handle_trades_sync_flexquery(job: Job, engine: Engine, ib_pool: IBSessionPoo
                 child_payload["account_code"] = filter_account
             child = enqueue_job(
                 session=session,
-                job_type=JOB_TYPE_TRADES_FLEXQUERY_INITIATE_REQUEST,
+                job_type=initiate_job_type,
                 payload=child_payload,
                 source=f"job:{job.id}",
                 request_text=None,
@@ -485,7 +422,7 @@ def handle_trades_sync_flexquery(job: Job, engine: Engine, ib_pool: IBSessionPoo
     }
 
 
-def handle_trades_flexquery_initiate_request(job: Job, engine: Engine, ib_pool: IBSessionPool) -> dict:
+def _initiate_flexquery_request(job: Job, engine: Engine, fetch_job_type: str) -> dict:
     """Phase 1: ask IBKR to build the statement, then schedule the collection.
 
     Returns as soon as IBKR hands back a reference code. The wait happens
@@ -499,11 +436,7 @@ def handle_trades_flexquery_initiate_request(job: Job, engine: Engine, ib_pool: 
         first_check_delay_seconds,
         make_flex_client,
     )
-    from src.services.jobs import (
-        JOB_TYPE_TRADES_FLEXQUERY_FETCH_REPORT,
-        enqueue_job,
-        now_utc,
-    )
+    from src.services.jobs import enqueue_job, now_utc
 
     payload = job.payload or {}
     token_id = payload.get("token_id")
@@ -552,7 +485,7 @@ def handle_trades_flexquery_initiate_request(job: Job, engine: Engine, ib_pool: 
     with Session(engine) as session:
         follow_up = enqueue_job(
             session=session,
-            job_type=JOB_TYPE_TRADES_FLEXQUERY_FETCH_REPORT,
+            job_type=fetch_job_type,
             payload=collect_payload,
             source=f"job:{job.id}",
             request_text=None,
@@ -572,12 +505,17 @@ def handle_trades_flexquery_initiate_request(job: Job, engine: Engine, ib_pool: 
     }
 
 
-def handle_trades_flexquery_fetch_report(job: Job, engine: Engine, ib_pool: IBSessionPool) -> dict:
+def _collect_flexquery_report(
+    job: Job,
+    engine: Engine,
+    sync_account: Callable[[str, Any, FlexCredential, date, date], dict],
+) -> dict:
     """Phase 2: collect the statement for a reference code and sync it.
 
     Defers itself while IBKR is still building. Each deferral costs a bounded
     check rather than a retry attempt, so a slow statement does not exhaust the
-    budget that exists for real failures.
+    budget that exists for real failures. ``sync_account`` is what differs
+    between trades and positions; everything around it is identical.
     """
     from defusedxml import ElementTree as ET
     from ngv_reports_ibkr.custom_flex_report import CustomFlexReport
@@ -588,7 +526,6 @@ def handle_trades_flexquery_fetch_report(job: Job, engine: Engine, ib_pool: IBSe
         RECHECK_DELAY_SECONDS,
         make_flex_client,
     )
-    from src.services.trade_sync_flexquery import sync_flex_trades
 
     payload = job.payload or {}
     reference_code = payload.get("reference_code")
@@ -639,14 +576,7 @@ def handle_trades_flexquery_fetch_report(job: Job, engine: Engine, ib_pool: IBSe
     for account_id in report.account_ids():
         if filter_account and account_id != filter_account:
             continue
-        per_account[account_id] = sync_flex_trades(
-            engine=engine,
-            account_code=account_id,
-            report=report,
-            start_date=start_date,
-            end_date=end_date,
-            flex_query_token_id=credential.token_id,
-        )
+        per_account[account_id] = sync_account(account_id, report, credential, start_date, end_date)
 
     return {
         "phase": "fetch_report",
@@ -659,24 +589,45 @@ def handle_trades_flexquery_fetch_report(job: Job, engine: Engine, ib_pool: IBSe
     }
 
 
-def handle_positions_sync_flexquery(job: Job, engine: Engine, ib_pool: IBSessionPool) -> dict:
-    from datetime import date as _date
+def handle_trades_sync_flexquery(job: Job, engine: Engine, ib_pool: IBSessionPool) -> dict:
+    """Entrypoint: fan out trade sync to one initiate_request per active token."""
+    from src.services.jobs import JOB_TYPE_TRADES_FLEXQUERY_INITIATE_REQUEST
 
+    return _fan_out_flexquery(job, engine, JOB_TYPE_TRADES_FLEXQUERY_INITIATE_REQUEST)
+
+
+def handle_trades_flexquery_initiate_request(job: Job, engine: Engine, ib_pool: IBSessionPool) -> dict:
+    from src.services.jobs import JOB_TYPE_TRADES_FLEXQUERY_FETCH_REPORT
+
+    return _initiate_flexquery_request(job, engine, JOB_TYPE_TRADES_FLEXQUERY_FETCH_REPORT)
+
+
+def handle_trades_flexquery_fetch_report(job: Job, engine: Engine, ib_pool: IBSessionPool) -> dict:
+    from src.services.trade_sync_flexquery import sync_flex_trades
+
+    def _sync(account_id: str, report: Any, credential: FlexCredential, start_date: date, end_date: date) -> dict:
+        return sync_flex_trades(
+            engine=engine,
+            account_code=account_id,
+            report=report,
+            start_date=start_date,
+            end_date=end_date,
+            flex_query_token_id=credential.token_id,
+        )
+
+    return _collect_flexquery_report(job, engine, _sync)
+
+
+def handle_positions_flexquery_initiate_request(job: Job, engine: Engine, ib_pool: IBSessionPool) -> dict:
+    from src.services.jobs import JOB_TYPE_POSITIONS_FLEXQUERY_FETCH_REPORT
+
+    return _initiate_flexquery_request(job, engine, JOB_TYPE_POSITIONS_FLEXQUERY_FETCH_REPORT)
+
+
+def handle_positions_flexquery_fetch_report(job: Job, engine: Engine, ib_pool: IBSessionPool) -> dict:
     from src.services.position_sync_flexquery import sync_flex_positions
-    from src.services.trade_sync_flexquery import previous_business_day
 
-    payload = job.payload or {}
-    filter_account = payload.get("account_code")
-    filter_token_id = payload.get("token_id")
-
-    if "start_date" in payload and "end_date" in payload:
-        start_date = _date.fromisoformat(payload["start_date"])
-        end_date = _date.fromisoformat(payload["end_date"])
-    else:
-        end_date = previous_business_day()
-        start_date = end_date
-
-    def _sync(account_id: str, report: Any, credential: FlexCredential) -> dict:
+    def _sync(account_id: str, report: Any, credential: FlexCredential, start_date: date, end_date: date) -> dict:
         result = sync_flex_positions(
             engine=engine,
             account_code=account_id,
@@ -689,7 +640,18 @@ def handle_positions_sync_flexquery(job: Job, engine: Engine, ib_pool: IBSession
             "as_of_date": as_of.isoformat() if as_of else None,
         }
 
-    return _run_flexquery_sync(engine, start_date, end_date, filter_account, _sync, filter_token_id)
+    return _collect_flexquery_report(job, engine, _sync)
+
+
+def handle_positions_sync_flexquery(job: Job, engine: Engine, ib_pool: IBSessionPool) -> dict:
+    """Entrypoint: fan out position sync to one initiate_request per active token.
+
+    Positions are an end-of-day snapshot, so the default window is the single
+    previous business day rather than the trailing span trades use.
+    """
+    from src.services.jobs import JOB_TYPE_POSITIONS_FLEXQUERY_INITIATE_REQUEST
+
+    return _fan_out_flexquery(job, engine, JOB_TYPE_POSITIONS_FLEXQUERY_INITIATE_REQUEST, default_days=0)
 
 
 def handle_contracts_chain_sync(job: Job, engine: Engine, ib_pool: IBSessionPool) -> dict:
@@ -921,6 +883,8 @@ def get_handler(job_type: str) -> Callable[[Job, Engine, IBSessionPool], dict] |
         JOB_TYPE_TRADES_FLEXQUERY_INITIATE_REQUEST: handle_trades_flexquery_initiate_request,
         JOB_TYPE_TRADES_FLEXQUERY_FETCH_REPORT: handle_trades_flexquery_fetch_report,
         JOB_TYPE_POSITIONS_SYNC_FLEXQUERY: handle_positions_sync_flexquery,
+        JOB_TYPE_POSITIONS_FLEXQUERY_INITIATE_REQUEST: handle_positions_flexquery_initiate_request,
+        JOB_TYPE_POSITIONS_FLEXQUERY_FETCH_REPORT: handle_positions_flexquery_fetch_report,
         JOB_TYPE_MARKET_DATA_FUTURES_PRICES: handle_market_data_futures_prices,
         JOB_TYPE_MARKET_DATA_FUTURES_OPTIONS: handle_market_data_futures_options,
         JOB_TYPE_MARKET_DATA_SNAPSHOT: handle_market_data_snapshot,

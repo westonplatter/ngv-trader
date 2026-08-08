@@ -106,3 +106,50 @@ def test_pause_remaining_counts_down_and_floors_at_zero() -> None:
     assert usable.pause_remaining_seconds(now) == 0
     assert 1190 <= paused.pause_remaining_seconds(now) <= 1200
     assert expired.pause_remaining_seconds(now) == 0
+
+
+# ── Handler wiring ────────────────────────────────────────────────────────────
+
+
+def test_both_domains_register_all_three_phases() -> None:
+    """Trades and positions must stay symmetric — a missing phase strands jobs."""
+    from src.services.jobs import (
+        JOB_TYPE_POSITIONS_FLEXQUERY_FETCH_REPORT,
+        JOB_TYPE_POSITIONS_FLEXQUERY_INITIATE_REQUEST,
+        JOB_TYPE_POSITIONS_SYNC_FLEXQUERY,
+        JOB_TYPE_TRADES_FLEXQUERY_FETCH_REPORT,
+        JOB_TYPE_TRADES_FLEXQUERY_INITIATE_REQUEST,
+        JOB_TYPE_TRADES_SYNC_FLEXQUERY,
+    )
+    from src.workers.jobs import get_handler
+
+    for job_type in (
+        JOB_TYPE_TRADES_SYNC_FLEXQUERY,
+        JOB_TYPE_TRADES_FLEXQUERY_INITIATE_REQUEST,
+        JOB_TYPE_TRADES_FLEXQUERY_FETCH_REPORT,
+        JOB_TYPE_POSITIONS_SYNC_FLEXQUERY,
+        JOB_TYPE_POSITIONS_FLEXQUERY_INITIATE_REQUEST,
+        JOB_TYPE_POSITIONS_FLEXQUERY_FETCH_REPORT,
+    ):
+        assert get_handler(job_type) is not None, job_type
+
+
+def test_position_window_defaults_to_a_single_day() -> None:
+    """An EOD snapshot wants one day; trades want a trailing span."""
+    from src.workers.jobs import _flexquery_window
+
+    pos_start, pos_end = _flexquery_window({}, default_days=0)
+    assert pos_start == pos_end
+
+    trade_start, trade_end = _flexquery_window({})
+    assert (trade_end - trade_start).days == 7
+
+
+def test_explicit_dates_override_the_default_in_both_domains() -> None:
+    from src.workers.jobs import _flexquery_window
+
+    payload = {"start_date": "2026-06-01", "end_date": "2026-06-30"}
+    for default_days in (0, 7):
+        start, end = _flexquery_window(payload, default_days)
+        assert start.isoformat() == "2026-06-01"
+        assert end.isoformat() == "2026-06-30"

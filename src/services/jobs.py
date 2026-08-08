@@ -34,6 +34,8 @@ class JobDeferred(Exception):  # noqa: N818 — a control signal, not an error
 
 JOB_TYPE_POSITIONS_SYNC_TWS = "positions.sync.tws"
 JOB_TYPE_POSITIONS_SYNC_FLEXQUERY = "positions.sync.flexquery"
+JOB_TYPE_POSITIONS_FLEXQUERY_INITIATE_REQUEST = "positions.flexquery.initiate_request"
+JOB_TYPE_POSITIONS_FLEXQUERY_FETCH_REPORT = "positions.flexquery.fetch_report"
 JOB_TYPE_TRADES_SYNC_TWS = "trades.sync.tws"
 # Kept as an entrypoint: enqueuing it fans out to one initiate_request per
 # active token. The two phases below do the actual work.
