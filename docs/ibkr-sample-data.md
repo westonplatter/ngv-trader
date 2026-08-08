@@ -1,4 +1,4 @@
-# IBKR Sample Data Anonymization Prompt
+# IBKR Sample Data Anonymization
 
 When creating or updating sample data documentation for IBKR (Interactive Brokers)
 data schemas, **always use anonymized, generic values** instead of real personal

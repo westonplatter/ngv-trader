@@ -64,7 +64,7 @@ IBKR FlexQuery tokens are **not** environment variables. They live encrypted at 
 
 ## Sample Data (IBKR anonymization)
 
-This repo handles personal brokerage data. **Never commit real IBKR account IDs, conids, exec/transaction/order IDs, prices, or trading dates.** Any repo-bound example/fixture/doc must use the anonymized patterns in `prompts/prompt-ibkr-sample-data.md` — e.g. accounts `U1234567`, generic ID ranges (`1000000001`), `ibExecID` `0000abcd.12345678.01.01`, generic Jan 2025 dates. Keep real for shape: symbols, exchanges, sec types, realistic prices/quantities.
+This repo handles personal brokerage data. **Never commit real IBKR account IDs, conids, exec/transaction/order IDs, prices, or trading dates.** Any repo-bound example/fixture/doc must use the anonymized patterns in `docs/ibkr-sample-data.md` — e.g. accounts `U1234567`, generic ID ranges (`1000000001`), `ibExecID` `0000abcd.12345678.01.01`, generic Jan 2025 dates. Keep real for shape: symbols, exchanges, sec types, realistic prices/quantities.
 
 `scripts/data/` is gitignored for ad-hoc real CSVs — never commit them. Before `git add`, scan staged additions for real-looking IDs (10-digit txn IDs, `U`-prefixed accounts, hex exec IDs).
 
@@ -108,7 +108,7 @@ Before staging, scan changes for real IBKR identifiers that must never be commit
 
 Every scanned file is listed by default so the output is evidence of what was checked; `--quiet` drops that list but still prints findings.
 
-Flags account IDs, contract IDs, and execution/transaction/order IDs against the patterns in `prompts/prompt-ibkr-sample-data.md`. Prices, quantities, symbols, and exchanges are intentionally not flagged — those stay real. Exits 1 on findings.
+Flags account IDs, contract IDs, and execution/transaction/order IDs against the patterns in `docs/ibkr-sample-data.md`. Prices, quantities, symbols, and exchanges are intentionally not flagged — those stay real. Exits 1 on findings.
 
 ## Codebase Survey
 

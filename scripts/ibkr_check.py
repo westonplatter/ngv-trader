@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """Scan changes for real IBKR data that must not reach the repo.
 
-Enforces `prompts/prompt-ibkr-sample-data.md`: account IDs, contract IDs,
+Enforces `docs/ibkr-sample-data.md`: account IDs, contract IDs,
 execution/transaction/order IDs must be anonymized in anything committed.
 Symbols, exchanges, sec types, prices, and quantities are deliberately NOT
 flagged — the prompt keeps those real so examples stay realistic.
@@ -225,7 +225,7 @@ def report(findings: list[Finding], scanned: str, files: list[str], quiet: bool 
     print(f"\nFAIL: {len(findings)} finding(s)")
     for category, count in sorted(by_category.items()):
         print(f"  {category}: {count}")
-    print("\nSee prompts/prompt-ibkr-sample-data.md for the anonymization patterns.")
+    print("\nSee docs/ibkr-sample-data.md for the anonymization patterns.")
     return 1
 
 
