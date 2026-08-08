@@ -38,7 +38,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 from sqlalchemy import Engine, func, select, text
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, StatementError
 from sqlalchemy.orm import Session
 
 from src.db import get_engine
@@ -62,6 +62,16 @@ def _read_token_value() -> str:
 
 
 def cmd_add(engine: Engine, args: argparse.Namespace) -> int:
+    # Resolve the key BEFORE reading the token. Encryption otherwise fails at
+    # flush time, and SQLAlchemy wraps a bind-parameter failure in a
+    # StatementError that echoes the parameters — which would put the plaintext
+    # token in a traceback. Fail here, where no token exists yet.
+    try:
+        crypto.key_count()
+    except crypto.EncryptionKeyError as exc:
+        print(f"{exc}\n\nNothing was read or written.")
+        return 1
+
     token_value = _read_token_value()
     if not token_value:
         print("Empty token — nothing written.")
@@ -84,6 +94,13 @@ def cmd_add(engine: Engine, args: argparse.Namespace) -> int:
         except IntegrityError:
             session.rollback()
             print(f"A token named {args.name!r} already exists. Pick another name, or deactivate that one first.")
+            return 1
+        except StatementError as exc:
+            # Never surface `exc` itself — its message embeds the bound
+            # parameters, one of which is the token.
+            session.rollback()
+            print(f"Insert failed ({type(exc.orig).__name__ if exc.orig else type(exc).__name__}). Nothing was written.")
+            print("Details are suppressed because the failing statement carries the token value.")
             return 1
         print(f"Added token {args.name!r} (report_id={args.report_id}, fingerprint={crypto.fingerprint(token_value)}).")
     return 0
