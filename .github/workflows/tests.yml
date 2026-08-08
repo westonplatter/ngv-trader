@@ -1,0 +1,60 @@
+name: tests
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+
+    # Matches the local Postgres major version (17).
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      # tests/conftest.py forces DB_NAME to ngv_trader_test and creates it on demand.
+      # TEST_ENV_FILE points at a file that does not exist in CI so no .env is loaded.
+      TEST_ENV_FILE: .env.ci
+      DB_HOST: localhost
+      DB_PORT: "5432"
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      # --extra mcp so src/mcp/semantic_server.py is importable; the import
+      # canary in tests/test_imports.py covers every module under src/.
+      - name: Install dependencies
+        run: uv sync --group dev --extra mcp
+
+      - name: Run tests
+        run: uv run --group dev --extra mcp pytest
