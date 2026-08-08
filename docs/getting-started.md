@@ -20,26 +20,26 @@ ngv-trader has four main components that work together:
                         └──────────────┘         └──────────────┘
 ```
 
-| Component              | Purpose                                                                                      |
-| ---------------------- | -------------------------------------------------------------------------------------------- |
-| **Frontend**           | React/TypeScript UI for viewing positions, orders, trades, watchlists, and the Tradebot chat |
-| **Backend**            | FastAPI REST API serving data from Postgres and proxying LLM chat                            |
-| **Workers**            | Background processes that sync data (positions, contracts, quotes) with IBKR                 |
-| **PostgreSQL**         | Stores accounts, positions, orders, trades, contracts, watchlists, and jobs                  |
+| Component              | Purpose                                                                                                                                                                    |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Frontend**           | React/TypeScript UI for viewing positions, orders, trades, watchlists, and the Tradebot chat                                                                               |
+| **Backend**            | FastAPI REST API serving data from Postgres and proxying LLM chat                                                                                                          |
+| **Workers**            | Background processes that sync data (positions, contracts, quotes) with IBKR                                                                                               |
+| **PostgreSQL**         | Stores accounts, positions, orders, trades, contracts, watchlists, and jobs                                                                                                |
 | **IBKR TWS / Gateway** | Interactive Brokers connection for live market data (required only for the optional [intraday TWS overlay](core/intraday-tws-overlay.md); FlexQuery sync needs no session) |
 
 ## Prerequisites
 
 Install these before proceeding:
 
-| Tool                   | Version  | Install                                                                             |
-| ---------------------- | -------- | ----------------------------------------------------------------------------------- |
-| `uv`                   | latest   | `curl -LsSf https://astral.sh/uv/install.sh \| sh`                                  |
-| Bun                    | 1.0+     | [bun.sh](https://bun.sh/)                                                           |
-| PostgreSQL             | 14+      | [postgresql.org](https://www.postgresql.org/download/) or `brew install postgresql` |
-| Task                   | latest   | [taskfile.dev](https://taskfile.dev/docs/installation)                              |
+| Tool                   | Version  | Install                                                                                                                                                                          |
+| ---------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `uv`                   | latest   | `curl -LsSf https://astral.sh/uv/install.sh \| sh`                                                                                                                               |
+| Bun                    | 1.0+     | [bun.sh](https://bun.sh/)                                                                                                                                                        |
+| PostgreSQL             | 14+      | [postgresql.org](https://www.postgresql.org/download/) or `brew install postgresql`                                                                                              |
+| Task                   | latest   | [taskfile.dev](https://taskfile.dev/docs/installation)                                                                                                                           |
 | 1Password CLI (`op`)   | latest   | [developer.1password.com](https://developer.1password.com/docs/cli/get-started/) — required for `task api`/`worker:jobs`/`worker:orders`; other tasks load the env file directly |
-| IBKR TWS or IB Gateway | optional | [interactivebrokers.com](https://www.interactivebrokers.com/en/trading/tws.php)     |
+| IBKR TWS or IB Gateway | optional | [interactivebrokers.com](https://www.interactivebrokers.com/en/trading/tws.php)                                                                                                  |
 
 ## 1. Clone and Install Dependencies
 
@@ -94,9 +94,9 @@ BROKER_TWS_PORT=7497
 # CL futures near-expiry safety window (days)
 BROKER_CL_MIN_DAYS_TO_EXPIRY=7
 
-# IBKR Flex Query credentials (JSON string with account flex_token and query IDs)
+# Encryption key for the IBKR Flex Query tokens stored in the database.
 # Required for trades/positions FlexQuery sync — see workers.md
-# IB_JSON={"accounts": [{"flex_token": "your_flex_token_here", "daily": 123456, "annual": 234567, "weekly": 345678}]}
+# FLEX_TOKEN_ENCRYPTION_KEY=op://Vault/FLEX_TOKEN_ENCRYPTION_KEY/value
 
 # Tradebot LLM (optional — needed only for the chat feature)
 # TRADEBOT_LLM_API_KEY=sk-...
@@ -125,6 +125,45 @@ op run --env-file=.env.dev -- uv run python scripts/setup_db.py --env dev
 See [secrets-using-1password.md](secrets-using-1password.md) for details.
 
 If you do **not** use 1Password, just use plain values in `.env.dev` and run commands directly.
+
+### FlexQuery tokens
+
+IBKR FlexQuery credentials are **not** environment variables. Each token lives
+as a row in the `flexquery_tokens` table, encrypted at rest with Fernet, next to
+the report id it requests. `FLEX_TOKEN_ENCRYPTION_KEY` — a comma-separated list
+of Fernet keys, newest first — is the only related value in `.env.<env>`.
+
+One token can cover several IBKR accounts. Sync stamps each account row with the
+token it was discovered under (`accounts.flex_query_token_id`), so the mapping
+lives in the database rather than in an operator's head. Every active token is
+used on each sync run.
+
+Day-to-day management lives in the UI, on the **Accounts** page: the FlexQuery
+Tokens table above the accounts list adds tokens, edits their alias and report
+id, and activates or deactivates them. The token value is write-only — it is
+never sent back to the browser, so changing one means typing a replacement.
+
+The encryption key never passes through the UI. Generate and rotate it with
+`scripts/manage_flex_tokens.py` (run it with `--help`), which also offers the
+same add/list/deactivate actions for headless use. First-time setup, before the
+API can store anything:
+
+```bash
+uv run python scripts/manage_flex_tokens.py generate-key --out newkey.txt
+# put that value in 1Password, point FLEX_TOKEN_ENCRYPTION_KEY at it, delete the file
+uv run python scripts/manage_flex_tokens.py verify
+```
+
+On the CLI the token is read from a hidden prompt or stdin, never an argument,
+and is never printed back. To rotate the encryption key, prepend a new key to
+`FLEX_TOKEN_ENCRYPTION_KEY`, run `rotate-key`, confirm `verify` passes, then drop
+the old key. Losing the key with no copy makes every stored token unreadable —
+IBKR tokens are re-issuable from the client portal, so that means re-seeding, not
+permanent data loss.
+
+Both `worker:jobs` (which decrypts to sync) and the API (which encrypts on write)
+need `FLEX_TOKEN_ENCRYPTION_KEY`. Reads never decrypt, so listing tokens works
+without it.
 
 ## 3. Set Up PostgreSQL
 
@@ -236,7 +275,7 @@ Workers are background processes that sync data with IBKR. Run in its own termin
 ENV=dev task worker:jobs
 ```
 
-TWS/Gateway is only required for contract-metadata sync and watchlist quotes; FlexQuery trade/position sync (the active sync path) works without it as long as `IB_JSON` is set. The UI header shows worker health lights (green/yellow/red) based on heartbeat freshness.
+TWS/Gateway is only required for contract-metadata sync and watchlist quotes; FlexQuery trade/position sync (the active sync path) works without it as long as at least one token is seeded (see [FlexQuery tokens](#flexquery-tokens) below). The UI header shows worker health lights (green/yellow/red) based on heartbeat freshness.
 
 See [workers.md](workers.md) for worker architecture details.
 
@@ -251,7 +290,7 @@ See [workers.md](workers.md) for worker architecture details.
 | **Positions**   | `/positions`   | View current holdings with filters, trigger position sync |
 | **Orders**      | `/orders`      | View synced orders and track fill status                  |
 | **Trades**      | `/trades`      | View executed trade history and fill details              |
-| **Tagging**     | `/tagging`     | Organize executions into trade groups with strategy tags  |
+| **Strategies**  | `/strategies`  | Organize executions into trade groups with strategy tags  |
 | **Watch Lists** | `/watchlists`  | Create watchlists, add instruments, view live quotes      |
 | **Market Data** | `/market-data` | Monitor futures and options market data                   |
 | **Structures**  | `/structures`  | Build and price options structures; view expected PnL     |
@@ -323,11 +362,11 @@ Empty output = TWS not listening; fix on the TWS side.
 
 ## Further Reading
 
-| Doc                                                              | Topic                                                |
-| ---------------------------------------------------------------- | ---------------------------------------------------- |
-| [contract-ref-setup.md](contract-ref-setup.md)                   | Contract caching and sync architecture               |
-| [trades-and-executions-sync.md](trades-and-executions-sync.md)   | Trade/position sync (FlexQuery), spreads, corrections |
-| [secrets-using-1password.md](secrets-using-1password.md)         | 1Password CLI integration                            |
-| [tradebot-chatbot.md](tradebot-chatbot.md)                       | Tradebot architecture, tools, and safety constraints |
-| [workers.md](workers.md)                                         | Worker processes, heartbeats, and job dispatch       |
-| [_index.md](_index.md)                                           | Full documentation index                             |
+| Doc                                                            | Topic                                                 |
+| -------------------------------------------------------------- | ----------------------------------------------------- |
+| [contract-ref-setup.md](contract-ref-setup.md)                 | Contract caching and sync architecture                |
+| [trades-and-executions-sync.md](trades-and-executions-sync.md) | Trade/position sync (FlexQuery), spreads, corrections |
+| [secrets-using-1password.md](secrets-using-1password.md)       | 1Password CLI integration                             |
+| [tradebot-chatbot.md](tradebot-chatbot.md)                     | Tradebot architecture, tools, and safety constraints  |
+| [workers.md](workers.md)                                       | Worker processes, heartbeats, and job dispatch        |
+| [\_index.md](_index.md)                                        | Full documentation index                              |

@@ -68,7 +68,7 @@ function formatParamValue(value: unknown): string {
 }
 
 // Render a job's payload as compact key=value chips. trade_group_id is special-
-// cased to a deep link into the tagging page for that group.
+// cased to a deep link into the Strategies page for that group.
 function ParamsCell({ payload }: { payload: Job["payload"] }) {
   const entries = Object.entries(payload ?? {});
   if (entries.length === 0) {
@@ -81,7 +81,7 @@ function ParamsCell({ payload }: { payload: Job["payload"] }) {
           return (
             <Link
               key={key}
-              to={`/tagging?trade_group_id=${String(value)}`}
+              to={`/strategies?trade_group_id=${String(value)}`}
               className="rounded bg-indigo-100 px-1.5 py-0.5 font-mono text-[11px] text-indigo-700 hover:bg-indigo-200 hover:underline"
             >
               trade-group-{String(value)}

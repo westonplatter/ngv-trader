@@ -1,4 +1,4 @@
-# NextGenTrader
+# ngv-trader
 
 Agentic software enabling one person to operate as an quick and nimble quantative futures, vol. and options trade desk.
 
@@ -52,13 +52,15 @@ Before any hard-to-reverse DB change (destructive/data-mutating migration, backf
 
 ## Secrets (1Password)
 
-`.env.*` files store secrets as 1Password URIs (`IB_JSON=op://ngtrader_pro/IB_JSON/value`). `load_dotenv` yields the literal string; only `op run` resolves it at exec time. Launch any script reading `IB_JSON`, `OPENAI_API_KEY`, or other `op://` secrets via:
+`.env.*` files store secrets as 1Password URIs (`OPENAI_API_KEY=op://ngtrader_pro/OPENAI_API_KEY/value`). `load_dotenv` yields the literal string; vars read through raw `os.environ` need `op run` to resolve them at exec time:
 
 ```bash
 op run --env-file=.env.<env> -- uv run python scripts/<script>.py
 ```
 
-Covers `scripts/fetch_flex_trades.py`, the worker (`scripts/work_jobs.py`), and anything reading `IB_JSON`. A `JSONDecodeError` on `_resolve_flex_credentials` means "started without `op run`", not a code bug. Migrations are exempt (plain `DB_*` vars). See [docs/secrets-using-1password.md](docs/secrets-using-1password.md).
+Vars read through `src/utils/env_vars.py` — `FLEX_TOKEN_ENCRYPTION_KEY`, `BROKER_TWS_PORT`, `TRADEBOT_LLM_API_KEY` — self-resolve `op://` and need no wrapper. Migrations are exempt (plain `DB_*` vars). See [docs/secrets-using-1password.md](docs/secrets-using-1password.md).
+
+IBKR FlexQuery tokens are **not** environment variables. They live encrypted at rest in the `flexquery_tokens` table; `FLEX_TOKEN_ENCRYPTION_KEY` is what decrypts them, and a job payload cannot supply one. Manage them with `scripts/manage_flex_tokens.py`.
 
 ## Sample Data (IBKR anonymization)
 
@@ -74,6 +76,16 @@ Always use `uv run python scripts/check.py <module>` to verify imports. Never us
 - Specific: `uv run python scripts/check.py src.services.jobs`
 
 Exits 1 on failure.
+
+## Tests
+
+`task test` runs the pytest suite (`tests/`). Pass pytest args after `--`, e.g. `task test -- -k api -v`.
+
+Tests never touch dev or prod data. `tests/conftest.py` reads connection settings from `.env.dev` (override with `TEST_ENV_FILE`), then forces `DB_NAME` to **`ngv_trader_test`** (override with `TEST_DB_NAME`) and aborts if the name does not end in `_test`. The database is created if missing and migrated with `alembic upgrade head`; each test runs in a transaction that is rolled back.
+
+The suite is a dependency-bump canary (see `.github/dependabot.yml`): every `src/` module imports, migrations reach head and cover every model table, an ORM round-trip works, and the API serves `/api/v1/health` and `/openapi.json`. Because `[tool.uv] default-groups = []`, tests must run as `uv run --group dev --extra mcp pytest` — a bare `uv run pytest` prunes pytest and the `mcp` extra.
+
+CI runs the same suite on every PR and push to `main` via `.github/workflows/tests.yml`, against a Postgres 17 service container. There, `TEST_ENV_FILE` points at a nonexistent file so no `.env` is loaded and `DB_*` come from the workflow env.
 
 ## Doc Validation
 
@@ -102,10 +114,12 @@ Flags account IDs, contract IDs, and execution/transaction/order IDs against the
 - `src/`: Python backend application code (current import root is `src`).
 - `scripts/`: operator-facing workflows and broker/database utilities.
 - `alembic/` + `alembic.ini`: database migrations for Postgres schema.
-- `frontend/`: React + Vite UI (positions, orders, trades, tagging, pricing, tradebot chat).
+- `frontend/`: React + Vite UI (positions, orders, trades, strategies, pricing, tradebot chat).
 - `docs/`: current-state docs and specs; see `docs/_index.md`.
+- `docs/solutions/`: documented solutions to past problems (bugs, best practices, workflow patterns), organized by category with YAML frontmatter (`module`, `tags`, `problem_type`) — relevant when implementing or debugging in documented areas.
 - `CONCEPTS.md`: shared domain vocabulary (entities, named processes, status concepts) — relevant when orienting to the codebase or discussing domain concepts.
-- `Taskfile.yaml`: common dev commands for API, frontend, and migrations.
+- `tests/`: pytest suite run via `task test` against a dedicated `ngv_trader_test` database.
+- `Taskfile.yaml`: common dev commands for API, frontend, migrations, and tests.
 
 ### Primitives
 
@@ -121,7 +135,7 @@ Flags account IDs, contract IDs, and execution/transaction/order IDs against the
 - `src/schemas.py`: Pandera DataFrame schema for positions validation shape.
 - `src/api/deps.py`: FastAPI DB session dependency (`get_db`).
 - `src/api/routers/*.py`: REST surface — `positions`, `orders`, `trades`, `futures` (market data), `activated_products`, `jobs`, `workers`, `events` (SSE), `tradebot` (chat), `watch_lists`, `tags`, `trade_groups`, `accounts`, `structures`, `reports`, `admin`, `user_preferences`.
-- `frontend/src/components/*.tsx`: React UI (positions, orders, trades, tagging, pricing, tradebot chat) consuming `/api/v1/*`.
+- `frontend/src/components/*.tsx`: React UI (positions, orders, trades, strategies, pricing, tradebot chat) consuming `/api/v1/*`.
 
 ### Services
 
@@ -151,7 +165,7 @@ Flags account IDs, contract IDs, and execution/transaction/order IDs against the
 
 ### Active Architecture Direction
 
-- Current import root is `src` (`from src...`). A previously-planned migration to an installable `src/ngtrader/...` package layout has no active spec on disk; re-add one under `docs/spec-*.md` before resuming that work.
+- Current import root is `src` (`from src...`). A previously-planned migration to an installable `src/ngv_trader/...` package layout has no active spec on disk; re-add one under `docs/spec-*.md` before resuming that work.
 
 ## Python
 

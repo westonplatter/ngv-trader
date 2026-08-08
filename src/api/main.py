@@ -14,6 +14,7 @@ from src.api.routers import (
     activated_products,
     admin,
     events,
+    flexquery_tokens,
     futures,
     jobs,
     orders,
@@ -76,6 +77,7 @@ def health():
 
 
 app.include_router(accounts.router, prefix="/api/v1", tags=["Accounts"])
+app.include_router(flexquery_tokens.router, prefix="/api/v1", tags=["FlexQuery Tokens"])
 app.include_router(positions.router, prefix="/api/v1", tags=["Positions"])
 app.include_router(orders.router, prefix="/api/v1", tags=["Orders"])
 app.include_router(trades.router, prefix="/api/v1", tags=["Trades"])

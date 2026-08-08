@@ -130,11 +130,13 @@ def sync_flex_positions(
     query_id: str | None = None,
     start_date: date | None = None,
     end_date: date | None = None,
+    flex_query_token_id: int | None = None,
 ) -> dict[str, Any]:
     """Fetch (or accept) FlexQuery open positions for one account and upsert.
 
     Pass `report` when reusing one fetch across multiple accounts; otherwise
     provide token/query/date_range and this function will fetch its own XML.
+    `flex_query_token_id` stamps the account with the token it came from.
     Returns metrics dict with row counts and as_of_date.
     """
     if report is None:
@@ -154,7 +156,7 @@ def sync_flex_positions(
     now = datetime.now(timezone.utc)
 
     with Session(engine) as session:
-        account_lookup = get_or_create_accounts(session, {account_code})
+        account_lookup = get_or_create_accounts(session, {account_code}, flex_query_token_id)
         account_id = account_lookup[account_code]
 
         for row in aggregated:

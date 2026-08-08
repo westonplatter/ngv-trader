@@ -50,9 +50,11 @@ This routinely makes an evening fill look like it settled a day late when its wa
 
 ### Combo
 
-A multi-leg order placed and filled as a single unit. The broker reports it twice over: once as a summary row for the whole structure, and once per constituent Leg.
+A multi-leg order placed and filled as a single unit. The broker reports it twice over: as a summary of the whole structure, and once per constituent Leg.
 
-The summary row is a display convenience, not an independent fill — its quantities and prices are already accounted for by the Legs. The live and settled tiers derive the summary differently, so the two summaries describe the same event under unrelated ids and must be matched by identity rather than by id.
+The summary is a display convenience, not an independent fill — its quantities and prices are already accounted for by the Legs. The live and settled tiers derive the summary differently, so the two summaries describe the same event under unrelated ids and must be matched by identity rather than by id.
+
+A Combo does not necessarily produce exactly one summary. When the order fills in several partial executions, the live tier emits one summary per partial — all sharing the same order identity — while the settled tier still derives a single summary. Any rule that assumes one summary per order, or that treats the other rows sharing an order identity as necessarily being Legs, breaks on this case.
 
 ### Leg
 

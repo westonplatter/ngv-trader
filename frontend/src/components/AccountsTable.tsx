@@ -73,6 +73,8 @@ interface Account {
   account: string;
   masked_account: string;
   alias: string | null;
+  flex_query_token_id: number | null;
+  flex_query_token_name: string | null;
 }
 
 type RevealMode = "hidden" | "partial" | "full";
@@ -167,6 +169,9 @@ export default function AccountsTable() {
             <th className="px-3 py-2 font-semibold text-gray-700">ID</th>
             <th className="px-3 py-2 font-semibold text-gray-700">Account</th>
             <th className="px-3 py-2 font-semibold text-gray-700">Alias</th>
+            <th className="px-3 py-2 font-semibold text-gray-700">
+              FlexQuery Token
+            </th>
             <th className="px-3 py-2 font-semibold text-gray-700">Actions</th>
           </tr>
         </thead>
@@ -241,6 +246,20 @@ export default function AccountsTable() {
                 ) : (
                   <span className="text-gray-600">
                     {account.alias ?? <span className="italic">Not set</span>}
+                  </span>
+                )}
+              </td>
+              <td className="px-3 py-2">
+                {account.flex_query_token_name ? (
+                  <span className="inline-flex rounded bg-gray-100 px-2 py-0.5 font-mono text-xs text-gray-700">
+                    {account.flex_query_token_name}
+                  </span>
+                ) : (
+                  <span
+                    className="text-gray-400 italic"
+                    title="Set on the account's next FlexQuery sync"
+                  >
+                    Not synced
                   </span>
                 )}
               </td>

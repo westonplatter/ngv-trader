@@ -55,6 +55,10 @@ tasks:
       ENV: "{{.ENV}}"
     cmd: uv run alembic revision --autogenerate -m "{{.CLI_ARGS}}"
 
+  test:
+    desc: Run the python test suite against the ngv_trader_test DB (created/migrated on demand)
+    cmd: uv run --group dev --extra mcp pytest {{.CLI_ARGS}}
+
   validate:
     desc: Check env file, Postgres, migrations, and optionally TWS
     cmd: uv run python scripts/validate_env.py --env {{.ENV}} {{.CLI_ARGS}}

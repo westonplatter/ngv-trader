@@ -128,8 +128,10 @@ Worker/job (handled by `worker:jobs`, see [workers.md](workers.md)):
 
 - `trades.sync.flexquery` → `handle_trades_sync_flexquery` (active)
 - `trades.sync.tws` → `handle_trades_sync_tws` (dormant, unregistered)
-- Flex payload overrides: `flex_token`, `query_id`, `lookback_days` (otherwise
-  resolved from the `IB_JSON` secret; see [secrets-using-1password.md](secrets-using-1password.md)).
+- Flex payload options: `lookback_days`, `start_date`/`end_date`, `account_code`.
+  Credentials are **not** payload-supplied — every active row in
+  `flexquery_tokens` is used, decrypted with `FLEX_TOKEN_ENCRYPTION_KEY`. See
+  [getting-started.md](getting-started.md#flexquery-tokens).
 
 Read API (`src/api/routers/trades.py`):
 

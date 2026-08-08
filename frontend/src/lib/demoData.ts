@@ -23,6 +23,7 @@
 // Fixtures reuse the real component/API types so they cannot silently drift
 // from the shapes the UI actually consumes.
 
+import type { FlexQueryToken } from "../components/FlexQueryTokensTable";
 import type { Position, TradeGroupRef } from "../components/PositionsTable";
 import type {
   GroupExecution,
@@ -43,7 +44,7 @@ const AS_OF = "2026-06-21";
 const LIVE_MARK_TS = "2026-06-21T14:29:55Z";
 
 // Trade groups the demo positions roll up to. Names render as links in the
-// Positions table's "Trade Group" column and as the list on the Tagging page.
+// Positions table's "Trade Group" column and as the list on the Strategies page.
 const GROUP_NQ: TradeGroupRef = { id: 101, name: "NQ Momentum" };
 const GROUP_ES_DIAGONAL: TradeGroupRef = { id: 102, name: "ES Call Diagonal" };
 const GROUP_GLD_CC: TradeGroupRef = { id: 103, name: "GLD Covered Calls" };
@@ -447,7 +448,89 @@ export const DEMO_POSITIONS: Position[] = [
   },
 ];
 
-// ── Tagging workspace ─────────────────────────────────────────────────────────
+// ── FlexQuery tokens ──────────────────────────────────────────────────────────
+
+// Token values are never returned by the API, so there is nothing secret to
+// fixture here — only the metadata the management table renders.
+export const DEMO_FLEXQUERY_TOKENS: FlexQueryToken[] = [
+  {
+    id: 1,
+    name: "main",
+    report_id: "633891",
+    is_active: true,
+    notes: null,
+    last_used_at: "2026-06-21T14:30:00Z",
+    account_count: 2,
+  },
+  {
+    id: 2,
+    name: "lp",
+    report_id: "656962",
+    is_active: true,
+    notes: null,
+    last_used_at: "2026-06-21T14:30:00Z",
+    account_count: 1,
+  },
+  {
+    id: 3,
+    name: "retired",
+    report_id: "512004",
+    is_active: false,
+    notes: null,
+    last_used_at: null,
+    account_count: 0,
+  },
+];
+
+// ── Accounts ──────────────────────────────────────────────────────────────────
+
+// Two FlexQuery tokens covering four accounts, including one not yet seen under
+// any token — the states the Accounts page has to render.
+export interface DemoAccount {
+  id: number;
+  account: string;
+  masked_account: string;
+  alias: string | null;
+  flex_query_token_id: number | null;
+  flex_query_token_name: string | null;
+}
+
+export const DEMO_ACCOUNTS: DemoAccount[] = [
+  {
+    id: 1,
+    account: "U1234567",
+    masked_account: "U****567",
+    alias: "main",
+    flex_query_token_id: 1,
+    flex_query_token_name: "main",
+  },
+  {
+    id: 2,
+    account: "U9999999",
+    masked_account: "U****999",
+    alias: "sep",
+    flex_query_token_id: 1,
+    flex_query_token_name: "main",
+  },
+  {
+    id: 3,
+    account: "U8675309",
+    masked_account: "U****309",
+    alias: "lsc",
+    flex_query_token_id: 2,
+    flex_query_token_name: "lp",
+  },
+  {
+    id: 5,
+    account: "U7654321",
+    masked_account: "U****321",
+    alias: "mini",
+    flex_query_token_id: null,
+    flex_query_token_name: null,
+  },
+];
+
+// ── Strategies workspace ──────────────────────────────────────────────────────
 
 // A single umbrella strategy keeps the demo coherent and ensures Trade Group
 // links from the Positions page always resolve to a populated group.

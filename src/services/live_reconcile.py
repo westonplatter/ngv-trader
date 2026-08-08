@@ -34,9 +34,11 @@ A third pattern is not an id divergence at all but a redundant row:
      ``con_id``/``symbol`` NULL — so the live BAG row (on placeholder
      ``con_id`` 28812380) shares no id, contract or order key with anything
      settled. Rather than match it, we establish that its combo settled and drop
-     it as pure display redundancy: purge once no live sibling shares its order
+     it as pure display redundancy: purge once no live *leg* shares its order
      key (every leg has already reconciled out) *and* settled legs exist at its
-     timestamp. Its group tag fans out onto those settled legs first.
+     timestamp. Its group tag fans out onto those settled legs first. A combo
+     filling in partials emits one summary per partial under a shared order key,
+     so peer summaries are not counted — see ``_has_live_siblings``.
 
 When a match is found, any preemptive trade-group tag on the live fill is
 carried onto the settled execution(s) before the live row is deleted, so
@@ -49,7 +51,7 @@ import logging
 import re
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from src.models import LiveExecution, TradeExecution
@@ -172,6 +174,14 @@ def _is_bag_summary(live: LiveExecution) -> bool:
     return live.exec_role == "combo_summary" or (live.sec_type or "").strip().upper() == "BAG"
 
 
+def _bag_summary_clause():
+    """SQL form of ``_is_bag_summary`` — keep the two in step when either changes."""
+    return or_(
+        LiveExecution.exec_role == "combo_summary",
+        func.upper(func.trim(func.coalesce(LiveExecution.sec_type, ""))) == "BAG",
+    )
+
+
 def _order_group_key(live: LiveExecution) -> tuple[str, int] | None:
     """Key grouping a live BAG summary with its live legs.
 
@@ -187,19 +197,29 @@ def _order_group_key(live: LiveExecution) -> tuple[str, int] | None:
 
 
 def _has_live_siblings(session: Session, live: LiveExecution) -> bool:
-    """True while any other live row still shares this row's order key.
+    """True while any unsettled **leg** still shares this row's order key.
 
     A live leg only leaves ``live_executions`` by settling (the exact-id purge
-    or the leg-strip matcher above), so "no siblings left" is the proof that the
+    or the leg-strip matcher above), so "no legs left" is the proof that the
     combo's legs have settled. A summary whose legs are still live is deferred
     to a later run, after they reconcile.
+
+    Peer BAG summaries are excluded from the count. When a combo order fills in
+    several partial executions, TWS emits one BAG summary *per partial* — all
+    sharing the order's ``permId``. Counting those as siblings deadlocked them
+    against each other: each saw the other still present, so neither ever
+    reached "no siblings" and both lingered as phantom ``unsettled`` rows even
+    though every leg had settled. A peer summary is never evidence that a leg is
+    outstanding, so only non-summary rows gate the purge.
     """
     key = _order_group_key(live)
     if key is None:
         return True
     kind, value = key
     column = LiveExecution.ib_perm_id if kind == "perm" else LiveExecution.ib_order_id
-    remaining = session.execute(select(func.count()).select_from(LiveExecution).where(column == value, LiveExecution.id != live.id)).scalar_one()
+    remaining = session.execute(
+        select(func.count()).select_from(LiveExecution).where(column == value, LiveExecution.id != live.id, ~_bag_summary_clause())
+    ).scalar_one()
     return remaining > 0
 
 
