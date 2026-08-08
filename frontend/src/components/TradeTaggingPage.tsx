@@ -313,6 +313,11 @@ export default function TradeTaggingPage() {
   const [error, setError] = useState<string | null>(null);
 
   const [focusMode, setFocusMode] = useState(false);
+  // Set once the user toggles focus mode. Guards against the async mount-time
+  // preference GET clobbering a toggle the user made before it resolved.
+  const focusTouchedRef = useRef(false);
+  // Chains preference PUTs so rapid toggles persist in order (last write wins).
+  const focusWriteChainRef = useRef<Promise<void>>(Promise.resolve());
   // Only collapse the panes when there is a detail to fill the space — a focus
   // toggle with nothing selected would hide both lists and leave an empty pane
   // with no way back to pick a group.
@@ -589,13 +594,17 @@ export default function TradeTaggingPage() {
     });
   }, [loadGroupDetail, loadExecutions, selectedGroupId]);
 
-  // Load the persisted focus-mode preference once at mount.
+  // Load the persisted focus-mode preference once at mount. If the user has
+  // already toggled by the time this resolves, their action wins — don't let a
+  // stale GET overwrite it.
   useEffect(() => {
     let active = true;
     fetch(`${API_BASE_URL}/user-preferences/${FOCUS_PREF_KEY}`)
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
-        if (active && data?.value === true) setFocusMode(true);
+        if (active && !focusTouchedRef.current && data?.value === true) {
+          setFocusMode(true);
+        }
       })
       .catch(() => {});
     return () => {
@@ -604,13 +613,20 @@ export default function TradeTaggingPage() {
   }, []);
 
   const toggleFocusMode = useCallback(() => {
+    focusTouchedRef.current = true;
     setFocusMode((current) => {
       const next = !current;
-      fetch(`${API_BASE_URL}/user-preferences/${FOCUS_PREF_KEY}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ value: next }),
-      }).catch(() => {});
+      // Serialize writes so a slow earlier PUT can't land after a later one and
+      // leave the persisted value out of sync with the last user action.
+      focusWriteChainRef.current = focusWriteChainRef.current
+        .catch(() => {})
+        .then(() =>
+          fetch(`${API_BASE_URL}/user-preferences/${FOCUS_PREF_KEY}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ value: next }),
+          }).then(() => undefined),
+        );
       return next;
     });
   }, []);
@@ -941,8 +957,11 @@ export default function TradeTaggingPage() {
       >
         {/* Column 1: Strategies — collapses to zero width in focus mode. The
             card padding/border are dropped while collapsed so the 0fr track
-            reaches true zero (padding+border are its min-content floor). */}
+            reaches true zero (padding+border are its min-content floor).
+            `inert` while collapsed keeps its hidden controls out of the tab
+            order (overflow-hidden alone does not). */}
         <section
+          inert={focusActive}
           className={`flex min-h-0 min-w-0 flex-col ${
             focusActive
               ? "overflow-hidden border-0 p-0"
@@ -1067,8 +1086,10 @@ export default function TradeTaggingPage() {
                 : "gap-4 xl:grid-cols-[minmax(280px,35%)_1fr]"
             }`}
           >
-            {/* Group list — collapses to zero width in focus mode. */}
+            {/* Group list — collapses to zero width in focus mode. `inert`
+                keeps its hidden controls out of the tab order while collapsed. */}
             <div
+              inert={focusActive}
               className={`flex min-h-0 min-w-0 flex-col ${
                 focusActive ? "overflow-hidden" : ""
               }`}
