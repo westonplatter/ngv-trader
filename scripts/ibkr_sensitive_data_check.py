@@ -7,11 +7,11 @@ Symbols, exchanges, sec types, prices, and quantities are deliberately NOT
 flagged — the prompt keeps those real so examples stay realistic.
 
 Usage:
-    uv run python scripts/ibkr_check.py              # staged changes, else unstaged
-    uv run python scripts/ibkr_check.py --unstaged   # force unstaged diff
-    uv run python scripts/ibkr_check.py --paths a.md src/   # whole files/dirs
-    uv run python scripts/ibkr_check.py --untracked  # include untracked files
-    uv run python scripts/ibkr_check.py --quiet      # result only, no file list
+    uv run python scripts/ibkr_sensitive_data_check.py              # staged changes, else unstaged
+    uv run python scripts/ibkr_sensitive_data_check.py --unstaged   # force unstaged diff
+    uv run python scripts/ibkr_sensitive_data_check.py --paths a.md src/   # whole files/dirs
+    uv run python scripts/ibkr_sensitive_data_check.py --untracked  # include untracked files
+    uv run python scripts/ibkr_sensitive_data_check.py --quiet      # result only, no file list
 
 Exits 1 when anything is flagged, so it can gate a commit hook.
 """
@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import argparse
 import re
-import subprocess
+import subprocess  # nosec B404 — only ever used by `_run` to shell out to git; see the note there
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -99,7 +99,14 @@ class Finding:
 
 
 def _run(args: list[str]) -> str:
-    result = subprocess.run(args, capture_output=True, text=True, check=False)
+    """Run a git command and return stdout, swallowing failures.
+
+    Every caller passes a literal argv list beginning with `git`, and nothing
+    is interpolated into a command string, so there is no shell for input to
+    escape into. The one caller-supplied value — a path from `--paths` — is
+    placed after `--`, which stops git reading it as an option.
+    """
+    result = subprocess.run(args, capture_output=True, text=True, check=False, shell=False)  # nosec B603 — fixed git argv, no shell
     return result.stdout
 
 

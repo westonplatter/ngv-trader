@@ -101,14 +101,34 @@ Exits 1 on hard failures (`FAIL`). Route warnings are `WARN` only — not blocke
 
 Before staging, scan changes for real IBKR identifiers that must never be committed (see **Sample Data** above).
 
-- Staged changes: `uv run python scripts/ibkr_check.py`
-- Include untracked files: `uv run python scripts/ibkr_check.py --untracked`
-- Specific files/dirs in full: `uv run python scripts/ibkr_check.py --paths <path> ...` (directories recurse, honoring `.gitignore`)
-- Result only, no per-file list: `uv run python scripts/ibkr_check.py --quiet`
+- Staged changes: `uv run python scripts/ibkr_sensitive_data_check.py`
+- Include untracked files: `uv run python scripts/ibkr_sensitive_data_check.py --untracked`
+- Specific files/dirs in full: `uv run python scripts/ibkr_sensitive_data_check.py --paths <path> ...` (directories recurse, honoring `.gitignore`)
+- Result only, no per-file list: `uv run python scripts/ibkr_sensitive_data_check.py --quiet`
 
 Every scanned file is listed by default so the output is evidence of what was checked; `--quiet` drops that list but still prints findings.
 
 Flags account IDs, contract IDs, and execution/transaction/order IDs against the patterns in `docs/ibkr-sample-data.md`. Prices, quantities, symbols, and exchanges are intentionally not flagged — those stay real. Exits 1 on findings.
+
+### Pre-commit hook
+
+The same scan runs automatically on every commit, as the trunk action
+`ibkr-sensitive-data-check` (`.trunk/trunk.yaml`). A commit whose staged diff
+contains a real identifier is rejected before it lands.
+
+Trunk owns `core.hooksPath`, so hooks live outside `.git/hooks` and each clone
+must opt in once:
+
+```bash
+trunk git-hooks sync
+```
+
+The hook shells out to `python3` rather than `uv run` — the script is pure
+stdlib, so it gates a commit on a machine with no virtualenv synced.
+
+Two limits worth knowing: `git commit --no-verify` skips it, and a contributor
+who never runs `trunk git-hooks sync` never has it. It catches honest mistakes;
+it is not an enforcement boundary.
 
 ## Codebase Survey
 
