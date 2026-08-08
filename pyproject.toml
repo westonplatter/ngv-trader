@@ -7,7 +7,7 @@ requires-python = ">=3.12"
 license = { file = "LICENSE" }
 dependencies = [
   "ib-async>=2.1.0",
-  "langgraph>=0.2.76",
+  "langgraph>=1.2.9",
   "python-dotenv>=1.2.1",
   "ngv_reports_ibkr @ git+https://github.com/westonplatter/ngv_reports_ibkr.git@v0.5.0",
   "sqlalchemy>=2.0",
