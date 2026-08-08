@@ -11,6 +11,7 @@ Usage:
     uv run python scripts/ibkr_check.py --unstaged   # force unstaged diff
     uv run python scripts/ibkr_check.py --paths a.md src/   # whole files/dirs
     uv run python scripts/ibkr_check.py --untracked  # include untracked files
+    uv run python scripts/ibkr_check.py --quiet      # result only, no file list
 
 Exits 1 when anything is flagged, so it can gate a commit hook.
 """
@@ -179,27 +180,38 @@ def _scan_files(paths: list[str]) -> list[Finding]:
     return findings
 
 
-def collect(args: argparse.Namespace) -> tuple[list[Finding], str]:
+def collect(args: argparse.Namespace) -> tuple[list[Finding], str, list[str]]:
     if args.paths:
         paths = _expand_paths(args.paths)
-        return _scan_files(paths), f"{len(paths)} file(s)"
+        return _scan_files(paths), f"{len(paths)} file(s)", paths
 
-    diff = "" if args.unstaged else _run(["git", "diff", "--cached", "--no-color"])
+    diff_args = ["git", "diff", "--cached"]
+    diff = "" if args.unstaged else _run([*diff_args, "--no-color"])
     scanned = "staged changes"
     if not diff.strip():
-        diff = _run(["git", "diff", "--no-color"])
+        diff_args = ["git", "diff"]
+        diff = _run([*diff_args, "--no-color"])
         scanned = "unstaged changes"
 
+    files = _run([*diff_args, "--name-only"]).split()
     findings = scan_diff(diff)
     if args.untracked:
         untracked = _run(["git", "ls-files", "--others", "--exclude-standard"]).split()
         findings.extend(_scan_files(untracked))
+        files.extend(path for path in untracked if path not in set(files))
         scanned += " + untracked files"
-    return findings, scanned
+    return findings, scanned, files
 
 
-def report(findings: list[Finding], scanned: str) -> int:
+def report(findings: list[Finding], scanned: str, files: list[str], quiet: bool = False) -> int:
     print(f"IBKR data check — scanned {scanned}")
+    if not quiet:
+        for path in files:
+            print(f"  · {path}")
+        if not files:
+            print("  (nothing to scan)")
+    if not quiet:
+        print()
     if not findings:
         print("OK: no real IBKR account IDs, contract IDs, or execution/order IDs found.")
         return 0
@@ -227,10 +239,16 @@ def main() -> int:
         default=None,
         help="scan these files/directories in full instead of a diff (directories recurse)",
     )
+    parser.add_argument(
+        "-q",
+        "--quiet",
+        action="store_true",
+        help="suppress the per-file list; print only the header and the result",
+    )
     args = parser.parse_args()
 
-    findings, scanned = collect(args)
-    return report(findings, scanned)
+    findings, scanned, files = collect(args)
+    return report(findings, scanned, files, quiet=args.quiet)
 
 
 if __name__ == "__main__":
