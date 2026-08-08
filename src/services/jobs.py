@@ -14,10 +14,32 @@ JOB_STATUS_RUNNING = "running"
 JOB_STATUS_COMPLETED = "completed"
 JOB_STATUS_FAILED = "failed"
 
+
+class JobDeferred(Exception):  # noqa: N818 — a control signal, not an error
+    """A handler is not finished, but nothing has gone wrong: check back later.
+
+    Raised when a job waits on something external that is merely slow — an IBKR
+    Flex statement still being generated, say. The worker requeues the job after
+    ``retry_after_seconds`` **without** counting an attempt: waiting is the
+    expected path and must not consume the failure budget that exists for real
+    errors. Handlers bound their own polling so a permanently stuck job still
+    terminates.
+    """
+
+    def __init__(self, reason: str, retry_after_seconds: int) -> None:
+        super().__init__(reason)
+        self.reason = reason
+        self.retry_after_seconds = retry_after_seconds
+
+
 JOB_TYPE_POSITIONS_SYNC_TWS = "positions.sync.tws"
 JOB_TYPE_POSITIONS_SYNC_FLEXQUERY = "positions.sync.flexquery"
 JOB_TYPE_TRADES_SYNC_TWS = "trades.sync.tws"
+# Kept as an entrypoint: enqueuing it fans out to one initiate_request per
+# active token. The two phases below do the actual work.
 JOB_TYPE_TRADES_SYNC_FLEXQUERY = "trades.sync.flexquery"
+JOB_TYPE_TRADES_FLEXQUERY_INITIATE_REQUEST = "trades.flexquery.initiate_request"
+JOB_TYPE_TRADES_FLEXQUERY_FETCH_REPORT = "trades.flexquery.fetch_report"
 JOB_TYPE_CONTRACTS_SYNC = "contracts.sync"
 JOB_TYPE_ORDER_SUBMIT = "order.submit"
 JOB_TYPE_ORDER_FETCH_SYNC = "order.fetch_sync"
@@ -119,6 +141,21 @@ def complete_job(session: Session, job: Job, result: dict) -> None:
     job.status = JOB_STATUS_COMPLETED
     job.result = result
     job.completed_at = now
+    job.updated_at = now
+    session.flush()
+
+
+def defer_job(session: Session, job: Job, reason: str, retry_after_seconds: int) -> None:
+    """Requeue a job to run later without recording a failure.
+
+    Unlike ``fail_or_retry_job`` this leaves ``attempts`` untouched, so a job
+    that legitimately waits on a slow external system keeps its full retry
+    budget for actual errors.
+    """
+    now = now_utc()
+    job.status = JOB_STATUS_QUEUED
+    job.available_at = now + timedelta(seconds=retry_after_seconds)
+    job.last_error = reason
     job.updated_at = now
     session.flush()
 
