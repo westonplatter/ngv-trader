@@ -13,6 +13,7 @@
 import { API_BASE_URL } from "../config";
 import {
   DEMO_ACCOUNTS,
+  DEMO_FLEXQUERY_TOKENS,
   DEMO_POSITIONS,
   DEMO_STRATEGIES,
   DEMO_TRADE_GROUPS,
@@ -46,6 +47,7 @@ function demoWorkerStatuses(): Json {
 function routeGet(path: string): Json | undefined {
   if (path === "/positions") return DEMO_POSITIONS;
   if (path === "/accounts") return DEMO_ACCOUNTS;
+  if (path === "/flexquery-tokens") return DEMO_FLEXQUERY_TOKENS;
   if (path === "/workers/status") return demoWorkerStatuses();
   if (path === "/strategies") return DEMO_STRATEGIES;
   if (path === "/trade-groups") return DEMO_TRADE_GROUPS;

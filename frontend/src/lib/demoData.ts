@@ -23,6 +23,7 @@
 // Fixtures reuse the real component/API types so they cannot silently drift
 // from the shapes the UI actually consumes.
 
+import type { FlexQueryToken } from "../components/FlexQueryTokensTable";
 import type { Position, TradeGroupRef } from "../components/PositionsTable";
 import type {
   GroupExecution,
@@ -444,6 +445,40 @@ export const DEMO_POSITIONS: Position[] = [
     mark: 4.1,
     mark_ts: LIVE_MARK_TS,
     live_unrealized: 125.0,
+  },
+];
+
+// ── FlexQuery tokens ──────────────────────────────────────────────────────────
+
+// Token values are never returned by the API, so there is nothing secret to
+// fixture here — only the metadata the management table renders.
+export const DEMO_FLEXQUERY_TOKENS: FlexQueryToken[] = [
+  {
+    id: 1,
+    name: "main",
+    report_id: "633891",
+    is_active: true,
+    notes: null,
+    last_used_at: "2026-06-21T14:30:00Z",
+    account_count: 2,
+  },
+  {
+    id: 2,
+    name: "lp",
+    report_id: "656962",
+    is_active: true,
+    notes: null,
+    last_used_at: "2026-06-21T14:30:00Z",
+    account_count: 1,
+  },
+  {
+    id: 3,
+    name: "retired",
+    report_id: "512004",
+    is_active: false,
+    notes: null,
+    last_used_at: null,
+    account_count: 0,
   },
 ];
 

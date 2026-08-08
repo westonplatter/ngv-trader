@@ -138,23 +138,32 @@ token it was discovered under (`accounts.flex_query_token_id`), so the mapping
 lives in the database rather than in an operator's head. Every active token is
 used on each sync run.
 
-`scripts/manage_flex_tokens.py` is the only supported way to seed, list,
-deactivate, verify, and re-key tokens — run it with `--help`. First-time setup,
-after the database exists:
+Day-to-day management lives in the UI, on the **Accounts** page: the FlexQuery
+Tokens table above the accounts list adds tokens, edits their alias and report
+id, and activates or deactivates them. The token value is write-only — it is
+never sent back to the browser, so changing one means typing a replacement.
+
+The encryption key never passes through the UI. Generate and rotate it with
+`scripts/manage_flex_tokens.py` (run it with `--help`), which also offers the
+same add/list/deactivate actions for headless use. First-time setup, before the
+API can store anything:
 
 ```bash
 uv run python scripts/manage_flex_tokens.py generate-key --out newkey.txt
 # put that value in 1Password, point FLEX_TOKEN_ENCRYPTION_KEY at it, delete the file
-uv run python scripts/manage_flex_tokens.py add --name main --report-id <flexquery-report-id>
 uv run python scripts/manage_flex_tokens.py verify
 ```
 
-The token value is read from a hidden prompt or stdin, never from an argument,
+On the CLI the token is read from a hidden prompt or stdin, never an argument,
 and is never printed back. To rotate the encryption key, prepend a new key to
 `FLEX_TOKEN_ENCRYPTION_KEY`, run `rotate-key`, confirm `verify` passes, then drop
 the old key. Losing the key with no copy makes every stored token unreadable —
 IBKR tokens are re-issuable from the client portal, so that means re-seeding, not
 permanent data loss.
+
+Both `worker:jobs` (which decrypts to sync) and the API (which encrypts on write)
+need `FLEX_TOKEN_ENCRYPTION_KEY`. Reads never decrypt, so listing tokens works
+without it.
 
 ## 3. Set Up PostgreSQL
 
