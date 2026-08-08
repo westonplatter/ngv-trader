@@ -7,15 +7,15 @@ requires-python = ">=3.12"
 license = { file = "LICENSE" }
 dependencies = [
   "ib-async>=2.1.0",
-  "langgraph>=0.2.76",
+  "langgraph>=1.2.9",
   "python-dotenv>=1.2.1",
   "ngv_reports_ibkr @ git+https://github.com/westonplatter/ngv_reports_ibkr.git@v0.5.0",
   "sqlalchemy>=2.0",
-  "alembic>=1.14",
+  "alembic>=1.18.5",
   "psycopg2-binary>=2.9",
   "pandera[pandas]>=0.20",
   "fastapi>=0.139.2",
-  "uvicorn[standard]>=0.34",
+  "uvicorn[standard]>=0.51.0",
   "defusedxml>=0.7.1",
 ]
 
@@ -41,7 +41,7 @@ default-groups = []
 dev = [
   "typer>=0.27.0",
   "ipdb>=0.13.13",
-  "ruff>=0.15.2",
+  "ruff>=0.16.0",
   "pytest>=9.1.1",
   "httpx>=0.28.1",
 ]
