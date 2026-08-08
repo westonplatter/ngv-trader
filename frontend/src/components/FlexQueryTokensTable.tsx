@@ -19,6 +19,13 @@ export interface FlexQueryToken {
 // IBKR answers 1025.
 const MANUAL_PAUSE_MINUTES = 20;
 
+// Row actions render as buttons rather than links: they perform an action on
+// this page, they do not navigate.
+const ACTION_BUTTON =
+  "rounded border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50";
+const PRIMARY_ACTION_BUTTON =
+  "rounded border border-blue-600 bg-blue-600 px-2 py-1 text-xs font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50";
+
 function pauseRemainingMinutes(token: FlexQueryToken): number {
   if (!token.paused_until) return 0;
   const remainingMs = new Date(token.paused_until).getTime() - Date.now();
@@ -151,10 +158,7 @@ export default function FlexQueryTokensTable() {
           IBKR FlexQuery Tokens
         </h2>
         {!adding && (
-          <button
-            onClick={() => setAdding(true)}
-            className="text-sm text-blue-600 hover:underline"
-          >
+          <button onClick={() => setAdding(true)} className={ACTION_BUTTON}>
             Add token
           </button>
         )}
@@ -211,7 +215,7 @@ export default function FlexQueryTokensTable() {
           <button
             onClick={createToken}
             disabled={saving || !canCreate}
-            className="rounded bg-blue-600 px-3 py-1 text-sm text-white hover:bg-blue-700 disabled:opacity-50"
+            className={PRIMARY_ACTION_BUTTON}
           >
             Save
           </button>
@@ -221,7 +225,7 @@ export default function FlexQueryTokensTable() {
               setNewToken(EMPTY_EDIT);
             }}
             disabled={saving}
-            className="px-2 py-1 text-sm text-gray-500 hover:underline disabled:opacity-50"
+            className={ACTION_BUTTON}
           >
             Cancel
           </button>
@@ -334,58 +338,60 @@ export default function FlexQueryTokensTable() {
                       </span>
                     )}
                   </td>
-                  <td className="space-x-2 px-3 py-2 whitespace-nowrap">
-                    {editingId === token.id ? (
-                      <>
-                        <button
-                          onClick={() => saveEdit(token.id)}
-                          disabled={saving}
-                          className="text-sm text-green-700 hover:underline disabled:opacity-50"
-                        >
-                          Save
-                        </button>
-                        <button
-                          onClick={() => {
-                            setEditingId(null);
-                            setEdit(EMPTY_EDIT);
-                          }}
-                          disabled={saving}
-                          className="text-sm text-gray-500 hover:underline disabled:opacity-50"
-                        >
-                          Cancel
-                        </button>
-                      </>
-                    ) : (
-                      <>
-                        <button
-                          onClick={() => startEdit(token)}
-                          className="text-sm text-blue-600 hover:underline"
-                        >
-                          Edit
-                        </button>
-                        <button
-                          onClick={() => togglePause(token)}
-                          disabled={saving}
-                          className="text-sm text-gray-600 hover:underline disabled:opacity-50"
-                          title={
-                            pauseRemainingMinutes(token) > 0
-                              ? "Resume report fetches now"
-                              : `Hold report fetches for ${MANUAL_PAUSE_MINUTES} minutes`
-                          }
-                        >
-                          {pauseRemainingMinutes(token) > 0
-                            ? "Resume"
-                            : "Pause"}
-                        </button>
-                        <button
-                          onClick={() => toggleActive(token)}
-                          disabled={saving}
-                          className="text-sm text-gray-600 hover:underline disabled:opacity-50"
-                        >
-                          {token.is_active ? "Deactivate" : "Activate"}
-                        </button>
-                      </>
-                    )}
+                  <td className="px-3 py-2 whitespace-nowrap">
+                    <div className="flex gap-2">
+                      {editingId === token.id ? (
+                        <>
+                          <button
+                            onClick={() => saveEdit(token.id)}
+                            disabled={saving}
+                            className={PRIMARY_ACTION_BUTTON}
+                          >
+                            Save
+                          </button>
+                          <button
+                            onClick={() => {
+                              setEditingId(null);
+                              setEdit(EMPTY_EDIT);
+                            }}
+                            disabled={saving}
+                            className={ACTION_BUTTON}
+                          >
+                            Cancel
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <button
+                            onClick={() => startEdit(token)}
+                            className={ACTION_BUTTON}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            onClick={() => togglePause(token)}
+                            disabled={saving}
+                            className={ACTION_BUTTON}
+                            title={
+                              pauseRemainingMinutes(token) > 0
+                                ? "Resume report fetches now"
+                                : `Hold report fetches for ${MANUAL_PAUSE_MINUTES} minutes`
+                            }
+                          >
+                            {pauseRemainingMinutes(token) > 0
+                              ? "Resume"
+                              : "Pause"}
+                          </button>
+                          <button
+                            onClick={() => toggleActive(token)}
+                            disabled={saving}
+                            className={ACTION_BUTTON}
+                          >
+                            {token.is_active ? "Deactivate" : "Activate"}
+                          </button>
+                        </>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}

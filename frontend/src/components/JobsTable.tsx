@@ -55,12 +55,6 @@ function computeRunMs(job: Job, nowMs: number): number | null {
   return (completedMs ?? nowMs) - startedMs;
 }
 
-function computeTotalMs(job: Job, nowMs: number): number {
-  const createdMs = parseTime(job.created_at) ?? nowMs;
-  const completedMs = parseTime(job.completed_at);
-  return (completedMs ?? nowMs) - createdMs;
-}
-
 function formatParamValue(value: unknown): string {
   if (value === null || value === undefined) return "";
   if (typeof value === "object") return JSON.stringify(value);
@@ -221,7 +215,6 @@ export default function JobsTable() {
               <th className="px-2 py-1 font-semibold text-gray-700">Status</th>
               <th className="px-2 py-1 font-semibold text-gray-700">Queue</th>
               <th className="px-2 py-1 font-semibold text-gray-700">Run</th>
-              <th className="px-2 py-1 font-semibold text-gray-700">Total</th>
               <th className="px-2 py-1 font-semibold text-gray-700">Actions</th>
             </tr>
           </thead>
@@ -256,9 +249,6 @@ export default function JobsTable() {
                 </td>
                 <td className="px-2 py-1 text-gray-700">
                   {formatDuration(computeRunMs(job, nowMs))}
-                </td>
-                <td className="px-2 py-1 text-gray-700">
-                  {formatDuration(computeTotalMs(job, nowMs))}
                 </td>
                 <td className="px-2 py-1 whitespace-nowrap">
                   <div className="flex gap-1">

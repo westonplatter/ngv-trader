@@ -158,6 +158,9 @@ def defer_job(session: Session, job: Job, reason: str, retry_after_seconds: int)
     job.status = JOB_STATUS_QUEUED
     job.available_at = now + timedelta(seconds=retry_after_seconds)
     job.last_error = reason
+    # Clear the start stamp: a deferred job is waiting, not running, and leaving
+    # it set makes the UI tick a run duration against work nobody is doing.
+    job.started_at = None
     job.updated_at = now
     session.flush()
 
