@@ -104,6 +104,7 @@ Flags account IDs, contract IDs, and execution/transaction/order IDs against the
 - `alembic/` + `alembic.ini`: database migrations for Postgres schema.
 - `frontend/`: React + Vite UI (positions, orders, trades, strategies, pricing, tradebot chat).
 - `docs/`: current-state docs and specs; see `docs/_index.md`.
+- `docs/solutions/`: documented solutions to past problems (bugs, best practices, workflow patterns), organized by category with YAML frontmatter (`module`, `tags`, `problem_type`) — relevant when implementing or debugging in documented areas.
 - `CONCEPTS.md`: shared domain vocabulary (entities, named processes, status concepts) — relevant when orienting to the codebase or discussing domain concepts.
 - `Taskfile.yaml`: common dev commands for API, frontend, and migrations.
 
