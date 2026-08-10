@@ -779,6 +779,7 @@ function toOpenPosition(pos: Position): GroupOpenPosition {
     live_unrealized: pos.live_unrealized,
     delta: pos.delta,
     gamma: pos.gamma,
+    iv: pos.iv,
   };
 }
 
