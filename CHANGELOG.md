@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.1.13](https://github.com/westonplatter/ngv-trader/compare/v0.1.12...v0.1.13) (2026-08-12)
+
+
+### Features
+
+* **strategies:** add IV column, totals row, and IBKR trade codes ([#154](https://github.com/westonplatter/ngv-trader/issues/154)) ([4402e28](https://github.com/westonplatter/ngv-trader/commit/4402e282e23f223503778ca593bb196db6ceca98))
+
+
+### Documentation
+
+* add flexquery_tokens router to AGENTS.md component list ([#153](https://github.com/westonplatter/ngv-trader/issues/153)) ([6b53454](https://github.com/westonplatter/ngv-trader/commit/6b53454b7085f5520b515df53784a5813e124e70))
+
 ## [0.1.12](https://github.com/westonplatter/ngv-trader/compare/v0.1.11...v0.1.12) (2026-08-08)
 
 
