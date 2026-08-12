@@ -4,6 +4,7 @@ import { useSearchParams } from "react-router-dom";
 import { API_BASE_URL } from "../config";
 import { usePrivacy } from "../contexts/PrivacyContext";
 import { useResizableColumn } from "../hooks/useResizableColumn";
+import { ibCodesTitle, parseIbCodes } from "../lib/ibCodes";
 import { linkify } from "../utils/linkify";
 import { formatGreek, formatPercent } from "../utils/number";
 import { PRIVACY_MASK, formatRelativeReturn } from "../utils/privacy";
@@ -56,6 +57,9 @@ export type GroupExecution = {
   sec_type: string | null;
   contract_display: string | null;
   data_source: string;
+  // IBKR FlexQuery trade codes (the `notes` attribute): A=assigned,
+  // Ep=from expiration, Ex=exercise, P=partial, WS=wash sale, etc.
+  ib_codes: string | null;
   // False for preemptively-tagged live fills not yet settled.
   settled?: boolean;
 };
@@ -2184,6 +2188,7 @@ export default function TradeTaggingPage() {
                               <th className="px-2 py-1 font-medium">
                                 Contract
                               </th>
+                              <th className="px-2 py-1 font-medium">Codes</th>
                               <th className="px-2 py-1 text-right font-medium">
                                 Side
                               </th>
@@ -2254,6 +2259,37 @@ export default function TradeTaggingPage() {
                                         {ex.settled === false && (
                                           <span className="ml-1 rounded bg-amber-100 px-1 py-0.5 text-[10px] uppercase text-amber-800">
                                             unsettled
+                                          </span>
+                                        )}
+                                      </td>
+                                      <td className="px-2 py-1">
+                                        {ex.ib_codes ? (
+                                          <span className="group/codes relative inline-block">
+                                            <span
+                                              className="cursor-default rounded bg-slate-100 px-2 py-0.5 font-mono text-[11px] font-medium text-slate-700"
+                                              title={ibCodesTitle(ex.ib_codes)}
+                                            >
+                                              {ex.ib_codes}
+                                            </span>
+                                            <span className="pointer-events-none absolute left-0 top-full z-20 mt-1 hidden w-max max-w-xs rounded bg-gray-900 px-2 py-1 text-[11px] text-white shadow-lg group-hover/codes:block">
+                                              {parseIbCodes(ex.ib_codes).map(
+                                                ({ code, label }) => (
+                                                  <span
+                                                    key={code}
+                                                    className="block"
+                                                  >
+                                                    <span className="font-mono font-semibold">
+                                                      {code}
+                                                    </span>{" "}
+                                                    — {label}
+                                                  </span>
+                                                ),
+                                              )}
+                                            </span>
+                                          </span>
+                                        ) : (
+                                          <span className="text-gray-400">
+                                            —
                                           </span>
                                         )}
                                       </td>
