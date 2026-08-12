@@ -269,6 +269,22 @@ def _trade_realized_pnl_from_executions(executions: list[tuple[dict | None, str 
     return sum(values)
 
 
+def _execution_ib_codes(raw: dict | None) -> str | None:
+    """IBKR FlexQuery trade codes for an execution (the `notes` attribute).
+
+    Semicolon-delimited codes like `A` (assigned), `Ep` (from expiration),
+    `Ex` (exercise), `P` (partial), `WS` (wash sale). Lives only in the raw flex
+    payload; TWS-sourced rows have no equivalent. Returns None when absent/empty.
+    """
+    if not raw:
+        return None
+    value = raw.get("notes")
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
 class TradeResponse(BaseModel):
     model_config = {"from_attributes": True}
 
@@ -353,6 +369,10 @@ class TradeExecutionListItem(BaseModel):
     con_id: int | None
     contract_display: str | None
     parent_ib_exec_id: str | None
+    # IBKR FlexQuery trade codes (the `notes` attribute): A=assigned,
+    # Ep=from expiration, Ex=exercise, P=partial, WS=wash sale, etc. Null for
+    # TWS-sourced rows.
+    ib_codes: str | None = None
     data_source: str
     trade_ib_perm_id: int | None
     trade_order_ref: str | None
@@ -779,6 +799,7 @@ def list_all_trade_executions(  # noqa: C901, PLR0912, PLR0915
                 con_id=ex.con_id,
                 contract_display=_contract_display_from_raw(ex.raw, contract_ref),
                 parent_ib_exec_id=parent_ib_exec_id,
+                ib_codes=_execution_ib_codes(ex.raw),
                 data_source=ex.data_source,
                 trade_ib_perm_id=trade.ib_perm_id if trade else None,
                 trade_order_ref=trade.order_ref if trade else None,

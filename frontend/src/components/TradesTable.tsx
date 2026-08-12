@@ -3,6 +3,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { usePrivacy } from "../contexts/PrivacyContext";
 import { PRIVACY_MASK } from "../utils/privacy";
 import { API_BASE_URL } from "../config";
+import { ibCodesTitle, parseIbCodes } from "../lib/ibCodes";
 import { useSSE } from "../lib/events";
 import { formatMoney } from "../utils/number";
 import TradeGroupSearchSelect from "./TradeGroupSearchSelect";
@@ -27,6 +28,9 @@ interface TradeExecutionRow {
   con_id: number | null;
   contract_display: string | null;
   parent_ib_exec_id: string | null;
+  // IBKR FlexQuery trade codes (the `notes` attribute): A=assigned,
+  // Ep=from expiration, Ex=exercise, P=partial, WS=wash sale, etc.
+  ib_codes: string | null;
   data_source?: string;
   trade_ib_perm_id: number | null;
   trade_order_ref: string | null;
@@ -1006,6 +1010,9 @@ export default function TradesTable() {
               <th className="whitespace-nowrap px-3 py-2 font-semibold text-gray-700">
                 Status
               </th>
+              <th className="whitespace-nowrap px-3 py-2 font-semibold text-gray-700">
+                Codes
+              </th>
               <th className="w-48 min-w-[12rem] whitespace-nowrap px-3 py-2 font-semibold text-gray-700">
                 Tag Group
               </th>
@@ -1031,7 +1038,7 @@ export default function TradesTable() {
             {!loading && filteredRows.length === 0 && (
               <tr>
                 <td
-                  colSpan={15}
+                  colSpan={16}
                   className="px-3 py-6 text-center text-gray-500"
                 >
                   No executions found.
@@ -1119,6 +1126,30 @@ export default function TradesTable() {
                     >
                       {row.trade_status}
                     </span>
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-2">
+                    {row.ib_codes ? (
+                      <span className="group/codes relative inline-block">
+                        <span
+                          className="cursor-default rounded bg-slate-100 px-2 py-0.5 font-mono text-xs font-medium text-slate-700"
+                          title={ibCodesTitle(row.ib_codes)}
+                        >
+                          {row.ib_codes}
+                        </span>
+                        <span className="pointer-events-none absolute left-0 top-full z-20 mt-1 hidden w-max max-w-xs rounded bg-gray-900 px-2 py-1 text-xs text-white shadow-lg group-hover/codes:block">
+                          {parseIbCodes(row.ib_codes).map(({ code, label }) => (
+                            <span key={code} className="block">
+                              <span className="font-mono font-semibold">
+                                {code}
+                              </span>{" "}
+                              — {label}
+                            </span>
+                          ))}
+                        </span>
+                      </span>
+                    ) : (
+                      <span className="text-xs text-gray-400">—</span>
+                    )}
                   </td>
                   <td className="px-3 py-2">
                     {ownsTagCell ? (

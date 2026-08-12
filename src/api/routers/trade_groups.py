@@ -11,7 +11,11 @@ from sqlalchemy.orm import Session
 from src.api.deps import get_db
 from src.api.routers.positions import _derive_option_expiry_and_dte
 from src.api.routers.tags import TagLinkResponse, _normalize_tag_value
-from src.api.routers.trades import _contract_display_from_raw, _execution_realized_pnl
+from src.api.routers.trades import (
+    _contract_display_from_raw,
+    _execution_ib_codes,
+    _execution_realized_pnl,
+)
 from src.models import (
     Account,
     ContractRef,
@@ -1058,6 +1062,10 @@ class TradeGroupExecutionItem(BaseModel):
     sec_type: str | None
     contract_display: str | None
     data_source: str
+    # IBKR FlexQuery trade codes (the `notes` attribute): A=assigned,
+    # Ep=from expiration, Ex=exercise, P=partial, WS=wash sale, etc. Null for
+    # TWS/live-sourced rows.
+    ib_codes: str | None = None
     # False for preemptively-tagged live fills not yet settled.
     settled: bool = True
     ib_exec_id: str | None = None
@@ -1358,6 +1366,7 @@ def trade_group_executions(trade_group_id: int, db: Session = DB_SESSION_DEPENDE
                 sec_type=execution.sec_type,
                 contract_display=_contract_display_from_raw(execution.raw, contract_ref),
                 data_source=execution.data_source,
+                ib_codes=_execution_ib_codes(execution.raw),
                 settled=True,
                 ib_exec_id=execution.ib_exec_id,
             )

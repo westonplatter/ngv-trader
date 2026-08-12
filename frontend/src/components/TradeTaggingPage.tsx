@@ -4,8 +4,9 @@ import { useSearchParams } from "react-router-dom";
 import { API_BASE_URL } from "../config";
 import { usePrivacy } from "../contexts/PrivacyContext";
 import { useResizableColumn } from "../hooks/useResizableColumn";
+import { ibCodesTitle, parseIbCodes } from "../lib/ibCodes";
 import { linkify } from "../utils/linkify";
-import { formatGreek } from "../utils/number";
+import { formatGreek, formatPercent } from "../utils/number";
 import { PRIVACY_MASK, formatRelativeReturn } from "../utils/privacy";
 
 export type TradeGroup = {
@@ -56,6 +57,9 @@ export type GroupExecution = {
   sec_type: string | null;
   contract_display: string | null;
   data_source: string;
+  // IBKR FlexQuery trade codes (the `notes` attribute): A=assigned,
+  // Ep=from expiration, Ex=exercise, P=partial, WS=wash sale, etc.
+  ib_codes: string | null;
   // False for preemptively-tagged live fills not yet settled.
   settled?: boolean;
 };
@@ -94,6 +98,9 @@ export type GroupOpenPosition = {
   // or when that job hasn't run). The table shows them scaled by position size.
   delta: number | null;
   gamma: number | null;
+  // Per-contract implied volatility (decimal fraction) from the same live
+  // option-metrics sync. Not scaled by position size; shown as a percent.
+  iv: number | null;
 };
 
 export type GroupAccountPnl = {
@@ -955,6 +962,49 @@ export default function TradeTaggingPage() {
     accountFilter == null
       ? executions
       : executions.filter((e) => e.account_id === accountFilter);
+  // Aggregate row for the Open Positions table: sums are over the currently
+  // visible (account-filtered) positions, following the same staleness rule
+  // as the per-row cells — delta/gamma/live_unrealized are excluded for a
+  // stale live overlay, while the settled fields (avg_cost, position_value,
+  // fifo_pnl_unrealized) are summed regardless of staleness.
+  const positionTotals = visiblePositions.reduce(
+    (acc, pos) => {
+      const liveStale = pos.live_is_stale;
+      if (!liveStale && pos.delta != null) {
+        acc.delta.sum += pos.delta * pos.position;
+        acc.delta.count += 1;
+      }
+      if (!liveStale && pos.gamma != null) {
+        acc.gamma.sum += pos.gamma * pos.position;
+        acc.gamma.count += 1;
+      }
+      // avg_cost is stored as a positive magnitude (entry price × multiplier ×
+      // |qty|); apply the position's sign so a short contributes a credit.
+      acc.avgCost.sum += pos.avg_cost * Math.sign(pos.position);
+      acc.avgCost.count += 1;
+      if (pos.position_value != null) {
+        acc.value.sum += pos.position_value;
+        acc.value.count += 1;
+      }
+      if (pos.fifo_pnl_unrealized != null) {
+        acc.unrealized.sum += pos.fifo_pnl_unrealized;
+        acc.unrealized.count += 1;
+      }
+      if (!liveStale && pos.live_unrealized != null) {
+        acc.liveUnrealized.sum += pos.live_unrealized;
+        acc.liveUnrealized.count += 1;
+      }
+      return acc;
+    },
+    {
+      delta: { sum: 0, count: 0 },
+      gamma: { sum: 0, count: 0 },
+      avgCost: { sum: 0, count: 0 },
+      value: { sum: 0, count: 0 },
+      unrealized: { sum: 0, count: 0 },
+      liveUnrealized: { sum: 0, count: 0 },
+    },
+  );
 
   return (
     <div className="flex min-h-0 flex-1 flex-col space-y-4">
@@ -989,7 +1039,9 @@ export default function TradeTaggingPage() {
         style={
           focusActive
             ? undefined
-            : ({ "--col-strategy": `${strategyColumn.width}px` } as CSSProperties)
+            : ({
+                "--col-strategy": `${strategyColumn.width}px`,
+              } as CSSProperties)
         }
       >
         {/* Column 1: Strategies — collapses to zero width in focus mode. The
@@ -1151,7 +1203,9 @@ export default function TradeTaggingPage() {
             style={
               focusActive
                 ? undefined
-                : ({ "--col-groups": `${groupsColumn.width}px` } as CSSProperties)
+                : ({
+                    "--col-groups": `${groupsColumn.width}px`,
+                  } as CSSProperties)
             }
           >
             {/* Group list — collapses to zero width in focus mode. `inert`
@@ -1832,10 +1886,13 @@ export default function TradeTaggingPage() {
                                 Qty
                               </th>
                               <th className="px-2 py-1 text-right font-medium">
-                                Live Delta
+                                Delta
                               </th>
                               <th className="px-2 py-1 text-right font-medium">
-                                Live Gamma
+                                Gamma
+                              </th>
+                              <th className="px-2 py-1 text-right font-medium">
+                                IV
                               </th>
                               <th className="px-2 py-1 text-right font-medium">
                                 Avg Cost
@@ -1860,6 +1917,79 @@ export default function TradeTaggingPage() {
                             </tr>
                           </thead>
                           <tbody>
+                            <tr className="border-t border-b-2 border-gray-300 bg-gray-50 font-medium">
+                              <td className="px-2 py-1 text-gray-700"></td>
+                              <td className="px-2 py-1 text-gray-800">Total</td>
+                              <td className="px-2 py-1"></td>
+                              <td className="px-2 py-1 text-right"></td>
+                              <td className="px-2 py-1 text-right"></td>
+                              <td className="px-2 py-1 text-right"></td>
+                              <td className="px-2 py-1 text-right font-mono text-gray-700">
+                                {privacyMode
+                                  ? PRIVACY_MASK
+                                  : positionTotals.delta.count === 0
+                                    ? "—"
+                                    : formatGreek(positionTotals.delta.sum)}
+                              </td>
+                              <td className="px-2 py-1 text-right font-mono text-gray-700">
+                                {privacyMode
+                                  ? PRIVACY_MASK
+                                  : positionTotals.gamma.count === 0
+                                    ? "—"
+                                    : formatGreek(positionTotals.gamma.sum)}
+                              </td>
+                              <td className="px-2 py-1 text-right"></td>
+                              <td className="px-2 py-1 text-right font-mono text-gray-700">
+                                {privacyMode
+                                  ? PRIVACY_MASK
+                                  : positionTotals.avgCost.count === 0
+                                    ? "—"
+                                    : positionTotals.avgCost.sum.toFixed(2)}
+                              </td>
+                              <td className="px-2 py-1 text-right"></td>
+                              <td className="px-2 py-1 text-right"></td>
+                              <td className="px-2 py-1 text-right font-mono text-gray-700">
+                                {privacyMode
+                                  ? PRIVACY_MASK
+                                  : positionTotals.value.count === 0
+                                    ? "—"
+                                    : positionTotals.value.sum.toFixed(2)}
+                              </td>
+                              <td
+                                className={`px-2 py-1 text-right font-mono ${
+                                  positionTotals.unrealized.count === 0
+                                    ? "text-gray-400"
+                                    : positionTotals.unrealized.sum >= 0
+                                      ? "text-emerald-700"
+                                      : "text-red-700"
+                                }`}
+                              >
+                                {privacyMode
+                                  ? PRIVACY_MASK
+                                  : positionTotals.unrealized.count === 0
+                                    ? "—"
+                                    : positionTotals.unrealized.sum.toFixed(2)}
+                              </td>
+                              <td
+                                className={`px-2 py-1 text-right font-mono ${
+                                  positionTotals.liveUnrealized.count === 0
+                                    ? "text-gray-400"
+                                    : positionTotals.liveUnrealized.sum >= 0
+                                      ? "text-emerald-700"
+                                      : "text-red-700"
+                                }`}
+                              >
+                                {privacyMode
+                                  ? PRIVACY_MASK
+                                  : positionTotals.liveUnrealized.count === 0
+                                    ? "—"
+                                    : positionTotals.liveUnrealized.sum.toFixed(
+                                        2,
+                                      )}
+                              </td>
+                              <td className="px-2 py-1"></td>
+                              <td className="px-2 py-1"></td>
+                            </tr>
                             {visiblePositions.map((pos) => {
                               const qtyClass =
                                 pos.position > 0
@@ -1934,6 +2064,13 @@ export default function TradeTaggingPage() {
                                     {privacyMode
                                       ? PRIVACY_MASK
                                       : formatGreek(positionGamma)}
+                                  </td>
+                                  <td className="px-2 py-1 text-right font-mono text-gray-700">
+                                    {privacyMode
+                                      ? PRIVACY_MASK
+                                      : formatPercent(
+                                          liveStale ? null : pos.iv,
+                                        )}
                                   </td>
                                   <td className="px-2 py-1 text-right font-mono text-gray-700">
                                     {privacyMode
@@ -2051,6 +2188,7 @@ export default function TradeTaggingPage() {
                               <th className="px-2 py-1 font-medium">
                                 Contract
                               </th>
+                              <th className="px-2 py-1 font-medium">Codes</th>
                               <th className="px-2 py-1 text-right font-medium">
                                 Side
                               </th>
@@ -2121,6 +2259,37 @@ export default function TradeTaggingPage() {
                                         {ex.settled === false && (
                                           <span className="ml-1 rounded bg-amber-100 px-1 py-0.5 text-[10px] uppercase text-amber-800">
                                             unsettled
+                                          </span>
+                                        )}
+                                      </td>
+                                      <td className="px-2 py-1">
+                                        {ex.ib_codes ? (
+                                          <span className="group/codes relative inline-block">
+                                            <span
+                                              className="cursor-default rounded bg-slate-100 px-2 py-0.5 font-mono text-[11px] font-medium text-slate-700"
+                                              title={ibCodesTitle(ex.ib_codes)}
+                                            >
+                                              {ex.ib_codes}
+                                            </span>
+                                            <span className="pointer-events-none absolute left-0 top-full z-20 mt-1 hidden w-max max-w-xs rounded bg-gray-900 px-2 py-1 text-[11px] text-white shadow-lg group-hover/codes:block">
+                                              {parseIbCodes(ex.ib_codes).map(
+                                                ({ code, label }) => (
+                                                  <span
+                                                    key={code}
+                                                    className="block"
+                                                  >
+                                                    <span className="font-mono font-semibold">
+                                                      {code}
+                                                    </span>{" "}
+                                                    — {label}
+                                                  </span>
+                                                ),
+                                              )}
+                                            </span>
+                                          </span>
+                                        ) : (
+                                          <span className="text-gray-400">
+                                            —
                                           </span>
                                         )}
                                       </td>

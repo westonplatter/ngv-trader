@@ -671,6 +671,7 @@ const GROUP_UNSETTLED_EXECUTIONS: Record<number, GroupExecution[]> = {
       sec_type: "FUT",
       contract_display: "NQ Sep'26 Future",
       data_source: "tws",
+      ib_codes: null,
       settled: false,
     },
   ],
@@ -691,6 +692,7 @@ const GROUP_UNSETTLED_EXECUTIONS: Record<number, GroupExecution[]> = {
       sec_type: "OPT",
       contract_display: "GLD Jul'26 330 Call",
       data_source: "tws",
+      ib_codes: null,
       settled: false,
     },
   ],
@@ -711,6 +713,7 @@ const GROUP_UNSETTLED_EXECUTIONS: Record<number, GroupExecution[]> = {
       sec_type: "FUT",
       contract_display: "MES Sep'26 Future",
       data_source: "tws",
+      ib_codes: null,
       settled: false,
     },
     {
@@ -728,6 +731,7 @@ const GROUP_UNSETTLED_EXECUTIONS: Record<number, GroupExecution[]> = {
       sec_type: "FUT",
       contract_display: "MES Sep'26 Future",
       data_source: "tws",
+      ib_codes: null,
       settled: false,
     },
   ],
@@ -748,6 +752,7 @@ const GROUP_UNSETTLED_EXECUTIONS: Record<number, GroupExecution[]> = {
       sec_type: "OPT",
       contract_display: "SPY Jul'26 540 Put",
       data_source: "tws",
+      ib_codes: null,
       settled: false,
     },
   ],
@@ -779,6 +784,7 @@ function toOpenPosition(pos: Position): GroupOpenPosition {
     live_unrealized: pos.live_unrealized,
     delta: pos.delta,
     gamma: pos.gamma,
+    iv: pos.iv,
   };
 }
 
@@ -801,6 +807,7 @@ function openingExecution(pos: Position, index: number): GroupExecution {
     sec_type: pos.sec_type,
     contract_display: pos.contract_display_name,
     data_source: "demo",
+    ib_codes: index % 3 === 0 ? "O;P" : null,
   };
 }
 
