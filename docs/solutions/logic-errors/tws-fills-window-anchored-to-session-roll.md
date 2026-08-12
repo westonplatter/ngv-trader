@@ -76,7 +76,7 @@ def session_start_utc(now: datetime | None = None) -> datetime:
     return session_open.astimezone(timezone.utc)
 ```
 
-After — a fixed rolling lookback (`src/services/intraday_sync_tws.py:54`, `:75`):
+After — a fixed rolling lookback (`FILLS_LOOKBACK_DAYS` and `fills_window_start` in `src/services/intraday_sync_tws.py`):
 
 ```python
 FILLS_LOOKBACK_DAYS = 2
@@ -87,7 +87,7 @@ def fills_window_start(now: datetime | None = None) -> datetime:
     return now - timedelta(days=FILLS_LOOKBACK_DAYS)
 ```
 
-The call site in `run_intraday_sync` reads `window_start = fills_window_start(now)` (`:583`); `_write_fills` applies it unchanged at `:486`. The `MARKET_TZ` / `SESSION_OPEN_HOUR_ET` constants and the now-unused `zoneinfo` import were deleted.
+The call site in `run_intraday_sync` reads `window_start = fills_window_start(now)`; `_write_fills` applies it unchanged. The `MARKET_TZ` / `SESSION_OPEN_HOUR_ET` constants and the now-unused `zoneinfo` import were deleted.
 
 The misleading `_fetch_fills` docstring was rewritten to record what the vendor docs actually say: reach is governed by the TWS Trade Log setting up to 7 days, IB Gateway cannot change it, and **the practical bound is `FILLS_LOOKBACK_DAYS` applied by `_write_fills`, not by the request**. The constant carries the measurement inline so the next reader sees the 6-of-72 number without re-deriving it.
 
@@ -101,8 +101,8 @@ A retention window should be sized by how long the settled feed takes to catch u
 
 **Why widening is safe — settled data wins on both sides of the handoff.** Reaching back two days necessarily pulls in fills FlexQuery has already settled. That cannot corrupt the settled record, because two independent mechanisms enforce settled-wins:
 
-- _Write path._ `run_intraday_sync` calls `_write_fills` then `_purge_settled` inside one `Session`, with a single `commit()` after both (`:612-630`). `_purge_settled` (`:556`) deletes every `live_executions` row whose `ib_exec_id` matches a `trade_executions` row, plus BAG/combo rows matched by identity via `_settled_combo_summaries` (`:518`) — same account, same instant, both BAG — carrying any trade-group link to the settled execution first. An already-settled fill is written and deleted in the same transaction; it is never visible to a reader.
-- _Read path._ `_unsettled_live_executions` in `src/api/routers/trades.py:912` independently filters `LiveExecution.ib_exec_id.not_in(select(TradeExecution.ib_exec_id))`.
+- _Write path._ `run_intraday_sync` calls `_write_fills` then `_purge_settled` inside one `Session`, with a single `commit()` after both. `_purge_settled` deletes every `live_executions` row whose `ib_exec_id` matches a `trade_executions` row, plus BAG/combo rows matched by identity via `_settled_combo_summaries` — same account, same instant, both BAG — carrying any trade-group link to the settled execution first. An already-settled fill is written and deleted in the same transaction; it is never visible to a reader.
+- _Read path._ `_unsettled_live_executions` in `src/api/routers/trades.py` independently filters `LiveExecution.ib_exec_id.not_in(select(TradeExecution.ib_exec_id))`.
 
 The window therefore only decides **how much unsettled tail is visible**. It cannot let TWS data override FlexQuery. That is the load-bearing argument for why the constant can be raised without a settled-data risk review — and it was never actually discussed when the purge was built, so it is recorded here. (session history)
 
@@ -110,7 +110,7 @@ The window therefore only decides **how much unsettled tail is visible**. It can
 
 **One caveat, documented rather than fixed.** The read-path dedup is plain `ib_exec_id` equality, so it does not cover combo **BAG summary** rows, whose live and settled ids come from different families and can never match. The read path still does not handle them. The write path does, but not through `_purge_settled` alone: its `_settled_combo_summaries` identity match only fires when a settled BAG row shares the same account _and the exact same instant_, which frequently misses. Covering the rest took a second mechanism — the `live_reconcile` Class C redundancy purge (PR #98), which itself later needed the fix in [the peer-summary deadlock learning](./bag-combo-summary-purge-deadlocks-on-peer-summaries.md). Widening the window exposes more rows to that asymmetry.
 
-**A separate defect found and left unfixed.** `assign_positions` (`src/api/routers/trade_groups.py:634`) fans an assignment out to the position's constituent executions. When a position has zero of both kinds, the loop body never runs, `db.commit()` (`:720`) commits nothing, and the endpoint still returns its declared **HTTP 204**. The UI reloads, sees no membership, and redraws "+ Assign" — a silent no-op indistinguishable from success. This is what turned a data-window bug into an _invisible_ one. Suggested fix: return 409 naming the cause.
+**A separate defect found and left unfixed.** `assign_positions` (`src/api/routers/trade_groups.py`) fans an assignment out to the position's constituent executions. When a position has zero of both kinds, the loop body never runs, `db.commit()` commits nothing, and the endpoint still returns its declared **HTTP 204**. The UI reloads, sees no membership, and redraws "+ Assign" — a silent no-op indistinguishable from success. This is what turned a data-window bug into an _invisible_ one. Suggested fix: return 409 naming the cause.
 
 **A related non-bug worth recording.** CME's trade date rolls at 18:00 ET, so an evening fill belongs to the _next_ trade date. A UI showing local wall-clock time in one column while settlement status is governed by exchange trade date in another will make evening fills look like they settled a day late. Correct behavior, but it costs real debugging time when unrecognized.
 

@@ -210,8 +210,11 @@ ALTER ROLE ngv_analyst SET statement_timeout = '10s';
 The server **fails closed**: it requires `NGV_SEMANTIC_DATABASE_URL` and will not
 fall back to the app's read-write credentials.
 
-**Claude Code config.** Copy `.mcp.json.example` → `.mcp.json` (gitignored — it
-holds the connection string) and point the URL at `ngv_analyst`:
+**Claude Code config.** Copy `.mcp.json.example` → `.mcp.json` (gitignored) and
+set `cwd` to your absolute repo path. `NGV_SEMANTIC_DATABASE_URL` passes
+through from the shell env by default (`${NGV_SEMANTIC_DATABASE_URL}`) — export
+it there, or replace the passthrough with a literal connection string pointed
+at `ngv_analyst`:
 
 ```json
 {
@@ -226,9 +229,9 @@ holds the connection string) and point the URL at `ngv_analyst`:
         "-m",
         "src.mcp.semantic_server"
       ],
-      "cwd": "/Users/you/code/ngv-trader",
+      "cwd": "/absolute/path/to/ngv-trader",
       "env": {
-        "NGV_SEMANTIC_DATABASE_URL": "postgresql://ngv_analyst:<pw>@host:5432/ngtrader_pro_prod"
+        "NGV_SEMANTIC_DATABASE_URL": "${NGV_SEMANTIC_DATABASE_URL}"
       }
     }
   }
