@@ -40,7 +40,7 @@ Avoid:
 # Spec: <Short Feature Name>
 
 > **Status: PROPOSED — not implemented (as of <date>).** <One-line summary;
-> update in place as the spec moves to PARTIAL / IMPLEMENTED.>
+> update in place as the spec moves to PARTIALLY IMPLEMENTED / IMPLEMENTED.>
 
 ## Complexity: <1-5>
 
