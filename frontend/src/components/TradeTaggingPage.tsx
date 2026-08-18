@@ -186,6 +186,40 @@ async function fetchGroupStrategyValue(
   }
 }
 
+// Contract multipliers that arrive as strings on the positions payload. Mirrors
+// the backend's ``parse_multiplier``: missing/unparseable falls back to 1.
+function parseMultiplier(value: string | null | undefined): number {
+  if (value == null || value === "") return 1;
+  const num = Number(value);
+  return Number.isFinite(num) && num > 0 ? num : 1;
+}
+
+// Futures carry no option metrics, but their delta is definitionally 1.0 per
+// contract (gamma 0), so they are folded in rather than dropped from the total.
+const FUTURES_SEC_TYPES = new Set(["FUT", "CONTFUT", "FUTURE"]);
+
+/**
+ * Position greeks in underlying units: per-contract greek × signed qty × the
+ * contract multiplier off the positions snapshot. Weighting matters because a
+ * group can mix multipliers — a CL option (1000) and an MW option (100) must
+ * not add as equals. Option greeks are live-sourced, so they blank out when the
+ * live overlay is stale; the futures delta is a constant and always counts.
+ */
+function positionGreeks(pos: GroupOpenPosition): {
+  delta: number | null;
+  gamma: number | null;
+} {
+  const multiplier = parseMultiplier(pos.multiplier);
+  if (FUTURES_SEC_TYPES.has((pos.sec_type ?? "").toUpperCase())) {
+    return { delta: pos.position * multiplier, gamma: 0 };
+  }
+  if (pos.live_is_stale) return { delta: null, gamma: null };
+  return {
+    delta: pos.delta == null ? null : pos.delta * pos.position * multiplier,
+    gamma: pos.gamma == null ? null : pos.gamma * pos.position * multiplier,
+  };
+}
+
 function statusClassName(status: TradeGroup["status"]): string {
   if (status === "open") return "bg-emerald-100 text-emerald-800";
   if (status === "closed") return "bg-gray-100 text-gray-700";
@@ -970,12 +1004,13 @@ export default function TradeTaggingPage() {
   const positionTotals = visiblePositions.reduce(
     (acc, pos) => {
       const liveStale = pos.live_is_stale;
-      if (!liveStale && pos.delta != null) {
-        acc.delta.sum += pos.delta * pos.position;
+      const greeks = positionGreeks(pos);
+      if (greeks.delta != null) {
+        acc.delta.sum += greeks.delta;
         acc.delta.count += 1;
       }
-      if (!liveStale && pos.gamma != null) {
-        acc.gamma.sum += pos.gamma * pos.position;
+      if (greeks.gamma != null) {
+        acc.gamma.sum += greeks.gamma;
         acc.gamma.count += 1;
       }
       // avg_cost is stored as a positive magnitude (entry price × multiplier ×
@@ -1885,10 +1920,16 @@ export default function TradeTaggingPage() {
                               <th className="px-2 py-1 text-right font-medium">
                                 Qty
                               </th>
-                              <th className="px-2 py-1 text-right font-medium">
+                              <th
+                                className="px-2 py-1 text-right font-medium"
+                                title="Delta × quantity × contract multiplier (underlying units). Futures count as 1.0 delta per contract."
+                              >
                                 Delta
                               </th>
-                              <th className="px-2 py-1 text-right font-medium">
+                              <th
+                                className="px-2 py-1 text-right font-medium"
+                                title="Gamma × quantity × contract multiplier (underlying units)."
+                              >
                                 Gamma
                               </th>
                               <th className="px-2 py-1 text-right font-medium">
@@ -2013,18 +2054,13 @@ export default function TradeTaggingPage() {
                                   : pos.live_unrealized >= 0
                                     ? "text-emerald-700"
                                     : "text-red-700";
-                              // Position-level greeks: the per-contract value
-                              // scaled by signed quantity (4 long calls at 0.30
-                              // delta -> 1.2). Live-sourced, so blanked when the
-                              // overlay is stale, like the other live columns.
-                              const positionDelta =
-                                liveStale || pos.delta == null
-                                  ? null
-                                  : pos.delta * pos.position;
-                              const positionGamma =
-                                liveStale || pos.gamma == null
-                                  ? null
-                                  : pos.gamma * pos.position;
+                              // Position-level greeks in underlying units:
+                              // per-contract value × signed quantity × the
+                              // contract multiplier (see positionGreeks).
+                              const {
+                                delta: positionDelta,
+                                gamma: positionGamma,
+                              } = positionGreeks(pos);
                               return (
                                 <tr
                                   key={`${pos.account_id}-${pos.con_id}`}
