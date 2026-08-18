@@ -360,9 +360,9 @@ When opening or updating pull requests, include the following write-up in the PR
 - Documentation (required if behavior changed)
 - Additional notes (when applicable). Link issue(s) or external resources.
 
-### UI Change Screenshots
+### UI Change Screenshots (optional)
 
-Any PR that changes the frontend UI must include a screenshot of the net result, captured with the built-in **demo data** (no live backend required).
+A PR that changes the frontend UI may include a screenshot of the net result, captured with the built-in **demo data** (no live backend required). Not required — add one when a picture makes the change easier to review.
 
 **Demo mode.** Enable with the `?demo=1` URL query param (e.g. `/positions?demo=1`) or `VITE_DEMO_MODE=1` in `frontend/.env`. When on, `frontend/src/lib/demoApi.ts` intercepts `fetch` and answers every backend call from the fixtures in `frontend/src/lib/demoData.ts` — so all pages render without a backend and components need no demo-specific code. A "DEMO MODE" banner is shown so screenshots are unambiguous.
 
