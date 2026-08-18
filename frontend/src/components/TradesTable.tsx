@@ -319,8 +319,8 @@ function TagGroupCell({
         disabled={assigning}
         renderTrigger={(open) =>
           effectiveGroupId ? (
-            // Two affordances in one badge: the arrow navigates to the trade
-            // group detail view, the label opens the reassign finder.
+            // Two affordances in one badge: the name links to the trade group
+            // detail view, the swap icon opens the reassign finder.
             <span
               className={`inline-flex items-center whitespace-nowrap rounded bg-blue-100 text-xs font-medium text-blue-800 ${
                 assigning ? "opacity-60" : ""
@@ -329,24 +329,26 @@ function TagGroupCell({
               <Link
                 to={`/strategies?trade_group_id=${effectiveGroupId}`}
                 onClick={(e) => e.stopPropagation()}
-                className="rounded-l px-1 py-0.5 hover:bg-blue-200"
+                className="rounded-l px-1.5 py-0.5 hover:bg-blue-200 hover:underline"
                 title="Open trade group detail"
-                aria-label={`Open trade group ${
-                  effectiveLabel ?? `#${effectiveGroupId}`
-                } detail`}
               >
-                &rarr;
+                {effectiveLabel ?? `Group #${effectiveGroupId}`}
               </Link>
-              <span
-                className="cursor-pointer rounded-r px-1.5 py-0.5 hover:bg-blue-200"
+              <button
+                type="button"
                 onClick={(e) => {
                   e.stopPropagation();
                   open();
                 }}
-                title={assigning ? "Saving…" : "Click to reassign"}
+                disabled={assigning}
+                className="rounded-r px-1 py-0.5 hover:bg-blue-200 disabled:opacity-50"
+                title={assigning ? "Saving…" : "Change trade group"}
+                aria-label={`Change trade group (currently ${
+                  effectiveLabel ?? `#${effectiveGroupId}`
+                })`}
               >
-                {effectiveLabel ?? `Group #${effectiveGroupId}`}
-              </span>
+                &#8646;
+              </button>
             </span>
           ) : (
             <button
