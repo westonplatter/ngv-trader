@@ -17,6 +17,44 @@ When a spec ships, do the wrap-up in the same change:
 
 When writing documentation or summaries, default to high-level overviews that point to detailed resources rather than verbose step-by-step instructions. Avoid hardcoding filenames in docs when the user wants lightweight guidance.
 
+## Issue Tracking (kata)
+
+Work in this repo is tracked in [kata](https://www.katatracker.com), a local
+issue ledger driven by the `kata` CLI. Issues are referenced by short id
+(e.g. `y8t3`), not numbers.
+
+**The registered project name is `ngv-tradrer`** (a typo that predates the
+binding) while `.kata.toml` declares `ngv-trader`, so workspace resolution
+fails. Pass `--project ngv-tradrer` on every project-scoped command until the
+project is renamed:
+
+```bash
+kata show y8t3 --project ngv-tradrer --agent      # read an issue + comments
+kata next --unowned --project ngv-tradrer --agent # find ready, unowned work
+kata claim y8t3 --project ngv-tradrer --agent     # take ownership
+kata comment y8t3 --project ngv-tradrer --body "approach notes" --agent
+kata search "trade group" --project ngv-tradrer --agent
+```
+
+Conventions:
+
+- Pass `--agent` for ordinary reads and mutations; `--json` only when piping to `jq`.
+- Search before creating, and pass `--idempotency-key` on `kata create` so retries don't duplicate.
+- **Closing asserts the work is complete.** If it isn't, do not close — add
+  `kata label add <ref> needs-review` plus a comment saying what remains.
+- Close each issue as its own work is verified, with evidence:
+
+  ```bash
+  kata close y8t3 --project ngv-tradrer --done \
+    --message "What changed and how it was verified." \
+    --commit "$(git rev-parse HEAD)" \
+    --test "bunx tsc --noEmit" \
+    --agent
+  ```
+
+- `kata quickstart` prints the full agent contract; `kata --help` lists all commands.
+- The MCP server (`kata mcp serve`) is not registered in `.mcp.json` — use the CLI.
+
 ## Task Delegation
 
 Do NOT make changes beyond what was explicitly requested. Do not proactively remove, move, or restructure columns, fields, or UI elements unless specifically asked. When in doubt, do less.
