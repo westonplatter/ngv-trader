@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.1.14](https://github.com/westonplatter/ngv-trader/compare/v0.1.13...v0.1.14) (2026-08-18)
+
+
+### Features
+
+* **ux:** add cost basis column to trade group open positions ([#174](https://github.com/westonplatter/ngv-trader/issues/174)) ([ce582fb](https://github.com/westonplatter/ngv-trader/commit/ce582fba151fd914563fd7be6319750b744f7793))
+* **ux:** link trade groups, scope chips to open lots, weight greeks ([#172](https://github.com/westonplatter/ngv-trader/issues/172)) ([8266904](https://github.com/westonplatter/ngv-trader/commit/82669049fe24acf491c240bc822928f51842d90b))
+
+
+### Documentation
+
+* fix stale references found in scheduled doc review ([#156](https://github.com/westonplatter/ngv-trader/issues/156)) ([dfa0388](https://github.com/westonplatter/ngv-trader/commit/dfa038817e59d6b6c8db490c69571517a0d5c365))
+
+
+### Miscellaneous Chores
+
+* add ngv-frontend-grouped-upgrades skill ([#176](https://github.com/westonplatter/ngv-trader/issues/176)) ([a9065dd](https://github.com/westonplatter/ngv-trader/commit/a9065dd1780d485b6a67dfacf4fd788f472bb3da))
+* **deps:** bump fastapi from 0.139.2 to 0.140.13 ([#166](https://github.com/westonplatter/ngv-trader/issues/166)) ([e632e7b](https://github.com/westonplatter/ngv-trader/commit/e632e7b4f7ad0df87ec108717a3c62b060930058))
+* **deps:** bump langgraph from 1.2.9 to 1.2.10 ([#158](https://github.com/westonplatter/ngv-trader/issues/158)) ([e753798](https://github.com/westonplatter/ngv-trader/commit/e7537985620456f7aa2caa1393e2701ff3e60539))
+* **deps:** group low-risk frontend package bumps ([#173](https://github.com/westonplatter/ngv-trader/issues/173)) ([25acba3](https://github.com/westonplatter/ngv-trader/commit/25acba3b1ef45e909499c62a4ba8153317538a00))
+* **deps:** override vulnerable transitive deps ([#175](https://github.com/westonplatter/ngv-trader/issues/175)) ([fc515d7](https://github.com/westonplatter/ngv-trader/commit/fc515d73571fda5d0ad3eadb733b278c35bae2c9))
+
 ## [0.1.13](https://github.com/westonplatter/ngv-trader/compare/v0.1.12...v0.1.13) (2026-08-12)
 
 
