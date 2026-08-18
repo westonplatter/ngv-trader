@@ -76,14 +76,24 @@ def check_script_paths(doc_files: list[Path]) -> list[Issue]:
 
     Plans are exempt: they record what a script was called at the time, and may
     name scripts that were later renamed, moved to `tests/`, or never written.
+
+    A `scripts/<name>/` reference (trailing slash) is a directory, not a script
+    file. If that directory is listed in `.gitignore`, it's exempt too — a
+    gitignored directory (e.g. a scratch dir for ad-hoc local files) may
+    legitimately not exist on disk in a fresh checkout.
     """
     issues: list[Issue] = []
     script_re = re.compile(r"scripts/([\w\-\.]+)")
+    gitignored = {line.strip() for line in (ROOT / ".gitignore").read_text().splitlines()}
     for doc in doc_files:
         if _is_plan(doc):
             continue
-        for m in script_re.finditer(doc.read_text()):
+        text = doc.read_text()
+        for m in script_re.finditer(text):
             name = m.group(1)
+            is_dir_ref = text[m.end() : m.end() + 1] == "/"
+            if is_dir_ref and f"scripts/{name}/" in gitignored:
+                continue
             # Check root scripts/ and frontend/scripts/ (AGENTS.md documents both)
             if not (ROOT / "scripts" / name).exists() and not (ROOT / "frontend" / "scripts" / name).exists():
                 issues.append(("scripts", str(doc.relative_to(ROOT)), f"scripts/{name}"))

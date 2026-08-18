@@ -109,15 +109,19 @@ the responses match prior behavior.
   `merge_positions()` helper); live qty/cost/mark preferred, opened-today
   positions surfaced as additional rows. Unlike `merge_positions()`, it has no
   equivalent net-closed check, so a position that closed out intraday can
-  still surface a stale settled-only row.
+  still surface a stale settled-only row. Also adds `live_is_stale`: true when
+  the live snapshot predates a newer settled/Flex import from the same or a
+  later day (`is_live_stale()` in `src/services/intraday_overlay.py`), so the
+  UI knows not to present a live mark as current.
 
 ## UI
 
 Both the Strategies page (`/strategies`) and the Positions page show a **"Refresh Live (TWS)"**
 button that enqueues `intraday.sync.tws` and re-fetches after the job runs. Live
 mark / live-unrealized columns and intraday P&L totals render alongside the
-settled values, with a freshness indicator (`live as of HH:MM` when marks are
-present, else `settled`).
+settled values, with a freshness indicator: `live as of HH:MM` when a fresh
+live mark is present, an amber `stale HH:MM` badge when `live_is_stale` is
+true (overlay columns blanked), else `settled`.
 
 ## Operational notes
 

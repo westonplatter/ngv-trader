@@ -31,7 +31,7 @@ related_components:
 
 ## Problem
 
-A combo order that fills in **several partial executions** leaves TWS emitting one BAG combo-summary row _per partial_, all sharing the order's `permId`. The Class C purge in `src/services/live_reconcile.py` gates on `_has_live_siblings` (`:199`) — "are this combo's legs still unsettled?" — but the implementation counted **any** other `live_executions` row sharing the order key, peer summaries included. Each summary saw the other still present, concluded siblings remained, and deferred. Neither could ever reach zero, because the only sibling each had was the other.
+A combo order that fills in **several partial executions** leaves TWS emitting one BAG combo-summary row _per partial_, all sharing the order's `permId`. The Class C purge in `src/services/live_reconcile.py` gates on `_has_live_siblings` — "are this combo's legs still unsettled?" — but the implementation counted **any** other `live_executions` row sharing the order key, peer summaries included. Each summary saw the other still present, concluded siblings remained, and deferred. Neither could ever reach zero, because the only sibling each had was the other.
 
 A mutual deadlock, not a missed match. The rows lingered indefinitely.
 
@@ -44,9 +44,9 @@ A mutual deadlock, not a missed match. The rows lingered indefinitely.
 
 ## What Didn't Work
 
-**Hypothesis 1 — "same bug as the fills-window learning."** The obvious starting point was [`tws-fills-window-anchored-to-session-roll.md`](./tws-fills-window-anchored-to-session-roll.md), which flags a matching-sounding caveat: the read-path dedup is plain `ib_exec_id` equality, so "it does not cover combo **BAG summary** rows, whose live and settled ids come from different families and can never match." Shape matches; diagnosis doesn't. That caveat is about the _read_ path. The _write_-path machinery — `_purge_settled` → `_settled_combo_summaries` (`src/services/intraday_sync_tws.py:518`), plus the later Class C matcher in `live_reconcile.py` — was built specifically to handle BAG summaries. The compensating mechanism existed and should have fired. That doc's own Prevention section says the investigation is not done until you know why; it applied again, to itself.
+**Hypothesis 1 — "same bug as the fills-window learning."** The obvious starting point was [`tws-fills-window-anchored-to-session-roll.md`](./tws-fills-window-anchored-to-session-roll.md), which flags a matching-sounding caveat: the read-path dedup is plain `ib_exec_id` equality, so "it does not cover combo **BAG summary** rows, whose live and settled ids come from different families and can never match." Shape matches; diagnosis doesn't. That caveat is about the _read_ path. The _write_-path machinery — `_purge_settled` → `_settled_combo_summaries` (`src/services/intraday_sync_tws.py`), plus the later Class C matcher in `live_reconcile.py` — was built specifically to handle BAG summaries. The compensating mechanism existed and should have fired. That doc's own Prevention section says the investigation is not done until you know why; it applied again, to itself.
 
-**Hypothesis 2 — "the timestamps disagree."** A background research subagent, reasoning from code structure, concluded the failure was a timestamp mismatch: both `_settled_legs_at` (`live_reconcile.py:228`) and `_settled_combo_summaries` require exact `executed_at` equality, and on a multi-leg roll TWS and FlexQuery would disagree on the instant. Superficially strong — the settled BAG summary really is one second earlier than the live rows.
+**Hypothesis 2 — "the timestamps disagree."** A background research subagent, reasoning from code structure, concluded the failure was a timestamp mismatch: both `_settled_legs_at` (`live_reconcile.py`) and `_settled_combo_summaries` require exact `executed_at` equality, and on a multi-leg roll TWS and FlexQuery would disagree on the instant. Superficially strong — the settled BAG summary really is one second earlier than the live rows.
 
 The real rows refuted it. `_settled_legs_at` found **4 settled legs at exactly the live rows' timestamp**. The timestamp match was fine; the sibling gate was the blocker. Reasoning from code structure produced a plausible, specific, wrong cause; one read-only query ended it.
 
@@ -54,7 +54,7 @@ The real rows refuted it. `_settled_legs_at` found **4 settled legs at exactly t
 
 Two changes in `src/services/live_reconcile.py`.
 
-Add a SQL mirror of the existing Python predicate `_is_bag_summary` (`:168`):
+Add a SQL mirror of the existing Python predicate `_is_bag_summary`:
 
 ```python
 def _bag_summary_clause():
@@ -65,7 +65,7 @@ def _bag_summary_clause():
     )
 ```
 
-Exclude peer summaries from the sibling count in `_has_live_siblings` (`:199`):
+Exclude peer summaries from the sibling count in `_has_live_siblings`:
 
 ```python
     remaining = session.execute(
@@ -80,8 +80,8 @@ Docstrings on `_has_live_siblings` and the module's Class C paragraph were updat
 
 Deliberately not done:
 
-- **No manual DB cleanup.** The stale rows were left in place. `reconcile_orphaned_live_executions` is idempotent and runs from both `src/services/intraday_sync_tws.py:628` and `src/services/trade_sync_flexquery.py:560`, so they clear on the next sync of either kind. The project forbids ad-hoc DB mutation — migrations only.
-- **`_settled_combo_summaries` untouched.** It retains a related exact-timestamp-equality constraint (`intraday_sync_tws.py:545`). Out of scope for this fix.
+- **No manual DB cleanup.** The stale rows were left in place. `reconcile_orphaned_live_executions` is idempotent and runs from both `src/services/intraday_sync_tws.py` and `src/services/trade_sync_flexquery.py`, so they clear on the next sync of either kind. The project forbids ad-hoc DB mutation — migrations only.
+- **`_settled_combo_summaries` untouched.** It retains a related exact-timestamp-equality constraint (`intraday_sync_tws.py`). Out of scope for this fix.
 
 Validation: `uv run ruff check src/services/live_reconcile.py` clean; `uv run python scripts/check.py` passes for `src.services.live_reconcile`, `src.services.intraday_sync_tws`, `src.services.trade_sync_flexquery`. (No pyright config exists in this repo — no `pyrightconfig.json`, no pyright in `pyproject.toml` or `Taskfile.yaml` — despite AGENTS.md calling for it.)
 
@@ -93,7 +93,7 @@ Validation: `uv run ruff check src/services/live_reconcile.py` clean; `uv run py
 
 Note the failure direction. The designer _did_ anticipate the sibling count admitting **false positives** — a summary arriving with no legs in the batch would satisfy the gate vacuously — and added `_settled_legs_at` as a corroborating guard against exactly that. The mirror-image failure, a **false negative** where a non-leg row inflates the count and blocks a legitimate purge, was not considered. One direction of the gate was guarded; the other was not. (session history)
 
-That corroborating guard is why the purge does not become vacuous now that peers stop gating it: `_match_bag_summary` (`:249`) still requires `_settled_legs_at` to return a non-empty list, so a summary with no settled legs behind it cannot purge early. Both peers here carry the same `permId`, and `_order_group_key` prefers `permId` over `orderId`, so both collapse onto one key — which is what put them in each other's sibling count.
+That corroborating guard is why the purge does not become vacuous now that peers stop gating it: `_match_bag_summary` still requires `_settled_legs_at` to return a non-empty list, so a summary with no settled legs behind it cannot purge early. Both peers here carry the same `permId`, and `_order_group_key` prefers `permId` over `orderId`, so both collapse onto one key — which is what put them in each other's sibling count.
 
 **Why the rows were permanently stuck rather than briefly wrong.** The TWS fills window is a rolling two-day lookback (PR #95), and `reconcile_orphaned_live_executions` was wired into the intraday path as well as the FlexQuery path (PR #100). So every intraday sync faithfully re-writes these summaries, and a purge gate that declines to retire them re-fails on each pass. A row Class C won't retire is not missed once — it is re-asserted forever. (session history)
 

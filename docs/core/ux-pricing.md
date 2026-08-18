@@ -90,7 +90,7 @@ The expected PnL endpoint receives:
 - `legs[]` — each with `option_type`, `strike`, `dte`, `ivstart`, `quantity`, `trade_price`
 - `day_step`, `strike_step` — resolution controls
 
-Returns `pnl_records[]` with `(spot_price, days_into_future, value)` tuples, rendered as a Plotly line chart with one trace per sampled day.
+Returns `{ model_inputs, model_outputs: { min_dte, pnl_records, pnl_records_count } }`. `pnl_records[]` holds `(spot_price, days_into_future, value)` tuples, rendered as a Plotly line chart with one trace per sampled day.
 
 ## Key Files
 
