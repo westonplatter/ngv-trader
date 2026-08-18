@@ -6,6 +6,8 @@ Shared domain vocabulary for this project — entities, named processes, and sta
 
 An Execution is the atomic record; Positions and Trade Groups are both rollups over Executions, along different axes. A Position groups Executions by instrument and account and answers "what do I hold." A Trade Group groups them by the operator's intent and answers "what was I trying to do." Because both are derived, an instrument with no Executions can appear as a Position (the broker reports the holding directly) yet be impossible to place in a Trade Group.
 
+The two axes meet at the Open Lot. Asking which Trade Groups a Position belongs to is a question about quantity, not about set membership: only the Executions still holding open quantity speak for what is held now. Rolling up every Execution the instrument has ever seen answers a different question — which groups have ever touched it — and the two diverge as soon as an instrument is traded under more than one group.
+
 ## Trade data
 
 ### Execution
@@ -68,8 +70,18 @@ A named grouping of Executions representing one trading idea — a spread, a rol
 
 Membership is defined at the Execution level, not the instrument level, so a single instrument's fills can belong to different Trade Groups. Assigning a Position to a Trade Group is shorthand for assigning the Executions behind it — which means an instrument with no Executions yet cannot be grouped at all.
 
+Because membership is per-Execution, an instrument closed out under one Trade Group and later re-entered under another accumulates Executions across several groups over its life. The Trade Groups that belong to a Position are therefore those of its Open Lots, not every group its Executions have ever belonged to.
+
 ### Position
 
 A current holding in one instrument for one account — the net of its Executions. Distinct from a Trade Group in that it is derived from the instrument, not from intent.
 
 The broker reports current holdings directly, so a Position can exist before any of its Executions have been recorded on either tier.
+
+### Open Lot
+
+The portion of a Position's quantity that has been opened and not yet closed, carrying the identity of the Execution that opened it. A Position is a queue of Open Lots, not an undifferentiated quantity.
+
+Lots are consumed oldest-first: a closing Execution retires the Open Lot that has been held longest, and a close larger than that lot carries into the next one. An Execution that consumes the last opposing lot and still has quantity left both closes and opens in one event. Every Execution on the instrument participates in this accounting, including ones belonging to no Trade Group — open quantity is a property of the instrument, not of any group.
+
+Open Lots are reconstructed from Execution history rather than reported by the broker, so they can only be as complete as that history. An instrument acquired by transfer, or traded before its Executions were first recorded, has holdings that no Open Lot accounts for. This reconstruction establishes which lots are open and whose they are; it is not a basis for cost or tax figures, which the broker computes under its own matching rules.

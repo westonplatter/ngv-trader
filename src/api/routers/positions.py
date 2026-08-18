@@ -40,6 +40,9 @@ from src.utils.contract_display import contract_display_name
 router = APIRouter()
 DB_SESSION_DEPENDENCY = Depends(get_db)
 
+# Fill quantities are floats; treat anything under this as flat.
+_QTY_EPSILON = 1e-9
+
 
 class TradeGroupRef(BaseModel):
     model_config = {"from_attributes": True}
@@ -160,6 +163,130 @@ def _account_alias(acct: Account | None, account_id: int) -> str:
     return f"Unknown Account {account_id}"
 
 
+def _apply_fill_fifo(lots: list[list], quantity: float, group: TradeGroupRef | None) -> None:
+    """Match one signed fill against ``lots`` FIFO, mutating it in place.
+
+    Opposite-signed quantity closes the oldest lots first; whatever is left over
+    opens a new lot carrying this fill's group (``None`` for an untagged fill).
+    """
+    remaining = quantity
+    while abs(remaining) >= _QTY_EPSILON and lots and (lots[0][0] > 0) != (remaining > 0):
+        matched = min(abs(remaining), abs(lots[0][0]))
+        lots[0][0] -= matched if lots[0][0] > 0 else -matched
+        remaining -= matched if remaining > 0 else -matched
+        if abs(lots[0][0]) < _QTY_EPSILON:
+            lots.pop(0)
+    if abs(remaining) >= _QTY_EPSILON:
+        lots.append([remaining, group])
+
+
+def _open_lot_trade_groups(db: Session) -> tuple[
+    dict[tuple[int, int], list[TradeGroupRef]],
+    dict[tuple[int, int], list[TradeGroupRef]],
+]:
+    """Trade groups per ``(account_id, con_id)``, attributed to the *open* lots.
+
+    A position row should carry the group(s) of the fills that actually make up
+    the quantity held right now — not every group the instrument has ever passed
+    through. The same con_id is routinely re-entered under a new campaign after
+    an earlier one was closed out (e.g. MNQ traded flat under a covered-call
+    group, then re-opened under a long-risk group); rolling up all historical
+    fills stacks a chip for each of those dead campaigns onto the live row.
+
+    So walk every fill for the instrument in execution order and match closing
+    quantity against open quantity FIFO. Whatever survives the walk is the open
+    lot set, and only those lots' groups are attributed to the position.
+    Ungrouped fills take part in the matching (they consume open quantity) but
+    contribute no chip.
+
+    Returns ``(open_lot_map, all_fills_map)``. The second is the unfiltered
+    rollup, kept as a fallback for positions whose fill history is incomplete —
+    e.g. transferred-in lots that predate the sync window, where FIFO would
+    close out the whole history and leave nothing to attribute.
+    """
+    rows = db.execute(
+        select(
+            TradeExecution.account_id,
+            TradeExecution.con_id,
+            TradeExecution.quantity,
+            TradeGroup.id,
+            TradeGroup.name,
+        )
+        .select_from(TradeExecution)
+        .outerjoin(
+            TradeGroupExecution,
+            TradeGroupExecution.trade_execution_id == TradeExecution.id,
+        )
+        .outerjoin(TradeGroup, TradeGroup.id == TradeGroupExecution.trade_group_id)
+        .where(TradeExecution.con_id.is_not(None))
+        .order_by(
+            TradeExecution.account_id.asc(),
+            TradeExecution.con_id.asc(),
+            TradeExecution.executed_at.asc(),
+            TradeExecution.id.asc(),
+        )
+    ).all()
+
+    # Per instrument: the FIFO queue of still-open lots, plus every group seen.
+    open_lots: dict[tuple[int, int], list[list]] = {}
+    all_groups: dict[tuple[int, int], dict[int, TradeGroupRef]] = {}
+    for account_id, con_id, quantity, group_id, group_name in rows:
+        key = (account_id, con_id)
+        group = None
+        if group_id is not None:
+            group = TradeGroupRef(id=group_id, name=group_name)
+            all_groups.setdefault(key, {}).setdefault(group_id, group)
+
+        # `quantity` is already signed (BUY positive, SELL negative).
+        _apply_fill_fifo(open_lots.setdefault(key, []), float(quantity or 0.0), group)
+
+    open_map: dict[tuple[int, int], dict[int, TradeGroupRef]] = {}
+    for key, lots in open_lots.items():
+        for _, group in lots:
+            if group is not None:
+                open_map.setdefault(key, {}).setdefault(group.id, group)
+
+    # Unsettled TWS fills are open by definition, so their groups always count.
+    live_rows = db.execute(
+        select(
+            TradeGroupLiveExecution.account_id,
+            TradeGroupLiveExecution.con_id,
+            TradeGroup.id,
+            TradeGroup.name,
+        )
+        .join(TradeGroup, TradeGroup.id == TradeGroupLiveExecution.trade_group_id)
+        .where(TradeGroupLiveExecution.con_id.is_not(None))
+        .distinct()
+    ).all()
+    for account_id, con_id, group_id, group_name in live_rows:
+        key = (account_id, con_id)
+        group = TradeGroupRef(id=group_id, name=group_name)
+        open_map.setdefault(key, {}).setdefault(group_id, group)
+        all_groups.setdefault(key, {}).setdefault(group_id, group)
+
+    def _sorted(source: dict[tuple[int, int], dict[int, TradeGroupRef]]):
+        return {key: sorted(groups.values(), key=lambda g: g.id) for key, groups in source.items()}
+
+    return _sorted(open_map), _sorted(all_groups)
+
+
+def _groups_for(
+    key: tuple[int, int],
+    open_map: dict[tuple[int, int], list[TradeGroupRef]],
+    all_map: dict[tuple[int, int], list[TradeGroupRef]],
+) -> list[TradeGroupRef]:
+    """Open-lot groups, falling back to the full history when they come up empty.
+
+    An empty open-lot set for a position that is actually held means the fill
+    history does not reconcile (transferred-in lots, fills predating the sync
+    window). Showing the historical rollup there is better than showing nothing.
+    """
+    groups = open_map.get(key)
+    if groups:
+        return groups
+    return all_map.get(key, [])
+
+
 @router.get("/positions", response_model=list[PositionResponse])
 def list_positions(db: Session = DB_SESSION_DEPENDENCY):
     rows = db.execute(select(Position, Account).outerjoin(Account, Position.account_id == Account.id)).all()
@@ -174,49 +301,11 @@ def list_positions(db: Session = DB_SESSION_DEPENDENCY):
     magnifiers = dict(db.execute(select(ContractRef.con_id, ContractRef.price_magnifier)).all())
     accounts_by_id = {a.id: a for a in db.execute(select(Account)).scalars().all()}
 
-    # Map each (account_id, con_id) to the trade group(s) it's associated with.
-    # Association is always at the *execution* (fill) level — uniform across
-    # FlexQuery and TWS — and rolled up here to a position. Two execution sources
-    # are unioned:
-    #   (1) settled fills: TradeExecution -> TradeGroupExecution (covers both
-    #       FlexQuery fills and TWS fills that have settled via the trade sync);
-    #   (2) live fills: LiveExecution -> TradeGroupLiveExecution, keyed by
-    #       ib_exec_id, so a TWS fill is groupable intraday before it settles.
-    # On settlement the live link is carried over into TradeGroupExecution, so a
-    # fill is never counted from both sources. Not all positions have a group.
-    trade_group_acc: dict[tuple[int, int], dict[int, TradeGroupRef]] = {}
-    settled_rows = db.execute(
-        select(
-            TradeExecution.account_id,
-            TradeExecution.con_id,
-            TradeGroup.id,
-            TradeGroup.name,
-        )
-        .join(
-            TradeGroupExecution,
-            TradeGroupExecution.trade_execution_id == TradeExecution.id,
-        )
-        .join(TradeGroup, TradeGroup.id == TradeGroupExecution.trade_group_id)
-        .where(TradeExecution.con_id.is_not(None))
-        .distinct()
-        .order_by(TradeGroup.id.asc())
-    ).all()
-    live_rows = db.execute(
-        select(
-            TradeGroupLiveExecution.account_id,
-            TradeGroupLiveExecution.con_id,
-            TradeGroup.id,
-            TradeGroup.name,
-        )
-        .join(TradeGroup, TradeGroup.id == TradeGroupLiveExecution.trade_group_id)
-        .where(TradeGroupLiveExecution.con_id.is_not(None))
-        .distinct()
-        .order_by(TradeGroup.id.asc())
-    ).all()
-    for account_id, con_id, group_id, group_name in [*settled_rows, *live_rows]:
-        trade_group_acc.setdefault((account_id, con_id), {}).setdefault(group_id, TradeGroupRef(id=group_id, name=group_name))
-
-    trade_group_map: dict[tuple[int, int], list[TradeGroupRef]] = {key: sorted(groups.values(), key=lambda g: g.id) for key, groups in trade_group_acc.items()}
+    # Trade groups are attributed to the fills that make up the *currently
+    # open* quantity, not to every fill the instrument has ever seen. See
+    # _open_lot_trade_groups. all_group_map is the unfiltered rollup, used
+    # only where the open-lot walk comes up empty for a live position.
+    trade_group_map, all_group_map = _open_lot_trade_groups(db)
 
     results: list[PositionResponse] = []
     flex_keys: set[tuple[int, int]] = set()
@@ -279,7 +368,7 @@ def list_positions(db: Session = DB_SESSION_DEPENDENCY):
                 account_alias=_account_alias(acct, pos.account_id),
                 contract_display_name=display_name,
                 con_id=pos.con_id,
-                trade_groups=trade_group_map.get((pos.account_id, pos.con_id), []),
+                trade_groups=_groups_for((pos.account_id, pos.con_id), trade_group_map, all_group_map),
                 symbol=pos.symbol,
                 sec_type=pos.sec_type,
                 exchange=pos.exchange,
@@ -340,7 +429,7 @@ def list_positions(db: Session = DB_SESSION_DEPENDENCY):
                 account_alias=_account_alias(accounts_by_id.get(account_id), account_id),
                 contract_display_name=display_name,
                 con_id=con_id,
-                trade_groups=trade_group_map.get((account_id, con_id), []),
+                trade_groups=_groups_for((account_id, con_id), trade_group_map, all_group_map),
                 symbol=live.symbol,
                 sec_type=live.sec_type,
                 exchange=None,

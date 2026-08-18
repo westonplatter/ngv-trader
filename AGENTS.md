@@ -17,6 +17,44 @@ When a spec ships, do the wrap-up in the same change:
 
 When writing documentation or summaries, default to high-level overviews that point to detailed resources rather than verbose step-by-step instructions. Avoid hardcoding filenames in docs when the user wants lightweight guidance.
 
+## Issue Tracking (kata)
+
+Work in this repo is tracked in [kata](https://www.katatracker.com), a local
+issue ledger driven by the `kata` CLI. Issues are referenced by short id
+(e.g. `y8t3`), not numbers.
+
+**The registered project name is `ngv-tradrer`** (a typo that predates the
+binding) while `.kata.toml` declares `ngv-trader`, so workspace resolution
+fails. Pass `--project ngv-tradrer` on every project-scoped command until the
+project is renamed:
+
+```bash
+kata show y8t3 --project ngv-tradrer --agent      # read an issue + comments
+kata next --unowned --project ngv-tradrer --agent # find ready, unowned work
+kata claim y8t3 --project ngv-tradrer --agent     # take ownership
+kata comment y8t3 --project ngv-tradrer --body "approach notes" --agent
+kata search "trade group" --project ngv-tradrer --agent
+```
+
+Conventions:
+
+- Pass `--agent` for ordinary reads and mutations; `--json` only when piping to `jq`.
+- Search before creating, and pass `--idempotency-key` on `kata create` so retries don't duplicate.
+- **Closing asserts the work is complete.** If it isn't, do not close — add
+  `kata label add <ref> needs-review` plus a comment saying what remains.
+- Close each issue as its own work is verified, with evidence:
+
+  ```bash
+  kata close y8t3 --project ngv-tradrer --done \
+    --message "What changed and how it was verified." \
+    --commit "$(git rev-parse HEAD)" \
+    --test "bunx tsc --noEmit" \
+    --agent
+  ```
+
+- `kata quickstart` prints the full agent contract; `kata --help` lists all commands.
+- The MCP server (`kata mcp serve`) is not registered in `.mcp.json` — use the CLI.
+
 ## Task Delegation
 
 Do NOT make changes beyond what was explicitly requested. Do not proactively remove, move, or restructure columns, fields, or UI elements unless specifically asked. When in doubt, do less.
@@ -322,9 +360,9 @@ When opening or updating pull requests, include the following write-up in the PR
 - Documentation (required if behavior changed)
 - Additional notes (when applicable). Link issue(s) or external resources.
 
-### UI Change Screenshots
+### UI Change Screenshots (optional)
 
-Any PR that changes the frontend UI must include a screenshot of the net result, captured with the built-in **demo data** (no live backend required).
+A PR that changes the frontend UI may include a screenshot of the net result, captured with the built-in **demo data** (no live backend required). Not required — add one when a picture makes the change easier to review.
 
 **Demo mode.** Enable with the `?demo=1` URL query param (e.g. `/positions?demo=1`) or `VITE_DEMO_MODE=1` in `frontend/.env`. When on, `frontend/src/lib/demoApi.ts` intercepts `fetch` and answers every backend call from the fixtures in `frontend/src/lib/demoData.ts` — so all pages render without a backend and components need no demo-specific code. A "DEMO MODE" banner is shown so screenshots are unambiguous.
 
