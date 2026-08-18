@@ -16,6 +16,7 @@ import {
   DEMO_FLEXQUERY_TOKENS,
   DEMO_POSITIONS,
   DEMO_STRATEGIES,
+  DEMO_TRADE_EXECUTIONS,
   DEMO_TRADE_GROUPS,
   demoGroupExecutions,
   demoTradeGroupDetail,
@@ -51,6 +52,7 @@ function routeGet(path: string): Json | undefined {
   if (path === "/workers/status") return demoWorkerStatuses();
   if (path === "/strategies") return DEMO_STRATEGIES;
   if (path === "/trade-groups") return DEMO_TRADE_GROUPS;
+  if (path === "/trade-executions") return DEMO_TRADE_EXECUTIONS;
 
   const execMatch = path.match(/^\/trade-groups\/(\d+)\/executions$/);
   if (execMatch) return demoGroupExecutions(Number(execMatch[1])) ?? undefined;
