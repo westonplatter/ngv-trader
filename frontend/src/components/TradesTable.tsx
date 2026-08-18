@@ -9,7 +9,7 @@ import { formatMoney } from "../utils/number";
 import TradeGroupSearchSelect from "./TradeGroupSearchSelect";
 import { type TradeGroupResult, tradeGroupLabel } from "../lib/tradeGroups";
 
-interface TradeExecutionRow {
+export interface TradeExecutionRow {
   id: number;
   trade_id: number | null;
   account_id: number;
@@ -319,17 +319,34 @@ function TagGroupCell({
         disabled={assigning}
         renderTrigger={(open) =>
           effectiveGroupId ? (
+            // Two affordances in one badge: the arrow navigates to the trade
+            // group detail view, the label opens the reassign finder.
             <span
-              className={`whitespace-nowrap rounded bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-800 cursor-pointer hover:bg-blue-200 ${
+              className={`inline-flex items-center whitespace-nowrap rounded bg-blue-100 text-xs font-medium text-blue-800 ${
                 assigning ? "opacity-60" : ""
               }`}
-              onClick={(e) => {
-                e.stopPropagation();
-                open();
-              }}
-              title={assigning ? "Saving…" : "Click to reassign"}
             >
-              {effectiveLabel ?? `Group #${effectiveGroupId}`}
+              <Link
+                to={`/strategies?trade_group_id=${effectiveGroupId}`}
+                onClick={(e) => e.stopPropagation()}
+                className="rounded-l px-1 py-0.5 hover:bg-blue-200"
+                title="Open trade group detail"
+                aria-label={`Open trade group ${
+                  effectiveLabel ?? `#${effectiveGroupId}`
+                } detail`}
+              >
+                &rarr;
+              </Link>
+              <span
+                className="cursor-pointer rounded-r px-1.5 py-0.5 hover:bg-blue-200"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  open();
+                }}
+                title={assigning ? "Saving…" : "Click to reassign"}
+              >
+                {effectiveLabel ?? `Group #${effectiveGroupId}`}
+              </span>
             </span>
           ) : (
             <button
