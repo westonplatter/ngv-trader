@@ -257,6 +257,29 @@ unassignment directly from the Positions page, via the
 [core/intraday-tws-overlay.md](core/intraday-tws-overlay.md) for how live
 positions are computed).
 
+#### Which groups a position row shows
+
+Membership is per-fill, so a position's chips are rolled up from its fills — but
+only from the fills that make up the quantity **held right now**. `GET /positions`
+walks every settled fill for an `(account_id, con_id)` in execution order and
+matches closing quantity against open quantity FIFO; the lots that survive the
+walk are the open ones, and only their groups become chips. Ungrouped fills take
+part in the matching but contribute no chip. Unsettled TWS fills
+(`trade_group_live_executions`) are open by definition and always count.
+
+This matters because the same con_id is routinely re-entered under a new campaign
+after an earlier one was closed out. Rolling up all historical fills would stack a
+chip for every dead campaign onto the live row.
+
+Fallback: if the FIFO walk leaves no open lots for a position that is actually
+held — the fill history does not reconcile, e.g. transferred-in lots or fills
+predating the sync window — the row falls back to the unfiltered historical
+rollup rather than showing nothing.
+
+Note the read path and the write path differ in scope: `positions:assign` and
+`positions:unassign` still fan out to **every** fill on the con_id, including
+closed historical lots, not just the open ones.
+
 ### Tagging workspace
 
 The main tagging UI is `frontend/src/components/TradeTaggingPage.tsx`.
