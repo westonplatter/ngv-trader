@@ -1017,6 +1017,11 @@ export default function TradeTaggingPage() {
       // |qty|); apply the position's sign so a short contributes a credit.
       acc.avgCost.sum += pos.avg_cost * Math.sign(pos.position);
       acc.avgCost.count += 1;
+      // Cost basis is multiplier-inclusive avg_cost × signed quantity, so long
+      // legs read as a debit and short legs as a credit; the total nets out to
+      // the spread's net debit/credit.
+      acc.costBasis.sum += pos.avg_cost * pos.position;
+      acc.costBasis.count += 1;
       if (pos.position_value != null) {
         acc.value.sum += pos.position_value;
         acc.value.count += 1;
@@ -1035,6 +1040,7 @@ export default function TradeTaggingPage() {
       delta: { sum: 0, count: 0 },
       gamma: { sum: 0, count: 0 },
       avgCost: { sum: 0, count: 0 },
+      costBasis: { sum: 0, count: 0 },
       value: { sum: 0, count: 0 },
       unrealized: { sum: 0, count: 0 },
       liveUnrealized: { sum: 0, count: 0 },
@@ -1938,6 +1944,12 @@ export default function TradeTaggingPage() {
                               <th className="px-2 py-1 text-right font-medium">
                                 Avg Cost
                               </th>
+                              <th
+                                className="px-2 py-1 text-right font-medium"
+                                title="Avg cost × signed quantity (multiplier-inclusive). Positive = debit paid, negative = credit received."
+                              >
+                                Cost Basis
+                              </th>
                               <th className="px-2 py-1 text-right font-medium">
                                 Mark
                               </th>
@@ -1986,6 +1998,13 @@ export default function TradeTaggingPage() {
                                   : positionTotals.avgCost.count === 0
                                     ? "—"
                                     : positionTotals.avgCost.sum.toFixed(2)}
+                              </td>
+                              <td className="px-2 py-1 text-right font-mono text-gray-700">
+                                {privacyMode
+                                  ? PRIVACY_MASK
+                                  : positionTotals.costBasis.count === 0
+                                    ? "—"
+                                    : positionTotals.costBasis.sum.toFixed(2)}
                               </td>
                               <td className="px-2 py-1 text-right"></td>
                               <td className="px-2 py-1 text-right"></td>
@@ -2112,6 +2131,13 @@ export default function TradeTaggingPage() {
                                     {privacyMode
                                       ? PRIVACY_MASK
                                       : pos.avg_cost.toFixed(2)}
+                                  </td>
+                                  <td className="px-2 py-1 text-right font-mono text-gray-700">
+                                    {privacyMode
+                                      ? PRIVACY_MASK
+                                      : (pos.avg_cost * pos.position).toFixed(
+                                          2,
+                                        )}
                                   </td>
                                   <td className="px-2 py-1 text-right font-mono text-gray-700">
                                     {privacyMode
