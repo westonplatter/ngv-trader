@@ -1,9 +1,16 @@
 # Doc Review Process
 
-Conventions for keeping documentation continuously accurate. Doc upkeep is an
-**overlay on day-to-day changes**, not a separate periodic audit: every PR that
-changes behavior updates its docs in the same change, and drift found along the
-way is fixed where it's noticed.
+## Scope
+
+Doc upkeep covers `README.md`, `AGENTS.md`, `CONCEPTS.md`, and all files in
+`docs/`. Front matter (`topics`, `description`, `code_dirs_or_files`) is in
+scope wherever it exists — it feeds the generated indexes, so stale metadata is
+as misleading as stale prose.
+
+Goal is accuracy and consistency with the actual codebase — not expansion or
+restructuring. Doc upkeep is an **overlay on day-to-day changes**, not a
+separate periodic audit: every PR that changes behavior updates its docs in
+the same change, and drift found along the way is fixed where it's noticed.
 
 ## Continuous upkeep (every PR)
 
@@ -46,18 +53,38 @@ A short pass to catch what same-change upkeep misses. Treat it as sampling and
 triage, not a full re-read:
 
 1. Run `scripts/doc_check.py` and fix failures.
-2. Cross-check a **rotating subset** of docs (not all) against code, using the
-   checks below. Prioritize docs adjacent to the week's changed code.
-3. Record findings in a priority table and fix **High** items in the same PR;
+2. Select a **rotating subset** of docs (not all). Prioritize docs adjacent to
+   the week's changed code, using `code_dirs_or_files` front matter as the
+   churn signal, plus narrative docs (`AGENTS.md` sections, workflow docs,
+   architecture summaries).
+3. For each selected doc, answer two questions:
+   - **References true?** Run the checks below (routes, tables, paths, vars).
+   - **Story true?** Does the doc's summary of _how the system works_ still
+     hold? A wrong route is obvious; a stale narrative (architecture
+     direction, workflow order, "current state" prose) passes every mechanical
+     check while quietly misleading. Read the doc as a new contributor would
+     and ask: would any claim made here lead to a wrong decision?
+4. Record findings in a priority table and fix **High** items in the same PR;
    file Medium/Low as follow-up.
 
-| Check                     | How                                                                                                                                 |
-| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| **Routes**                | Compare the doc's endpoint list to `@router.{method}(path)` decorators in the router file. `--routes` output is the starting point. |
-| **Table names / columns** | Spot-check against `src/models.py` and `alembic/versions/`.                                                                         |
-| **Key files sections**    | Verify each listed path exists on disk.                                                                                             |
-| **Env vars**              | Check example values and names against `.env.example`.                                                                              |
-| **Spec status banners**   | Confirm each `spec-*.md` banner matches the spec's actual state.                                                                    |
+**Priority tiebreaker:** when severity is ambiguous, ask _would a new
+contributor make a wrong decision from this?_ If yes, it's High — regardless
+of whether the drift is a command, a route, or prose.
+
+**Reference checks** (the "references true?" half):
+
+| Check                     | How                                                                                                                                                                              |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Routes**                | Compare the doc's endpoint list to `@router.{method}(path)` decorators in the router file. `--routes` output is the starting point.                                              |
+| **Table names / columns** | Spot-check against `src/models.py` and `alembic/versions/`.                                                                                                                      |
+| **Key files sections**    | Verify each listed path exists on disk.                                                                                                                                          |
+| **Env vars**              | Check example values and names against `.env.example`.                                                                                                                           |
+| **Spec status banners**   | Confirm each `spec-*.md` banner matches the spec's actual state.                                                                                                                 |
+| **Front matter accuracy** | Does `description` still match the doc, do `topics` still fit, do `code_dirs_or_files` paths still exist? Stale metadata propagates into every generated index, machine-blessed. |
+
+**Staleness signal:** a doc unchanged while its `code_dirs_or_files` saw heavy
+churn is a front-matter-and-description review candidate even when nothing
+else flags it.
 
 **Priority guide:**
 
