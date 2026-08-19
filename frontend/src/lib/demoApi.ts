@@ -89,7 +89,7 @@ export function installDemoApi(): void {
 
   const realFetch = window.fetch.bind(window);
 
-  window.fetch = async (
+  const demoFetch = async (
     input: RequestInfo | URL,
     init?: RequestInit,
   ): Promise<Response> => {
@@ -110,4 +110,10 @@ export function installDemoApi(): void {
 
     return realFetch(input as RequestInfo, init);
   };
+
+  // `fetch` carries statics (preconnect) that a bare function literal lacks;
+  // copy them across so the override stays a drop-in replacement.
+  window.fetch = Object.assign(demoFetch, {
+    preconnect: window.fetch.preconnect,
+  });
 }
