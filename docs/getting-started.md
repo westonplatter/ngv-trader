@@ -386,4 +386,4 @@ Empty output = TWS not listening; fix on the TWS side.
 | [secrets-using-1password.md](secrets-using-1password.md)       | 1Password CLI integration                             |
 | [tradebot-chatbot.md](tradebot-chatbot.md)                     | Tradebot architecture, tools, and safety constraints  |
 | [workers.md](workers.md)                                       | Worker processes, heartbeats, and job dispatch        |
-| [\_index.md](_index.md)                                        | Full documentation index                              |
+| [index.md](index.md)                                           | Generated documentation index                         |

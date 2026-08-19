@@ -1,3 +1,16 @@
+---
+topics: ["semantic-layer", "resolver", "sql-generation", "agent-tools", "osi"]
+code_dirs_or_files:
+  [
+    "osi/ngv_semantic_model.yaml",
+    "src/services/semantic/loader.py",
+    "src/services/semantic/resolver.py",
+    "src/services/semantic/executor.py",
+    "src/mcp/semantic_server.py",
+  ]
+description: Spec for the OSI semantic layer — YAML model, resolver algorithm, grain enforcement, invariants, and extension guide.
+---
+
 # Semantic Queries (OSI semantic layer)
 
 > **Status: implemented.** This is the authoritative spec for the semantic layer

@@ -1,3 +1,15 @@
+---
+topics: ["semantic-layer", "metrics", "analytics", "agent-tools", "osi"]
+code_dirs_or_files:
+  [
+    "osi/ngv_semantic_model.yaml",
+    "src/services/semantic/",
+    "src/mcp/semantic_server.py",
+    "src/services/trade_group_pnl.py",
+  ]
+description: Analyst-facing catalog for the semantic layer — metrics, dimensions, grains, and worked examples for query_metric and trade_group_pnl tools.
+---
+
 # Semantic Data Model — what the MCP can answer
 
 > **Audience: an analyst driving the semantic layer through MCP** (`describe_semantic_model`,
@@ -55,18 +67,18 @@ per metric; an invalid pick errors with the valid options).
 
 ## 4. Dimensions — how to slice
 
-| Dimension                           | On grain(s)                   | Notes                                                                                                                                                           |
-| ----------------------------------- | ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `account`                           | all                           | Human alias (`main`, `sep`, `lsc`, `mini`) — never the raw account number.                                                                                      |
-| `tag`                               | execution, position           | **Trade group / strategy name.** The key slice for a strategy review.                                                                                           |
-| `sec_type`                          | execution, position, trade    | STK / FUT / OPT / FOP. On execution & position grains it comes straight off the fill/position, so it's **always populated** — use it to split stock vs options. |
-| `symbol`                            | all                           | Underlying ticker. Native (complete) on `trade_facts`/`position_facts`; on `execution_facts` it comes via the `contracts` join — see the caveat below.          |
-| `expiration`                        | **position** (time axis)      | Contract last-trade date. **Range-filter** it (`start_date`/`end_date`) for "expiring in the next N days". NULL for stock.                                      |
-| `days_to_expiration`                | position                      | Whole days until expiration. For **display/grouping**; to filter a horizon, range-filter `expiration` instead.                                                  |
-| `executed_at`                       | execution / trade (time axis) | Fill/trade time. Range-filter for date windows.                                                                                                                 |
-| `right`, `strike`                   | position (native); execution (via `contracts`) | ⚠️ Complete on `position_facts` — see the caveat below for `execution_facts`.                                                                    |
-| `contract_month`                    | execution (via `contracts`)   | ⚠️ See the caveat below.                                                                                                                                        |
-| `exchange`, `side`, `status`        | see `describe`                | —                                                                                                                                                               |
+| Dimension                    | On grain(s)                                    | Notes                                                                                                                                                           |
+| ---------------------------- | ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `account`                    | all                                            | Human alias (`main`, `sep`, `lsc`, `mini`) — never the raw account number.                                                                                      |
+| `tag`                        | execution, position                            | **Trade group / strategy name.** The key slice for a strategy review.                                                                                           |
+| `sec_type`                   | execution, position, trade                     | STK / FUT / OPT / FOP. On execution & position grains it comes straight off the fill/position, so it's **always populated** — use it to split stock vs options. |
+| `symbol`                     | all                                            | Underlying ticker. Native (complete) on `trade_facts`/`position_facts`; on `execution_facts` it comes via the `contracts` join — see the caveat below.          |
+| `expiration`                 | **position** (time axis)                       | Contract last-trade date. **Range-filter** it (`start_date`/`end_date`) for "expiring in the next N days". NULL for stock.                                      |
+| `days_to_expiration`         | position                                       | Whole days until expiration. For **display/grouping**; to filter a horizon, range-filter `expiration` instead.                                                  |
+| `executed_at`                | execution / trade (time axis)                  | Fill/trade time. Range-filter for date windows.                                                                                                                 |
+| `right`, `strike`            | position (native); execution (via `contracts`) | ⚠️ Complete on `position_facts` — see the caveat below for `execution_facts`.                                                                                   |
+| `contract_month`             | execution (via `contracts`)                    | ⚠️ See the caveat below.                                                                                                                                        |
+| `exchange`, `side`, `status` | see `describe`                                 | —                                                                                                                                                               |
 
 ⚠️ **On `execution_facts`, `strike` / `right` / `contract_month` / `symbol` all
 come from a join to the `contracts` security master, which is incomplete for

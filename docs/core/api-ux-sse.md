@@ -1,3 +1,14 @@
+---
+topics: ["sse", "real-time-updates", "event-streams", "notifications"]
+code_dirs_or_files:
+  [
+    "src/services/ui_events.py",
+    "src/api/routers/events.py",
+    "frontend/src/lib/events.ts",
+  ]
+description: Server-Sent Events architecture for real-time UI updates — broadcaster, SSE stream, worker notifications, and frontend EventSource client.
+---
+
 # Server-Sent Events (SSE) for Real-Time UI Updates
 
 How jobs, orders, and worker status flow from backend processes to the browser in real time using Server-Sent Events.

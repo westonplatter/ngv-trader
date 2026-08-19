@@ -1,3 +1,15 @@
+---
+topics: ["frontend", "pricing", "options", "futures", "contract-qualification"]
+code_dirs_or_files:
+  [
+    "frontend/src/components/PricingPage.tsx",
+    "src/services/contract_sync.py",
+    "src/api/routers/futures.py",
+    "src/workers/jobs.py",
+  ]
+description: Pricing page UX for planning FOP and D1 entries — contract qualification flow, leg cascade, PnL chart, and API endpoints.
+---
+
 # Pricing Page UX
 
 How the pricing page helps users plan trade entries for blended positions of futures options (FOP) and futures (D1).
@@ -43,13 +55,13 @@ When a user selects an option from the catalog that hasn't been qualified yet:
 
 All `/api/v1/*` routes are served by the local FastAPI backend (`:8000`). The `/pricing-api/*` prefix is a Vite dev-server proxy that rewrites to the **nextgenvol service** at `http://localhost:8080/api/v1` — it is not part of the local FastAPI app.
 
-| Endpoint                                           | Service        | Purpose                                                                                          |
-| -------------------------------------------------- | -------------- | ------------------------------------------------------------------------------------------------ |
-| `GET /futures/{symbol}/term-structure`             | FastAPI (:8000) | Futures months with prices (for D1 legs and spot price)                                          |
-| `GET /futures/{symbol}/chain`                      | FastAPI (:8000) | Full option chain catalog from `option_chain_meta`, LEFT JOINed to qualified contracts + pricing |
-| `POST /jobs` with `contracts.qualify_and_snapshot` | FastAPI (:8000) | On-demand: qualify one contract + fetch its price                                                |
-| `POST /jobs` with `market_data.snapshot`           | FastAPI (:8000) | Fetch price for already-qualified contract                                                       |
-| `POST /pricing-api/expected-pnl`                   | nextgenvol (:8080) | Compute expected PnL time series (proxied via Vite; see `vite.config.ts`)                    |
+| Endpoint                                           | Service            | Purpose                                                                                          |
+| -------------------------------------------------- | ------------------ | ------------------------------------------------------------------------------------------------ |
+| `GET /futures/{symbol}/term-structure`             | FastAPI (:8000)    | Futures months with prices (for D1 legs and spot price)                                          |
+| `GET /futures/{symbol}/chain`                      | FastAPI (:8000)    | Full option chain catalog from `option_chain_meta`, LEFT JOINed to qualified contracts + pricing |
+| `POST /jobs` with `contracts.qualify_and_snapshot` | FastAPI (:8000)    | On-demand: qualify one contract + fetch its price                                                |
+| `POST /jobs` with `market_data.snapshot`           | FastAPI (:8000)    | Fetch price for already-qualified contract                                                       |
+| `POST /pricing-api/expected-pnl`                   | nextgenvol (:8080) | Compute expected PnL time series (proxied via Vite; see `vite.config.ts`)                        |
 
 ## Leg Row Interaction
 
@@ -94,11 +106,11 @@ Returns `{ model_inputs, model_outputs: { min_dte, pnl_records, pnl_records_coun
 
 ## Key Files
 
-| File                                                             | Purpose                                  |
-| ---------------------------------------------------------------- | ---------------------------------------- |
-| `frontend/src/components/PricingPage.tsx`                        | Main pricing page with dynamic legs      |
-| `frontend/src/components/ComboboxInput.tsx`                      | Reusable fuzzy-search dropdown           |
-| `src/models.py` — `OptionChainMeta`                              | Unqualified option chain catalog         |
-| `src/services/contract_sync.py` — `sync_futures_chain`           | Chain sync: IND → FUT → chain metadata   |
-| `src/api/routers/futures.py` — `get_chain`                       | Chain catalog endpoint with pricing JOIN |
-| `src/workers/jobs.py` — `handle_contracts_qualify_and_snapshot`  | On-demand qualify + price fetch          |
+| File                                                            | Purpose                                  |
+| --------------------------------------------------------------- | ---------------------------------------- |
+| `frontend/src/components/PricingPage.tsx`                       | Main pricing page with dynamic legs      |
+| `frontend/src/components/ComboboxInput.tsx`                     | Reusable fuzzy-search dropdown           |
+| `src/models.py` — `OptionChainMeta`                             | Unqualified option chain catalog         |
+| `src/services/contract_sync.py` — `sync_futures_chain`          | Chain sync: IND → FUT → chain metadata   |
+| `src/api/routers/futures.py` — `get_chain`                      | Chain catalog endpoint with pricing JOIN |
+| `src/workers/jobs.py` — `handle_contracts_qualify_and_snapshot` | On-demand qualify + price fetch          |

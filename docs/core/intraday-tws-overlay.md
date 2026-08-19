@@ -1,3 +1,15 @@
+---
+topics: ["live-data", "tws", "positions", "fills", "intraday", "market-data"]
+code_dirs_or_files:
+  [
+    "src/services/intraday_sync_tws.py",
+    "src/services/intraday_overlay.py",
+    "src/services/live_reconcile.py",
+    "src/services/group_link_carryover.py",
+  ]
+description: Live TWS overlay for intraday positions — marks, fills, settlement handoff, orphan reconciliation, and read-time merge over FlexQuery snapshots.
+---
+
 # Intraday TWS Overlay
 
 Current-state documentation for the live, current-state P&L overlay sourced from

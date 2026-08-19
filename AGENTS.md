@@ -4,16 +4,22 @@ Agentic software enabling one person to operate as an quick and nimble quantativ
 
 ## Docs Index Rule
 
-If any `docs/*.md` file is added, modified, renamed, or deleted (excluding `docs/_index.md`), update `docs/_index.md` in the same change. Exception: `docs/plans/*.md` are dated, historical implementation-plan artifacts and are not indexed.
+Doc indexes are generated. If any `docs/**/*.md` file is added, renamed, or deleted (or its front-matter `description`/`topics` changes), regenerate the indexes in the same change:
 
-`docs/_index.md` separates **current-state docs** (how the system works today, grouped by area) from **open specs** (`spec-*` files, proposed or in-progress). Place each entry in the right place. Every `spec-*.md` carries a status banner at the top (e.g. `Status: NOT IMPLEMENTED` / `PARTIAL`).
+```bash
+uv run python scripts/gen_docs_index.py
+```
+
+This writes an `index.md` into `docs/` and every docs subdirectory that contains `.md` files. Index files are generated artifacts — never edit them by hand. Front matter (`topics`, `description`) is optional; docs without it are still listed.
+
+Every `spec-*.md` carries a status banner at the top (e.g. `Status: NOT IMPLEMENTED` / `PARTIAL`).
 
 When a spec ships, do the wrap-up in the same change:
 
 1. Rewrite it to describe the system as it works today, or fold it into the relevant current-state doc.
 2. If kept as a standalone file, remove the `spec-` prefix; if folded, delete the spec file.
-3. Move/remove its `docs/_index.md` entry accordingly (out of the open-specs table into the right current-state section).
-4. Update any in-repo references to the old filename.
+3. Update any in-repo references to the old filename.
+4. Regenerate the indexes.
 
 When writing documentation or summaries, default to high-level overviews that point to detailed resources rather than verbose step-by-step instructions. Avoid hardcoding filenames in docs when the user wants lightweight guidance.
 

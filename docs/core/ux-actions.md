@@ -1,3 +1,10 @@
+---
+topics:
+  ["frontend", "ux-patterns", "forms", "destructive-actions", "accessibility"]
+code_dirs_or_files: ["frontend/src/components/"]
+description: Reusable action interaction patterns — inline two-step destructive confirms, dialog confirms, and non-destructive mutation flows.
+---
+
 # Core UX Actions
 
 Reusable interaction patterns for high-frequency operator workflows in ngv-trader.
