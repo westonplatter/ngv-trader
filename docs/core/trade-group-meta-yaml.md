@@ -1,3 +1,14 @@
+---
+topics: ["trade-groups", "yaml-config", "meta", "agent-targeting"]
+code_dirs_or_files:
+  [
+    "src/services/trade_group_meta.py",
+    "src/models.py",
+    "src/api/routers/trade_groups.py",
+  ]
+description: Free-form YAML management spec on trade groups — delta targets, dates, profit targets, and CRUD API surface.
+---
+
 # Trade-Group Meta (YAML)
 
 An optional free-form YAML "management spec" attached to a trade group: target

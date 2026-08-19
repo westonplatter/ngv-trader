@@ -1,3 +1,14 @@
+---
+topics: ["options", "greeks", "iv", "live-data", "risk-metrics", "tws"]
+code_dirs_or_files:
+  [
+    "src/services/option_metrics_sync_tws.py",
+    "src/services/intraday_overlay.py",
+    "src/models.py",
+  ]
+description: Live option greeks and IV overlay — modelGreeks fetch, intrinsic/extrinsic split, and read-time merge on held positions.
+---
+
 # Option Metrics Overlay
 
 Current-state doc for the live option greeks/IV overlay on **held** option
