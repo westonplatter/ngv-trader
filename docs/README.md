@@ -4,11 +4,11 @@
 
 ## Directories
 
-| Directory    | Index                          |
-| ------------ | ------------------------------ |
-| `core/`      | [index.md](core/index.md)      |
-| `plans/`     | [index.md](plans/index.md)     |
-| `solutions/` | [index.md](solutions/index.md) |
+| Directory    | Index                            |
+| ------------ | -------------------------------- |
+| `core/`      | [README.md](core/README.md)      |
+| `plans/`     | [README.md](plans/README.md)     |
+| `solutions/` | [README.md](solutions/README.md) |
 
 ## Files
 
