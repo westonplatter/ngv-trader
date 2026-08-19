@@ -1,80 +1,105 @@
 # Doc Review Process
 
-Checklist and conventions for reviewing and refining project documentation.
-
 ## Scope
 
-Review covers: `README.md`, `AGENTS.md`, and all files in `docs/`. Goal is to keep docs accurate, complete, and consistent with the actual codebase — not to expand or restructure them.
+Doc upkeep covers `README.md`, `AGENTS.md`, `CONCEPTS.md`, and all files in
+`docs/`. Front matter (`topics`, `description`, `code_dirs_or_files`) is in
+scope wherever it exists — it feeds the generated indexes, so stale metadata is
+as misleading as stale prose.
 
-## Steps
+Goal is accuracy and consistency with the actual codebase — not expansion or
+restructuring. Doc upkeep is an **overlay on day-to-day changes**, not a
+separate periodic audit: every PR that changes behavior updates its docs in
+the same change, and drift found along the way is fixed where it's noticed.
 
-### 1. Run the automated checks
+## Continuous upkeep (every PR)
 
-Run `scripts/doc_check.py` first. It handles the mechanical verifications:
+Applies to any PR that changes code, schema, or UX:
 
-```bash
-uv run python scripts/doc_check.py          # links, scripts, tasks, spec banners
-uv run python scripts/doc_check.py --routes  # also show undocumented routes (informational)
-```
+- **Same-change rule.** If behavior changes, the docs that describe it change in
+  the same PR. A behavior change without its doc update is an incomplete PR.
+- **Regenerate indexes.** After adding, renaming, or deleting any
+  `docs/**/*.md` (or changing its front matter), run
+  `uv run python scripts/gen_docs_index.py` and commit the regenerated
+  `index.md` files. Never hand-edit an index.
+- **Run the automated checks.**
 
-Fix any hard failures (`FAIL`) before proceeding. Informational warnings (`WARN`, routes only) are inputs for the priority table, not blockers.
+  ```bash
+  uv run python scripts/doc_check.py          # links, scripts, tasks, spec banners
+  uv run python scripts/doc_check.py --routes  # undocumented routes (informational)
+  ```
 
-### 2. Read every doc file and cross-check
+  Fix hard failures (`FAIL`) before merging; route `WARN`s are informational.
 
-Read all files in scope. For each doc, verify the following against actual code — and record findings in a priority table as you go (see format below):
+- **Spec lifecycle.** When a spec ships, do the wrap-up per the Docs Index Rule
+  in `AGENTS.md` (rewrite or fold, drop the `spec-` prefix, update references,
+  regenerate indexes). Update a spec's status banner when its state changes,
+  not on a schedule.
 
-| Check | How |
-| --- | --- |
-| **Routes** | For each router file referenced, compare its `@router.{method}(path)` decorators to the endpoint list in the doc. Use `--routes` output as a starting point. |
-| **Table names / columns** | Spot-check against `src/models.py` and `alembic/versions/`. |
-| **Key files sections** | For every "Key files" table or list in any doc, verify each path exists on disk. |
-| **Env vars** | Check that example values and var names match `.env.example`. |
-| **Spec status banners** | Confirm each `spec-*.md` has a status banner at the top and its `_index.md` entry reflects current status. |
+## Opportunistic drift fixes
 
-**Note on line numbers:** Do not cite specific line numbers in docs. They drift on every refactor. Reference function or method names instead — they are stable and searchable.
+Anyone touching a doc who notices drift elsewhere fixes it or files it — do not
+leave it for "the review":
 
-**Priority guide** (fill the table as you read, not after):
+- **Doc gap** (code correct, doc stale/wrong) → fix in the current PR as a
+  separate `docs:` commit.
+- **Code gap** (doc describes something that should exist but doesn't) → don't
+  fix code in a docs change; flag it in the PR description under
+  **Code gaps found** for separate follow-up.
 
-- **High** — incorrect or missing information that actively misleads a developer (wrong commands, missing routes, stale architecture description).
+## Weekly consolidation pass
+
+A short pass to catch what same-change upkeep misses. Treat it as sampling and
+triage, not a full re-read:
+
+1. Run `scripts/doc_check.py` and fix failures.
+2. Select a **rotating subset** of docs (not all). Prioritize docs adjacent to
+   the week's changed code, using `code_dirs_or_files` front matter as the
+   churn signal, plus narrative docs (`AGENTS.md` sections, workflow docs,
+   architecture summaries).
+3. For each selected doc, answer two questions:
+   - **References true?** Run the checks below (routes, tables, paths, vars).
+   - **Story true?** Does the doc's summary of _how the system works_ still
+     hold? A wrong route is obvious; a stale narrative (architecture
+     direction, workflow order, "current state" prose) passes every mechanical
+     check while quietly misleading. Read the doc as a new contributor would
+     and ask: would any claim made here lead to a wrong decision?
+4. Record findings in a priority table and fix **High** items in the same PR;
+   file Medium/Low as follow-up.
+
+**Priority tiebreaker:** when severity is ambiguous, ask _would a new
+contributor make a wrong decision from this?_ If yes, it's High — regardless
+of whether the drift is a command, a route, or prose.
+
+**Reference checks** (the "references true?" half):
+
+| Check                     | How                                                                                                                                                                              |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Routes**                | Compare the doc's endpoint list to `@router.{method}(path)` decorators in the router file. `--routes` output is the starting point.                                              |
+| **Table names / columns** | Spot-check against `src/models.py` and `alembic/versions/`.                                                                                                                      |
+| **Key files sections**    | Verify each listed path exists on disk.                                                                                                                                          |
+| **Env vars**              | Check example values and names against `.env.example`.                                                                                                                           |
+| **Spec status banners**   | Confirm each `spec-*.md` banner matches the spec's actual state.                                                                                                                 |
+| **Front matter accuracy** | Does `description` still match the doc, do `topics` still fit, do `code_dirs_or_files` paths still exist? Stale metadata propagates into every generated index, machine-blessed. |
+
+**Staleness signal:** a doc unchanged while its `code_dirs_or_files` saw heavy
+churn is a front-matter-and-description review candidate even when nothing
+else flags it.
+
+**Priority guide:**
+
+- **High** — incorrect or missing information that actively misleads (wrong commands, missing routes, stale architecture).
 - **Medium** — broken references, outdated details, contradictions between files.
-- **Low** — minor inconsistencies, style issues, nice-to-have clarifications.
+- **Low** — minor inconsistencies, style, nice-to-have clarifications.
 
-| Priority | File | Change |
-| --- | --- | --- |
-| High | `file.md` | Short description: what's wrong and what the fix is |
-| Medium | `docs/file.md` | ... |
+| Priority | File      | Change                           |
+| -------- | --------- | -------------------------------- |
+| High     | `file.md` | What's wrong and what the fix is |
 
-### 3. Distinguish doc gaps from code gaps
+## Conventions
 
-- **Doc gap** — the code is correct but the doc is stale, incomplete, or wrong.
-- **Code gap** — the doc reveals something that should exist in the codebase but doesn't (e.g., a file that components import from but isn't on disk).
-
-Fix doc gaps in this PR. Flag code gaps in the PR description under a **Code gaps found** section so they get separate follow-up. Do not attempt to fix code gaps in a doc review pass.
-
-### 4. Make changes
-
-Edit only what is in the priority table. Do not expand scope, refactor structure, or clean up style beyond what was flagged.
-
-After any change to a doc file, verify `docs/_index.md` is still accurate per the rule in `AGENTS.md`.
-
-### 5. Commit and open a PR
-
-Commit message format:
-
-```
-docs: short summary of what changed
-
-One sentence per logical fix.
-```
-
-PR description must include:
-
-- The same priority table under a `## Changes` heading.
-- A `## Code gaps found` section if any code gaps were identified (or "None" if clean).
-
-## What Not to Do
-
-- Do not fix code as part of a doc review. Flag it and move on.
-- Do not rewrite docs from scratch unless they are entirely wrong.
+- Do not cite line numbers in docs — they drift. Reference function/method names.
+- Do not rewrite a doc from scratch unless it is entirely wrong.
 - Do not add new docs unless a gap was explicitly identified.
-- Do not change content in `spec-*.md` files beyond updating status banners — specs are planning artifacts.
+- Do not change `spec-*.md` content beyond status banners — specs are planning artifacts.
+- Edit only what's flagged; no drive-by restructuring or style churn.
