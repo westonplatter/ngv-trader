@@ -23,13 +23,13 @@ Fix any hard failures (`FAIL`) before proceeding. Informational warnings (`WARN`
 
 Read all files in scope. For each doc, verify the following against actual code — and record findings in a priority table as you go (see format below):
 
-| Check | How |
-| --- | --- |
-| **Routes** | For each router file referenced, compare its `@router.{method}(path)` decorators to the endpoint list in the doc. Use `--routes` output as a starting point. |
-| **Table names / columns** | Spot-check against `src/models.py` and `alembic/versions/`. |
-| **Key files sections** | For every "Key files" table or list in any doc, verify each path exists on disk. |
-| **Env vars** | Check that example values and var names match `.env.example`. |
-| **Spec status banners** | Confirm each `spec-*.md` has a status banner at the top and its `_index.md` entry reflects current status. |
+| Check                     | How                                                                                                                                                          |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Routes**                | For each router file referenced, compare its `@router.{method}(path)` decorators to the endpoint list in the doc. Use `--routes` output as a starting point. |
+| **Table names / columns** | Spot-check against `src/models.py` and `alembic/versions/`.                                                                                                  |
+| **Key files sections**    | For every "Key files" table or list in any doc, verify each path exists on disk.                                                                             |
+| **Env vars**              | Check that example values and var names match `.env.example`.                                                                                                |
+| **Spec status banners**   | Confirm each `spec-*.md` has a status banner at the top and its status banner reflects current status.                                                       |
 
 **Note on line numbers:** Do not cite specific line numbers in docs. They drift on every refactor. Reference function or method names instead — they are stable and searchable.
 
@@ -39,10 +39,10 @@ Read all files in scope. For each doc, verify the following against actual code 
 - **Medium** — broken references, outdated details, contradictions between files.
 - **Low** — minor inconsistencies, style issues, nice-to-have clarifications.
 
-| Priority | File | Change |
-| --- | --- | --- |
-| High | `file.md` | Short description: what's wrong and what the fix is |
-| Medium | `docs/file.md` | ... |
+| Priority | File           | Change                                              |
+| -------- | -------------- | --------------------------------------------------- |
+| High     | `file.md`      | Short description: what's wrong and what the fix is |
+| Medium   | `docs/file.md` | ...                                                 |
 
 ### 3. Distinguish doc gaps from code gaps
 
@@ -55,7 +55,7 @@ Fix doc gaps in this PR. Flag code gaps in the PR description under a **Code gap
 
 Edit only what is in the priority table. Do not expand scope, refactor structure, or clean up style beyond what was flagged.
 
-After any change to a doc file, verify `docs/_index.md` is still accurate per the rule in `AGENTS.md`.
+After adding or renaming a doc file, regenerate the indexes with `uv run python scripts/gen_docs_index.py`.
 
 ### 5. Commit and open a PR
 
