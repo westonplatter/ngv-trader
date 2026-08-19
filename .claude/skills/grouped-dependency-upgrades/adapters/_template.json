@@ -1,0 +1,23 @@
+{
+  "id": "cargo",
+  "description": "COPY THIS FILE to <ecosystem>.json and fill it in. Every field below is optional except id, dir, and metrics. See references/adding-an-ecosystem.md.",
+  "dir": ".",
+  "dependabot_ecosystems": ["cargo"],
+  "labels": ["rust"],
+  "registry": "crates",
+  "manifests": ["Cargo.toml", "Cargo.lock"],
+  "install": "cargo fetch",
+  "add": "cargo update -p {pkg} --precise {version}",
+  "post_add_fixup": "Quirks of the add command: does it pin exact, move sections, rewrite ranges?",
+  "cooldown": {"days": 14, "mode": "manual", "where": "no mechanical enforcement", "note": "Run check_cooldown.py --registry crates before committing."},
+  "audit_cmd": "cargo audit",
+  "transitive_pin": {"file": "Cargo.toml", "field": "[patch.crates-io]", "note": "Ship pins as their own PR."},
+  "toolchain": [],
+  "types_prefixes": [],
+  "link_untracked": [],
+  "metrics": [
+    {"name": "build", "cmd": "cargo build 2>&1", "mode": "count", "pattern": "^error"},
+    {"name": "lint", "cmd": "cargo clippy 2>&1", "mode": "count", "pattern": "^warning"},
+    {"name": "tests", "cmd": "cargo test 2>&1", "mode": "capture", "pattern": "([0-9]+) failed"}
+  ]
+}
