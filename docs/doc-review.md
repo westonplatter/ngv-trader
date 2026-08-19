@@ -20,8 +20,9 @@ Applies to any PR that changes code, schema, or UX:
   the same PR. A behavior change without its doc update is an incomplete PR.
 - **Regenerate indexes.** After adding, renaming, or deleting any
   `docs/**/*.md` (or changing its front matter), run
-  `uv run python scripts/gen_docs_index.py` and commit the regenerated
-  `index.md` files. Never hand-edit an index.
+  `uv run python scripts/gen_docs_index.py` and
+  `uv run python scripts/gen_core_index_html.py`, then commit the regenerated
+  `README.md` files. Never hand-edit an index.
 - **Run the automated checks.**
 
   ```bash

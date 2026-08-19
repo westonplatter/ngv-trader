@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
-"""Generate index.md files for docs/ and every docs subdirectory.
+"""Generate README.md files for docs/ and every docs subdirectory.
 
-For each directory under docs/ that contains .md files, writes an index.md
-listing the .md files in that directory (not recursive) with their front-matter
-`description` (empty when absent). Every index also links to subdirectory
-indexes at the top.
+For each directory under docs/ that contains .md files, writes a README.md
+(auto-rendered by GitHub) listing the .md files in that directory (not
+recursive) with their front-matter `description` (empty when absent). Every
+README also links to subdirectory READMEs at the top.
 
-Overwrites existing index.md files; never lists index.md itself.
+docs/core/ is owned by scripts/gen_core_index_html.py and is skipped here.
+
+Overwrites existing README.md files; never lists README.md itself.
 
 Usage:
     uv run python scripts/gen_docs_index.py
@@ -51,7 +53,7 @@ def parse_topics(path: Path) -> str:
 
 def md_files(directory: Path) -> list[Path]:
     """Non-index .md files directly in this directory."""
-    return sorted(p for p in directory.glob("*.md") if p.name not in ("index.md", "_index.md"))
+    return sorted(p for p in directory.glob("*.md") if p.name not in ("README.md", "_index.md"))
 
 
 def doc_subdirs(directory: Path) -> list[Path]:
@@ -64,8 +66,7 @@ def render_index(title: str, subdirs: list[Path], files: list[Path]) -> str:
     if subdirs:
         lines += ["## Directories", "", "| Directory | Index |", "| --- | --- |"]
         for d in subdirs:
-            lines.append(f"| `{d.name}/` | [index.md]({d.name}/index.md) |")
-        lines.append("")
+            lines.append(f"| `{d.name}/` | [README.md]({d.name}/README.md) |")
     lines += ["## Files", "", "| Doc | Topics | Description |", "| --- | --- | --- |"]
     for f in files:
         topics = parse_topics(f)
@@ -80,12 +81,12 @@ def main() -> None:
 
     # Every directory under docs/ that has .md files anywhere beneath it,
     # so intermediate containers (e.g. solutions/) get indexes too.
-    dirs = [d for d in [DOCS, *DOCS.rglob("*")] if d.is_dir() and any(d.rglob("*.md"))]
+    dirs = [d for d in [DOCS, *DOCS.rglob("*")] if d.is_dir() and any(d.rglob("*.md")) and d != DOCS / "core"]
     for d in dirs:
         files = md_files(d)
         title = "Docs Index" if d == DOCS else f"{d.name}/ Index"
-        (d / "index.md").write_text(render_index(title, doc_subdirs(d), files), encoding="utf-8")
-        print(f"Wrote {d / 'index.md'} ({len(files)} file(s))")
+        (d / "README.md").write_text(render_index(title, doc_subdirs(d), files), encoding="utf-8")
+        print(f"Wrote {d / 'README.md'} ({len(files)} file(s))")
 
 
 if __name__ == "__main__":
