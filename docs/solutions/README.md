@@ -4,12 +4,11 @@
 
 ## Directories
 
-| Directory             | Index                                     |
-| --------------------- | ----------------------------------------- |
+| Directory | Index |
+| --- | --- |
 | `integration-issues/` | [README.md](integration-issues/README.md) |
-| `logic-errors/`       | [README.md](logic-errors/README.md)       |
-
+| `logic-errors/` | [README.md](logic-errors/README.md) |
 ## Files
 
 | Doc | Topics | Description |
-| --- | ------ | ----------- |
+| --- | --- | --- |

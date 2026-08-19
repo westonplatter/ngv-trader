@@ -4,33 +4,32 @@
 
 ## Directories
 
-| Directory    | Index                            |
-| ------------ | -------------------------------- |
-| `core/`      | [README.md](core/README.md)      |
-| `plans/`     | [README.md](plans/README.md)     |
+| Directory | Index |
+| --- | --- |
+| `core/` | [README.md](core/README.md) |
+| `plans/` | [README.md](plans/README.md) |
 | `solutions/` | [README.md](solutions/README.md) |
-
 ## Files
 
-| Doc                                                                                          | Topics | Description |
-| -------------------------------------------------------------------------------------------- | ------ | ----------- |
-| [contract-display-names.md](contract-display-names.md)                                       |        |             |
-| [contract-ref-setup.md](contract-ref-setup.md)                                               |        |             |
-| [db-snapshots.md](db-snapshots.md)                                                           |        |             |
-| [doc-review.md](doc-review.md)                                                               |        |             |
-| [getting-started.md](getting-started.md)                                                     |        |             |
-| [ibkr-sample-data.md](ibkr-sample-data.md)                                                   |        |             |
-| [planning-agents-quorum.md](planning-agents-quorum.md)                                       |        |             |
-| [planning-spec-format.md](planning-spec-format.md)                                           |        |             |
-| [secrets-using-1password.md](secrets-using-1password.md)                                     |        |             |
-| [security-data.md](security-data.md)                                                         |        |             |
-| [spec-activated-products-security-master.md](spec-activated-products-security-master.md)     |        |             |
-| [spec-auto-tag-suggestions.md](spec-auto-tag-suggestions.md)                                 |        |             |
-| [spec-first-class-realized-pnl-on-trades.md](spec-first-class-realized-pnl-on-trades.md)     |        |             |
-| [spec-tradebot-contract-metadata-autofetch.md](spec-tradebot-contract-metadata-autofetch.md) |        |             |
-| [spec-worker-order-recovery.md](spec-worker-order-recovery.md)                               |        |             |
-| [trade-tagging.md](trade-tagging.md)                                                         |        |             |
-| [tradebot-chatbot.md](tradebot-chatbot.md)                                                   |        |             |
-| [trades-and-executions-sync.md](trades-and-executions-sync.md)                               |        |             |
-| [user-preferences-privacy-mode.md](user-preferences-privacy-mode.md)                         |        |             |
-| [workers.md](workers.md)                                                                     |        |             |
+| Doc | Topics | Description |
+| --- | --- | --- |
+| [contract-display-names.md](contract-display-names.md) |  |  |
+| [contract-ref-setup.md](contract-ref-setup.md) |  |  |
+| [db-snapshots.md](db-snapshots.md) |  |  |
+| [doc-review.md](doc-review.md) |  |  |
+| [getting-started.md](getting-started.md) |  |  |
+| [ibkr-sample-data.md](ibkr-sample-data.md) |  |  |
+| [planning-agents-quorum.md](planning-agents-quorum.md) |  |  |
+| [planning-spec-format.md](planning-spec-format.md) |  |  |
+| [secrets-using-1password.md](secrets-using-1password.md) |  |  |
+| [security-data.md](security-data.md) |  |  |
+| [spec-activated-products-security-master.md](spec-activated-products-security-master.md) |  |  |
+| [spec-auto-tag-suggestions.md](spec-auto-tag-suggestions.md) |  |  |
+| [spec-first-class-realized-pnl-on-trades.md](spec-first-class-realized-pnl-on-trades.md) |  |  |
+| [spec-tradebot-contract-metadata-autofetch.md](spec-tradebot-contract-metadata-autofetch.md) |  |  |
+| [spec-worker-order-recovery.md](spec-worker-order-recovery.md) |  |  |
+| [trade-tagging.md](trade-tagging.md) |  |  |
+| [tradebot-chatbot.md](tradebot-chatbot.md) |  |  |
+| [trades-and-executions-sync.md](trades-and-executions-sync.md) |  |  |
+| [user-preferences-privacy-mode.md](user-preferences-privacy-mode.md) |  |  |
+| [workers.md](workers.md) |  |  |

@@ -4,9 +4,9 @@
 
 ## Files
 
-| Doc                                                                                                              | Topics | Description |
-| ---------------------------------------------------------------------------------------------------------------- | ------ | ----------- |
-| [bag-combo-summary-purge-deadlocks-on-peer-summaries.md](bag-combo-summary-purge-deadlocks-on-peer-summaries.md) |        |             |
-| [data-migration-importing-live-code-breaks-fresh-db.md](data-migration-importing-live-code-breaks-fresh-db.md)   |        |             |
-| [position-trade-group-chips-included-closed-lots.md](position-trade-group-chips-included-closed-lots.md)         |        |             |
-| [tws-fills-window-anchored-to-session-roll.md](tws-fills-window-anchored-to-session-roll.md)                     |        |             |
+| Doc | Topics | Description |
+| --- | --- | --- |
+| [bag-combo-summary-purge-deadlocks-on-peer-summaries.md](bag-combo-summary-purge-deadlocks-on-peer-summaries.md) |  |  |
+| [data-migration-importing-live-code-breaks-fresh-db.md](data-migration-importing-live-code-breaks-fresh-db.md) |  |  |
+| [position-trade-group-chips-included-closed-lots.md](position-trade-group-chips-included-closed-lots.md) |  |  |
+| [tws-fills-window-anchored-to-session-roll.md](tws-fills-window-anchored-to-session-roll.md) |  |  |
