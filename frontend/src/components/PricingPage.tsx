@@ -196,11 +196,11 @@ export default function PricingPage() {
   const [futuresContracts, setFuturesContracts] = useState<FuturesContract[]>(
     [],
   );
-  const [futuresLoading, setFuturesLoading] = useState(false);
+  const [futuresLoading, setFuturesLoading] = useState(true);
 
   // Options
   const [availableOptions, setAvailableOptions] = useState<ChainEntry[]>([]);
-  const [optionsLoading, setOptionsLoading] = useState(false);
+  const [optionsLoading, setOptionsLoading] = useState(true);
 
   // Inputs
   const [spotPrice, setSpotPrice] = useState("");
@@ -225,11 +225,23 @@ export default function PricingPage() {
   const [error, setError] = useState<string | null>(null);
   const [pnlData, setPnlData] = useState<ExpectedPnlResponse | null>(null);
 
+  // Switching instruments blanks the previous instrument's data and re-enters
+  // the loading state. Guarded so re-selecting the current instrument does not
+  // strand a spinner with no fetch behind it.
+  const changeInstrument = useCallback(
+    (next: string) => {
+      if (next === instrument) return;
+      setFuturesLoading(true);
+      setOptionsLoading(true);
+      setFuturesContracts([]);
+      setAvailableOptions([]);
+      setInstrument(next);
+    },
+    [instrument],
+  );
+
   // --- Fetch term structure on instrument change ---
   useEffect(() => {
-    setFuturesLoading(true);
-    setFuturesContracts([]);
-    setAvailableOptions([]);
     fetch(`${API_BASE_URL}/futures/${instrument}/term-structure?front_n=12`)
       .then((res) => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -250,8 +262,6 @@ export default function PricingPage() {
 
   // --- Fetch option chain catalog ---
   useEffect(() => {
-    setOptionsLoading(true);
-    setAvailableOptions([]);
     fetch(`${API_BASE_URL}/futures/${instrument}/chain`)
       .then((res) => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -330,7 +340,7 @@ export default function PricingPage() {
       if (!s) return;
       setSaveStatus("idle");
       setSaveFeedback(null);
-      setInstrument(s.instrument);
+      changeInstrument(s.instrument);
       setLegs(savedLegsToRows(s.legs));
       if (s.spot_price != null) {
         const p = s.spot_price;
@@ -340,7 +350,7 @@ export default function PricingPage() {
       }
       setLoadedStructureId(s.id);
     },
-    [savedStructures],
+    [savedStructures, changeInstrument],
   );
 
   const handleSave = useCallback(async () => {
@@ -691,7 +701,7 @@ export default function PricingPage() {
             <span className="text-gray-600 mb-1">Instrument</span>
             <select
               value={instrument}
-              onChange={(e) => setInstrument(e.target.value)}
+              onChange={(e) => changeInstrument(e.target.value)}
               className="border border-gray-300 rounded px-2 py-1.5"
             >
               {INSTRUMENTS.map((sym) => (

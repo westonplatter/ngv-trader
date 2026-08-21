@@ -29,16 +29,19 @@ export default function ComboboxInput<T>({
   const containerRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
 
+  // Any query change restarts the highlight at the first row. Done here rather
+  // than in an effect so it lands in the same render as the query itself.
+  const changeQuery = (next: string) => {
+    setQuery(next);
+    setHighlightIdx(0);
+  };
+
   const safeOptions = options ?? [];
   const filtered = query
     ? safeOptions
         .filter((o) => o.label.toLowerCase().includes(query.toLowerCase()))
         .slice(0, 50)
     : safeOptions.slice(0, 50);
-
-  useEffect(() => {
-    setHighlightIdx(0);
-  }, [query]);
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -81,7 +84,7 @@ export default function ComboboxInput<T>({
         e.preventDefault();
         if (filtered[highlightIdx]) {
           onChange(filtered[highlightIdx]);
-          setQuery("");
+          changeQuery("");
           setOpen(false);
         }
         break;
@@ -100,11 +103,11 @@ export default function ComboboxInput<T>({
           type="text"
           value={displayValue}
           onChange={(e) => {
-            setQuery(e.target.value);
+            changeQuery(e.target.value);
             setOpen(true);
           }}
           onFocus={() => {
-            setQuery("");
+            changeQuery("");
             setOpen(true);
           }}
           onKeyDown={handleKeyDown}
@@ -116,7 +119,7 @@ export default function ComboboxInput<T>({
             type="button"
             onClick={() => {
               onClear();
-              setQuery("");
+              changeQuery("");
             }}
             className="ml-1 text-gray-400 hover:text-gray-600 text-xs"
           >
@@ -140,7 +143,7 @@ export default function ComboboxInput<T>({
                 onMouseDown={(e) => {
                   e.preventDefault();
                   onChange(opt);
-                  setQuery("");
+                  changeQuery("");
                   setOpen(false);
                 }}
                 onMouseEnter={() => setHighlightIdx(i)}

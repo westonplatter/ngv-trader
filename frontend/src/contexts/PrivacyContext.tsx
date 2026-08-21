@@ -1,21 +1,6 @@
-import {
-  createContext,
-  useContext,
-  useEffect,
-  useState,
-  type ReactNode,
-} from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { API_BASE_URL } from "../config";
-
-interface PrivacyContextValue {
-  privacyMode: boolean;
-  togglePrivacy: () => void;
-}
-
-const PrivacyContext = createContext<PrivacyContextValue>({
-  privacyMode: false,
-  togglePrivacy: () => {},
-});
+import { PrivacyContext } from "./privacyContextValue";
 
 export function PrivacyProvider({ children }: { children: ReactNode }) {
   const [privacyMode, setPrivacyMode] = useState(false);
@@ -47,8 +32,4 @@ export function PrivacyProvider({ children }: { children: ReactNode }) {
       {children}
     </PrivacyContext.Provider>
   );
-}
-
-export function usePrivacy() {
-  return useContext(PrivacyContext);
 }

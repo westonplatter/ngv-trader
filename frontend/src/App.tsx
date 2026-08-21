@@ -17,7 +17,8 @@ import TradeTaggingPage from "./components/TradeTaggingPage";
 import TradesTable from "./components/TradesTable";
 import WatchListsPage from "./components/WatchListsPage";
 import WorkerStatusLights from "./components/WorkerStatusLights";
-import { PrivacyProvider, usePrivacy } from "./contexts/PrivacyContext";
+import { PrivacyProvider } from "./contexts/PrivacyContext";
+import { usePrivacy } from "./contexts/usePrivacy";
 import { isDemoMode } from "./lib/demoMode";
 
 const DEMO_MODE = isDemoMode();

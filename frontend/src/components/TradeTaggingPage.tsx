@@ -2,7 +2,7 @@ import type { CSSProperties } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { API_BASE_URL } from "../config";
-import { usePrivacy } from "../contexts/PrivacyContext";
+import { usePrivacy } from "../contexts/usePrivacy";
 import { useResizableColumn } from "../hooks/useResizableColumn";
 import { ibCodesTitle, parseIbCodes } from "../lib/ibCodes";
 import { linkify } from "../utils/linkify";
@@ -606,6 +606,12 @@ export default function TradeTaggingPage() {
     if (loading) return;
 
     if (!selectedStrategy) {
+      // Clearing dependent state when the selection empties. The rule's remedy
+      // is to derive this instead of storing it, which means restructuring the
+      // group/detail state of this 2.5k-line component; deferred deliberately
+      // rather than refactored blind. Clearing must stay synchronous — deferring
+      // it flashes the previous strategy's groups.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setGroups([]);
       setSelectedGroupId(null);
       return;
@@ -632,6 +638,10 @@ export default function TradeTaggingPage() {
 
   useEffect(() => {
     if (selectedGroupId == null) {
+      // Same trade-off as the effect above: synchronous clearing of the
+      // previously selected group's detail, pending a derive-instead-of-store
+      // refactor of this component.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setGroupDetail(null);
       setExecutions([]);
       setTotalRealizedPnl(null);

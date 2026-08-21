@@ -1,7 +1,7 @@
 import type React from "react";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { usePrivacy } from "../contexts/PrivacyContext";
+import { usePrivacy } from "../contexts/usePrivacy";
 import { PRIVACY_MASK, formatRelativeReturn } from "../utils/privacy";
 import { API_BASE_URL } from "../config";
 import { useSSE } from "../lib/events";
@@ -318,7 +318,7 @@ export default function PositionsTable() {
       if (leftNull) return 1;
       if (rightNull) return -1;
 
-      let cmp = 0;
+      let cmp: number;
       if (typeof left === "number" && typeof right === "number") {
         cmp = left - right;
       } else {

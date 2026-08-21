@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { usePrivacy } from "../contexts/PrivacyContext";
+import { usePrivacy } from "../contexts/usePrivacy";
 import { PRIVACY_MASK } from "../utils/privacy";
 import { API_BASE_URL } from "../config";
 import { ibCodesTitle, parseIbCodes } from "../lib/ibCodes";
@@ -143,22 +143,21 @@ function TagGroupCell({
     label: string | null;
   } | null>(null);
 
-  // Once the backend-confirmed prop catches up to (or matches) the optimistic
-  // target, drop the override so we render the authoritative server state.
-  useEffect(() => {
-    if (optimisticOverride && assignedTradeGroupId === optimisticOverride.id) {
-      setOptimisticOverride(null);
-    }
-  }, [assignedTradeGroupId, optimisticOverride]);
+  // An override stops being pending as soon as the backend-confirmed prop
+  // catches up to it; from then on the authoritative server values win. Derived
+  // during render rather than cleared in an effect, so there is no intermediate
+  // pass where the settled override is still on screen.
+  const pendingOverride =
+    optimisticOverride && optimisticOverride.id !== assignedTradeGroupId
+      ? optimisticOverride
+      : null;
 
   // The group currently shown to the user: the optimistic value when one is
   // pending, otherwise the backend-confirmed prop.
-  const effectiveGroupId = optimisticOverride
-    ? optimisticOverride.id
+  const effectiveGroupId = pendingOverride
+    ? pendingOverride.id
     : assignedTradeGroupId;
-  const effectiveLabel = optimisticOverride
-    ? optimisticOverride.label
-    : groupLabel;
+  const effectiveLabel = pendingOverride ? pendingOverride.label : groupLabel;
 
   const assignToGroup = async (group: TradeGroupResult) => {
     const previousOverride = optimisticOverride;
@@ -390,6 +389,11 @@ function TagGroupCell({
 export default function TradesTable() {
   const { privacyMode } = usePrivacy();
   const [executions, setExecutions] = useState<TradeExecutionRow[]>([]);
+  // Clock reading the relative "last 24h/3d/..." filter measures against. Taken
+  // when executions arrive and when the range changes, rather than during
+  // render — reading the clock while rendering is impure and would let the
+  // window drift on unrelated re-renders.
+  const [filterNow, setFilterNow] = useState(() => Date.now());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
@@ -462,18 +466,28 @@ export default function TradesTable() {
     }
     const data: TradeExecutionRow[] = await res.json();
     setExecutions(data);
+    setFilterNow(Date.now());
     setError(null);
   }, [serverSymbol, conIdFilter]);
 
   useEffect(() => {
-    void loadExecutions()
-      .catch((err) => {
+    let cancelled = false;
+    const run = async () => {
+      void loadTradeGroups();
+      try {
+        await loadExecutions();
+      } catch (err) {
         const message =
           err instanceof Error ? err.message : "Unknown executions load error";
-        setError(message);
-      })
-      .finally(() => setLoading(false));
-    void loadTradeGroups();
+        if (!cancelled) setError(message);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+    void run();
+    return () => {
+      cancelled = true;
+    };
   }, [loadExecutions, loadTradeGroups]);
 
   useSSE<Record<string, unknown>>("trades", () => {
@@ -524,7 +538,7 @@ export default function TradesTable() {
       };
       const hours = hoursMap[timeRange];
       if (hours) {
-        const cutoff = Date.now() - hours * 60 * 60 * 1000;
+        const cutoff = filterNow - hours * 60 * 60 * 1000;
         next = next.filter((row) => Date.parse(row.executed_at) >= cutoff);
       }
     }
@@ -543,7 +557,7 @@ export default function TradesTable() {
       return Number.isNaN(t) ? Number.NEGATIVE_INFINITY : t;
     };
     return [...next].sort((a, b) => execMs(b) - execMs(a));
-  }, [executions, accountFilter, symbolRegex, timeRange, tagStatus]);
+  }, [executions, accountFilter, symbolRegex, timeRange, tagStatus, filterNow]);
 
   // For each group (settled trade or live combo), the row that owns the Tag
   // Group cell. Prefer combo_summary; otherwise the earliest row in the
@@ -901,7 +915,10 @@ export default function TradesTable() {
             ].map((opt) => (
               <button
                 key={opt.id}
-                onClick={() => setTimeRange(opt.id)}
+                onClick={() => {
+                  setFilterNow(Date.now());
+                  setTimeRange(opt.id);
+                }}
                 className={`rounded px-2.5 py-1 text-xs font-medium uppercase tracking-wide ${
                   timeRange === opt.id
                     ? "bg-white text-gray-900 shadow-sm"
