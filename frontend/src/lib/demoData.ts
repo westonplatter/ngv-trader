@@ -46,6 +46,18 @@ const LIVE_MARK_TS = "2026-06-21T14:29:55Z";
 
 // Trade groups the demo positions roll up to. Names render as links in the
 // Positions table's "Trade Group" column and as the list on the Strategies page.
+//
+// The five groups deliberately cover one settlement state each, so the overlay
+// logic in demoGroupExecutions is exercised end to end (see demoData.test.ts):
+//
+//   NQ Momentum          settled legs + an unsettled fill that adds no pnl
+//   ES Call Diagonal     fully settled, no live data at all
+//   GLD Covered Calls    settled legs + an unsettled fill contributing zero
+//   MES Intraday Scalp   all live, no settled snapshot
+//   SPY Protective Puts  all live, no settled snapshot
+//
+// Adding a live overlay to an ES or GLD leg collapses two of those cases —
+// keep their `source` as "settled".
 const GROUP_NQ: TradeGroupRef = { id: 101, name: "NQ Momentum" };
 const GROUP_ES_DIAGONAL: TradeGroupRef = { id: 102, name: "ES Call Diagonal" };
 const GROUP_GLD_CC: TradeGroupRef = { id: 103, name: "GLD Covered Calls" };
@@ -124,11 +136,11 @@ export const DEMO_POSITIONS: Position[] = [
     fifo_pnl_unrealized: 1000.0,
     fetched_at: FETCHED_AT,
     account_id: ACCOUNT_ID,
-    source: "live",
-    mark: 95.0,
-    mark_ts: "2026-06-21T14:29:50Z",
-    live_unrealized: 1250.0,
-    live_fetched_at: LIVE_MARK_TS,
+    source: "settled",
+    mark: null,
+    mark_ts: null,
+    live_unrealized: null,
+    live_fetched_at: null,
     live_is_stale: false,
     iv: 0.145,
     delta: 0.55,
@@ -165,11 +177,11 @@ export const DEMO_POSITIONS: Position[] = [
     fifo_pnl_unrealized: 1175.0,
     fetched_at: FETCHED_AT,
     account_id: ACCOUNT_ID,
-    source: "live",
-    mark: 172.0,
-    mark_ts: "2026-06-21T14:29:50Z",
-    live_unrealized: 1500.0,
-    live_fetched_at: LIVE_MARK_TS,
+    source: "settled",
+    mark: null,
+    mark_ts: null,
+    live_unrealized: null,
+    live_fetched_at: null,
     live_is_stale: false,
     iv: 0.152,
     delta: 0.47,
@@ -251,11 +263,11 @@ export const DEMO_POSITIONS: Position[] = [
     fifo_pnl_unrealized: -73.0,
     fetched_at: FETCHED_AT,
     account_id: ACCOUNT_ID,
-    source: "live",
-    mark: 6.9,
-    mark_ts: "2026-06-21T14:29:52Z",
-    live_unrealized: -78.0,
-    live_fetched_at: LIVE_MARK_TS,
+    source: "settled",
+    mark: null,
+    mark_ts: null,
+    live_unrealized: null,
+    live_fetched_at: null,
     live_is_stale: false,
     iv: 0.182,
     delta: 0.71,
@@ -292,11 +304,11 @@ export const DEMO_POSITIONS: Position[] = [
     fifo_pnl_unrealized: 44.0,
     fetched_at: FETCHED_AT,
     account_id: ACCOUNT_ID,
-    source: "live",
-    mark: 3.3,
-    mark_ts: "2026-06-21T14:29:52Z",
-    live_unrealized: 54.0,
-    live_fetched_at: LIVE_MARK_TS,
+    source: "settled",
+    mark: null,
+    mark_ts: null,
+    live_unrealized: null,
+    live_fetched_at: null,
     live_is_stale: false,
     iv: 0.176,
     delta: 0.46,
@@ -333,11 +345,11 @@ export const DEMO_POSITIONS: Position[] = [
     fifo_pnl_unrealized: 41.0,
     fetched_at: FETCHED_AT,
     account_id: ACCOUNT_ID,
-    source: "live",
-    mark: 1.45,
-    mark_ts: "2026-06-21T14:29:52Z",
-    live_unrealized: 51.0,
-    live_fetched_at: LIVE_MARK_TS,
+    source: "settled",
+    mark: null,
+    mark_ts: null,
+    live_unrealized: null,
+    live_fetched_at: null,
     live_is_stale: false,
     iv: 0.171,
     delta: 0.23,
