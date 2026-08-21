@@ -48,7 +48,7 @@
       "name": "lint",
       "cmd": "bun run lint",
       "mode": "capture",
-      "pattern": "([0-9]+) error"
+      "pattern": "\\(([0-9]+) errors?,"
     },
     {
       "name": "audit",
@@ -66,5 +66,6 @@
     "eslint-plugin-react-refresh",
     "vite"
   ],
-  "baseline_tools_note": "These produce the build/lint counts compare_baseline.py diffs. Bumping one moves its own yardstick: an unchanged count is no longer evidence -- read the message diff."
+  "baseline_tools_note": "These produce the build/lint counts compare_baseline.py diffs. Bumping one moves its own yardstick: an unchanged count is no longer evidence -- read the message diff.",
+  "lock_delta_cmd": "git diff frontend/bun.lock | grep -cE '^\\+ +\"[^\"]+\": \\[\"'"
 }

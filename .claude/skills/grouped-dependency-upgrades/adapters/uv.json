@@ -15,13 +15,13 @@
     "uv.lock"
   ],
   "install": "uv sync --group dev --extra mcp",
-  "add": "uv add '{pkg}=={version}' --exclude-newer {cutoff}",
-  "post_add_fixup": "uv add rewrites the constraint to >={version}. Restore the original operator if the manifest deliberately used a looser floor.",
+  "add": "uv add --group dev '{pkg}=={version}'   # omit --group for a runtime dependency",
+  "post_add_fixup": "Two hazards, both measured. (1) Never pass --exclude-newer when bumping an existing lock: it re-resolves the whole graph -- one dev patch bump moved 94 packages, including uvicorn, pandas and mcp. Verify the date with check_cooldown.py instead; --exclude-newer belongs on `uv add` for a brand-new dependency, where a full resolve is expected. (2) Omit --group and uv writes a dev tool into [project.dependencies] as a runtime dep, leaving the real entry in place. Always diff pyproject.toml.",
   "cooldown": {
     "days": 14,
     "mode": "manual",
-    "where": "uv add --exclude-newer $(date -u -d '14 days ago' +%Y-%m-%d)",
-    "note": "Nothing enforces this -- the flag is a human step. Run check_cooldown.py --adapter uv on every version before committing."
+    "where": "no mechanical enforcement; check_cooldown.py --adapter uv",
+    "note": "Nothing enforces this at install time. Dependabot's own cooldown covers the PRs it opens; a hand-typed version or a transitive pin is unguarded. Do not reach for --exclude-newer on a bump -- see post_add_fixup."
   },
   "audit_cmd": null,
   "transitive_pin": {
@@ -56,7 +56,7 @@
       "name": "tests",
       "cmd": "uv run --group dev --extra mcp pytest -q",
       "mode": "capture",
-      "pattern": "([0-9]+) failed"
+      "pattern": "^[=\\s]*(?:[0-9]+ (?:passed|skipped|deselected|xfailed|xpassed|warnings?), )*([0-9]+) (?:failed|error)s?\\b.*\\bin [0-9]"
     }
   ],
   "reference": "references/uv.md",
@@ -65,5 +65,7 @@
     "pytest",
     "typer"
   ],
-  "baseline_tools_note": "ruff produces the lint count and pytest the test count. A ruff bump can add rules, so a changed count is expected -- read the new findings rather than trusting the delta."
+  "baseline_tools_note": "ruff produces the lint count and pytest the test count. A ruff bump can add rules, so a changed count is expected -- read the new findings rather than trusting the delta.",
+  "add_lock_only": "uv lock --upgrade-package {pkg}=={version}",
+  "lock_delta_cmd": "git diff uv.lock | grep -c '^+version = '"
 }

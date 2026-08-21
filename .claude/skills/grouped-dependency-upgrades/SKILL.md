@@ -84,8 +84,21 @@ git fetch origin main && git checkout -b chore/deps-<ecosystem>-<tier> origin/ma
 
 Then run the adapter's `add` command for each package, and apply its
 `post_add_fixup` — most package managers rewrite the manifest in ways you did
-not ask for (pinning exact where a range was intended, moving sections,
-widening a floor). Diff the manifest and confirm only the version changed.
+not ask for (pinning exact where a range was intended, writing a dev tool into
+the runtime section, widening a floor). Diff the manifest and confirm only the
+version changed.
+
+**Then check the blast radius**, with the adapter's `lock_delta_cmd`:
+
+```bash
+git diff <lockfile> | grep -c '<version marker>'   # should equal the packages you bumped
+```
+
+A bump command can quietly re-resolve the whole graph instead of moving one
+package — measured here, one wrong flag turned a single dev patch bump into 94
+moved packages. If the count exceeds what you bumped, reset the lock and use
+the adapter's surgical form; do not ship the extra upgrades inside a low-tier
+PR, where nobody is reviewing them.
 
 ### 4. Verify against the baseline
 
@@ -96,7 +109,15 @@ to explain any removals in the PR body.
 
 **Exception:** if the batch bumps a package in the adapter's `baseline_tools`
 (the linter, the type checker, the test runner), it moved its own yardstick. An
-unchanged count is no longer evidence — read the new findings themselves.
+unchanged count is no longer evidence — read the new findings themselves. This
+is not hypothetical: an `eslint-plugin-react-hooks` 7.0.1 → 7.1.1 patch in this
+repo took the lint count from 6 to 13 with no source change.
+
+**A metric can also come back `UNMEASURABLE`** — the command failed and printed
+nothing the pattern recognizes (a suite that never reached a test body, a
+linter that died on its config). That is not a pass. Fix the environment or
+drop the metric explicitly with `--metrics`, and say which checks did not run
+in the PR.
 
 ### 5. Audit
 

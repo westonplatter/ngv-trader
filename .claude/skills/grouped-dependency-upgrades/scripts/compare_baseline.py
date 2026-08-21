@@ -61,17 +61,26 @@ def sh(cmd: str, cwd: Path, timeout: int) -> tuple[int, str]:
     return proc.returncode, (proc.stdout or "") + (proc.stderr or "")
 
 
-def score(metric: dict, code: int, out: str) -> int:
-    """Reduce a command's output to one lower-is-better integer."""
+def score(metric: dict, code: int, out: str) -> int | None:
+    """Reduce a command's output to one lower-is-better integer.
+
+    None means unmeasurable: the command failed *and* produced nothing the
+    pattern recognizes -- a suite that never reached a test body, a linter that
+    died on a config error. Reporting 0 there is the dangerous answer, because
+    0 on both sides reads as "same" for a check that never ran.
+    """
     mode = metric.get("mode", "count")
     if mode == "status":
         return 0 if code == 0 else 1
     pattern = metric["pattern"]
     if mode == "count":
-        return len(re.findall(pattern, out, re.MULTILINE))
+        hits = len(re.findall(pattern, out, re.MULTILINE))
+        return None if hits == 0 and code != 0 else hits
     if mode == "capture":
         match = re.search(pattern, out, re.MULTILINE)
-        return int(match.group(1)) if match else 0
+        if match:
+            return int(match.group(1))
+        return None if code != 0 else 0
     raise ValueError(f"unknown metric mode: {mode}")
 
 
@@ -93,7 +102,13 @@ def measure(root: Path, adapter: dict, wanted: list[str], label: str) -> dict[st
     for metric in metrics:
         print(f"  [{label}] {metric['cmd']}", file=sys.stderr)
         code, out = sh(metric["cmd"], work, metric.get("timeout", DEFAULT_TIMEOUT))
-        results[metric["name"]] = score(metric, code, out)
+        value = score(metric, code, out)
+        if value is None:
+            print(f"  [{label}] UNMEASURABLE: '{metric['name']}' exited {code} with no "
+                  "parseable result. Last output:", file=sys.stderr)
+            for line in out.strip().splitlines()[-4:]:
+                print(f"      {line[:120]}", file=sys.stderr)
+        results[metric["name"]] = value
     return results
 
 
@@ -187,6 +202,28 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
+def summarize(wanted: list[str], base_results: dict, cur_results: dict,
+              regressed: list[str], args: argparse.Namespace) -> int:
+    unmeasured = [
+        name for name in wanted
+        if cur_results[name] is None or (not args.current_only and base_results[name] is None)
+    ]
+    if unmeasured:
+        print(f"UNMEASURED: {unmeasured} did not produce a readable result. That is not a pass —")
+        print("  fix the environment (a database, an env file, a missing tool), or drop the "
+              "metric with --metrics and say so in the PR.")
+    if regressed:
+        print(f"REGRESSION in {regressed} vs {args.base}. Do not ship.")
+        return 1
+
+    scope = f" ({len(wanted) - len(unmeasured)} of {len(wanted)} metrics ran)" if unmeasured else ""
+    if args.current_only:
+        print(f"Recorded current counts only, no baseline compared{scope}.")
+        return 0
+    print(f"OK: no regression vs {args.base}{scope}. Cite these counts in the PR body.")
+    return 0
+
+
 def main() -> int:
     args = parse_args()
     if args.list:
@@ -230,14 +267,7 @@ def main() -> int:
     else:
         render(args.base, wanted, base_results, cur_results)
 
-    if regressed:
-        print(f"REGRESSION in {regressed} vs {args.base}. Do not ship.")
-        return 1
-    if args.current_only:
-        print("Recorded current counts only (no baseline compared).")
-        return 0
-    print(f"OK: no regression vs {args.base}. Cite these counts in the PR body.")
-    return 0
+    return summarize(wanted, base_results, cur_results, regressed, args)
 
 
 if __name__ == "__main__":

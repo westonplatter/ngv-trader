@@ -183,6 +183,15 @@ def triage(pr: dict, adapters: list[dict]) -> dict:
             "kind": kind, "tier": tier, "why": why}
 
 
+def baseline_path() -> Path:
+    """compare_baseline.py as typed from the repo root, where it will be run."""
+    path = Path(__file__).resolve().parent / "compare_baseline.py"
+    try:
+        return path.relative_to(Path.cwd())
+    except ValueError:
+        return path
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repo", help="owner/name; uses gh when available")
@@ -232,7 +241,7 @@ def main() -> int:
               f"{(pr['old'] or '?')} -> {(pr['new'] or '?'):<12} ({pr['kind']}: {pr['why']})")
 
     print("\nNever group across ecosystems: separate lockfiles, separate revert blast radius.")
-    print("Next: record the baseline BEFORE branching -> scripts/compare_baseline.py --adapter <id>")
+    print(f"Next: record the baseline BEFORE branching -> {baseline_path()} --adapter <id>")
     return 0
 
 

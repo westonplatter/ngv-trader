@@ -14,15 +14,28 @@ Neither the frontend build/lint nor `ruff` is gated in CI —
 
 | adapter | metric | baseline |
 | --- | --- | --- |
-| bun | build (`tsc -b`) | 18 errors |
+| bun | build (`tsc -b`) | 17 errors |
 | bun | lint (eslint) | 13 errors |
 | bun | audit | 2 vulnerabilities |
 | uv | imports (`scripts/check.py`) | 0 failed of 73 modules |
-| uv | lint (`ruff check .`) | ~81 errors |
+| uv | lint (`ruff check .`) | 76 errors |
 
-These drift; re-measure rather than quoting this table in a PR. The frontend
+These drift — re-measure rather than quoting this table in a PR. The frontend
 `tsc -b` errors are demo fixtures in `frontend/src/lib/demoData.ts` drifted from
 the `Position`/`TradeGroup` types — a separate PR, not part of a dep bump.
+
+**Worked example of the drift.** These numbers moved twice in a single session:
+`#180` (`@types/react-dom` patch) took the build from 18 to 17, and `#186`
+(`eslint-plugin-react-hooks` 7.0.1 → 7.1.1, a dev patch) took lint from 6 to 13
+with no source change at all. The second is why `eslint-plugin-react-hooks` is
+in the bun adapter's `baseline_tools`.
+
+## The Python suite needs infrastructure this environment lacks
+
+Claude Code web sessions have no Postgres and no `.env.dev`, so the uv `tests`
+metric reports UNMEASURABLE. Run the Python side as
+`--metrics imports,lint` there and say so in the PR, rather than letting a
+skipped check read as a passing one.
 
 ## No `gh` in web or mobile sessions
 

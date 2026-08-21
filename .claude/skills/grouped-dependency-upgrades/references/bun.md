@@ -48,3 +48,16 @@ the evidence that both still execute — cite them.
 `eslint`, `typescript`, `typescript-eslint`, and the eslint plugins produce the
 numbers the batch is verified against. When one is in the batch, read the
 findings diff rather than trusting the count.
+
+Measured here: merging `#186` (`eslint-plugin-react-hooks` 7.0.1 → 7.1.1 — a
+dev patch, textbook low tier) raised the lint count from 6 to 13. All seven new
+findings were `react-hooks/set-state-in-effect` in `PricingPage.tsx`,
+`TradeTaggingPage.tsx`, and `TradesTable.tsx`; not one line of source had
+changed. Batch a bump like that with other packages and the counts stop meaning
+anything for the whole PR.
+
+## Reading the eslint count
+
+The metric anchors on the summary's parenthesis — `(13 errors, 0 warnings)`.
+A bare `([0-9]+) error` also matches text inside individual findings, so it can
+report a number that has nothing to do with the total.
