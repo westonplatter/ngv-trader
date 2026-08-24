@@ -22,7 +22,8 @@ SKILL=.claude/skills/grouped-dependency-upgrades
 $SKILL/scripts/compare_baseline.py --list      # adapters this repo has
 ```
 
-New to this workflow? [references/workflow.md](references/workflow.md) draws it.
+New to this workflow? [references/workflow.md](references/workflow.md) draws it, and
+[references/running-locally.md](references/running-locally.md) is the by-hand runbook.
 
 ## Step 0 — learn the repo's conventions
 
