@@ -166,9 +166,16 @@ All events use a consistent envelope:
 | `trades.changed`    | `trades`        | Trade-group execution / position / live-execution assign or unassign | `src/api/routers/trade_groups.py`                                                          | `{}` (coarse hint)    |
 | `positions.changed` | `positions`     | Trade-group position or live-execution assign or unassign            | `src/api/routers/trade_groups.py`                                                          | `{}` (coarse hint)    |
 
-**Notify path**: Events marked "via notify" originate in the worker process. After committing to Postgres, the worker POSTs to a notification endpoint on the API (`/events/notify-job` or `/events/notify-worker-status`). The API reads the committed row, builds the response DTO, and publishes to the in-memory broadcaster. Events without "via notify" are published directly by the API process after its own `db.commit()`.
+## Publish Paths
 
-**Order sync events are currently broken in practice**: `order_sync_tws.py` runs inside the `worker:jobs` process (via `handle_order_fetch_sync`), not the API process, so its direct `broadcaster.publish()` call writes to a broadcaster instance with no SSE subscribers. Nothing in the codebase calls `POST /api/v1/events/notify-order` — the endpoint exists but is never invoked. `order.created`/`order.updated` events do not currently reach the browser; the UI catches up via the next REST fetch instead.
+| Path              | How it publishes                                                                                                                                | When                           |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ |
+| **API endpoints** | Direct `broadcaster.publish()` after `db.commit()`, in the same process                                                                         | Immediately after the mutation |
+| **Workers**       | `POST /api/v1/events/notify-job`, `notify-worker-status`, `notify-trades`, or `notify-positions` after `session.commit()` in the worker process | After the worker finishes      |
+
+Workers run in a separate process from the API, so they cannot access the in-memory broadcaster directly. The notify endpoints bridge this gap.
+
+**Order sync events**: `order_sync_tws.py` runs inside the worker process and currently publishes directly to a broadcaster with no SSE subscribers. The `order.created`/`order.updated` events do not reach the browser; the UI catches up via the next REST fetch. Endpoint `POST /api/v1/events/notify-order` exists but is never invoked.
 
 ## Frontend Integration
 
