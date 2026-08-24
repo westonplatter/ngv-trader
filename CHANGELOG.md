@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.1.15](https://github.com/westonplatter/ngv-trader/compare/v0.1.14...v0.1.15) (2026-08-24)
+
+
+### Documentation
+
+* generate README.md indexes instead of index.md ([#179](https://github.com/westonplatter/ngv-trader/issues/179)) ([e781384](https://github.com/westonplatter/ngv-trader/commit/e7813840494c0f1763871ba788e18cfebbcf92fe))
+* replace hand-curated index with generated index.md files ([#177](https://github.com/westonplatter/ngv-trader/issues/177)) ([52b2181](https://github.com/westonplatter/ngv-trader/commit/52b2181d6d411484d1c1f65b52a6b595ab86668b))
+
+
+### Code Refactoring
+
+* **docs:** unify doc tooling under docs_index.py and docs_check.py ([#196](https://github.com/westonplatter/ngv-trader/issues/196)) ([7842f5a](https://github.com/westonplatter/ngv-trader/commit/7842f5a1f6c038a138f5ff7fae2514a5582ca583))
+
+
+### Miscellaneous Chores
+
+* **deps-dev:** bump @types/react-dom from 19.2.3 to 19.2.4 in /frontend ([#180](https://github.com/westonplatter/ngv-trader/issues/180)) ([8cd07f2](https://github.com/westonplatter/ngv-trader/commit/8cd07f2082af73f218c64cc875fcb46ea39be3dc))
+* **deps-dev:** bump @types/react-dom from 19.2.3 to 19.2.4 in /frontend ([#195](https://github.com/westonplatter/ngv-trader/issues/195)) ([68c979f](https://github.com/westonplatter/ngv-trader/commit/68c979fb2f99f1e3b0a106b2c7a32a91e941da60))
+* **deps-dev:** bump eslint-plugin-react-hooks from 7.0.1 to 7.1.1 in /frontend ([#186](https://github.com/westonplatter/ngv-trader/issues/186)) ([a6bd083](https://github.com/westonplatter/ngv-trader/commit/a6bd083404bdd03118a8e8f8492b350133651ff5))
+* **deps-dev:** bump typer from 0.27.0 to 0.27.1 ([#182](https://github.com/westonplatter/ngv-trader/issues/182)) ([1a0d3c2](https://github.com/westonplatter/ngv-trader/commit/1a0d3c28b4171576e43a6c70401153036b12efe8))
+* **deps:** bump @ai-sdk/react from 3.0.118 to 4.0.55 in /frontend ([#183](https://github.com/westonplatter/ngv-trader/issues/183)) ([a0ddbec](https://github.com/westonplatter/ngv-trader/commit/a0ddbecc0939644f84771291f7011e88e82ab351))
+* **deps:** bump ai from 7.0.41 to 7.0.52 in /frontend ([#189](https://github.com/westonplatter/ngv-trader/issues/189)) ([075739a](https://github.com/westonplatter/ngv-trader/commit/075739af0eade1287b8ef2ba1560d1431c62a23f))
+* **deps:** bump alembic from 1.18.5 to 1.19.0 ([#185](https://github.com/westonplatter/ngv-trader/issues/185)) ([79fbd8c](https://github.com/westonplatter/ngv-trader/commit/79fbd8ca0932df145ce00c117ec6188661010c13))
+* **deps:** bump fastapi from 0.140.13 to 0.141.1 ([#184](https://github.com/westonplatter/ngv-trader/issues/184)) ([a46d849](https://github.com/westonplatter/ngv-trader/commit/a46d84964a64b834d612aac88589fe1d62125205))
+* **deps:** bump react-plotly.js from 2.6.0 to 4.1.0 ([#194](https://github.com/westonplatter/ngv-trader/issues/194)) ([bccaa66](https://github.com/westonplatter/ngv-trader/commit/bccaa66d1fa4a0a2bf411b966ec72c6ea8e4093a))
+* **deps:** bump vite, typescript-eslint and react-refresh plugin ([#192](https://github.com/westonplatter/ngv-trader/issues/192)) ([eb89d6a](https://github.com/westonplatter/ngv-trader/commit/eb89d6ab449d969f6ba0de4ea85a91795a59e741))
+* **deps:** upgrade pandera to &gt;=0.32.1 ([#193](https://github.com/westonplatter/ngv-trader/issues/193)) ([87d6805](https://github.com/westonplatter/ngv-trader/commit/87d6805f70378a8e45c7e832ea3a41455412e80e))
+
 ## [0.1.14](https://github.com/westonplatter/ngv-trader/compare/v0.1.13...v0.1.14) (2026-08-18)
 
 
