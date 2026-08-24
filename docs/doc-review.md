@@ -20,14 +20,13 @@ Applies to any PR that changes code, schema, or UX:
   the same PR. A behavior change without its doc update is an incomplete PR.
 - **Regenerate indexes.** After adding, renaming, or deleting any
   `docs/**/*.md` (or changing its front matter), run
-  `uv run python scripts/gen_docs_index.py` and
-  `uv run python scripts/gen_core_index_html.py`, then commit the regenerated
+  `uv run python scripts/docs_index.py`, then commit the regenerated
   `README.md` files. Never hand-edit an index.
 - **Run the automated checks.**
 
   ```bash
-  uv run python scripts/doc_check.py          # links, scripts, tasks, spec banners
-  uv run python scripts/doc_check.py --routes  # undocumented routes (informational)
+  uv run python scripts/docs_check.py          # links, scripts, tasks, spec banners
+  uv run python scripts/docs_check.py --routes  # undocumented routes (informational)
   ```
 
   Fix hard failures (`FAIL`) before merging; route `WARN`s are informational.
@@ -53,7 +52,7 @@ leave it for "the review":
 A short pass to catch what same-change upkeep misses. Treat it as sampling and
 triage, not a full re-read:
 
-1. Run `scripts/doc_check.py` and fix failures.
+1. Run `scripts/docs_check.py` and fix failures.
 2. Select a **rotating subset** of docs (not all). Prioritize docs adjacent to
    the week's changed code, using `code_dirs_or_files` front matter as the
    churn signal, plus narrative docs (`AGENTS.md` sections, workflow docs,
