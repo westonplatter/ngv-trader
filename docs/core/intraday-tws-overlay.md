@@ -231,6 +231,11 @@ that writes its own `latest_option_metrics` table and rides this overlay's
 read-time merge. Kept separate so the two jobs never clobber each other's columns
 and can run on independent cadences. See [option-metrics-overlay.md](option-metrics-overlay.md).
 
+Both sides land in the same `merge_positions()` helper in `intraday_overlay.py`, so
+the math is single-source; only the inputs differ. The API endpoint passes
+`price_magnifier` and `latest_option_metrics`; `trade_group_pnl` calls it with those
+arguments defaulted to `None`.
+
 ## Known limitations (deferred)
 
 - No interval auto-refresh (manual buttons only); no historical intraday

@@ -19,6 +19,18 @@ description: Spec for the OSI semantic layer — YAML model, resolver algorithm,
 > SQL. Read this before changing `osi/ngv_semantic_model.yaml`,
 > `src/services/semantic/*`, the fact views, or the `query_metric` surfaces.
 
+## Quick Start
+
+Not sure where to begin? Start here based on your goal:
+
+- **I want to run a query right now** → Go to **[§1. What it is and why](#1-what-it-is-and-why)** to learn about the four tools (`describe_semantic_model`, `query_metric`, `find_trade_groups`, `trade_group_pnl`) and pick a metric + dimensions.
+
+- **I'm defining a new metric or dimension** → Go to **[§6. How to extend](#6-how-to-extend-the-common-tasks)** to add an entry under `metrics:` or `dimensions:` in the YAML model.
+
+- **I'm lost and need orientation** → Read **[§2. Core design decisions](#2-core-design-decisions)** first, especially §2.1 (facts at their natural grain) and §2.2 (conformed dimensions via relationships). This section explains the grain-enforcement rules that make the layer work.
+
+- **I need to understand the data model / grains** → Go to **[§3.1 Semantic views](#31-semantic-views-the-physical-sources)** for the table of fact views, their grain, and what creates them.
+
 ## 1. What it is and why
 
 An [Open Semantic Interchange (OSI)](https://github.com/open-semantic-interchange/OSI)

@@ -165,7 +165,7 @@ Result here: **exactly one row changed** out of 77 positions — three chips to 
 task test                                        # 144 passed
 trunk check
 uv run python scripts/check.py src.api.routers.positions
-uv run python scripts/doc_check.py
+uv run python scripts/docs_check.py
 uv run python scripts/ibkr_sensitive_data_check.py
 ```
 
