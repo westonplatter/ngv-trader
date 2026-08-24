@@ -294,6 +294,15 @@ It currently supports:
 6. editing group name, notes, and status
 7. deleting trade groups
 8. viewing a read-only timeline
+9. **focus mode** — narrows the layout to the selected group's own panels, toggled
+   via the header button, the `F` key, or `Escape` to exit; the preference
+   persists per-user through `user-preferences`
+10. a position-panel totals row (delta, gamma, avg cost, cost basis, value,
+    unrealized/live-unrealized P&L) summed across the group's visible positions
+11. an IV column and IBKR trade-code badges (`frontend/src/lib/ibCodes.ts`) on
+    execution rows
+12. horizontally resizable strategy/groups columns, persisted per-device via
+    `localStorage`
 
 The current page does not provide:
 
