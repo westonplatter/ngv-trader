@@ -5,11 +5,11 @@ from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, Field
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, func, literal, or_, select
 from sqlalchemy.orm import Session
 
 from src.api.deps import get_db
-from src.api.routers.positions import _derive_option_expiry_and_dte
+from src.api.routers.positions import _option_expiry_and_dte
 from src.api.routers.tags import TagLinkResponse, _normalize_tag_value
 from src.api.routers.trades import (
     _contract_display_from_raw,
@@ -19,7 +19,6 @@ from src.api.routers.trades import (
 from src.models import (
     Account,
     ContractRef,
-    LatestOptionMetrics,
     LiveExecution,
     Tag,
     TagLink,
@@ -39,11 +38,17 @@ from src.services.intraday_overlay import (
     merge_positions,
     overlay_totals,
 )
+from src.services.trade_group_instruments import (
+    InstrumentPatternError,
+    instrument_filter_condition,
+    trade_group_instruments,
+)
 from src.services.trade_group_meta import TradeGroupMetaError, parse_meta_yaml
 from src.services.trade_group_pnl import (
-    load_overlay_inputs,
+    TradeGroupBatchPnl,
+    load_overlay_context,
+    trade_group_batch_pnls,
     trade_group_realized_pnl,
-    trade_group_total_pnls,
 )
 from src.services.ui_events import (
     TOPIC_POSITIONS,
@@ -98,6 +103,22 @@ class TradeGroupResponse(BaseModel):
     # Settled Total PnL (realized + settled unrealized). Populated by the list
     # endpoint; None elsewhere (the detail view computes its own live figures).
     total_pnl: float | None = None
+    # The realized / unrealized split behind ``total_pnl``, plus the intraday TWS
+    # overlay. All None unless the list endpoint was called with
+    # ``include_intraday=true`` — existing consumers read only ``total_pnl`` and
+    # must not pay for the overlay.
+    realized_pnl: float | None = None
+    unrealized_pnl: float | None = None
+    intraday_unrealized_pnl: float | None = None
+    intraday_realized_pnl: float | None = None
+    intraday_total_pnl: float | None = None
+    marks_as_of: datetime | None = None
+    # True only when every live-sourced mark behind this group is stale; a mix of
+    # fresh and stale legs is not flagged (``marks_as_of`` already carries the age).
+    live_is_stale: bool = False
+    # Underlying roots the group's executions touched (e.g. ``["CL"]``). None when
+    # not requested; ``[]`` for a group with no resolvable instruments.
+    instruments: list[str] | None = None
 
 
 class TradeGroupDetailResponse(TradeGroupResponse):
@@ -222,6 +243,148 @@ def _primary_strategy_subquery():
     )
 
 
+def _group_account_exposure(account_id: int):
+    """Correlated: the group is owned by this account, or holds a fill in it.
+
+    ``trade_groups.account_id`` is only the account of the group's *first*
+    assigned fill, and V1 assignment is deliberately cross-account — so a group
+    routinely holds legs in an account it is not "owned" by. Selecting on
+    ownership alone hid those groups from that account's view even though the
+    detail panel reports real capital and P&L for them there.
+
+    The ownership arm is kept so a group with no fills yet still appears
+    somewhere; the live arm covers a group whose only exposure in an account is
+    a preemptively-tagged unsettled fill.
+    """
+    settled_leg = (
+        select(literal(1))
+        .select_from(TradeGroupExecution)
+        .join(TradeExecution, TradeExecution.id == TradeGroupExecution.trade_execution_id)
+        .where(
+            TradeGroupExecution.trade_group_id == TradeGroup.id,
+            TradeExecution.account_id == account_id,
+        )
+        .correlate(TradeGroup)
+        .exists()
+    )
+    live_leg = (
+        select(literal(1))
+        .select_from(TradeGroupLiveExecution)
+        .where(
+            TradeGroupLiveExecution.trade_group_id == TradeGroup.id,
+            TradeGroupLiveExecution.account_id == account_id,
+        )
+        .correlate(TradeGroup)
+        .exists()
+    )
+    return or_(TradeGroup.account_id == account_id, settled_leg, live_leg)
+
+
+def _group_tag_exists(tag_type: str, value: str):
+    """Correlated EXISTS: the group carries a ``tag_type`` tag with this value."""
+    return (
+        select(TagLink.id)
+        .join(Tag, Tag.id == TagLink.tag_id)
+        .where(
+            and_(
+                TagLink.entity_type == "trade_groups",
+                TagLink.entity_id == TradeGroup.id,
+                TagLink.tag_type == tag_type,
+                Tag.normalized_value == _normalize_tag_value(value),
+            )
+        )
+        .exists()
+    )
+
+
+def _group_text_search(q: str):
+    """Free-text match across the group name and its primary strategy value."""
+    normalized_q = _normalize_tag_value(q)
+    # Escape LIKE metacharacters so %, _, and \ are treated literally
+    escaped_q = normalized_q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    strategy_name_exists = (
+        select(Tag.id)
+        .join(TagLink, TagLink.tag_id == Tag.id)
+        .where(
+            and_(
+                TagLink.entity_type == "trade_groups",
+                TagLink.entity_id == TradeGroup.id,
+                TagLink.tag_type == "strategy",
+                TagLink.is_primary.is_(True),
+                Tag.normalized_value.like(f"%{escaped_q}%", escape="\\"),
+            )
+        )
+        .correlate(TradeGroup)
+        .exists()
+    )
+    return or_(func.lower(TradeGroup.name).like(f"%{escaped_q}%", escape="\\"), strategy_name_exists)
+
+
+def _filtered_group_query(  # noqa: PLR0913
+    *,
+    account_id: int | None,
+    status_filter: str | None,
+    strategy_tag: str | None,
+    theme_tag: str | None,
+    q: str | None,
+    instrument: str | None,
+    opened_from: datetime | None,
+    opened_to: datetime | None,
+):
+    """The trade-group select with every list filter applied.
+
+    Every filter is a WHERE on the same statement, so they compose and — this is
+    the part that matters for the instrument pattern — all of them narrow the set
+    before the caller's ``LIMIT`` is applied.
+
+    Raises ``InstrumentPatternError`` on a malformed instrument pattern; the
+    caller maps that to a 400.
+    """
+    stmt = select(TradeGroup, _primary_strategy_subquery())
+    if account_id is not None:
+        stmt = stmt.where(_group_account_exposure(account_id))
+    if status_filter is not None:
+        stmt = stmt.where(TradeGroup.status == status_filter)
+    if opened_from is not None:
+        stmt = stmt.where(TradeGroup.opened_at >= opened_from)
+    if opened_to is not None:
+        stmt = stmt.where(TradeGroup.opened_at <= opened_to)
+    if strategy_tag:
+        stmt = stmt.where(_group_tag_exists("strategy", strategy_tag))
+    if theme_tag:
+        stmt = stmt.where(_group_tag_exists("theme", theme_tag))
+    if q:
+        stmt = stmt.where(_group_text_search(q))
+    if instrument:
+        stmt = stmt.where(instrument_filter_condition(instrument))
+    return stmt
+
+
+def _list_row(
+    trade_group: TradeGroup,
+    strategy_value: str | None,
+    pnl: TradeGroupBatchPnl | None,
+    instruments: list[str] | None,
+    include_intraday: bool,
+) -> TradeGroupResponse:
+    """Assemble one list row; the intraday split only when it was asked for."""
+    resp = TradeGroupResponse.model_validate(trade_group)
+    resp.primary_strategy_value = strategy_value
+    resp.instruments = instruments
+    if pnl is None:
+        return resp
+    resp.total_pnl = pnl.total_pnl
+    if include_intraday:
+        resp.realized_pnl = pnl.realized_pnl
+        resp.unrealized_pnl = pnl.settled_unrealized_pnl
+        resp.intraday_unrealized_pnl = pnl.intraday_unrealized_pnl
+        resp.intraday_realized_pnl = pnl.intraday_realized_pnl
+        resp.intraday_total_pnl = pnl.intraday_total_pnl
+        resp.marks_as_of = pnl.marks_as_of
+        resp.live_is_stale = pnl.live_is_stale
+    return resp
+
+
 @router.get("/trade-groups", response_model=list[TradeGroupResponse])
 def list_trade_groups(  # noqa: PLR0913
     account_id: int | None = Query(default=None),
@@ -229,91 +392,57 @@ def list_trade_groups(  # noqa: PLR0913
     strategy_tag: str | None = Query(default=None),
     theme_tag: str | None = Query(default=None),
     q: str | None = Query(default=None),
+    instrument: str | None = Query(default=None),
+    include_intraday: bool = Query(default=False),
     opened_from: datetime | None = Query(default=None),  # noqa: B008
     opened_to: datetime | None = Query(default=None),  # noqa: B008
     limit: int = Query(default=100, ge=1, le=1000),
     db: Session = DB_SESSION_DEPENDENCY,
 ):
-    strategy_value_col = _primary_strategy_subquery()
-    stmt = select(TradeGroup, strategy_value_col)
-    if account_id is not None:
-        stmt = stmt.where(TradeGroup.account_id == account_id)
-    if status_filter is not None:
-        stmt = stmt.where(TradeGroup.status == status_filter)
-    if opened_from is not None:
-        stmt = stmt.where(TradeGroup.opened_at >= opened_from)
-    if opened_to is not None:
-        stmt = stmt.where(TradeGroup.opened_at <= opened_to)
+    """List trade groups, optionally with the full P&L split and instruments.
 
-    if strategy_tag:
-        normalized = _normalize_tag_value(strategy_tag)
-        stmt = stmt.where(
-            select(TagLink.id)
-            .join(Tag, Tag.id == TagLink.tag_id)
-            .where(
-                and_(
-                    TagLink.entity_type == "trade_groups",
-                    TagLink.entity_id == TradeGroup.id,
-                    TagLink.tag_type == "strategy",
-                    Tag.normalized_value == normalized,
-                )
-            )
-            .exists()
-        )
+    ``instrument`` is a case-insensitive regex (``CL.*``, ``CL|NG``) matched in
+    SQL against each group's derived underlying roots, falling back to its name —
+    so it narrows the whole set *before* ``limit`` applies, not the page after.
 
-    if theme_tag:
-        normalized = _normalize_tag_value(theme_tag)
-        stmt = stmt.where(
-            select(TagLink.id)
-            .join(Tag, Tag.id == TagLink.tag_id)
-            .where(
-                and_(
-                    TagLink.entity_type == "trade_groups",
-                    TagLink.entity_id == TradeGroup.id,
-                    TagLink.tag_type == "theme",
-                    Tag.normalized_value == normalized,
-                )
-            )
-            .exists()
-        )
+    ``include_intraday`` opts into the live TWS overlay and the realized /
+    unrealized split. It defaults to false so the Strategies left panel and the
+    group picker keep their two-query cost. Instruments come back whenever the
+    overlay is requested or an ``instrument`` filter was supplied.
 
-    if q:
-        normalized_q = _normalize_tag_value(q)
-        # Escape LIKE metacharacters so %, _, and \ are treated literally
-        escaped_q = normalized_q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-        # Search across group name and primary strategy value
-        strategy_name_exists = (
-            select(Tag.id)
-            .join(TagLink, TagLink.tag_id == Tag.id)
-            .where(
-                and_(
-                    TagLink.entity_type == "trade_groups",
-                    TagLink.entity_id == TradeGroup.id,
-                    TagLink.tag_type == "strategy",
-                    TagLink.is_primary.is_(True),
-                    Tag.normalized_value.like(f"%{escaped_q}%", escape="\\"),
-                )
-            )
-            .correlate(TradeGroup)
-            .exists()
+    ``account_id`` narrows both the rows *and* the figures on them. Trade-group
+    membership is cross-account, so a group can hold legs in several accounts: a
+    group is listed when it is owned by the account *or* holds a fill there, and
+    its figures report that account's slice — which is what the detail
+    endpoint's per-account breakdown shows.
+    """
+    try:
+        stmt = _filtered_group_query(
+            account_id=account_id,
+            status_filter=status_filter,
+            strategy_tag=strategy_tag,
+            theme_tag=theme_tag,
+            q=q,
+            instrument=instrument,
+            opened_from=opened_from,
+            opened_to=opened_to,
         )
-        stmt = stmt.where(
-            or_(
-                func.lower(TradeGroup.name).like(f"%{escaped_q}%", escape="\\"),
-                strategy_name_exists,
-            )
-        )
-
+    except InstrumentPatternError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     rows = db.execute(stmt.order_by(TradeGroup.created_at.desc()).limit(limit)).all()
-    # Batched settled Total PnL for every group in the page (two queries, no N+1).
-    total_pnls = trade_group_total_pnls(db, [trade_group.id for trade_group, _ in rows])
-    results = []
-    for trade_group, strategy_val in rows:
-        resp = TradeGroupResponse.model_validate(trade_group)
-        resp.primary_strategy_value = strategy_val
-        resp.total_pnl = total_pnls.get(trade_group.id)
-        results.append(resp)
-    return results
+    group_ids = [trade_group.id for trade_group, _ in rows]
+
+    # Batched P&L for every group in the page — query count is fixed in the row
+    # count either way (two queries settled-only, eight with the overlay).
+    # Scope the figures to the filtered account: groups are cross-account, so an
+    # unscoped total under an account heading would silently include the other
+    # account's legs.
+    pnls = trade_group_batch_pnls(db, group_ids, include_intraday=include_intraday, account_id=account_id)
+    instruments: dict[int, list[str]] = trade_group_instruments(db, group_ids, account_id) if (include_intraday or instrument) else {}
+
+    return [
+        _list_row(trade_group, strategy_val, pnls.get(trade_group.id), instruments.get(trade_group.id), include_intraday) for trade_group, strategy_val in rows
+    ]
 
 
 @router.post("/trade-groups", response_model=TradeGroupResponse, status_code=201)
@@ -379,7 +508,14 @@ def get_trade_group(trade_group_id: int, db: Session = DB_SESSION_DEPENDENCY):
         .scalars()
         .all()
     )
-    execution_count = db.execute(select(func.count()).select_from(TradeGroupExecution).where(TradeGroupExecution.trade_group_id == trade_group_id)).scalar_one()
+    # Counts both ledgers so the header matches the executions table, which lists
+    # live/unsettled rows alongside settled ones. A group opened today has all of
+    # its fills in trade_group_live_executions and would otherwise read zero.
+    settled_count = db.execute(select(func.count()).select_from(TradeGroupExecution).where(TradeGroupExecution.trade_group_id == trade_group_id)).scalar_one()
+    live_count = db.execute(
+        select(func.count()).select_from(TradeGroupLiveExecution).where(TradeGroupLiveExecution.trade_group_id == trade_group_id)
+    ).scalar_one()
+    execution_count = settled_count + live_count
 
     # Resolve the group's primary strategy value. This is a subquery-computed
     # field (not a column on TradeGroup), so model_validate leaves it None;
@@ -1187,16 +1323,13 @@ def _build_open_positions_overlay(
     if not account_con_pairs:
         return empty
 
-    flex_rows, live_rows, quotes, live_execs = load_overlay_inputs(db, account_con_pairs)
-    # Price magnifiers normalize cents-quoted marks (e.g. grain futures) into the
-    # multiplier's dollar unit before merge_positions computes live PnL.
-    overlay_con_ids = {p.con_id for p in flex_rows} | {p.con_id for p in live_rows}
-    magnifiers: dict[int, int] = {}
-    metrics: dict[int, LatestOptionMetrics] = {}
-    if overlay_con_ids:
-        magnifiers = dict(db.execute(select(ContractRef.con_id, ContractRef.price_magnifier).where(ContractRef.con_id.in_(list(overlay_con_ids)))).all())
-        metrics = {m.con_id: m for m in db.execute(select(LatestOptionMetrics).where(LatestOptionMetrics.con_id.in_(list(overlay_con_ids)))).scalars().all()}
-    views = merge_positions(flex_rows, live_rows, quotes, magnifiers, metrics)
+    # One shared loader for every overlay consumer (price magnifiers, security-
+    # master expiries, option metrics), so this panel and the batched Strategy
+    # P&L list path cannot merge from different inputs.
+    context = load_overlay_context(db, account_con_pairs)
+    flex_rows, live_rows, live_execs = context.flex_rows, context.live_rows, context.live_execs
+    expiries = context.expiries
+    views = merge_positions(flex_rows, live_rows, context.quotes, context.magnifiers, context.metrics)
 
     view_account_ids = {v.account_id for v in views}
     alias_by_id = {}
@@ -1211,6 +1344,7 @@ def _build_open_positions_overlay(
             flex_by_key.get((view.account_id, view.con_id)),
             alias_by_id.get(view.account_id),
             live_fetched_by_key.get((view.account_id, view.con_id)),
+            expiries.get(view.con_id),
         )
         for view in views
     ]
@@ -1255,7 +1389,7 @@ def _build_open_positions_overlay(
     )
 
 
-def _view_to_open_position(view, flex, account, live_fetched_at) -> TradeGroupOpenPositionItem:
+def _view_to_open_position(view, flex, account, live_fetched_at, ref_expiry=None) -> TradeGroupOpenPositionItem:
     """Map a unified PositionView to the response item (settled fields kept additive)."""
     # Build the Contract label exactly like the Positions table does: off the
     # settled snapshot row when there is one (its symbol/local_symbol carry the
@@ -1266,9 +1400,12 @@ def _view_to_open_position(view, flex, account, live_fetched_at) -> TradeGroupOp
     display_sec_type = (flex.sec_type if flex else None) or view.sec_type
     display_right = (flex.right if flex else None) or view.right
     display_strike = (flex.strike if flex else None) if flex and flex.strike is not None else view.strike
+    # Expiry comes off the settled snapshot when there is one, else the security
+    # master. Without it two same-strike legs of a calendar render identically.
+    raw_expiry = (flex.last_trade_date if flex else None) or ref_expiry
     inferred_month = infer_contract_month_from_local_symbol(
         local_symbol=display_local_symbol,
-        contract_expiry=flex.last_trade_date if flex else None,
+        contract_expiry=raw_expiry,
         sec_type=display_sec_type,
     )
     display_name = contract_display_name(
@@ -1277,14 +1414,12 @@ def _view_to_open_position(view, flex, account, live_fetched_at) -> TradeGroupOp
         local_symbol=display_local_symbol,
         right=display_right,
         strike=display_strike,
-        contract_expiry=flex.last_trade_date if flex else None,
+        contract_expiry=raw_expiry,
         contract_month=inferred_month,
         exchange=flex.exchange if flex else None,
         trading_class=flex.trading_class if flex else None,
     )
-    # Expiry/DTE come off the settled snapshot's last_trade_date; a live-only
-    # row (opened today, no snapshot) has no expiry to derive from.
-    option_expiry_date, dte = _derive_option_expiry_and_dte(flex) if flex else (None, None)
+    option_expiry_date, dte = _option_expiry_and_dte(display_sec_type, raw_expiry)
     return TradeGroupOpenPositionItem(
         account_id=view.account_id,
         account_alias=(account.alias if account else None) or (account.account if account else None),

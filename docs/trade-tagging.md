@@ -3,8 +3,9 @@
 Current-state documentation for strategy tags, trade groups, execution assignment, and the tagging UI.
 
 The UI surface for all of this is the **Strategies** page at `/strategies`
-(`frontend/src/components/TradeTaggingPage.tsx`). "Tagging" remains the name of the
-underlying mechanism — tags, tag links, and trade groups — and of this doc.
+(`frontend/src/components/TradeTaggingPage.tsx`), with a book-wide **Strategy P&L**
+table at `/strategies/table`. "Tagging" remains the name of the underlying
+mechanism — tags, tag links, and trade groups — and of this doc.
 
 ## Purpose
 
@@ -155,11 +156,34 @@ Supported filters:
 3. `strategy_tag`
 4. `theme_tag`
 5. `q`
-6. `opened_from`
-7. `opened_to`
-8. `limit`
+6. `instrument` — case-insensitive regex (`CL.*`, `CL|NG`) over the group's
+   derived instruments, falling back to its name
+7. `opened_from`
+8. `opened_to`
+9. `limit`
 
-The response includes a derived `primary_strategy_value`.
+Plus one opt-in flag, `include_intraday` (default `false`).
+
+The response always includes a derived `primary_strategy_value` and the settled
+`total_pnl`. With `include_intraday=true` it also carries the split behind that
+total — `realized_pnl`, `unrealized_pnl`, `intraday_unrealized_pnl`,
+`intraday_realized_pnl`, `intraday_total_pnl`, `marks_as_of`, `live_is_stale` —
+and the group's `instruments`. The flag defaults off so the Strategies left
+panel and the group picker, which read `total_pnl` alone, pay no overlay cost.
+
+Two behaviors are worth knowing:
+
+- **Every filter is applied before `limit`.** The instrument pattern is a
+  correlated SQL `EXISTS`, not a post-fetch filter, so a narrow pattern returns
+  matching rows rather than an empty page. A malformed pattern is a `400`.
+- **`account_id` scopes the figures, not just the row list.** Group membership
+  is cross-account, so a group can hold legs in several accounts. A group is
+  listed when it is _owned by_ the account (`trade_groups.account_id`, set from
+  its first assigned fill) **or** holds a fill there, and its figures report that
+  account's slice — the same numbers `GET /trade-groups/{id}/executions` shows in
+  its per-account breakdown. Selecting on ownership alone would hide a
+  cross-account group from the account whose capital it is using; keeping the
+  ownership arm is what lets a group with no fills yet still appear somewhere.
 
 #### `POST /trade-groups`
 
@@ -280,6 +304,37 @@ Note the read path and the write path differ in scope: `positions:assign` and
 `positions:unassign` still fan out to **every** fill on the con_id, including
 closed historical lots, not just the open ones.
 
+### Strategy P&L table
+
+`/strategies/table` (`frontend/src/components/StrategyPnlTable.tsx`) is the
+book-wide sibling of the Strategies workspace: one row per trade group, with its
+strategy, account, instruments, and Realized / Unrealized / Total P&L, filterable
+by account, instrument pattern, and status. It is read-only — assignment,
+renaming, and status changes stay on the workspace page — and a row click opens
+that group in the workspace via `?trade_group_id=`.
+
+Each row's three P&L columns come from the same layer as each other: the
+intraday figures when the group has live data, the settled ones otherwise, so
+Total always reconciles to Realized + Unrealized. Freshness renders as
+`live HH:MM`, an amber `stale HH:MM`, or `settled`. See
+[core/intraday-tws-overlay.md](core/intraday-tws-overlay.md) for how the batched
+overlay is computed.
+
+#### Deriving a group's instruments
+
+A trade group has no instrument: it links to executions, and an execution
+carries `con_id` but no symbol. `src/services/trade_group_instruments.py`
+resolves the **underlying root** as
+`COALESCE(contracts.symbol, trade_executions.raw -> 'contract' ->> 'symbol')`.
+
+The security master (`contracts`) is authoritative where present, but it is
+incomplete — many traded option `con_id`s never get a row — so the raw payload,
+which the FlexQuery sync synthesizes from `underlyingSymbol`, is the fallback.
+Both are the underlying root, not the OCC/local symbol (the sync writes that to
+`contract.localSymbol`). Where the security master holds a specific contract
+symbol rather than a root, the derived list carries that too, which is why a
+group can list both `CL` and `CLZ6`.
+
 ### Tagging workspace
 
 The main tagging UI is `frontend/src/components/TradeTaggingPage.tsx`.
@@ -340,5 +395,6 @@ Typical live workflow:
 3. `src/api/routers/tags.py`
 4. `frontend/src/components/TradesTable.tsx`
 5. `frontend/src/components/PositionsTable.tsx`
-6. `frontend/src/components/TradeTaggingPage.tsx`
-7. `frontend/src/contexts/PrivacyContext.tsx`, `frontend/src/utils/privacy.ts` (privacy-mode masking used throughout the trade-group detail view)
+6. `frontend/src/components/TradeTaggingPage.tsx`, `frontend/src/components/StrategyPnlTable.tsx`, `frontend/src/lib/strategyPnl.ts`
+7. `src/services/trade_group_pnl.py` (batched per-group P&L), `src/services/trade_group_instruments.py` (instrument derivation and the pattern filter)
+8. `frontend/src/contexts/PrivacyContext.tsx`, `frontend/src/utils/privacy.ts` (privacy-mode masking used throughout the trade-group detail view)

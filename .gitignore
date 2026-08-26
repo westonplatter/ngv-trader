@@ -144,3 +144,11 @@ cython_debug/
 .envrc
 !.envrc.example
 
+
+# Beads / Dolt files (added by bd init)
+.dolt/
+*.db
+.beads-credential-key
+.beads/proxieddb/
+# Local agent activity log, not configuration
+.beads/interactions.jsonl

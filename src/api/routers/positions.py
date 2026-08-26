@@ -147,14 +147,24 @@ def _parse_raw_expiry_date(raw_value: str | None) -> date | None:
     return None
 
 
-def _derive_option_expiry_and_dte(position: Position) -> tuple[str | None, int | None]:
-    sec_type = (position.sec_type or "").strip().upper()
-    expiry = _parse_raw_expiry_date(position.last_trade_date)
+def _option_expiry_and_dte(sec_type: str | None, raw_expiry: str | None) -> tuple[str | None, int | None]:
+    """Expiry/DTE from raw values, for callers with no settled ``Position`` row.
+
+    A position opened intraday has no FlexQuery snapshot, so its expiry has to
+    come from elsewhere (the security master). Taking the two fields directly
+    lets those callers reuse this rule instead of reimplementing it.
+    """
+    stype = (sec_type or "").strip().upper()
+    expiry = _parse_raw_expiry_date(raw_expiry)
     if expiry is None:
         return None, None
 
-    option_expiry_date = expiry.isoformat() if sec_type in {"OPT", "FOP"} else None
+    option_expiry_date = expiry.isoformat() if stype in {"OPT", "FOP"} else None
     return option_expiry_date, (expiry - date.today()).days
+
+
+def _derive_option_expiry_and_dte(position: Position) -> tuple[str | None, int | None]:
+    return _option_expiry_and_dte(position.sec_type, position.last_trade_date)
 
 
 def _account_alias(acct: Account | None, account_id: int) -> str:

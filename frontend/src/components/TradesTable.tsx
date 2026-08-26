@@ -790,6 +790,15 @@ export default function TradesTable() {
             </button>
             <button
               onClick={() => {
+                void kickOffTradesSync("3 day sync", { days: 3 });
+              }}
+              disabled={syncing}
+              className="whitespace-nowrap rounded border border-blue-300 px-3 py-1 text-sm text-blue-700 hover:bg-blue-50 disabled:opacity-50"
+            >
+              {syncing ? "Queueing..." : "3 Days"}
+            </button>
+            <button
+              onClick={() => {
                 void kickOffTradesSync("Full sync", { days: 7 });
               }}
               disabled={syncing}
