@@ -17,12 +17,18 @@ import {
   DEMO_POSITIONS,
   DEMO_STRATEGIES,
   DEMO_TRADE_EXECUTIONS,
-  DEMO_TRADE_GROUPS,
   demoGroupExecutions,
   demoTradeGroupDetail,
+  demoTradeGroupRows,
 } from "./demoData";
 
 type Json = unknown;
+
+function splitOnce(value: string, separator: string): [string, string?] {
+  const index = value.indexOf(separator);
+  if (index === -1) return [value];
+  return [value.slice(0, index), value.slice(index + separator.length)];
+}
 
 function jsonResponse(body: Json, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -43,15 +49,22 @@ function demoWorkerStatuses(): Json {
   }));
 }
 
-// Resolve a GET request path (already stripped of the API base + query) to a
-// fixture payload. Returns undefined when no fixture matches.
-function routeGet(path: string): Json | undefined {
+// Resolve a GET request path (stripped of the API base) plus its query params
+// to a fixture payload. Returns undefined when no fixture matches.
+function routeGet(path: string, params: URLSearchParams): Json | undefined {
   if (path === "/positions") return DEMO_POSITIONS;
   if (path === "/accounts") return DEMO_ACCOUNTS;
   if (path === "/flexquery-tokens") return DEMO_FLEXQUERY_TOKENS;
   if (path === "/workers/status") return demoWorkerStatuses();
   if (path === "/strategies") return DEMO_STRATEGIES;
-  if (path === "/trade-groups") return DEMO_TRADE_GROUPS;
+  if (path === "/trade-groups") {
+    return demoTradeGroupRows({
+      status: params.get("status"),
+      accountId: params.get("account_id"),
+      instrument: params.get("instrument"),
+      includeIntraday: params.get("include_intraday") === "true",
+    });
+  }
   if (path === "/trade-executions") return DEMO_TRADE_EXECUTIONS;
 
   const execMatch = path.match(/^\/trade-groups\/(\d+)\/executions$/);
@@ -64,9 +77,13 @@ function routeGet(path: string): Json | undefined {
   return undefined;
 }
 
-function handle(method: string, path: string): Response {
+function handle(
+  method: string,
+  path: string,
+  params: URLSearchParams,
+): Response {
   if (method === "GET") {
-    const body = routeGet(path);
+    const body = routeGet(path, params);
     if (body !== undefined) return jsonResponse(body);
     // Unknown GET: most endpoints return lists, so an empty array yields a
     // clean empty state rather than an error.
@@ -104,8 +121,11 @@ export function installDemoApi(): void {
       const method = (
         init?.method ?? (input instanceof Request ? input.method : "GET")
       ).toUpperCase();
-      const path = url.slice(API_BASE_URL.length).split("?")[0];
-      return handle(method, path);
+      const [path, search = ""] = splitOnce(
+        url.slice(API_BASE_URL.length),
+        "?",
+      );
+      return handle(method, path, new URLSearchParams(search));
     }
 
     return realFetch(input as RequestInfo, init);

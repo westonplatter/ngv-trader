@@ -61,6 +61,50 @@ Conventions:
 - `kata quickstart` prints the full agent contract; `kata --help` lists all commands.
 - The MCP server (`kata mcp serve`) is not registered in `.mcp.json` — use the CLI.
 
+## Issue Tracking (beads)
+
+Issues also live in [beads](https://beads.gascity.com/getting-started/quickstart) —
+a dependency-aware ledger stored in an embedded Dolt database under `.beads/`
+and driven by the `bd` CLI. Ids are hash-based and prefixed with the repo
+(e.g. `ngv-trader-xms`), not numbers. There is no `--project` flag: `bd` walks
+up from the cwd to find `.beads/`.
+
+Adding an issue:
+
+```bash
+bd create "Add 3 Days trade sync button to Trades page" \
+  -t feature -p 2 -l "frontend,trades" \
+  -d "What changes and where, with file paths." \
+  --acceptance "Observable done condition."
+```
+
+- `-t` type: `task` (default), `bug`, `feature`, `chore`, `epic`, `decision`, `spike`, `story`. `bd types` lists them.
+- `-p` priority: `0`–`4`, 0 highest, default `2`.
+- `-l` labels: comma-separated.
+- `--parent <id>` files a child under an epic; `--deps 'blocks:<id>'` (or `bd dep add <id> <blocker>`) records a blocker.
+- `--silent` prints only the new id — use it when scripting. `--dry-run` previews.
+
+Search before creating: `bd search "trade sync"`, `bd find-duplicates`.
+
+Working the queue:
+
+```bash
+bd ready                                  # open issues with no active blockers
+bd list --status open
+bd show ngv-trader-xms
+bd update ngv-trader-xms --claim          # assign to self + in_progress
+bd note ngv-trader-xms "approach notes"
+bd close ngv-trader-xms --reason "Shipped in PR #199; verified with bunx tsc --noEmit"
+```
+
+Conventions:
+
+- Write descriptions a fresh agent can act on: file paths, the observable behavior, acceptance criteria.
+- **Closing asserts the work is complete.** If it isn't, leave it open and `bd note <id> "what remains"`.
+- Add `--json` to any command when piping to `jq`; plain output otherwise.
+- `bd prime` prints the full agent workflow contract; `bd quickstart` is the short version.
+- Sync is Dolt-native (`bd dolt push` / `bd dolt pull`). Git hooks are not installed in this clone — `bd hooks install` to opt in.
+
 ## Task Delegation
 
 Do NOT make changes beyond what was explicitly requested. Do not proactively remove, move, or restructure columns, fields, or UI elements unless specifically asked. When in doubt, do less.

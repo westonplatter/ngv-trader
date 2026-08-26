@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "embedded",
+  "dolt_database": "ngv_trader",
+  "project_id": "5c25995b-f54d-4129-884f-28d808eaa3f1"
+}

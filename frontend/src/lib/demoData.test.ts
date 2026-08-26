@@ -10,6 +10,7 @@ import {
   DEMO_TRADE_GROUPS,
   demoGroupExecutions,
   demoTradeGroupDetail,
+  demoTradeGroupRows,
 } from "./demoData";
 
 const GROUP_NQ_ID = 101;
@@ -167,14 +168,14 @@ describe("demoGroupExecutions", () => {
     const result = demoGroupExecutions(GROUP_GLD_CC_ID);
     expect(result?.executions).toHaveLength(5);
     // Settled openings (ids 4-7) come first, in position order...
-    expect(result?.executions.slice(0, 4).map((e) => e.contract_display)).toEqual(
-      [
-        "GLD Stock",
-        "GLD Jul'26 311 Call",
-        "GLD Jul'26 317 Call",
-        "GLD Jul'26 324 Call",
-      ],
-    );
+    expect(
+      result?.executions.slice(0, 4).map((e) => e.contract_display),
+    ).toEqual([
+      "GLD Stock",
+      "GLD Jul'26 311 Call",
+      "GLD Jul'26 317 Call",
+      "GLD Jul'26 324 Call",
+    ]);
     // ...followed by the unsettled intraday fill.
     expect(result?.executions[4]).toMatchObject({
       id: 5103,
@@ -224,5 +225,128 @@ describe("demoGroupExecutions", () => {
     expect(result?.intraday_unrealized_pnl).toBe(125.0);
     expect(result?.intraday_total_pnl).toBe(125.0);
     expect(result?.marks_as_of).toBe(LIVE_MARK_TS);
+  });
+});
+// ── Strategy P&L table fixtures (U5) ─────────────────────────────────────────
+
+const GROUP_CL_CLOSED_ID = 106;
+const GROUP_CL_ROLL_ID = 107;
+
+describe("demoTradeGroupRows", () => {
+  test("every fixture carries instruments and a boolean staleness flag", () => {
+    for (const group of DEMO_TRADE_GROUPS) {
+      expect(Array.isArray(group.instruments)).toBe(true);
+      expect(group.instruments?.length).toBeGreaterThan(0);
+      expect(typeof group.live_is_stale).toBe("boolean");
+    }
+  });
+
+  test("the fixture set covers the states the table has to render", () => {
+    expect(DEMO_TRADE_GROUPS.some((g) => g.status === "closed")).toBe(true);
+    expect(
+      DEMO_TRADE_GROUPS.some((g) => g.primary_strategy_value === null),
+    ).toBe(true);
+    expect(DEMO_TRADE_GROUPS.some((g) => g.live_is_stale)).toBe(true);
+    expect(DEMO_TRADE_GROUPS.some((g) => g.instruments?.includes("CL"))).toBe(
+      true,
+    );
+    expect(DEMO_TRADE_GROUPS.some((g) => !g.instruments?.includes("CL"))).toBe(
+      true,
+    );
+  });
+
+  test("an instrument pattern returns only the matching groups", () => {
+    const rows = demoTradeGroupRows({ instrument: "CL.*", status: "all" });
+    expect(rows.map((g) => g.id).sort()).toEqual([
+      GROUP_CL_CLOSED_ID,
+      GROUP_CL_ROLL_ID,
+    ]);
+  });
+
+  test("the instrument pattern is case-insensitive and matches names too", () => {
+    expect(demoTradeGroupRows({ instrument: "cl", status: "all" }).length).toBe(
+      2,
+    );
+    expect(
+      demoTradeGroupRows({ instrument: "Momentum", status: "all" }).map(
+        (g) => g.id,
+      ),
+    ).toEqual([GROUP_NQ_ID]);
+  });
+
+  test("a malformed pattern matches nothing instead of throwing", () => {
+    expect(demoTradeGroupRows({ instrument: "CL[", status: "all" })).toEqual(
+      [],
+    );
+  });
+
+  test("status=open excludes the closed fixture", () => {
+    const ids = demoTradeGroupRows({ status: "open" }).map((g) => g.id);
+    expect(ids).not.toContain(GROUP_CL_CLOSED_ID);
+    expect(ids).toContain(GROUP_NQ_ID);
+  });
+
+  test("include_intraday=false leaves every overlay field null", () => {
+    for (const group of demoTradeGroupRows({ status: "all" })) {
+      expect(group.intraday_total_pnl).toBeNull();
+      expect(group.intraday_realized_pnl).toBeNull();
+      expect(group.intraday_unrealized_pnl).toBeNull();
+      expect(group.realized_pnl).toBeNull();
+      expect(group.unrealized_pnl).toBeNull();
+      expect(group.marks_as_of).toBeNull();
+      expect(group.live_is_stale).toBe(false);
+      expect(group.instruments).toBeNull();
+      // total_pnl is the pre-existing field and stays populated.
+    }
+    expect(
+      demoTradeGroupRows({ status: "all" }).some((g) => g.total_pnl !== null),
+    ).toBe(true);
+  });
+
+  test("a settled-only group reports no live mark", () => {
+    const rows = demoTradeGroupRows({ status: "all", includeIntraday: true });
+    expect(
+      rows.find((g) => g.id === GROUP_ES_DIAGONAL_ID)?.marks_as_of,
+    ).toBeNull();
+    expect(rows.find((g) => g.id === GROUP_NQ_ID)?.marks_as_of).toBe(
+      LIVE_MARK_TS,
+    );
+  });
+
+  test("include_intraday=true populates the split from the detail helper", () => {
+    const rows = demoTradeGroupRows({ status: "all", includeIntraday: true });
+    const nq = rows.find((g) => g.id === GROUP_NQ_ID);
+    const detail = demoGroupExecutions(GROUP_NQ_ID);
+
+    expect(nq?.realized_pnl).toBe(detail?.total_realized_pnl ?? null);
+    expect(nq?.unrealized_pnl).toBe(detail?.total_unrealized_pnl ?? null);
+    expect(nq?.intraday_total_pnl).toBe(detail?.intraday_total_pnl ?? null);
+    expect(nq?.marks_as_of).toBe(detail?.marks_as_of ?? null);
+    expect(nq?.instruments).toEqual(["NQ"]);
+  });
+
+  test("the two CL fixtures carry their own figures (nothing is mapped to them)", () => {
+    const rows = demoTradeGroupRows({ status: "all", includeIntraday: true });
+    const closed = rows.find((g) => g.id === GROUP_CL_CLOSED_ID);
+    expect(closed?.realized_pnl).toBe(4210.0);
+    expect(closed?.unrealized_pnl).toBeNull();
+    expect(closed?.intraday_total_pnl).toBe(4210.0);
+    expect(closed?.primary_strategy_value).toBeNull();
+  });
+
+  test("a stale group keeps its own older mark timestamp", () => {
+    const roll = demoTradeGroupRows({
+      status: "all",
+      includeIntraday: true,
+    }).find((g) => g.id === GROUP_CL_ROLL_ID);
+    expect(roll?.live_is_stale).toBe(true);
+    expect(roll?.marks_as_of).toBe("2026-06-20T19:58:40Z");
+  });
+
+  test("the account filter narrows by account id", () => {
+    expect(demoTradeGroupRows({ status: "all", accountId: "999" })).toEqual([]);
+    expect(demoTradeGroupRows({ status: "all", accountId: "1" }).length).toBe(
+      DEMO_TRADE_GROUPS.length,
+    );
   });
 });
