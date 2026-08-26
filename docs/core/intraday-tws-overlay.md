@@ -96,10 +96,18 @@ Key rules (defined once in the service):
 
 `src/services/intraday_overlay.py` holds pure, DB-free merge/PnL helpers:
 
-- `merge_positions(flex_rows, live_rows, quotes)` — prefer live qty/cost/mark,
-  fall back to the FlexQuery row; drop net-closed; surface opened-today rows.
+- `merge_positions(flex_rows, live_rows, quotes, magnifiers, metrics)` — prefer
+  live qty/cost/mark, fall back to the FlexQuery row; drop net-closed; surface
+  opened-today rows.
 - `intraday_unrealized_total`, `marks_as_of`, `dedupe_live_realized`.
 - `compute_unrealized` / `parse_multiplier` — the shared cost-basis convention.
+
+Every consumer loads its rows through `load_overlay_context()` in
+`src/services/trade_group_pnl.py` — positions, live positions, quotes, live
+executions, price magnifiers, security-master expiries, and option metrics in a
+fixed six queries. It is one loader on purpose: a magnifier fetched on one path
+and not another is how a cents-quoted future comes out 100x wrong on one screen
+and right on the next.
 
 **Cost-basis convention (pending live validation).** IBKR `avgCost` from
 `ib.positions()` is the per-unit cost **already including the contract
@@ -117,6 +125,18 @@ the responses match prior behavior.
   `(account_id, con_id)` pairs. Adds per-position `source` / `mark` / `mark_ts` /
   `live_unrealized` and top-level `intraday_unrealized_pnl` /
   `intraday_realized_pnl` / `intraday_total_pnl` / `marks_as_of`.
+- `GET /trade-groups?include_intraday=true` — the same overlay computed for
+  **many groups at once**, behind the Strategy P&L table. Loads the union of
+  every visible group's pairs once, then slices per group and reuses
+  `overlay_totals()`, so the query count is fixed in the row count. The merge
+  itself runs per group rather than once over the union: `merge_positions()`
+  drops a settled row when _its account_ has live data, so a union-wide merge
+  would net-close a group whose own pairs have no live rows. Defaults to `false`
+  so the Strategies left panel and the group picker keep their two-query cost.
+  Adds a group-level `live_is_stale`, true only when the group has live-sourced
+  marks and **every** one of them is stale — a mix of fresh and stale legs is
+  not flagged, because `marks_as_of` already carries the age and flagging a whole
+  row on one stale leg trains the operator to ignore the badge.
 - `GET /positions` — portfolio-wide overlay with its own inline merge (not the
   `merge_positions()` helper); live qty/cost/mark preferred, opened-today
   positions surfaced as additional rows. Unlike `merge_positions()`, it has no
@@ -128,7 +148,8 @@ the responses match prior behavior.
 
 ## UI
 
-Both the Strategies page (`/strategies`) and the Positions page show a **"Refresh Live (TWS)"**
+The Strategies page (`/strategies`), the Strategy P&L table (`/strategies/table`),
+and the Positions page each show a **"Refresh Live (TWS)"**
 button that enqueues `intraday.sync.tws` and re-fetches after the job runs. Live
 mark / live-unrealized columns and intraday P&L totals render alongside the
 settled values, with a freshness indicator: `live as of HH:MM` when a fresh
