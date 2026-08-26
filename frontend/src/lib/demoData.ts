@@ -64,6 +64,13 @@ const GROUP_GLD_CC: TradeGroupRef = { id: 103, name: "GLD Covered Calls" };
 // Two groups opened intraday — entirely live/unsettled until they settle T+1.
 const GROUP_MES_SCALP: TradeGroupRef = { id: 104, name: "MES Intraday Scalp" };
 const GROUP_SPY_PUTS: TradeGroupRef = { id: 105, name: "SPY Protective Puts" };
+// Two CL groups so the instrument filter has something to narrow to: one
+// closed and untagged, one open with a stale live mark.
+const GROUP_CL_CLOSED: TradeGroupRef = {
+  id: 106,
+  name: "CL Dec'27 Short Gamma",
+};
+const GROUP_CL_ROLL: TradeGroupRef = { id: 107, name: "CL Calendar Roll" };
 
 export const DEMO_POSITIONS: Position[] = [
   // ── Long 3 NQ futures contracts ────────────────────────────────────────────
@@ -604,6 +611,16 @@ export const DEMO_STRATEGIES: Tag[] = [
 export const DEMO_TRADE_GROUPS: TradeGroup[] = [
   {
     id: GROUP_NQ.id,
+    instruments: ["NQ"],
+    // The P&L split is filled in by demoTradeGroupRows from the same helper
+    // the detail endpoint uses, so the table and the panel agree.
+    realized_pnl: null,
+    unrealized_pnl: null,
+    intraday_unrealized_pnl: null,
+    intraday_realized_pnl: null,
+    intraday_total_pnl: null,
+    marks_as_of: LIVE_MARK_TS,
+    live_is_stale: false,
     account_id: ACCOUNT_ID,
     name: GROUP_NQ.name,
     notes: "Long NQ futures — trend continuation.",
@@ -618,6 +635,16 @@ export const DEMO_TRADE_GROUPS: TradeGroup[] = [
   },
   {
     id: GROUP_ES_DIAGONAL.id,
+    instruments: ["ES"],
+    // The P&L split is filled in by demoTradeGroupRows from the same helper
+    // the detail endpoint uses, so the table and the panel agree.
+    realized_pnl: null,
+    unrealized_pnl: null,
+    intraday_unrealized_pnl: null,
+    intraday_realized_pnl: null,
+    intraday_total_pnl: null,
+    marks_as_of: null,
+    live_is_stale: false,
     account_id: ACCOUNT_ID,
     name: GROUP_ES_DIAGONAL.name,
     notes: "Long call diagonal: short-dated 6000C vs longer-dated 6100C.",
@@ -632,6 +659,16 @@ export const DEMO_TRADE_GROUPS: TradeGroup[] = [
   },
   {
     id: GROUP_GLD_CC.id,
+    instruments: ["GLD"],
+    // The P&L split is filled in by demoTradeGroupRows from the same helper
+    // the detail endpoint uses, so the table and the panel agree.
+    realized_pnl: null,
+    unrealized_pnl: null,
+    intraday_unrealized_pnl: null,
+    intraday_realized_pnl: null,
+    intraday_total_pnl: null,
+    marks_as_of: LIVE_MARK_TS,
+    live_is_stale: false,
     account_id: ACCOUNT_ID,
     name: GROUP_GLD_CC.name,
     notes: "200 GLD shares overwritten with calls at ATM / +2% / +4%.",
@@ -665,6 +702,16 @@ thesis: gold consolidating; collect theta while range-bound
   },
   {
     id: GROUP_MES_SCALP.id,
+    instruments: ["MES"],
+    // The P&L split is filled in by demoTradeGroupRows from the same helper
+    // the detail endpoint uses, so the table and the panel agree.
+    realized_pnl: null,
+    unrealized_pnl: null,
+    intraday_unrealized_pnl: null,
+    intraday_realized_pnl: null,
+    intraday_total_pnl: null,
+    marks_as_of: LIVE_MARK_TS,
+    live_is_stale: false,
     account_id: ACCOUNT_ID,
     name: GROUP_MES_SCALP.name,
     notes: "Long MES scalp opened intraday — live fills, not yet settled.",
@@ -679,6 +726,16 @@ thesis: gold consolidating; collect theta while range-bound
   },
   {
     id: GROUP_SPY_PUTS.id,
+    instruments: ["SPY"],
+    // The P&L split is filled in by demoTradeGroupRows from the same helper
+    // the detail endpoint uses, so the table and the panel agree.
+    realized_pnl: null,
+    unrealized_pnl: null,
+    intraday_unrealized_pnl: null,
+    intraday_realized_pnl: null,
+    intraday_total_pnl: null,
+    marks_as_of: LIVE_MARK_TS,
+    live_is_stale: false,
     account_id: ACCOUNT_ID,
     name: GROUP_SPY_PUTS.name,
     notes: "Long SPY puts as an intraday hedge — live fill, not yet settled.",
@@ -691,8 +748,55 @@ thesis: gold consolidating; collect theta while range-bound
     opened_by: "demo",
     closed_by: null,
   },
+  {
+    id: GROUP_CL_CLOSED.id,
+    instruments: ["CL"],
+    // Closed flat: realized only, no open leg to mark.
+    realized_pnl: 4210.0,
+    unrealized_pnl: null,
+    intraday_unrealized_pnl: null,
+    intraday_realized_pnl: 4210.0,
+    intraday_total_pnl: 4210.0,
+    marks_as_of: null,
+    live_is_stale: false,
+    account_id: ACCOUNT_ID,
+    name: GROUP_CL_CLOSED.name,
+    notes: "Short gamma campaign, closed flat in May.",
+    meta_yaml: null,
+    total_pnl: 4210.0,
+    status: "closed",
+    // Untagged on purpose: the table must render a "No Strategy" fallback.
+    primary_strategy_value: null,
+    opened_at: "2026-04-02T13:40:00Z",
+    closed_at: "2026-05-29T20:05:00Z",
+    opened_by: "demo",
+    closed_by: "demo",
+  },
+  {
+    id: GROUP_CL_ROLL.id,
+    instruments: ["CL"],
+    realized_pnl: -320.0,
+    unrealized_pnl: -1555.0,
+    intraday_unrealized_pnl: -1555.0,
+    intraday_realized_pnl: -320.0,
+    intraday_total_pnl: -1875.0,
+    // A live snapshot from the prior session with a newer settled import behind
+    // it — the case the stale badge exists for.
+    marks_as_of: "2026-06-20T19:58:40Z",
+    live_is_stale: true,
+    account_id: ACCOUNT_ID,
+    name: GROUP_CL_ROLL.name,
+    notes: "Rolling the front-month short into the next expiry.",
+    meta_yaml: null,
+    total_pnl: -1875.0,
+    status: "open",
+    primary_strategy_value: DEMO_STRATEGIES[0].value,
+    opened_at: "2026-06-18T15:11:00Z",
+    closed_at: null,
+    opened_by: "demo",
+    closed_by: null,
+  },
 ];
-
 // Map each group to the position rows that belong to it (by position id).
 const GROUP_POSITION_IDS: Record<number, number[]> = {
   [GROUP_NQ.id]: [1],
@@ -943,7 +1047,91 @@ export function demoGroupExecutions(
   };
 }
 
-// ── /trade-executions (Trades page) ──────────────────────────────────────────
+// ── /trade-groups (Strategy P&L table) ───────────────────────────────────────
+
+export interface DemoTradeGroupQuery {
+  status?: string | null;
+  accountId?: string | null;
+  instrument?: string | null;
+  includeIntraday?: boolean;
+}
+
+/**
+ * The `GET /trade-groups` list, with the same filters and opt-in shape the
+ * backend has — so the demo screenshot shows real filtering rather than a
+ * static list.
+ *
+ * The P&L split is derived from `demoGroupExecutions`, the same helper the
+ * detail panel reads, so a row here and that group's panel cannot disagree.
+ */
+export function demoTradeGroupRows(
+  query: DemoTradeGroupQuery = {},
+): TradeGroup[] {
+  const { status, accountId, instrument, includeIntraday = false } = query;
+
+  let pattern: RegExp | null = null;
+  if (instrument && instrument.trim()) {
+    try {
+      pattern = new RegExp(instrument, "i");
+    } catch {
+      // The real backend answers 400 here; the demo has no error channel, so
+      // fall through to "matches nothing" rather than throwing inside fetch.
+      return [];
+    }
+  }
+
+  return DEMO_TRADE_GROUPS.filter((group) => {
+    if (status && status !== "all" && group.status !== status) return false;
+    if (
+      accountId &&
+      accountId !== "all" &&
+      String(group.account_id) !== accountId
+    ) {
+      return false;
+    }
+    if (pattern) {
+      const matchesInstrument = (group.instruments ?? []).some((symbol) =>
+        pattern.test(symbol),
+      );
+      if (!matchesInstrument && !pattern.test(group.name)) return false;
+    }
+    return true;
+  }).map((group) => {
+    if (!includeIntraday) {
+      // Existing consumers read total_pnl alone; everything the overlay adds
+      // comes back null, exactly as the backend answers a default request.
+      return {
+        ...group,
+        realized_pnl: null,
+        unrealized_pnl: null,
+        intraday_unrealized_pnl: null,
+        intraday_realized_pnl: null,
+        intraday_total_pnl: null,
+        marks_as_of: null,
+        live_is_stale: false,
+        instruments: pattern ? group.instruments : null,
+      };
+    }
+    const detail = demoGroupExecutions(group.id);
+    const mapped =
+      (detail?.open_positions.length ?? 0) > 0 ||
+      (detail?.executions.length ?? 0) > 0;
+    // Groups with positions or fills behind them derive their split from the
+    // detail helper, so a row and that group's panel cannot disagree. Groups
+    // with nothing mapped carry their own figures on the fixture.
+    if (!mapped) return { ...group };
+    return {
+      ...group,
+      realized_pnl: detail?.total_realized_pnl ?? null,
+      unrealized_pnl: detail?.total_unrealized_pnl ?? null,
+      intraday_unrealized_pnl: detail?.intraday_unrealized_pnl ?? null,
+      intraday_realized_pnl: detail?.intraday_realized_pnl ?? null,
+      intraday_total_pnl: detail?.intraday_total_pnl ?? null,
+    };
+  });
+}
+
+// ── /trade-executions (Trades page) ─────────────────────────────────────────
 // Execution rows behind the Trades table. Enough shape to exercise the columns
 // that matter: a grouped single-leg trade, a grouped two-leg combo (BAG summary
 // plus its legs), and an ungrouped trade so the "+ Assign" affordance renders

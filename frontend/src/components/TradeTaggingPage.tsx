@@ -2,6 +2,7 @@ import type { CSSProperties } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { API_BASE_URL } from "../config";
+import type { TradeGroupPnlRow } from "../lib/tradeGroups";
 import { usePrivacy } from "../contexts/usePrivacy";
 import { useResizableColumn } from "../hooks/useResizableColumn";
 import { ibCodesTitle, parseIbCodes } from "../lib/ibCodes";
@@ -9,21 +10,18 @@ import { linkify } from "../utils/linkify";
 import { formatGreek, formatPercent } from "../utils/number";
 import { PRIVACY_MASK, formatRelativeReturn } from "../utils/privacy";
 
-export type TradeGroup = {
-  id: number;
-  account_id: number | null;
-  name: string;
+// The list-endpoint row (id/name/status/strategy plus the P&L split and
+// instruments, all in ../lib/tradeGroups) with the fields only the workspace
+// needs. One source for the P&L shape, so this page and the Strategy P&L table
+// cannot describe the same payload differently.
+export type TradeGroup = TradeGroupPnlRow & {
   notes: string | null;
   meta_yaml: string | null;
   status: "open" | "closed" | "archived";
-  primary_strategy_value: string | null;
   opened_at: string;
   closed_at: string | null;
   opened_by: string | null;
   closed_by: string | null;
-  // Settled Total PnL (realized + settled unrealized) for the group. Matches the
-  // detail panel's "Total PnL" headline. Null when the group has no PnL data.
-  total_pnl: number | null;
 };
 
 export type TradeGroupDetail = TradeGroup & {
