@@ -14,7 +14,7 @@ from typing import Any
 from sqlalchemy import event
 from sqlalchemy.orm import Session
 
-from src.models import ContractRef
+from src.models import Account, ContractRef
 from src.services.trade_group_pnl import (
     compute_trade_group_pnl,
     trade_group_batch_pnls,
