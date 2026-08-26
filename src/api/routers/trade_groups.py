@@ -5,7 +5,7 @@ from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, Field
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, func, literal, or_, select
 from sqlalchemy.orm import Session
 
 from src.api.deps import get_db
@@ -243,6 +243,43 @@ def _primary_strategy_subquery():
     )
 
 
+def _group_account_exposure(account_id: int):
+    """Correlated: the group is owned by this account, or holds a fill in it.
+
+    ``trade_groups.account_id`` is only the account of the group's *first*
+    assigned fill, and V1 assignment is deliberately cross-account — so a group
+    routinely holds legs in an account it is not "owned" by. Selecting on
+    ownership alone hid those groups from that account's view even though the
+    detail panel reports real capital and P&L for them there.
+
+    The ownership arm is kept so a group with no fills yet still appears
+    somewhere; the live arm covers a group whose only exposure in an account is
+    a preemptively-tagged unsettled fill.
+    """
+    settled_leg = (
+        select(literal(1))
+        .select_from(TradeGroupExecution)
+        .join(TradeExecution, TradeExecution.id == TradeGroupExecution.trade_execution_id)
+        .where(
+            TradeGroupExecution.trade_group_id == TradeGroup.id,
+            TradeExecution.account_id == account_id,
+        )
+        .correlate(TradeGroup)
+        .exists()
+    )
+    live_leg = (
+        select(literal(1))
+        .select_from(TradeGroupLiveExecution)
+        .where(
+            TradeGroupLiveExecution.trade_group_id == TradeGroup.id,
+            TradeGroupLiveExecution.account_id == account_id,
+        )
+        .correlate(TradeGroup)
+        .exists()
+    )
+    return or_(TradeGroup.account_id == account_id, settled_leg, live_leg)
+
+
 def _group_tag_exists(tag_type: str, value: str):
     """Correlated EXISTS: the group carries a ``tag_type`` tag with this value."""
     return (
@@ -305,7 +342,7 @@ def _filtered_group_query(  # noqa: PLR0913
     """
     stmt = select(TradeGroup, _primary_strategy_subquery())
     if account_id is not None:
-        stmt = stmt.where(TradeGroup.account_id == account_id)
+        stmt = stmt.where(_group_account_exposure(account_id))
     if status_filter is not None:
         stmt = stmt.where(TradeGroup.status == status_filter)
     if opened_from is not None:
@@ -374,9 +411,10 @@ def list_trade_groups(  # noqa: PLR0913
     overlay is requested or an ``instrument`` filter was supplied.
 
     ``account_id`` narrows both the rows *and* the figures on them. Trade-group
-    membership is cross-account, so a group can hold legs in several accounts;
-    filtering to one account reports that account's slice of each group, which
-    is what the detail endpoint's per-account breakdown shows.
+    membership is cross-account, so a group can hold legs in several accounts: a
+    group is listed when it is owned by the account *or* holds a fill there, and
+    its figures report that account's slice — which is what the detail
+    endpoint's per-account breakdown shows.
     """
     try:
         stmt = _filtered_group_query(

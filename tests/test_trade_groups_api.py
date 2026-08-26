@@ -12,6 +12,7 @@ from src.api.deps import get_db
 from src.api.main import app
 from tests.trade_group_factories import (
     ACCOUNT_LSC,
+    ACCOUNT_THIRD,
     CON_CL,
     CON_ES,
     CON_NG,
@@ -249,7 +250,7 @@ def test_account_filter_scopes_the_figures_not_just_the_row_list(client: TestCli
 
 
 def test_account_scoped_row_matches_the_detail_endpoints_per_account_breakdown(client: TestClient, db_session: Session) -> None:
-    """R6 extended: the scoped row equals that account's slice on the panel."""
+    """R6 extended: each account's row equals that account's slice on the panel."""
     main = make_account(db_session)
     lsc = make_account(db_session, ACCOUNT_LSC, "lsc")
     group = make_group(db_session, "Cross-account campaign", lsc.id)
@@ -260,23 +261,22 @@ def test_account_scoped_row_matches_the_detail_endpoints_per_account_breakdown(c
     db_session.flush()
 
     detail = client.get(f"{BASE}/{group.id}/executions").json()
-    panel = {row["account_id"]: row for row in detail["by_account"]}[lsc.id]
-    row = _by_name(client.get(BASE, params={"include_intraday": "true", "account_id": lsc.id}).json())["Cross-account campaign"]
+    by_account = {row["account_id"]: row for row in detail["by_account"]}
 
-    assert row["realized_pnl"] == panel["realized_pnl"]
-    assert row["unrealized_pnl"] == panel["unrealized_pnl"]
-    assert row["intraday_total_pnl"] == panel["intraday_total_pnl"]
+    for account in (main, lsc):
+        row = _by_name(client.get(BASE, params={"include_intraday": "true", "account_id": account.id}).json())["Cross-account campaign"]
+        panel = by_account[account.id]
+        assert row["realized_pnl"] == panel["realized_pnl"], account.alias
+        assert row["unrealized_pnl"] == panel["unrealized_pnl"], account.alias
+        assert row["intraday_total_pnl"] == panel["intraday_total_pnl"], account.alias
 
 
-def test_account_filter_selects_rows_by_group_ownership_not_leg_membership(client: TestClient, db_session: Session) -> None:
-    """Characterizes today's row-selection rule, which the figures do not share.
+def test_account_filter_lists_a_group_held_in_that_account_not_only_owned_by_it(client: TestClient, db_session: Session) -> None:
+    """A group's legs, not just its owning account, put it in an account's view.
 
-    ``account_id`` picks rows by ``trade_groups.account_id`` (the group's owning
-    account, set from its first assigned fill). A group owned by one account but
-    holding legs in another is therefore absent from the other account's view,
-    even though it has real exposure there. Scoping the *figures* per account is
-    what this change fixed; broadening row selection to leg membership is a
-    separate product decision, so it is pinned here rather than left ambiguous.
+    ``trade_groups.account_id`` is only the account of the first assigned fill,
+    so selecting on it alone hid cross-account groups from the very account
+    whose capital they were using.
     """
     main = make_account(db_session)
     lsc = make_account(db_session, ACCOUNT_LSC, "lsc")
@@ -288,4 +288,25 @@ def test_account_filter_selects_rows_by_group_ownership_not_leg_membership(clien
     under_leg_account = client.get(BASE, params={"account_id": main.id}).json()
 
     assert [r["name"] for r in under_owner] == ["Owned by lsc, legs in main"]
-    assert under_leg_account == []
+    assert [r["name"] for r in under_leg_account] == ["Owned by lsc, legs in main"]
+
+
+def test_account_filter_still_excludes_a_group_with_no_exposure_there(client: TestClient, db_session: Session) -> None:
+    """Broadening selection to leg membership must not become match-everything."""
+    main = make_account(db_session)
+    lsc = make_account(db_session, ACCOUNT_LSC, "lsc")
+    third = make_account(db_session, ACCOUNT_THIRD, "other")
+    group = make_group(db_session, "Owned by lsc, legs in main", lsc.id)
+    make_execution(db_session, group=group, account=main, con_id=CON_CL, realized=1_000.0, exec_id=make_exec_id(83000001), raw_symbol="CL")
+    db_session.flush()
+
+    assert client.get(BASE, params={"account_id": third.id}).json() == []
+
+
+def test_a_group_with_no_fills_yet_still_appears_under_its_owning_account(client: TestClient, db_session: Session) -> None:
+    """The ownership arm is why a brand-new group does not vanish everywhere."""
+    main = make_account(db_session)
+    make_group(db_session, "No fills yet", main.id)
+    db_session.flush()
+
+    assert [r["name"] for r in client.get(BASE, params={"account_id": main.id}).json()] == ["No fills yet"]
