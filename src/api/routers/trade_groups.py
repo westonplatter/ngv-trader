@@ -9,7 +9,7 @@ from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
 from src.api.deps import get_db
-from src.api.routers.positions import _derive_option_expiry_and_dte
+from src.api.routers.positions import _option_expiry_and_dte
 from src.api.routers.tags import TagLinkResponse, _normalize_tag_value
 from src.api.routers.trades import (
     _contract_display_from_raw,
@@ -1192,9 +1192,16 @@ def _build_open_positions_overlay(
     # multiplier's dollar unit before merge_positions computes live PnL.
     overlay_con_ids = {p.con_id for p in flex_rows} | {p.con_id for p in live_rows}
     magnifiers: dict[int, int] = {}
+    # Security-master expiry, so a position opened intraday (no settled snapshot)
+    # still renders its expiry/DTE instead of collapsing onto same-strike siblings.
+    expiries: dict[int, str] = {}
     metrics: dict[int, LatestOptionMetrics] = {}
     if overlay_con_ids:
-        magnifiers = dict(db.execute(select(ContractRef.con_id, ContractRef.price_magnifier).where(ContractRef.con_id.in_(list(overlay_con_ids)))).all())
+        refs = db.execute(
+            select(ContractRef.con_id, ContractRef.price_magnifier, ContractRef.contract_expiry).where(ContractRef.con_id.in_(list(overlay_con_ids)))
+        ).all()
+        magnifiers = {con_id: magnifier for con_id, magnifier, _ in refs}
+        expiries = {con_id: expiry for con_id, _, expiry in refs if expiry}
         metrics = {m.con_id: m for m in db.execute(select(LatestOptionMetrics).where(LatestOptionMetrics.con_id.in_(list(overlay_con_ids)))).scalars().all()}
     views = merge_positions(flex_rows, live_rows, quotes, magnifiers, metrics)
 
@@ -1211,6 +1218,7 @@ def _build_open_positions_overlay(
             flex_by_key.get((view.account_id, view.con_id)),
             alias_by_id.get(view.account_id),
             live_fetched_by_key.get((view.account_id, view.con_id)),
+            expiries.get(view.con_id),
         )
         for view in views
     ]
@@ -1255,7 +1263,7 @@ def _build_open_positions_overlay(
     )
 
 
-def _view_to_open_position(view, flex, account, live_fetched_at) -> TradeGroupOpenPositionItem:
+def _view_to_open_position(view, flex, account, live_fetched_at, ref_expiry=None) -> TradeGroupOpenPositionItem:
     """Map a unified PositionView to the response item (settled fields kept additive)."""
     # Build the Contract label exactly like the Positions table does: off the
     # settled snapshot row when there is one (its symbol/local_symbol carry the
@@ -1266,9 +1274,12 @@ def _view_to_open_position(view, flex, account, live_fetched_at) -> TradeGroupOp
     display_sec_type = (flex.sec_type if flex else None) or view.sec_type
     display_right = (flex.right if flex else None) or view.right
     display_strike = (flex.strike if flex else None) if flex and flex.strike is not None else view.strike
+    # Expiry comes off the settled snapshot when there is one, else the security
+    # master. Without it two same-strike legs of a calendar render identically.
+    raw_expiry = (flex.last_trade_date if flex else None) or ref_expiry
     inferred_month = infer_contract_month_from_local_symbol(
         local_symbol=display_local_symbol,
-        contract_expiry=flex.last_trade_date if flex else None,
+        contract_expiry=raw_expiry,
         sec_type=display_sec_type,
     )
     display_name = contract_display_name(
@@ -1277,14 +1288,12 @@ def _view_to_open_position(view, flex, account, live_fetched_at) -> TradeGroupOp
         local_symbol=display_local_symbol,
         right=display_right,
         strike=display_strike,
-        contract_expiry=flex.last_trade_date if flex else None,
+        contract_expiry=raw_expiry,
         contract_month=inferred_month,
         exchange=flex.exchange if flex else None,
         trading_class=flex.trading_class if flex else None,
     )
-    # Expiry/DTE come off the settled snapshot's last_trade_date; a live-only
-    # row (opened today, no snapshot) has no expiry to derive from.
-    option_expiry_date, dte = _derive_option_expiry_and_dte(flex) if flex else (None, None)
+    option_expiry_date, dte = _option_expiry_and_dte(display_sec_type, raw_expiry)
     return TradeGroupOpenPositionItem(
         account_id=view.account_id,
         account_alias=(account.alias if account else None) or (account.account if account else None),
