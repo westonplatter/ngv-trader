@@ -119,7 +119,12 @@ export default function StrategyPnlTable() {
   }, [query]);
 
   useEffect(() => {
-    void load();
+    // Run through an async wrapper so `load`'s opening setLoading(true) lands
+    // after the effect body rather than synchronously inside it — same shape as
+    // the accounts effect below.
+    void (async () => {
+      await load();
+    })();
   }, [load]);
 
   useEffect(() => {
