@@ -379,7 +379,14 @@ def get_trade_group(trade_group_id: int, db: Session = DB_SESSION_DEPENDENCY):
         .scalars()
         .all()
     )
-    execution_count = db.execute(select(func.count()).select_from(TradeGroupExecution).where(TradeGroupExecution.trade_group_id == trade_group_id)).scalar_one()
+    # Counts both ledgers so the header matches the executions table, which lists
+    # live/unsettled rows alongside settled ones. A group opened today has all of
+    # its fills in trade_group_live_executions and would otherwise read zero.
+    settled_count = db.execute(select(func.count()).select_from(TradeGroupExecution).where(TradeGroupExecution.trade_group_id == trade_group_id)).scalar_one()
+    live_count = db.execute(
+        select(func.count()).select_from(TradeGroupLiveExecution).where(TradeGroupLiveExecution.trade_group_id == trade_group_id)
+    ).scalar_one()
+    execution_count = settled_count + live_count
 
     # Resolve the group's primary strategy value. This is a subquery-computed
     # field (not a column on TradeGroup), so model_validate leaves it None;
