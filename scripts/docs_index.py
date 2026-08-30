@@ -69,30 +69,55 @@ def doc_subdirs(directory: Path) -> list[Path]:
     return sorted(d for d in directory.iterdir() if d.is_dir() and any(d.rglob("*.md")))
 
 
+def render_table(header: list[str], rows: list[list[str]]) -> list[str]:
+    """A markdown table with columns padded the way Prettier formats them.
+
+    Emitting the *formatted* shape is what keeps regeneration a no-op. These
+    indexes are rewritten on every doc change and then reformatted by Prettier
+    at commit time (`trunk-fmt-pre-commit`), so a generator that emitted the
+    collapsed `| --- |` form produced a whole-table diff every single run.
+
+    Prettier's rule, which this mirrors: every cell in a column is padded to the
+    width of the widest cell in that column (header included), and the separator
+    is that many dashes — with a floor of three, the minimum a separator needs.
+    Width is measured in characters, so a full-width CJK cell would be padded a
+    column too narrow and Prettier would correct it on commit; every doc field
+    indexed here is Latin text.
+    """
+    widths = [max(3, *(len(row[i]) for row in [header, *rows])) for i in range(len(header))]
+
+    def line(cells: list[str]) -> str:
+        return "| " + " | ".join(cell.ljust(width) for cell, width in zip(cells, widths, strict=True)) + " |"
+
+    return [line(header), "| " + " | ".join("-" * width for width in widths) + " |", *(line(row) for row in rows)]
+
+
 def render_index(title: str, subdirs: list[Path], files: list[Path]) -> str:
     lines = [f"# {title}", "", GENERATED_BANNER, ""]
     if subdirs:
-        lines += ["## Directories", "", "| Directory | Index |", "| --- | --- |"]
-        for d in subdirs:
-            lines.append(f"| `{d.name}/` | [README.md]({d.name}/README.md) |")
+        lines += ["## Directories", ""]
+        lines += render_table(
+            ["Directory", "Index"],
+            [[f"`{d.name}/`", f"[README.md]({d.name}/README.md)"] for d in subdirs],
+        )
         lines.append("")
     include_specific_files = any(parse_specific_files(file) for file in files)
-    header = "| Doc | Status | Topics | Description |"
-    separator = "| --- | --- | --- | --- |"
+    header = ["Doc", "Status", "Topics", "Description"]
     if include_specific_files:
-        header = "| Doc | Status | Topics | Description | Specific files |"
-        separator = "| --- | --- | --- | --- | --- |"
-    lines += ["## Files", "", header, separator]
+        header.append("Specific files")
+    rows = []
     for f in files:
-        topics = parse_topics(f)
-        desc = parse_field(f, "description")
-        status = parse_field(f, "status")
-        label = parse_field(f, "title") or f.name
-        row = f"| [{label}]({f.name}) | {status} | {topics} | {desc} |"
+        row = [
+            f"[{parse_field(f, 'title') or f.name}]({f.name})",
+            parse_field(f, "status"),
+            parse_topics(f),
+            parse_field(f, "description"),
+        ]
         if include_specific_files:
-            specific_files = "<br>".join(f"`{path}`" for path in parse_specific_files(f))
-            row = f"{row} {specific_files} |"
-        lines.append(row)
+            row.append("<br>".join(f"`{path}`" for path in parse_specific_files(f)))
+        rows.append(row)
+    lines += ["## Files", ""]
+    lines += render_table(header, rows)
     return "\n".join(lines) + "\n"
 
 
