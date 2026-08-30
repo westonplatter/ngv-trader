@@ -26,7 +26,7 @@ the TWS UI during market hours; adjust here if avgCost semantics differ.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -34,6 +34,23 @@ from zoneinfo import ZoneInfo
 # Mountain Time via zoneinfo so DST transitions are handled correctly (no
 # hardcoded UTC offset).
 _MT_ZONE = ZoneInfo("America/Denver")
+
+# Reference timezone for the overlay-supersede watermark. Chicago because it is
+# the southern/western bound of the venues traded here: no exchange's trade date
+# runs more than one day ahead of the CT calendar date (CME rolls 17:00 CT, Blue
+# Ocean ATS runs 20:00-04:00 ET, ASX/Tokyo sit one day forward). That +1-day
+# bound is what makes the strict ">" comparison in is_overlay_superseded safe
+# for every instrument without a per-venue session calendar.
+_CT_ZONE = ZoneInfo("America/Chicago")
+
+# Instruments that trade nearly continuously, where an hours-old mark during an
+# open session is genuinely stale rather than a valid close.
+_CONTINUOUS_SEC_TYPES = frozenset({"FUT", "FOP"})
+
+# How old a continuously-traded instrument's mark may be before it stops
+# presenting as live. Equity and equity-option marks are not age-capped: their
+# last print is the close and stays valid until the next session.
+CONTINUOUS_MARK_MAX_AGE = timedelta(hours=1)
 
 
 def _midnight_mt(moment: datetime) -> datetime:
@@ -70,6 +87,79 @@ def is_live_stale(live_fetched_at: datetime | None, settled_fetched_at: datetime
     if live_fetched_at >= _midnight_mt(datetime.now(timezone.utc)):
         return False  # live snapshot is from today's MT calendar day — fresh
     return settled_fetched_at > _midnight_mt(live_fetched_at)
+
+
+def ct_date(moment: datetime) -> date:
+    """America/Chicago calendar date of a tz-aware instant.
+
+    This labels which trade date a capture belongs near, which is the sanctioned
+    use of an anchor (see the repo learning on anchors vs durations: an anchor is
+    correct for labeling a trade date, wrong for sizing a retention window).
+    """
+    return moment.astimezone(_CT_ZONE).date()
+
+
+def is_overlay_superseded(live_fetched_at: datetime | None, account_as_of: date | None) -> bool:
+    """True when a settled snapshot postdates a live overlay capture.
+
+    ``account_as_of`` is the newest ``Position.as_of_date`` for the capture's
+    account -- an account-level fact, so it is available even for a contract the
+    snapshot omits entirely. That is the whole point: a closed position has no
+    settled row to compare against, which is why the per-row ``is_live_stale``
+    check cannot see it.
+
+    The comparison is strict. A capture's own trade date can be at most one day
+    ahead of its CT date, so requiring ``as_of`` to be strictly greater
+    guarantees the snapshot covers the capture for any venue -- including an
+    overnight futures or Blue Ocean equity fill that belongs to the next trade
+    date. Erring this way keeps a still-fresh overlay row rather than deleting
+    it.
+
+    None-guards: no capture, or an account with no settled snapshot at all, is
+    never superseded.
+    """
+    if live_fetched_at is None or account_as_of is None:
+        return False
+    return account_as_of > ct_date(live_fetched_at)
+
+
+def superseded_cutoff(account_as_of: date) -> datetime:
+    """Instant at or after which a capture is NOT superseded by ``account_as_of``.
+
+    Set-based equivalent of :func:`is_overlay_superseded`, for use in a SQL
+    ``DELETE``/filter instead of a per-row Python loop::
+
+        account_as_of > ct_date(fetched_at)  <->  fetched_at < superseded_cutoff(account_as_of)
+
+    Both forms must agree exactly -- ``test_intraday_overlay`` pins that.
+    """
+    return datetime.combine(account_as_of, time.min, tzinfo=_CT_ZONE)
+
+
+def mark_if_fresh(
+    mark: float | None,
+    market_ts: datetime | None,
+    sec_type: str | None,
+    now: datetime | None = None,
+) -> float | None:
+    """Drop a continuously-traded instrument's mark once it is too old.
+
+    Futures and futures options trade ~23h, so a mark from hours ago during an
+    open session is stale. Equities and equity options are left alone -- their
+    last print is the close and stays valid all evening.
+
+    A capped mark behaves exactly like an absent one (the caller nulls mark_ts
+    and the live unrealized alongside it); it is never replaced with the settled
+    mark. ``now`` is injectable for testing.
+    """
+    if mark is None or market_ts is None:
+        return mark
+    if (sec_type or "").strip().upper() not in _CONTINUOUS_SEC_TYPES:
+        return mark
+    now = now or datetime.now(timezone.utc)
+    if now - market_ts > CONTINUOUS_MARK_MAX_AGE:
+        return None
+    return mark
 
 
 def parse_multiplier(value: Any) -> float:
@@ -262,6 +352,9 @@ def merge_positions(
         # Normalize the quoted price into the multiplier's unit (e.g. cents →
         # dollars for grain futures) before it feeds the mark/PnL columns.
         mark = normalize_live_mark(mark, magnifiers.get(live.con_id))
+        # Age out a continuously-traded instrument's mark (futures/FOP only);
+        # an equity's last print is its close and stays valid.
+        mark = mark_if_fresh(mark, getattr(quote, "market_ts", None), live.sec_type or (flex.sec_type if flex else None))
         # When there is no usable live mark, leave the live-specific fields null
         # (the UI shows "—" and intraday totals fall back to settled per row) —
         # do NOT mirror the settled mark into the live column.
