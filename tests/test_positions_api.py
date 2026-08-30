@@ -107,3 +107,89 @@ def test_stale_equity_mark_is_still_served(client, db_session):
     _quote_at(db_session, CON_ES, datetime.now(UTC) - timedelta(hours=6), mark=117.98)
 
     assert _row(client.get(BASE).json(), CON_ES)["mark"] is not None
+
+
+class TestStaleOverlayDefersToSettled:
+    """A stale overlay is superseded data, not current state.
+
+    It must not win over a newer settled snapshot -- the bug that had a Saturday
+    request answering from Tuesday while a Friday snapshot sat unused.
+    """
+
+    def _stale_pair(self, session: Session, account, con_id: int, *, settled_qty: float, live_qty: float):
+        pos = make_position(session, account=account, con_id=con_id, quantity=settled_qty, avg_cost=70.0, fetched_at=datetime.now(UTC))
+        make_live_position(
+            session,
+            account=account,
+            con_id=con_id,
+            quantity=live_qty,
+            avg_cost=99_000.0,
+            fetched_at=datetime.now(UTC) - timedelta(days=4),
+        )
+        return pos
+
+    def test_stale_row_serves_settled_quantity_and_source(self, client, db_session):
+        account = make_account(db_session)
+        self._stale_pair(db_session, account, CON_CL, settled_qty=2.0, live_qty=1.0)
+
+        row = _row(client.get(BASE).json(), CON_CL)
+
+        assert row["position"] == 2.0, "the newer settled quantity wins"
+        assert row["source"] == "settled"
+        assert row["live_is_stale"] is True, "the flag still reports that an old capture exists"
+        assert row["live_fetched_at"] is not None, "and how old it is"
+
+    def test_fresh_overlay_still_wins(self, client, db_session):
+        account = make_account(db_session)
+        make_position(db_session, account=account, con_id=CON_CL, quantity=2.0, fetched_at=datetime.now(UTC))
+        make_live_position(db_session, account=account, con_id=CON_CL, quantity=1.0, fetched_at=datetime.now(UTC))
+
+        row = _row(client.get(BASE).json(), CON_CL)
+
+        assert row["position"] == 1.0, "a current overlay is still preferred"
+        assert row["source"] == "live"
+
+
+class TestAvgCostUnits:
+    """Settled avg_cost is per-unit; every consumer expects multiplier-inclusive.
+
+    Cost basis is computed downstream as qty x avg_cost with no multiplier, so a
+    settled-backed contract row reported basis 100x/1000x too small.
+    """
+
+    def test_settled_only_row_reports_multiplier_inclusive_cost(self, client, db_session):
+        account = make_account(db_session)
+        # FlexQuery stores the per-unit price; multiplier 1000 (a CL-shaped future).
+        make_position(
+            db_session,
+            account=account,
+            con_id=CON_CL,
+            quantity=1.0,
+            avg_cost=77.26,
+            multiplier="1000",
+            fetched_at=datetime.now(UTC),
+        )
+
+        row = _row(client.get(BASE).json(), CON_CL)
+
+        assert row["avg_cost"] == pytest.approx(77_260.0)
+        assert row["avg_cost"] * row["position"] == pytest.approx(77_260.0), "qty x avg_cost is dollars"
+
+    def test_stock_row_is_unchanged_by_normalization(self, client, db_session):
+        """Multiplier 1 -- the case where the bug could never show."""
+        account = make_account(db_session)
+        pos = make_position(
+            db_session,
+            account=account,
+            con_id=CON_ES,
+            quantity=109.0,
+            avg_cost=49.11,
+            multiplier="1",
+            fetched_at=datetime.now(UTC),
+        )
+        pos.sec_type = "STK"
+        db_session.flush()
+
+        row = _row(client.get(BASE).json(), CON_ES)
+
+        assert row["avg_cost"] == pytest.approx(49.11)

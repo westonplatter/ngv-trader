@@ -58,8 +58,14 @@ designed this handoff for `live_executions` only; positions were never given one
   must clear.
 - **R5.** A futures mark older than one hour must not present as live.
 - **R6.** Equity marks must not be age-capped; a closing mark stays valid.
-- **R7.** Existing `is_live_stale` behavior for rows that have both a live and a
-  settled row is unchanged.
+- **R7.** ~~Existing `is_live_stale` behavior for rows that have both a live and
+  a settled row is unchanged.~~ **Superseded — this requirement was wrong.** See
+  R8/R9; the behavior it protected was itself the bug.
+- **R8.** A stale overlay must not supply quantity, cost, or `source` when a
+  newer settled snapshot exists. `live_is_stale` gates the _data_, not just the
+  label. The row is still not dropped — a held position stays visible.
+- **R9.** `avg_cost` must carry one unit convention regardless of which source
+  supplied it.
 
 ### Scope Boundaries
 
@@ -131,6 +137,38 @@ use here: _"Use an anchor only when the semantics genuinely are 'since the
 boundary' — labeling a trade date."_ This computes which trade date a capture
 belongs to, not how much history to retain. Recorded so review does not
 re-litigate it.
+
+**KTD6. A stale overlay is superseded data, so it loses to the settled snapshot.**
+_(Corrects R7, which asserted the opposite and was wrong.)_
+
+The original plan treated the live+settled path as already correct and made
+preserving it a requirement. It was not correct: `list_positions` took
+`position`, `avg_cost`, and `source` from the live row whenever one existed,
+consulting `is_live_stale` only to set a display flag. A Saturday request
+therefore answered from a Tuesday capture while Friday's snapshot sat unused.
+
+R7 was assumed, never tested. It also actively suppressed the fix — when an
+earlier pass changed that path, the failing test read as an R7 violation and the
+old behavior was restored. Recorded so the reasoning is visible rather than
+looking like churn.
+
+The row is still not dropped: a held position stays on screen with the settled
+numbers, and the flag reports that an older capture exists and how old it is.
+
+**KTD7. Normalize `avg_cost` to the multiplier-inclusive convention at the read
+boundary.** _(session-settled: user-directed — chosen over normalizing in the
+sync, after an investigation the user asked for before any code changed.)_
+
+The two sources disagree by design: TWS reports `avgCost` already multiplied
+out, FlexQuery's `costBasisPrice` is per-unit. Every consumer — `compute_unrealized`
+and the frontend's Cost Basis column — computes `qty * avg_cost` and reads
+dollars, so the settled value is scaled up rather than the live value scaled
+down. Applied at the read boundary, so the stored column still matches the raw
+IBKR report.
+
+This was a live bug on its own: nine settled-backed rows reported cost basis
+100x or 1000x too small. Fixing it was also a prerequisite for KTD6 — the
+fallback alone would have spread that error from 9 rows to 62.
 
 ### Assumptions
 
