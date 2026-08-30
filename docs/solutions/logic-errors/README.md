@@ -9,5 +9,6 @@
 | [Peer BAG combo summaries counted as siblings deadlocked the redundant-summary purge](bag-combo-summary-purge-deadlocks-on-peer-summaries.md) |        |        |             |
 | [Data migration importing live service code cannot build a fresh database](data-migration-importing-live-code-breaks-fresh-db.md)             |        |        |             |
 | [Position trade-group chips included closed lots because attribution was per-instrument](position-trade-group-chips-included-closed-lots.md)  |        |        |             |
+| [One stale live capture net-closed every position opened after it](stale-capture-net-closed-positions-opened-after-it.md)                     |        |        |             |
 | [A stale live overlay outranked a newer settled snapshot in three readers](stale-overlay-preferred-over-newer-settled-snapshot.md)            |        |        |             |
 | [Intraday fills window anchored to the session roll discarded most executions](tws-fills-window-anchored-to-session-roll.md)                  |        |        |             |

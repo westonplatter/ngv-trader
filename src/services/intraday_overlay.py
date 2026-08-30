@@ -325,12 +325,13 @@ def option_metric_fields(
     }
 
 
-def merge_positions(
+def merge_positions(  # noqa: PLR0913
     flex_rows: list[Any],
     live_rows: list[Any],
     quotes: dict[int, Any],
     magnifiers: dict[int, Any] | None = None,
     metrics: dict[int, Any] | None = None,
+    account_as_of: dict[int, date] | None = None,
 ) -> list[PositionView]:
     """Compose unified positions, preferring live state with FlexQuery fallback.
 
@@ -343,15 +344,31 @@ def merge_positions(
       options (from the separate ``option_metrics.sync.tws`` job). Optional; when
       absent option rows simply carry no greeks. The intrinsic/extrinsic split is
       computed here from the view's mark and the metric's underlying price.
+    - ``account_as_of``: ``{account_id: newest Position.as_of_date}``. Decides
+      which live captures still count as evidence of the account's current book
+      (see below). Optional only for callers with no settled snapshot to compare
+      against; every DB-backed caller passes ``OverlayContext.account_as_of``.
 
     Reconciliation per ``(account, con_id)``:
       * live present  → live qty/cost, live mark (fallback settled mark), source=live.
-      * live absent, flex present, **account has live data** → net-closed, dropped.
-      * live absent, flex present, account has *no* live data → settled fallback.
+      * live absent, flex present, **account has a current live capture** →
+        net-closed, dropped.
+      * live absent, flex present, account has no current live capture →
+        settled fallback.
       * flex absent, live present (opened today) → live-only row.
+
+    "Current" is the load-bearing word in the net-closed rule. Absence from the
+    overlay only proves a position was closed if the capture postdates the
+    settled snapshot; a superseded capture predates every position opened since
+    it, so treating it as evidence deletes held positions. ``account_as_of``
+    is what separates the two, exactly as it does in ``load_overlay_context``.
     """
     flex_by_key = {_key(r.account_id, r.con_id): r for r in flex_rows}
-    live_accounts = {r.account_id for r in live_rows}
+    account_as_of = account_as_of or {}
+    # Only a capture the settled snapshot has NOT superseded is evidence of what
+    # the account currently holds. A stale capture cannot know about a position
+    # opened after it, so counting its account here net-closes that position.
+    live_accounts = {r.account_id for r in live_rows if not is_overlay_superseded(r.fetched_at, account_as_of.get(r.account_id))}
     magnifiers = magnifiers or {}
     metrics = metrics or {}
     views: list[PositionView] = []
@@ -426,7 +443,7 @@ def merge_positions(
         if key in seen:
             continue
         if flex.account_id in live_accounts:
-            continue  # net-closed — account synced, instrument absent from live
+            continue  # net-closed — account has a current capture, instrument absent from it
         views.append(
             PositionView(
                 account_id=flex.account_id,

@@ -138,3 +138,64 @@ def test_fresh_overlay_still_wins():
     assert view.source == "live"
     assert view.position == 1.0
     assert view.avg_cost == 99_000.0
+
+
+# ---------------------------------------------------------------------------
+# Regression guard: the net-closed inference reads the account's *current* book.
+#
+# merge_positions drops a settled row when its account has live data, on the
+# theory that a synced account which omits the instrument has netted it flat.
+# That inference is only sound for a capture the snapshot has not superseded --
+# a stale capture predates every position opened after it, so counting it makes
+# each of those look closed. One stale overlay row was enough to hide every
+# other holding in the account from the trade-group panel.
+# ---------------------------------------------------------------------------
+
+STALE_CAPTURE = datetime(2025, 1, 5, 23, 9, tzinfo=MT)
+SNAPSHOT_AS_OF = date(2025, 1, 8)
+
+
+def _account_book(*, capture_at: datetime):
+    """An account holding two instruments, only one of which the capture saw.
+
+    The second was opened after ``capture_at``, so it exists in the settled
+    snapshot and is absent from the overlay -- the exact shape that the
+    net-closed rule must not mistake for a close.
+    """
+    from src.services.intraday_overlay import merge_positions
+
+    snapshot_at = datetime(2025, 1, 9, 9, 0, tzinfo=MT)
+    held = _Row(con_id=1000000001, position=1.0, avg_cost=77.26, fetched_at=snapshot_at, as_of_date=SNAPSHOT_AS_OF)
+    opened_after = _Row(con_id=1000000002, position=-1.0, avg_cost=90.37, fetched_at=snapshot_at, as_of_date=SNAPSHOT_AS_OF)
+    live = _Row(con_id=1000000001, position=1.0, avg_cost=77_260.0, fetched_at=capture_at)
+    views = merge_positions([held, opened_after], [live], {}, account_as_of={1: SNAPSHOT_AS_OF})
+    return {v.con_id: v for v in views}
+
+
+def test_superseded_capture_does_not_net_close_a_position_opened_after_it():
+    views = _account_book(capture_at=STALE_CAPTURE)
+
+    assert set(views) == {1000000001, 1000000002}, "the newer holding must survive the merge"
+    assert views[1000000002].position == -1.0
+    assert views[1000000002].source == "settled"
+
+
+def test_current_capture_still_net_closes_an_instrument_it_omits():
+    """Guards the over-correction: net-closing is the rule's whole purpose."""
+    views = _account_book(capture_at=datetime(2025, 1, 9, 13, 0, tzinfo=MT))
+
+    assert set(views) == {1000000001}, "a capture the snapshot has not superseded is authoritative"
+
+
+def test_net_closing_falls_back_to_any_live_row_without_a_watermark():
+    """No ``account_as_of`` (no settled snapshot to compare against) = prior behavior."""
+    from src.services.intraday_overlay import merge_positions
+
+    snapshot_at = datetime(2025, 1, 9, 9, 0, tzinfo=MT)
+    held = _Row(con_id=1000000001, position=1.0, avg_cost=77.26, fetched_at=snapshot_at)
+    gone = _Row(con_id=1000000002, position=-1.0, avg_cost=90.37, fetched_at=snapshot_at)
+    live = _Row(con_id=1000000001, position=1.0, avg_cost=77_260.0, fetched_at=STALE_CAPTURE)
+
+    views = merge_positions([held, gone], [live], {})
+
+    assert {v.con_id for v in views} == {1000000001}

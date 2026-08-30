@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
 from sqlalchemy import func, select
@@ -91,10 +91,14 @@ class OverlayContext:
     # Security-master expiry, so a position opened intraday (no settled snapshot)
     # still renders its expiry/DTE instead of collapsing onto same-strike siblings.
     expiries: dict[int, str]
+    # Newest settled ``Position.as_of_date`` per account. The watermark that says
+    # which live captures are still current — needed by ``merge_positions`` as
+    # well as by the row filter below, so it travels with the rows it qualifies.
+    account_as_of: dict[int, date]
 
     @classmethod
     def empty(cls) -> OverlayContext:
-        return cls(flex_rows=[], live_rows=[], quotes={}, live_execs=[], magnifiers={}, metrics={}, expiries={})
+        return cls(flex_rows=[], live_rows=[], quotes={}, live_execs=[], magnifiers={}, metrics={}, expiries={}, account_as_of={})
 
 
 def load_overlay_context(session: Session, account_con_pairs: set[tuple[int, int]]) -> OverlayContext:
@@ -164,6 +168,7 @@ def load_overlay_context(session: Session, account_con_pairs: set[tuple[int, int
         magnifiers=magnifiers,
         metrics=metrics,
         expiries=expiries,
+        account_as_of=account_as_of,
     )
 
 
@@ -341,7 +346,7 @@ def trade_group_batch_pnls(
         flex_slice = [row for row in context.flex_rows if (row.account_id, row.con_id) in pairs]
         live_slice = [row for row in context.live_rows if (row.account_id, row.con_id) in pairs]
         exec_slice = [row for row in context.live_execs if (row.account_id, row.con_id) in pairs]
-        views = merge_positions(flex_slice, live_slice, context.quotes, context.magnifiers, context.metrics)
+        views = merge_positions(flex_slice, live_slice, context.quotes, context.magnifiers, context.metrics, context.account_as_of)
         totals = overlay_totals(
             flex_slice,
             views,
@@ -514,7 +519,7 @@ def compute_trade_group_pnl(session: Session, group_id: int) -> TradeGroupPnl:
     settled_exec_ids = {ex.ib_exec_id for ex in executions if ex.ib_exec_id}
 
     context = load_overlay_context(session, account_con_pairs)
-    views = merge_positions(context.flex_rows, context.live_rows, context.quotes, context.magnifiers, context.metrics)
+    views = merge_positions(context.flex_rows, context.live_rows, context.quotes, context.magnifiers, context.metrics, context.account_as_of)
     totals = overlay_totals(context.flex_rows, views, context.live_execs, settled_exec_ids, realized)
 
     return TradeGroupPnl(

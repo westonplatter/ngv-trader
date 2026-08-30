@@ -100,8 +100,12 @@ Key rules (defined once in the service):
 ## Overlay invalidation — settled data wins
 
 The overlay is refreshed by hand, so a capture routinely outlives the settled
-snapshot it was layered over. Two mechanisms keep it from being presented as
-current, and both treat the FlexQuery snapshot as authoritative.
+snapshot it was layered over. Three mechanisms keep it from being presented as
+current, and all three treat the FlexQuery snapshot as authoritative. They divide
+by **what the stale row is being used as**: as its own numbers (read-time
+precedence), as a row that should no longer exist (write-time purge), or — the
+one that is easy to miss — as _evidence about contracts other than its own_
+(net-closed inference).
 
 **Write-time purge.** `_purge_superseded_live_positions` runs inside
 `sync_flex_positions` — so the _settled_ import is the trigger and the overlay
@@ -123,18 +127,40 @@ need for a per-venue session calendar, and errs toward keeping a still-fresh row
 **Read-time precedence.** `is_live_stale` gates the _data_, not just the label. A
 stale overlay supplies neither quantity, cost, nor `source`; the snapshot does,
 and the flag survives only so the UI can say a capture exists and how old it is.
-The row is never dropped — a held position stays visible with settled numbers.
+The row carrying the stale capture is never dropped on account of it — a held
+position stays visible with settled numbers.
 
 Both read paths apply this, and both had to be fixed independently. See
 [the stale-overlay learning](../solutions/logic-errors/stale-overlay-preferred-over-newer-settled-snapshot.md).
+
+**Net-closed inference.** `merge_positions` drops a settled row when its account
+has live data, reading "the account synced and this instrument is absent" as
+_netted flat_. That inference is sound **only for a capture the snapshot has not
+superseded**: a stale capture predates every position opened after it, so those
+positions are absent from it for the opposite reason, and counting it deletes
+them. So the account set is built from non-superseded captures only —
+`is_overlay_superseded` again, now applied before `live_rows` is reduced to
+`live_accounts`.
+
+This is the mechanism with the widest blast radius, and the only one that is
+**not** per-row: one stale capture anywhere in an account speaks for every
+contract in it. Its precondition is also the inverse of the other two — those ask
+"is _this row_ still current?", this one asks "is this row still fit to testify
+about _other_ rows?" A row can legitimately survive read-time precedence (shown
+with settled numbers) while being disqualified here. See
+[the net-closed learning](../solutions/logic-errors/stale-capture-net-closed-positions-opened-after-it.md).
 
 ## Read-time merge
 
 `src/services/intraday_overlay.py` holds pure, DB-free merge/PnL helpers:
 
-- `merge_positions(flex_rows, live_rows, quotes, magnifiers, metrics)` — prefer
-  live qty/cost/mark **when the overlay is fresh**, else the FlexQuery row; drop
-  net-closed; surface opened-since-snapshot rows.
+- `merge_positions(flex_rows, live_rows, quotes, magnifiers, metrics, account_as_of)` —
+  prefer live qty/cost/mark **when the overlay is fresh**, else the FlexQuery row;
+  drop net-closed **as judged by non-superseded captures only**; surface
+  opened-since-snapshot rows. `account_as_of` is what makes the net-closed
+  judgement watermark-aware; it defaults to `{}` (every capture counts, the
+  pre-fix behavior) purely for callers with no settled snapshot to compare
+  against. Every DB-backed caller passes `OverlayContext.account_as_of`.
 - `is_overlay_superseded` / `superseded_cutoff` — the row-wise and set-based forms
   of the watermark, pinned equal by test so the write and read paths cannot drift.
 - `mark_if_fresh` — ages out a futures/FOP mark after an hour. Equity marks are
@@ -148,6 +174,14 @@ executions, price magnifiers, security-master expiries, option metrics, and the
 account-level newest `as_of_date`, in a fixed seven queries. It is one loader on
 purpose: a magnifier fetched on one path and not another is how a cents-quoted
 future comes out 100x wrong on one screen and right on the next.
+
+`account_as_of` is deliberately computed over the **whole account**, not the
+requested pairs — a superseded capture's own contract is by definition absent
+from the snapshot, so a pair-scoped max would miss it. It rides on the
+`OverlayContext` rather than staying local to the loader because the same
+watermark has to qualify the rows twice: once to filter `live_rows` here, and
+again inside `merge_positions` to decide which captures may net-close. A caller
+that takes the rows without the watermark gets the second decision wrong.
 
 **Cost-basis convention.** The two sources store `avg_cost` in **different units**,
 and this is the single most error-prone thing in the overlay:
@@ -180,13 +214,21 @@ the responses match prior behavior.
   `(account_id, con_id)` pairs. Adds per-position `source` / `mark` / `mark_ts` /
   `live_unrealized` and top-level `intraday_unrealized_pnl` /
   `intraday_realized_pnl` / `intraday_total_pnl` / `marks_as_of`.
+  Because the merge is **pair-scoped**, this endpoint sees a subset of its
+  account's live rows — often one — while `GET /positions` sees them all. Any
+  rule that reduces `live_rows` to an account-level fact therefore reaches a
+  different conclusion here than it does portfolio-wide, which is why the two
+  screens can disagree about the same holding. Account-level facts belong on the
+  `OverlayContext` (computed account-wide), never derived from the sliced rows.
 - `GET /trade-groups?include_intraday=true` — the same overlay computed for
   **many groups at once**, behind the Strategy P&L table. Loads the union of
   every visible group's pairs once, then slices per group and reuses
   `overlay_totals()`, so the query count is fixed in the row count. The merge
   itself runs per group rather than once over the union: `merge_positions()`
-  drops a settled row when _its account_ has live data, so a union-wide merge
-  would net-close a group whose own pairs have no live rows. Defaults to `false`
+  drops a settled row when _its account_ has a current capture, so a union-wide
+  merge would net-close a group whose own pairs have no live rows. `account_as_of`
+  is the one input **not** sliced — it is an account fact, and slicing it per
+  group is how a group would disagree with the portfolio about what is stale. Defaults to `false`
   so the Strategies left panel and the group picker keep their two-query cost.
   Adds a group-level `live_is_stale`, true only when the group has
   overlay-backed rows and **every** one of them is stale — a mix of fresh and
