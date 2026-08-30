@@ -4,6 +4,6 @@
 
 ## Files
 
-| Doc                                                                                                                                | Topics | Description |
-| ---------------------------------------------------------------------------------------------------------------------------------- | ------ | ----------- |
-| [ib-async-req-executions-strips-commission-reports-2026-07-29.md](ib-async-req-executions-strips-commission-reports-2026-07-29.md) |        |             |
+| Doc                                                                                                                                          | Status | Topics | Description |
+| -------------------------------------------------------------------------------------------------------------------------------------------- | ------ | ------ | ----------- |
+| [ib_async reqExecutions returns fills stripped of their commission reports](ib-async-req-executions-strips-commission-reports-2026-07-29.md) |        |        |             |
