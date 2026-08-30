@@ -26,14 +26,14 @@ component filename and the `docs/trade-tagging.md` doc filename.
 
 ## Scope
 
-**In scope**
+### In scope
 
 - `NAV_ITEMS` label + path, the route, and the layout branch in `frontend/src/App.tsx`
 - Page heading, subtitle, and the left-panel heading in `TradeTaggingPage.tsx`
 - Every in-app link that targets `/tagging`
 - Doc/README/script-comment prose that names the nav item or the URL
 
-**Out of scope (confirmed with the user)**
+### Out of scope (confirmed with the user)
 
 - Component/file renames — `TradeTaggingPage.tsx`, its default export, and the
   `TradeGroup*`/`Tag*` type exports stay as they are
@@ -190,7 +190,7 @@ independently safe). U4 has no code dependency and can land in the same commit.
    - `/positions?demo=1` → click a trade-group chip → lands on `/strategies?...`.
    - `/tagging?demo=1` → redirects to `/tradebot` (expected hard break).
 5. **PR screenshot** (required by AGENTS.md for UI changes):
-   ```
+   ```bash
    cd frontend
    node scripts/screenshot.mjs "/strategies?demo=1" ../docs/screenshots/tagging-demo.png 1600 900
    ```

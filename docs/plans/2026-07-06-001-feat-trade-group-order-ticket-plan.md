@@ -314,7 +314,7 @@ Literal["BUY","SELL"]`, `legs: list[LegModel]` (min length 1), `label: str | Non
 
 **Technical design (directional, not implementation spec):**
 
-```
+```text
 root(code)      = re.match(r"^[A-Za-z]+", code).group()      # "HEJ27" -> "HE", "ZCH27" -> "ZC"
 roots           = { root(l.code) for l in legs }
 intra  valid iff len(roots) == 1
