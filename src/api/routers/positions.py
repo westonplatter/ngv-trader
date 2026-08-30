@@ -28,6 +28,7 @@ from src.services.intraday_overlay import (
     is_overlay_superseded,
     mark_if_fresh,
     normalize_live_mark,
+    normalize_settled_avg_cost,
     option_metric_fields,
     parse_multiplier,
 )
@@ -300,6 +301,26 @@ def _groups_for(
     return all_map.get(key, [])
 
 
+def _resolve_live_mark(quote: Any, magnifier: Any, sec_type: str | None) -> tuple[float | None, datetime | None]:
+    """Best usable live mark for one contract, with its timestamp.
+
+    Three filters in order: reject IBKR's non-positive no-data sentinel,
+    normalize the quoted price into the multiplier's unit, then age out a
+    continuously-traded instrument's mark. Any of them can null the mark, and a
+    null mark carries a null timestamp — the live columns go blank together
+    rather than showing a time for a price that isn't there.
+
+    Never falls back to the settled mark; that lives in its own column.
+    """
+    mark = getattr(quote, "mark", None) if quote is not None else None
+    if mark is not None and mark <= 0:
+        mark = None
+    mark = normalize_live_mark(mark, magnifier)
+    mark = mark_if_fresh(mark, getattr(quote, "market_ts", None), sec_type)
+    mark_ts = getattr(quote, "market_ts", None) if (quote is not None and mark is not None) else None
+    return mark, mark_ts
+
+
 def _account_as_of_map(rows: list[Any]) -> dict[int, date]:
     """Newest settled snapshot date per account.
 
@@ -363,33 +384,33 @@ def list_positions(db: Session = DB_SESSION_DEPENDENCY):
         )
         live = live_by_key.get((pos.account_id, pos.con_id))
         # Prefer live current state; fall back to the settled snapshot.
+        #
+        # avg_cost is normalized here because the two sources store it in
+        # different units — see ``normalize_settled_avg_cost``. Every consumer
+        # expects the TWS multiplier-inclusive convention, so the settled value
+        # is scaled up rather than the live value scaled down.
         position_qty = pos.position
-        avg_cost = pos.avg_cost
+        avg_cost = normalize_settled_avg_cost(pos.avg_cost, pos.multiplier)
         source = "settled"
         mark = mark_ts = live_unrealized = live_fetched_at = None
         live_is_stale = False
         if live is not None:
-            quote = quotes.get(pos.con_id)
-            mark = getattr(quote, "mark", None) if quote is not None else None
-            # Reject the IBKR no-data sentinel; leave the live mark null when
-            # there's no usable live price (no settled-mark fallback in the
-            # live-specific column).
-            if mark is not None and mark <= 0:
-                mark = None
-            mark = normalize_live_mark(mark, magnifiers.get(pos.con_id))
-            # Futures/FOP trade ~23h, so an hours-old mark during an open
-            # session is stale rather than a close. A capped mark behaves as an
-            # absent one — never replaced with the settled mark.
-            mark = mark_if_fresh(mark, getattr(quote, "market_ts", None), pos.sec_type)
-            mark_ts = getattr(quote, "market_ts", None) if (quote is not None and mark is not None) else None
-            position_qty = live.position
-            avg_cost = live.avg_cost
-            source = "live"
+            mark, mark_ts = _resolve_live_mark(quotes.get(pos.con_id), magnifiers.get(pos.con_id), pos.sec_type)
             live_unrealized = compute_unrealized(live.position, live.avg_cost, mark, parse_multiplier(live.multiplier))
             live_fetched_at = live.fetched_at
             # Stale when the live snapshot is from a prior MT day and settled
             # data exists to fall back to (see ``is_live_stale``).
             live_is_stale = is_live_stale(live.fetched_at, pos.fetched_at)
+            # A stale overlay is *superseded* data, not current state, so it
+            # must not win over the newer settled snapshot. Keep the settled
+            # quantity, cost and source; the flag stays so the UI can say a
+            # live capture exists and how old it is. Preferring the overlay
+            # unconditionally meant a Saturday request answered from Tuesday
+            # while a Friday snapshot sat unused.
+            if not live_is_stale:
+                position_qty = live.position
+                avg_cost = live.avg_cost
+                source = "live"
         # Option metrics: split off the best available mark (live, else settled).
         opt_fields = option_metric_fields(
             pos.sec_type,
@@ -451,13 +472,7 @@ def list_positions(db: Session = DB_SESSION_DEPENDENCY):
             continue
         if is_overlay_superseded(live.fetched_at, account_as_of.get(account_id)):
             continue
-        quote = quotes.get(con_id)
-        mark = getattr(quote, "mark", None) if quote is not None else None
-        if mark is not None and mark <= 0:
-            mark = None
-        mark = normalize_live_mark(mark, magnifiers.get(con_id))
-        mark = mark_if_fresh(mark, getattr(quote, "market_ts", None), live.sec_type)
-        mark_ts = getattr(quote, "market_ts", None) if (quote is not None and mark is not None) else None
+        mark, mark_ts = _resolve_live_mark(quotes.get(con_id), magnifiers.get(con_id), live.sec_type)
         display_name = contract_display_name(
             symbol=live.symbol,
             sec_type=live.sec_type,

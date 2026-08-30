@@ -242,6 +242,26 @@ def normalize_live_mark(mark: float | None, magnifier: Any) -> float | None:
     return mark / mag
 
 
+def normalize_settled_avg_cost(avg_cost: float | None, multiplier: Any) -> float | None:
+    """Convert a FlexQuery per-unit cost into the multiplier-inclusive convention.
+
+    The two sources disagree by design. TWS ``ib.positions()`` reports ``avgCost``
+    already multiplied out -- the full dollar cost of one contract -- while
+    FlexQuery's ``costBasisPrice`` is a per-unit price. Every consumer of this
+    field assumes the TWS convention: ``compute_unrealized`` above, and the
+    frontend's Cost Basis column, all compute ``qty * avg_cost`` and read the
+    result as dollars. None of them multiplies by ``multiplier``.
+
+    So the settled value has to be normalized on the way out, or a settled-backed
+    option row reports a cost basis 100x too small and a futures row 1000x too
+    small. Applied at the read boundary rather than in the sync, so the stored
+    column keeps matching the raw IBKR report.
+    """
+    if avg_cost is None:
+        return None
+    return avg_cost * parse_multiplier(multiplier)
+
+
 _OPTION_SEC_TYPES = {"OPT", "FOP"}
 _CALL_RIGHTS = {"C", "CALL"}
 _PUT_RIGHTS = {"P", "PUT"}
@@ -408,7 +428,7 @@ def merge_positions(
                 right=flex.right,
                 strike=flex.strike,
                 position=flex.position,
-                avg_cost=flex.avg_cost,
+                avg_cost=normalize_settled_avg_cost(flex.avg_cost, flex.multiplier),
                 mark=flex.mark_price,
                 mark_ts=None,
                 source="settled",
