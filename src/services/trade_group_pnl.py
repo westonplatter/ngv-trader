@@ -256,10 +256,16 @@ def trade_group_account_con_pairs(session: Session, group_id: int) -> set[tuple[
 
 
 def _group_live_is_stale(views: list[Any], flex_rows: list[Any], live_rows: list[Any]) -> bool:
-    """True when the group has live-sourced marks and every one of them is stale."""
+    """True when the group has overlay-backed rows and every one of them is stale.
+
+    Keyed on whether a live row *exists* for the view, not on the view's
+    resulting ``source``. A stale overlay now resolves to ``source="settled"``
+    (the snapshot supplies the numbers), so filtering on ``source == "live"``
+    would find nothing and report a fully-stale group as fresh.
+    """
     flex_fetched = {(p.account_id, p.con_id): p.fetched_at for p in flex_rows}
     live_fetched = {(p.account_id, p.con_id): p.fetched_at for p in live_rows}
-    flags = [is_live_stale(live_fetched.get(key), flex_fetched.get(key)) for view in views if view.source == "live" for key in [(view.account_id, view.con_id)]]
+    flags = [is_live_stale(live_fetched.get(key), flex_fetched.get(key)) for view in views for key in [(view.account_id, view.con_id)] if key in live_fetched]
     return bool(flags) and all(flags)
 
 

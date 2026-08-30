@@ -379,6 +379,16 @@ def merge_positions(
         # (the UI shows "—" and intraday totals fall back to settled per row) —
         # do NOT mirror the settled mark into the live column.
         mark_ts = getattr(quote, "market_ts", None) if (quote is not None and mark is not None) else None
+        # A stale overlay is superseded data and must not win over the newer
+        # settled snapshot — the same rule the positions router applies. The row
+        # is still shown (the position is held); only the numbers come from the
+        # snapshot, and avg_cost is normalized into the multiplier-inclusive
+        # convention the live value already uses.
+        stale = is_live_stale(live.fetched_at, flex.fetched_at if flex else None)
+        if stale and flex is not None:
+            position, avg_cost, source = flex.position, normalize_settled_avg_cost(flex.avg_cost, flex.multiplier), "settled"
+        else:
+            position, avg_cost, source = live.position, live.avg_cost, "live"
         views.append(
             PositionView(
                 account_id=live.account_id,
@@ -389,12 +399,12 @@ def merge_positions(
                 multiplier=live.multiplier or (flex.multiplier if flex else None),
                 right=live.right or (flex.right if flex else None),
                 strike=live.strike if live.strike is not None else (flex.strike if flex else None),
-                position=live.position,
-                avg_cost=live.avg_cost,
+                position=position,
+                avg_cost=avg_cost,
                 mark=mark,
                 mark_ts=mark_ts,
-                source="live",
-                live_unrealized=compute_unrealized(live.position, live.avg_cost, mark, mult),
+                source=source,
+                live_unrealized=compute_unrealized(position, avg_cost, mark, mult) if source == "live" else None,
                 settled_mark_price=flex.mark_price if flex else None,
                 settled_unrealized=flex.fifo_pnl_unrealized if flex else None,
                 settled_position_value=flex.position_value if flex else None,

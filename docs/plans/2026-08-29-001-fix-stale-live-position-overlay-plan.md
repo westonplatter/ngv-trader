@@ -155,6 +155,15 @@ looking like churn.
 The row is still not dropped: a held position stays on screen with the settled
 numbers, and the flag reports that an older capture exists and how old it is.
 
+The defect existed independently in **both** read paths — `list_positions` and
+`merge_positions` — and was fixed in two passes because the second was only
+noticed when the Strategies page still showed it. That is the third time this
+shape of bug has been found in a separate reader, so the rule is pinned by tests
+at the shared merge rather than at each call site: see
+`test_stale_overlay_defers_to_the_settled_snapshot`. `_group_live_is_stale` also
+had to stop keying on `source == "live"`, since a stale row now resolves to
+`settled` and the group would otherwise report itself fresh.
+
 **KTD7. Normalize `avg_cost` to the multiplier-inclusive convention at the read
 boundary.** _(session-settled: user-directed — chosen over normalizing in the
 sync, after an investigation the user asked for before any code changed.)_

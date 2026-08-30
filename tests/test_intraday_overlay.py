@@ -79,3 +79,62 @@ def test_mark_if_fresh_caps_only_continuously_traded_instruments(sec_type, age, 
 
 def test_mark_if_fresh_leaves_a_mark_alone_when_its_timestamp_is_unknown():
     assert mark_if_fresh(73.5, None, "FUT") == 73.5
+
+
+# ---------------------------------------------------------------------------
+# Regression guard: a stale overlay must never win over a newer snapshot.
+#
+# This defect shipped three times in the same session -- once in the positions
+# router, once in the trade-group merge, and it was briefly "fixed" by reverting
+# to it. The rule is one line: is_live_stale gates the DATA, not just the label.
+# ---------------------------------------------------------------------------
+
+
+class _Row:
+    """Minimal stand-in for a Position / LivePosition row."""
+
+    def __init__(self, **kw):
+        self.account_id = kw.get("account_id", 1)
+        self.con_id = kw.get("con_id", 1000000001)
+        self.symbol = kw.get("symbol", "CL")
+        self.local_symbol = kw.get("local_symbol", "CLZ6")
+        self.sec_type = kw.get("sec_type", "FUT")
+        self.multiplier = kw.get("multiplier", "1000")
+        self.right = None
+        self.strike = None
+        self.position = kw["position"]
+        self.avg_cost = kw["avg_cost"]
+        self.fetched_at = kw["fetched_at"]
+        self.mark_price = kw.get("mark_price")
+        self.fifo_pnl_unrealized = kw.get("fifo_pnl_unrealized")
+        self.position_value = kw.get("position_value")
+        self.as_of_date = kw.get("as_of_date")
+
+
+def _merged(*, live_age_days: int):
+    """One instrument held in both sources, with the overlay `n` days old."""
+    from src.services.intraday_overlay import merge_positions
+
+    now = datetime.now(timezone.utc)
+    # Settled stores avg_cost per-unit; live stores it multiplier-inclusive.
+    flex = _Row(position=2.0, avg_cost=77.26, fetched_at=now, mark_price=80.0)
+    live = _Row(position=1.0, avg_cost=99_000.0, fetched_at=now - timedelta(days=live_age_days))
+    return merge_positions([flex], [live], {})[0]
+
+
+def test_stale_overlay_defers_to_the_settled_snapshot():
+    view = _merged(live_age_days=4)
+
+    assert view.source == "settled"
+    assert view.position == 2.0, "the newer snapshot's quantity wins"
+    assert view.avg_cost == 77_260.0, "and its cost, normalized to multiplier-inclusive"
+    assert view.live_unrealized is None, "no live P&L is computed off superseded data"
+
+
+def test_fresh_overlay_still_wins():
+    """Guards the over-correction: a current overlay is the whole point."""
+    view = _merged(live_age_days=0)
+
+    assert view.source == "live"
+    assert view.position == 1.0
+    assert view.avg_cost == 99_000.0
