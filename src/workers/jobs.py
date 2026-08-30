@@ -648,6 +648,9 @@ def handle_positions_flexquery_fetch_report(job: Job, engine: Engine, ib_pool: I
         as_of = result.get("as_of_date")
         return {
             "upserted_count": result.get("upserted_count", 0),
+            # Overlay rows this snapshot retired. Surfaced so the settled-wins
+            # purge can be seen *firing* rather than inferred from an absence.
+            "live_purged": result.get("live_purged", 0),
             "as_of_date": as_of.isoformat() if as_of else None,
         }
 

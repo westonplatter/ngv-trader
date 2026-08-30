@@ -101,12 +101,20 @@ def make_execution(  # noqa: PLR0913
     exec_role: str = "standalone",
     raw_symbol: str | None = "CL",
     side: str = "BUY",
+    quantity: float = 1.0,
+    executed_at: datetime | None = None,
+    is_canonical: bool = True,
 ) -> TradeExecution:
     """One settled fill, optionally assigned to ``group``.
 
     ``raw`` mirrors the FlexQuery sync's synthesized payload: ``fifoPnlRealized``
     carries realized P&L and ``contract.symbol`` carries the *underlying* root
     (``CL``), not the OCC/local symbol.
+
+    ``quantity`` is **signed** as it is in the database -- a sell is negative --
+    so a round trip is written as ``+n`` then ``-n``. ``executed_at`` and
+    ``is_canonical`` are exposed for tests that reason about fill history
+    relative to a point in time.
     """
     trade = Trade(account_id=account.id, status="filled", total_quantity=1.0, data_source="flex")
     session.add(trade)
@@ -125,11 +133,12 @@ def make_execution(  # noqa: PLR0913
         exec_revision=1,
         con_id=con_id,
         exec_role=exec_role,
-        executed_at=now(),
-        quantity=1.0,
+        executed_at=executed_at or now(),
+        quantity=quantity,
         price=70.0,
         side=side,
         data_source="flex",
+        is_canonical=is_canonical,
         raw=raw,
     )
     session.add(execution)
