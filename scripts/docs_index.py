@@ -3,8 +3,8 @@
 
 For each directory under docs/ that contains .md files, writes a README.md
 (auto-rendered by GitHub) listing the .md files in that directory (not
-recursive) with their front-matter `description` (empty when absent). Every
-README also links to subdirectory READMEs at the top.
+recursive) with their index-visible front matter. Every README also links to
+subdirectory READMEs at the top.
 
 docs/core/ is indexed here too (it previously had its own generator).
 
@@ -51,6 +51,14 @@ def parse_topics(path: Path) -> str:
     return ", ".join(items)
 
 
+def parse_specific_files(path: Path) -> list[str]:
+    """Front-matter `specific_files` as a list of repository-relative paths."""
+    raw = parse_field(path, "specific_files")
+    if not raw:
+        return []
+    return [item.strip(" \"'[]") for item in raw.split(",") if item.strip(" \"'[]")]
+
+
 def md_files(directory: Path) -> list[Path]:
     """Non-index .md files directly in this directory."""
     return sorted(p for p in directory.glob("*.md") if p.name not in ("README.md", "_index.md"))
@@ -68,11 +76,23 @@ def render_index(title: str, subdirs: list[Path], files: list[Path]) -> str:
         for d in subdirs:
             lines.append(f"| `{d.name}/` | [README.md]({d.name}/README.md) |")
         lines.append("")
-    lines += ["## Files", "", "| Doc | Topics | Description |", "| --- | --- | --- |"]
+    include_specific_files = any(parse_specific_files(file) for file in files)
+    header = "| Doc | Status | Topics | Description |"
+    separator = "| --- | --- | --- | --- |"
+    if include_specific_files:
+        header = "| Doc | Status | Topics | Description | Specific files |"
+        separator = "| --- | --- | --- | --- | --- |"
+    lines += ["## Files", "", header, separator]
     for f in files:
         topics = parse_topics(f)
         desc = parse_field(f, "description")
-        lines.append(f"| [{f.name}]({f.name}) | {topics} | {desc} |")
+        status = parse_field(f, "status")
+        label = parse_field(f, "title") or f.name
+        row = f"| [{label}]({f.name}) | {status} | {topics} | {desc} |"
+        if include_specific_files:
+            specific_files = "<br>".join(f"`{path}`" for path in parse_specific_files(f))
+            row = f"{row} {specific_files} |"
+        lines.append(row)
     return "\n".join(lines) + "\n"
 
 
