@@ -158,21 +158,27 @@ This repo handles personal brokerage data. **Never commit real IBKR account IDs,
 
 ### Genericize account references in plans and docs
 
-Account **aliases** (`main`, `lsc`, `sep`, `mini`) are the anonymization layer, not a
-leak — `accounts.alias` exists so the UI and semantic model never show the raw `U…`
-number. Using an alias in prose about the _schema_ is fine.
+This applies to written content committed to the repo — plans, specs, docs, code
+comments, fixtures, commit messages.
 
-What is **not** fine is an alias (or "the account that…") tied to that account's real
-**activity**. A plan must not pin a named account to concrete holdings, quantities,
-average costs, P&L, execution counts, import windows, trade dates, or prod row ids —
-together those profile a real account even with every IBKR identifier redacted, and
+Accounts carry a short **alias** (`accounts.alias`) so the UI and semantic model never
+show the raw `U…` number. Naming the _column_ is fine; writing a _specific_ alias into
+committed content is not — not in prose, not in a filename or title, not even without
+data attached. Aliases are stable, few, and identifying in aggregate; keeping them out
+of the repo is simpler than judging each mention. In chat, scratchpad files, and
+gitignored paths, use whatever alias you need.
+
+Worse still is any account reference — an alias, or "the account that…" — tied to real
+**activity**. A plan must not pin an account to concrete holdings, quantities, average
+costs, P&L, execution counts, import windows, trade dates, or prod row ids — together
+those profile a real account even with every IBKR identifier redacted, and
 `scripts/ibkr_sensitive_data_check.py` does **not** catch it.
 
 Write plans against placeholders instead: `<ACCOUNT>`, `<CONID>`, `<QTY>`,
 `<AVG_COST>`, `<TRADE_ID>`, `<DAILY_START>`. Keep the _shape_ of the problem — the
 mechanics, the failure mode, the procedure — and keep symbols, sec types, and
-exchanges real. Concrete values belong in gitignored `scratchpad/`, referenced by
-path. Keep the alias out of plan filenames and titles for the same reason.
+exchanges real. Concrete values, aliases included, belong in gitignored `scratchpad/`,
+referenced by path.
 
 See `docs/plans/2026-07-14-001-fix-missing-opening-execution-plan.md` for the pattern:
 a full recovery runbook that names no account and loses no usefulness.
