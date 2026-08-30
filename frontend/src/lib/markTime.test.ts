@@ -44,3 +44,25 @@ describe("formatMarkTime", () => {
     expect(formatMarkTime("not a date")).toBe("");
   });
 });
+
+describe("single source of truth", () => {
+  // This helper existed in three private copies (PositionsTable,
+  // TradeTaggingPage, strategyPnl). Two were merged and the third was missed,
+  // so the Strategy P&L table kept printing a bare time on a days-old capture.
+  // Grepping for the next copy is not a plan; this is.
+  const FRESHNESS_CONSUMERS = [
+    "src/components/PositionsTable.tsx",
+    "src/components/TradeTaggingPage.tsx",
+    "src/lib/strategyPnl.ts",
+  ];
+
+  test.each(FRESHNESS_CONSUMERS)(
+    "%s formats mark freshness via the shared helper, not its own",
+    async (path) => {
+      const text = await Bun.file(path).text();
+      expect(text).toContain("formatMarkTime");
+      // A local toLocaleTimeString here means a private copy has grown back.
+      expect(text).not.toContain("toLocaleTimeString");
+    },
+  );
+});
