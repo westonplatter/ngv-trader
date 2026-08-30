@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 from src.api.deps import get_db
 from src.api.main import app
 from src.models import LatestQuote
+from src.services.intraday_overlay import ct_date, is_overlay_superseded
 from tests.trade_group_factories import (
     CON_CL,
     CON_ES,
@@ -48,6 +49,20 @@ def _row(payload: list[dict], con_id: int) -> dict | None:
 def _quote_at(session: Session, con_id: int, market_ts: datetime, mark: float = 73.0) -> None:
     session.add(LatestQuote(con_id=con_id, mark=mark, market_ts=market_ts, ingested_at=market_ts))
     session.flush()
+
+
+def test_settled_snapshot_is_dated_on_the_same_clock_the_supersede_check_uses(db_session):
+    """Guards the invariant the overlay tests below rest on.
+
+    ``date.today()`` reads the *process* timezone. On a UTC machine after 00:00
+    UTC -- which is where CI runs -- that dates a snapshot a day ahead of its
+    own capture, and every fresh overlay then reads as superseded by it.
+    """
+    captured_at = datetime.now(UTC)
+    position = make_position(db_session, account=make_account(db_session), con_id=CON_NG, fetched_at=captured_at)
+
+    assert position.as_of_date == ct_date(captured_at)
+    assert not is_overlay_superseded(captured_at, position.as_of_date)
 
 
 def test_superseded_live_only_row_is_absent_while_a_current_one_is_served(client, db_session):
