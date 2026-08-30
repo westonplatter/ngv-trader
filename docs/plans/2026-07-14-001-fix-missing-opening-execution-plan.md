@@ -64,7 +64,7 @@ is **not** in the imported window. It is therefore one of:
 1. **Wait ~20–30 min** for the IBKR `1025` lockout to clear (do not retry into a
    locked-out state — it extends the lockout).
 2. **Read-only verify** the gap window first:
-   ```
+   ```bash
    op run --env-file=.env.prod -- \
      uv run python scripts/fetch_flex_trades.py --days <N> --end-date <GAP_END>
    ```

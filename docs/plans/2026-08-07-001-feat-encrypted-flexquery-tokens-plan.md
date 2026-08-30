@@ -38,27 +38,27 @@ The `daily`/`weekly`/`annual` triple in `IB_JSON` is vestigial. It existed becau
 
 ### Requirements
 
-**Storage and encryption**
+#### Storage and encryption
 
 - R1. A `flexquery_tokens` table stores one row per IBKR FlexQuery token, identified by an operator-supplied name.
 - R2. The token value is encrypted at rest. A reader with database access and no encryption key cannot recover it.
 - R3. Encryption and decryption are transparent to application code — the model attribute reads and writes a plain string.
 - R4. The encryption key supports rotation without downtime: values written under a previous key remain readable while a new key becomes the write key.
 
-**Token-to-account mapping**
+#### Token-to-account mapping
 
 - R5. Each token row carries the single `report_id` used to request its FlexQuery report.
 - R6. An `accounts` row records which token it was discovered under, via a nullable foreign key. The foreign key is nullable because accounts predating this work have no known token until their next sync.
 - R7. When a sync run resolves a token's report to a set of account codes, each of those accounts is stamped with that token. If an account is already stamped with a different token, the newer token replaces it.
 
-**Credential resolution and cutover**
+#### Credential resolution and cutover
 
 - R8. The FlexQuery sync paths resolve token and `report_id` from the database, not from the environment.
 - R9. `IB_JSON` is removed. No code, env template, or doc reads it or references it after this work: `src/workers/jobs.py`, `scripts/fetch_flex_trades.py`, `.env.example`, `docs/getting-started.md`, `docs/trades-and-executions-sync.md`, `docs/secrets-using-1password.md`, and `AGENTS.md`.
 - R10. The `flex_token` and `query_id` job-payload overrides are removed. A job payload cannot supply a credential.
 - R11. A sync run covers every active token, not only the first configured one.
 
-**Operations**
+#### Operations
 
 - R12. An operator command creates, lists, and deactivates token rows. It reads the token value from an environment variable or stdin, never from a command-line argument.
 - R13. An operator command re-encrypts all stored tokens under a new primary key.
@@ -336,7 +336,7 @@ The R2 proof is specific and worth naming: after seeding, a raw `SELECT token_en
 
 ## Definition of Done
 
-**Global**
+### Global
 
 - Every requirement R1-R14 is implemented or explicitly deferred in this document.
 - All Verification Contract gates pass.
@@ -345,7 +345,7 @@ The R2 proof is specific and worth naming: after seeding, a raw `SELECT token_en
 - Abandoned or experimental code from approaches that did not pan out is removed from the diff.
 - Commits follow Conventional Commits; the PR notes the `cryptography` direct-dependency add and its cooldown date.
 
-**Per unit**
+### Per unit
 
 | Unit | Done signal                                                                                                   |
 | ---- | ------------------------------------------------------------------------------------------------------------- |

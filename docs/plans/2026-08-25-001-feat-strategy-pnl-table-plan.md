@@ -43,7 +43,7 @@ Two things make the comparison view non-trivial rather than a cosmetic re-layout
 
 ### Requirements
 
-**Table content**
+#### Table content
 
 - R1. Every trade group appears as exactly one row. No nesting, no strategy roll-up rows.
 - R2. Each row shows the group's primary strategy tag, or a clear "no strategy" state when the group is untagged.
@@ -52,21 +52,21 @@ Two things make the comparison view non-trivial rather than a cosmetic re-layout
 - R5. P&L figures include the intraday TWS overlay when live data is present, and fall back to settled values when it is not — with a visible freshness indicator, matching the convention on the Strategies and Positions pages.
 - R6. A row's figures for a given group equal what `GET /trade-groups/{id}/executions` reports for that same group. One source, no divergence.
 
-**Filtering**
+#### Filtering
 
 - R7. Filter by account, selected by alias.
 - R8. Filter by instrument using a pattern (`CL.*`, `ES`, `CL|NG`), matched against the group's derived instruments and, as a fallback, its name.
 - R9. Filter by status, defaulting to `open` so the table is not dominated by closed campaigns.
 - R10. Filters compose; an instrument filter selects across the whole set before any row limit is applied, never after.
 
-**Surface**
+#### Surface
 
 - R11. A new top-nav tab reaches the table directly. The existing `/strategies` page keeps its nav entry, route, and behavior.
 - R12. A row navigates into the existing Strategies page focused on that group.
 - R13. Dollar figures respect privacy mode, like every other P&L surface in the app.
 - R14. The table renders under demo mode (`?demo=1`) with representative fixtures, so the PR carries a screenshot.
 
-**Non-regression**
+#### Non-regression
 
 - R15. Existing consumers of `GET /trade-groups` — the Strategies page left panel and `TradeGroupSearchSelect` — see no behavior change and pay no new query cost.
 
