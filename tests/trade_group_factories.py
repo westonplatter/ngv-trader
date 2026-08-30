@@ -24,6 +24,7 @@ from src.models import (
     TradeGroupExecution,
     TradeGroupLiveExecution,
 )
+from src.services.intraday_overlay import ct_date
 
 UTC = timezone.utc
 
@@ -168,7 +169,9 @@ def make_position(  # noqa: PLR0913
     unrealized: float | None = 2_000.0,
     fetched_at: datetime | None = None,
     multiplier: str = "1000",
+    as_of_date: date | None = None,
 ) -> Position:
+    captured_at = fetched_at or now()
     row = Position(
         account_id=account.id,
         con_id=con_id,
@@ -181,8 +184,13 @@ def make_position(  # noqa: PLR0913
         position_value=quantity * mark_price * float(multiplier),
         fifo_pnl_unrealized=unrealized,
         data_source="flex",
-        as_of_date=date.today(),
-        fetched_at=fetched_at or now(),
+        # The trade date the snapshot belongs to, on the same clock the
+        # supersede comparison uses. date.today() would read the *process*
+        # timezone: on a UTC machine after 00:00 UTC it dates the snapshot a
+        # day ahead of its own capture, and a fresh overlay then looks
+        # superseded by it.
+        as_of_date=as_of_date or ct_date(captured_at),
+        fetched_at=captured_at,
     )
     session.add(row)
     session.flush()
