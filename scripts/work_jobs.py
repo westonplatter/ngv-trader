@@ -23,6 +23,9 @@ from sqlalchemy.orm import Session
 from src.db import get_engine
 from src.models import Job
 from src.services.jobs import (
+    JOB_TYPE_POSITIONS_FLEXQUERY_FETCH_REPORT,
+    JOB_TYPE_TRADES_FLEXQUERY_FETCH_REPORT,
+    JOB_TYPE_TRADES_SYNC_TWS,
     JobDeferred,
     claim_next_job,
     complete_job,
@@ -70,12 +73,29 @@ def _notify_job_event(job_id: int, event: str = "job.updated") -> None:
         logger.warning("SSE notify job #%d failed: %s", job_id, exc)
 
 
+# Job types that actually write trade/position rows. The `*.sync.flexquery`
+# entrypoints only fan out child jobs and commit no data, so notifying on them
+# would fire before the statement is collected — `*.flexquery.fetch_report` is
+# the phase that ingests.
+_TRADE_WRITING_JOB_TYPES = frozenset(
+    {
+        JOB_TYPE_TRADES_FLEXQUERY_FETCH_REPORT,
+        JOB_TYPE_TRADES_SYNC_TWS,
+    }
+)
+_POSITION_WRITING_JOB_TYPES = frozenset(
+    {
+        JOB_TYPE_POSITIONS_FLEXQUERY_FETCH_REPORT,
+    }
+)
+
+
 def _notify_coarse_for_job_type(job_type: str) -> None:
     """Publish coarse trade/position SSE events when matching sync jobs finish."""
     try:
-        if job_type == "trades.sync.flexquery":
+        if job_type in _TRADE_WRITING_JOB_TYPES:
             _notify_api("/events/notify-trades", {})
-        elif job_type == "positions.sync.flexquery":
+        elif job_type in _POSITION_WRITING_JOB_TYPES:
             _notify_api("/events/notify-positions", {})
     except Exception as exc:
         logger.warning("SSE coarse notify for %s failed: %s", job_type, exc)
