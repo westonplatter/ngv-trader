@@ -6,8 +6,9 @@ import type { TradeGroupPnlRow } from "../lib/tradeGroups";
 import { usePrivacy } from "../contexts/usePrivacy";
 import { useResizableColumn } from "../hooks/useResizableColumn";
 import { ibCodesTitle, parseIbCodes } from "../lib/ibCodes";
+import { formatMarkTime } from "../lib/markTime";
 import { linkify } from "../utils/linkify";
-import { formatGreek, formatPercent } from "../utils/number";
+import { formatGreek, formatMoney, formatPercent } from "../utils/number";
 import { PRIVACY_MASK, formatRelativeReturn } from "../utils/privacy";
 
 // The list-endpoint row (id/name/status/strategy plus the P&L split and
@@ -141,16 +142,6 @@ function formatDate(value: string | null): string {
   const parsed = Date.parse(value);
   if (Number.isNaN(parsed)) return "-";
   return new Date(parsed).toLocaleString();
-}
-
-function formatMarkTime(value: string | null | undefined): string {
-  if (!value) return "";
-  const parsed = Date.parse(value);
-  if (Number.isNaN(parsed)) return "";
-  return new Date(parsed).toLocaleTimeString(undefined, {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
 }
 
 async function readErrorMessage(
@@ -2005,14 +1996,14 @@ export default function TradeTaggingPage() {
                                   ? PRIVACY_MASK
                                   : positionTotals.avgCost.count === 0
                                     ? "—"
-                                    : positionTotals.avgCost.sum.toFixed(2)}
+                                    : formatMoney(positionTotals.avgCost.sum)}
                               </td>
                               <td className="px-2 py-1 text-right font-mono text-gray-700">
                                 {privacyMode
                                   ? PRIVACY_MASK
                                   : positionTotals.costBasis.count === 0
                                     ? "—"
-                                    : positionTotals.costBasis.sum.toFixed(2)}
+                                    : formatMoney(positionTotals.costBasis.sum)}
                               </td>
                               <td className="px-2 py-1 text-right"></td>
                               <td className="px-2 py-1 text-right"></td>
@@ -2021,7 +2012,7 @@ export default function TradeTaggingPage() {
                                   ? PRIVACY_MASK
                                   : positionTotals.value.count === 0
                                     ? "—"
-                                    : positionTotals.value.sum.toFixed(2)}
+                                    : formatMoney(positionTotals.value.sum)}
                               </td>
                               <td
                                 className={`px-2 py-1 text-right font-mono ${
@@ -2036,7 +2027,9 @@ export default function TradeTaggingPage() {
                                   ? PRIVACY_MASK
                                   : positionTotals.unrealized.count === 0
                                     ? "—"
-                                    : positionTotals.unrealized.sum.toFixed(2)}
+                                    : formatMoney(
+                                        positionTotals.unrealized.sum,
+                                      )}
                               </td>
                               <td
                                 className={`px-2 py-1 text-right font-mono ${
@@ -2051,8 +2044,8 @@ export default function TradeTaggingPage() {
                                   ? PRIVACY_MASK
                                   : positionTotals.liveUnrealized.count === 0
                                     ? "—"
-                                    : positionTotals.liveUnrealized.sum.toFixed(
-                                        2,
+                                    : formatMoney(
+                                        positionTotals.liveUnrealized.sum,
                                       )}
                               </td>
                               <td className="px-2 py-1"></td>
@@ -2138,13 +2131,13 @@ export default function TradeTaggingPage() {
                                   <td className="px-2 py-1 text-right font-mono text-gray-700">
                                     {privacyMode
                                       ? PRIVACY_MASK
-                                      : pos.avg_cost.toFixed(2)}
+                                      : formatMoney(pos.avg_cost)}
                                   </td>
                                   <td className="px-2 py-1 text-right font-mono text-gray-700">
                                     {privacyMode
                                       ? PRIVACY_MASK
-                                      : (pos.avg_cost * pos.position).toFixed(
-                                          2,
+                                      : formatMoney(
+                                          pos.avg_cost * pos.position,
                                         )}
                                   </td>
                                   <td className="px-2 py-1 text-right font-mono text-gray-700">
@@ -2152,21 +2145,21 @@ export default function TradeTaggingPage() {
                                       ? PRIVACY_MASK
                                       : pos.mark_price == null
                                         ? "—"
-                                        : pos.mark_price.toFixed(2)}
+                                        : formatMoney(pos.mark_price)}
                                   </td>
                                   <td className="px-2 py-1 text-right font-mono text-gray-700">
                                     {privacyMode
                                       ? PRIVACY_MASK
                                       : liveStale || pos.mark == null
                                         ? "—"
-                                        : pos.mark.toFixed(2)}
+                                        : formatMoney(pos.mark)}
                                   </td>
                                   <td className="px-2 py-1 text-right font-mono text-gray-700">
                                     {privacyMode
                                       ? PRIVACY_MASK
                                       : pos.position_value == null
                                         ? "—"
-                                        : pos.position_value.toFixed(2)}
+                                        : formatMoney(pos.position_value)}
                                   </td>
                                   <td
                                     className={`px-2 py-1 text-right font-mono ${pnlClass}`}
@@ -2178,7 +2171,7 @@ export default function TradeTaggingPage() {
                                         )
                                       : pos.fifo_pnl_unrealized == null
                                         ? "—"
-                                        : pos.fifo_pnl_unrealized.toFixed(2)}
+                                        : formatMoney(pos.fifo_pnl_unrealized)}
                                   </td>
                                   <td
                                     className={`px-2 py-1 text-right font-mono ${livePnlClass}`}
@@ -2194,7 +2187,7 @@ export default function TradeTaggingPage() {
                                           )
                                       : liveStale || pos.live_unrealized == null
                                         ? "—"
-                                        : pos.live_unrealized.toFixed(2)}
+                                        : formatMoney(pos.live_unrealized)}
                                   </td>
                                   <td className="px-2 py-1 text-gray-500">
                                     {pos.as_of_date ?? "—"}

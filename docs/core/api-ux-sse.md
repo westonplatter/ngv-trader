@@ -86,13 +86,13 @@ A lightweight async pub/sub broker running inside the API process:
 
 ### Worker notification endpoints
 
-| Endpoint                                   | Purpose                                                                                 |
-| ------------------------------------------ | --------------------------------------------------------------------------------------- |
-| `POST /api/v1/events/notify-job`           | Worker sends `{ job_id, event }` after job state changes                                |
-| `POST /api/v1/events/notify-order`         | Worker sends `{ order_id, event }` after order mutations                                |
-| `POST /api/v1/events/notify-worker-status` | Worker sends `{ worker_type }` after heartbeat upserts                                  |
-| `POST /api/v1/events/notify-trades`        | Worker sends coarse hint after `trades.sync.flexquery` completes (triggers re-fetch)    |
-| `POST /api/v1/events/notify-positions`     | Worker sends coarse hint after `positions.sync.flexquery` completes (triggers re-fetch) |
+| Endpoint                                   | Purpose                                                                             |
+| ------------------------------------------ | ----------------------------------------------------------------------------------- |
+| `POST /api/v1/events/notify-job`           | Worker sends `{ job_id, event }` after job state changes                            |
+| `POST /api/v1/events/notify-order`         | Worker sends `{ order_id, event }` after order mutations                            |
+| `POST /api/v1/events/notify-worker-status` | Worker sends `{ worker_type }` after heartbeat upserts                              |
+| `POST /api/v1/events/notify-trades`        | Worker sends coarse hint after a trade-writing job completes (triggers re-fetch)    |
+| `POST /api/v1/events/notify-positions`     | Worker sends coarse hint after a position-writing job completes (triggers re-fetch) |
 
 The API reads the committed row, builds the enriched response DTO, and publishes to the broadcaster. Notifications are fire-and-forget from the worker side — if the API is unreachable, the UI catches up on the next REST fetch or SSE reconnect.
 
@@ -161,8 +161,8 @@ All events use a consistent envelope:
 | `order.updated`     | `orders`        | TWS broker sync updates an existing order                            | `src/services/order_sync_tws.py` (calls `broadcaster.publish()` directly — see note below) | `OrderResponse`       |
 | `order.cancelled`   | `orders`        | `POST /api/v1/orders/{id}/cancel`                                    | `src/api/routers/orders.py`                                                                | `OrderResponse`       |
 | `worker.heartbeat`  | `worker_status` | Worker heartbeat upsert (every poll cycle)                           | `src/services/worker_heartbeat.py` via notify                                              | `WorkerStatusPayload` |
-| `trades.changed`    | `trades`        | `trades.sync.flexquery` job completes                                | `scripts/work_jobs.py` via notify                                                          | `{}` (coarse hint)    |
-| `positions.changed` | `positions`     | `positions.sync.flexquery` job completes                             | `scripts/work_jobs.py` via notify                                                          | `{}` (coarse hint)    |
+| `trades.changed`    | `trades`        | `trades.flexquery.fetch_report` or `trades.sync.tws` job completes   | `scripts/work_jobs.py` via notify                                                          | `{}` (coarse hint)    |
+| `positions.changed` | `positions`     | `positions.flexquery.fetch_report` job completes                     | `scripts/work_jobs.py` via notify                                                          | `{}` (coarse hint)    |
 | `trades.changed`    | `trades`        | Trade-group execution / position / live-execution assign or unassign | `src/api/routers/trade_groups.py`                                                          | `{}` (coarse hint)    |
 | `positions.changed` | `positions`     | Trade-group position or live-execution assign or unassign            | `src/api/routers/trade_groups.py`                                                          | `{}` (coarse hint)    |
 
@@ -174,6 +174,15 @@ All events use a consistent envelope:
 | **Workers**       | `POST /api/v1/events/notify-job`, `notify-worker-status`, `notify-trades`, or `notify-positions` after `session.commit()` in the worker process | After the worker finishes      |
 
 Workers run in a separate process from the API, so they cannot access the in-memory broadcaster directly. The notify endpoints bridge this gap.
+
+**Which job type fires the coarse hint**: FlexQuery sync is split into three
+phases — `*.sync.flexquery` (fan out one child per token), `*.flexquery.initiate_request`
+(ask IBKR to build the statement), `*.flexquery.fetch_report` (collect and ingest).
+Only the `fetch_report` phase writes rows, so it is the one that notifies. Notifying
+on the `*.sync.flexquery` entrypoint fires seconds after the button click, before
+any data exists. `scripts/work_jobs.py` keeps the writing job types in
+`_TRADE_WRITING_JOB_TYPES` / `_POSITION_WRITING_JOB_TYPES` — add to those sets when
+a new job type writes trades or positions.
 
 **Order sync events**: `order_sync_tws.py` runs inside the worker process and currently publishes directly to a broadcaster with no SSE subscribers. The `order.created`/`order.updated` events do not reach the browser; the UI catches up via the next REST fetch. Endpoint `POST /api/v1/events/notify-order` exists but is never invoked.
 

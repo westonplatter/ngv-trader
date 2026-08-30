@@ -1,6 +1,7 @@
 """Positions API router."""
 
 from datetime import date, datetime
+from typing import Any
 
 from fastapi import APIRouter, Depends, status
 from pydantic import BaseModel, Field
@@ -24,7 +25,10 @@ from src.services.cl_contracts import infer_contract_month_from_local_symbol
 from src.services.intraday_overlay import (
     compute_unrealized,
     is_live_stale,
+    is_overlay_superseded,
+    mark_if_fresh,
     normalize_live_mark,
+    normalize_settled_avg_cost,
     option_metric_fields,
     parse_multiplier,
 )
@@ -297,6 +301,44 @@ def _groups_for(
     return all_map.get(key, [])
 
 
+def _resolve_live_mark(quote: Any, magnifier: Any, sec_type: str | None) -> tuple[float | None, datetime | None]:
+    """Best usable live mark for one contract, with its timestamp.
+
+    Three filters in order: reject IBKR's non-positive no-data sentinel,
+    normalize the quoted price into the multiplier's unit, then age out a
+    continuously-traded instrument's mark. Any of them can null the mark, and a
+    null mark carries a null timestamp — the live columns go blank together
+    rather than showing a time for a price that isn't there.
+
+    Never falls back to the settled mark; that lives in its own column.
+    """
+    mark = getattr(quote, "mark", None) if quote is not None else None
+    if mark is not None and mark <= 0:
+        mark = None
+    mark = normalize_live_mark(mark, magnifier)
+    mark = mark_if_fresh(mark, getattr(quote, "market_ts", None), sec_type)
+    mark_ts = getattr(quote, "market_ts", None) if (quote is not None and mark is not None) else None
+    return mark, mark_ts
+
+
+def _account_as_of_map(rows: list[Any]) -> dict[int, date]:
+    """Newest settled snapshot date per account.
+
+    An *account-level* fact, so it is available even for a contract the snapshot
+    omits entirely — which is the point: a closed position has no settled row of
+    its own to compare against, so a per-row check cannot see it. Built from rows
+    already loaded; no extra query.
+    """
+    as_of_by_account: dict[int, date] = {}
+    for pos, _acct in rows:
+        if pos.as_of_date is None:
+            continue
+        current = as_of_by_account.get(pos.account_id)
+        if current is None or pos.as_of_date > current:
+            as_of_by_account[pos.account_id] = pos.as_of_date
+    return as_of_by_account
+
+
 @router.get("/positions", response_model=list[PositionResponse])
 def list_positions(db: Session = DB_SESSION_DEPENDENCY):
     rows = db.execute(select(Position, Account).outerjoin(Account, Position.account_id == Account.id)).all()
@@ -316,6 +358,8 @@ def list_positions(db: Session = DB_SESSION_DEPENDENCY):
     # _open_lot_trade_groups. all_group_map is the unfiltered rollup, used
     # only where the open-lot walk comes up empty for a live position.
     trade_group_map, all_group_map = _open_lot_trade_groups(db)
+
+    account_as_of = _account_as_of_map(rows)
 
     results: list[PositionResponse] = []
     flex_keys: set[tuple[int, int]] = set()
@@ -340,29 +384,33 @@ def list_positions(db: Session = DB_SESSION_DEPENDENCY):
         )
         live = live_by_key.get((pos.account_id, pos.con_id))
         # Prefer live current state; fall back to the settled snapshot.
+        #
+        # avg_cost is normalized here because the two sources store it in
+        # different units — see ``normalize_settled_avg_cost``. Every consumer
+        # expects the TWS multiplier-inclusive convention, so the settled value
+        # is scaled up rather than the live value scaled down.
         position_qty = pos.position
-        avg_cost = pos.avg_cost
+        avg_cost = normalize_settled_avg_cost(pos.avg_cost, pos.multiplier)
         source = "settled"
         mark = mark_ts = live_unrealized = live_fetched_at = None
         live_is_stale = False
         if live is not None:
-            quote = quotes.get(pos.con_id)
-            mark = getattr(quote, "mark", None) if quote is not None else None
-            # Reject the IBKR no-data sentinel; leave the live mark null when
-            # there's no usable live price (no settled-mark fallback in the
-            # live-specific column).
-            if mark is not None and mark <= 0:
-                mark = None
-            mark = normalize_live_mark(mark, magnifiers.get(pos.con_id))
-            mark_ts = getattr(quote, "market_ts", None) if (quote is not None and mark is not None) else None
-            position_qty = live.position
-            avg_cost = live.avg_cost
-            source = "live"
+            mark, mark_ts = _resolve_live_mark(quotes.get(pos.con_id), magnifiers.get(pos.con_id), pos.sec_type)
             live_unrealized = compute_unrealized(live.position, live.avg_cost, mark, parse_multiplier(live.multiplier))
             live_fetched_at = live.fetched_at
             # Stale when the live snapshot is from a prior MT day and settled
             # data exists to fall back to (see ``is_live_stale``).
             live_is_stale = is_live_stale(live.fetched_at, pos.fetched_at)
+            # A stale overlay is *superseded* data, not current state, so it
+            # must not win over the newer settled snapshot. Keep the settled
+            # quantity, cost and source; the flag stays so the UI can say a
+            # live capture exists and how old it is. Preferring the overlay
+            # unconditionally meant a Saturday request answered from Tuesday
+            # while a Friday snapshot sat unused.
+            if not live_is_stale:
+                position_qty = live.position
+                avg_cost = live.avg_cost
+                source = "live"
         # Option metrics: split off the best available mark (live, else settled).
         opt_fields = option_metric_fields(
             pos.sec_type,
@@ -411,15 +459,20 @@ def list_positions(db: Session = DB_SESSION_DEPENDENCY):
         )
 
     # Opened-today positions: present live but with no settled snapshot row yet.
+    #
+    # "No settled row" has two causes and they need opposite handling: the
+    # position was opened since the snapshot (render it), or it was *closed*
+    # since the last live capture and the snapshot correctly dropped it (drop it
+    # too). is_overlay_superseded separates them. Without this the second case
+    # renders a closed position as held — and it cannot be caught by
+    # is_live_stale, which needs a settled row to compare against and so is
+    # structurally blind exactly here.
     for (account_id, con_id), live in live_by_key.items():
         if (account_id, con_id) in flex_keys or live.position == 0:
             continue
-        quote = quotes.get(con_id)
-        mark = getattr(quote, "mark", None) if quote is not None else None
-        if mark is not None and mark <= 0:
-            mark = None
-        mark = normalize_live_mark(mark, magnifiers.get(con_id))
-        mark_ts = getattr(quote, "market_ts", None) if (quote is not None and mark is not None) else None
+        if is_overlay_superseded(live.fetched_at, account_as_of.get(account_id)):
+            continue
+        mark, mark_ts = _resolve_live_mark(quotes.get(con_id), magnifiers.get(con_id), live.sec_type)
         display_name = contract_display_name(
             symbol=live.symbol,
             sec_type=live.sec_type,
@@ -470,10 +523,12 @@ def list_positions(db: Session = DB_SESSION_DEPENDENCY):
                     mark,
                     parse_multiplier(live.multiplier),
                 ),
-                # Opened-today live-only row: no settled snapshot to fall back
-                # to, so never stale (settled ts is None → is_live_stale False).
+                # Opened since the snapshot: there is no settled row to fall
+                # back to, and the supersede check above already dropped the
+                # rows that were closed rather than opened — so what remains is
+                # current by construction.
                 live_fetched_at=live.fetched_at,
-                live_is_stale=is_live_stale(live.fetched_at, None),
+                live_is_stale=False,
                 **opt_fields,
             )
         )

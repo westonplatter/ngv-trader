@@ -3,8 +3,8 @@
 
 For each directory under docs/ that contains .md files, writes a README.md
 (auto-rendered by GitHub) listing the .md files in that directory (not
-recursive) with their front-matter `description` (empty when absent). Every
-README also links to subdirectory READMEs at the top.
+recursive) with their index-visible front matter. Every README also links to
+subdirectory READMEs at the top.
 
 docs/core/ is indexed here too (it previously had its own generator).
 
@@ -51,6 +51,14 @@ def parse_topics(path: Path) -> str:
     return ", ".join(items)
 
 
+def parse_specific_files(path: Path) -> list[str]:
+    """Front-matter `specific_files` as a list of repository-relative paths."""
+    raw = parse_field(path, "specific_files")
+    if not raw:
+        return []
+    return [item.strip(" \"'[]") for item in raw.split(",") if item.strip(" \"'[]")]
+
+
 def md_files(directory: Path) -> list[Path]:
     """Non-index .md files directly in this directory."""
     return sorted(p for p in directory.glob("*.md") if p.name not in ("README.md", "_index.md"))
@@ -61,18 +69,55 @@ def doc_subdirs(directory: Path) -> list[Path]:
     return sorted(d for d in directory.iterdir() if d.is_dir() and any(d.rglob("*.md")))
 
 
+def render_table(header: list[str], rows: list[list[str]]) -> list[str]:
+    """A markdown table with columns padded the way Prettier formats them.
+
+    Emitting the *formatted* shape is what keeps regeneration a no-op. These
+    indexes are rewritten on every doc change and then reformatted by Prettier
+    at commit time (`trunk-fmt-pre-commit`), so a generator that emitted the
+    collapsed `| --- |` form produced a whole-table diff every single run.
+
+    Prettier's rule, which this mirrors: every cell in a column is padded to the
+    width of the widest cell in that column (header included), and the separator
+    is that many dashes — with a floor of three, the minimum a separator needs.
+    Width is measured in characters, so a full-width CJK cell would be padded a
+    column too narrow and Prettier would correct it on commit; every doc field
+    indexed here is Latin text.
+    """
+    widths = [max(3, *(len(row[i]) for row in [header, *rows])) for i in range(len(header))]
+
+    def line(cells: list[str]) -> str:
+        return "| " + " | ".join(cell.ljust(width) for cell, width in zip(cells, widths, strict=True)) + " |"
+
+    return [line(header), "| " + " | ".join("-" * width for width in widths) + " |", *(line(row) for row in rows)]
+
+
 def render_index(title: str, subdirs: list[Path], files: list[Path]) -> str:
     lines = [f"# {title}", "", GENERATED_BANNER, ""]
     if subdirs:
-        lines += ["## Directories", "", "| Directory | Index |", "| --- | --- |"]
-        for d in subdirs:
-            lines.append(f"| `{d.name}/` | [README.md]({d.name}/README.md) |")
+        lines += ["## Directories", ""]
+        lines += render_table(
+            ["Directory", "Index"],
+            [[f"`{d.name}/`", f"[README.md]({d.name}/README.md)"] for d in subdirs],
+        )
         lines.append("")
-    lines += ["## Files", "", "| Doc | Topics | Description |", "| --- | --- | --- |"]
+    include_specific_files = any(parse_specific_files(file) for file in files)
+    header = ["Doc", "Status", "Topics", "Description"]
+    if include_specific_files:
+        header.append("Specific files")
+    rows = []
     for f in files:
-        topics = parse_topics(f)
-        desc = parse_field(f, "description")
-        lines.append(f"| [{f.name}]({f.name}) | {topics} | {desc} |")
+        row = [
+            f"[{parse_field(f, 'title') or f.name}]({f.name})",
+            parse_field(f, "status"),
+            parse_topics(f),
+            parse_field(f, "description"),
+        ]
+        if include_specific_files:
+            row.append("<br>".join(f"`{path}`" for path in parse_specific_files(f)))
+        rows.append(row)
+    lines += ["## Files", ""]
+    lines += render_table(header, rows)
     return "\n".join(lines) + "\n"
 
 

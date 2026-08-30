@@ -16,11 +16,12 @@ import pandas as pd
 from defusedxml import ElementTree as ET
 from ngv_reports_ibkr.custom_flex_report import CustomFlexReport
 from ngv_reports_ibkr.flex_client import DateRange
-from sqlalchemy import Engine, delete
+from sqlalchemy import Engine, delete, func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
-from src.models import Position
+from src.models import LivePosition, Position, TradeExecution
+from src.services.intraday_overlay import superseded_cutoff
 from src.services.sync_common import (
     _safe_float,
     _safe_int,
@@ -121,6 +122,83 @@ def _resolve_as_of_date(df: pd.DataFrame) -> date | None:
     return None
 
 
+def _purge_superseded_live_positions(session: Session, account_id: int, as_of: date | None) -> int:
+    """Drop live overlay rows this settled snapshot has superseded (settled wins).
+
+    The overlay's only other writer is the TWS sync, so without this a position
+    closed since the last TWS capture survives in ``live_positions`` forever and
+    renders as still-held. Mirrors ``_purge_settled`` in ``intraday_sync_tws``,
+    which does the same job for ``live_executions`` -- except positions have no
+    identity to match on (a closed position is simply *absent* from the
+    snapshot), so disposal is by watermark and by fill history instead.
+
+    Two independent signals, because neither covers the other:
+
+    1. **Watermark.** Any capture predating this snapshot's trade date is
+       superseded, whether or not its contract appears in the snapshot. This is
+       the only signal that can dispose of an *expired* contract, which leaves
+       the book without ever producing a closing fill.
+    2. **Net-zero fills.** Settled fills for the instrument net to zero and the
+       latest one postdates the capture -- the position was closed. Clears a
+       same-day close without waiting for the watermark to advance.
+
+    Runs in the caller's transaction. Returns the number of rows deleted.
+    """
+    purged = 0
+
+    if as_of is not None:
+        # Set-based equivalent of is_overlay_superseded; see superseded_cutoff.
+        purged += (
+            session.execute(
+                delete(LivePosition).where(
+                    LivePosition.account_id == account_id,
+                    LivePosition.fetched_at < superseded_cutoff(as_of),
+                )
+            ).rowcount
+            or 0
+        )
+
+    # Instruments whose canonical fills net flat. A contract with no fills at all
+    # is absent from this aggregate and so can never match -- that is the
+    # load-bearing guard: an empty fill history means transferred-in lots or
+    # fills predating the sync window, not a close (see the open-lot note in
+    # src/api/routers/positions.py).
+    flat = (
+        select(
+            TradeExecution.con_id.label("con_id"),
+            func.max(TradeExecution.executed_at).label("last_fill"),
+        )
+        .where(
+            TradeExecution.account_id == account_id,
+            TradeExecution.is_canonical.is_(True),
+            TradeExecution.con_id.is_not(None),
+        )
+        .group_by(TradeExecution.con_id)
+        .having(func.sum(TradeExecution.quantity) == 0)
+        .subquery()
+    )
+    closed_since_capture = (
+        select(1)
+        .select_from(flat)
+        .where(
+            flat.c.con_id == LivePosition.con_id,
+            flat.c.last_fill > LivePosition.fetched_at,
+        )
+        .exists()
+    )
+    purged += (
+        session.execute(
+            delete(LivePosition).where(
+                LivePosition.account_id == account_id,
+                closed_since_capture,
+            )
+        ).rowcount
+        or 0
+    )
+
+    return purged
+
+
 def sync_flex_positions(
     engine: Engine,
     *,
@@ -187,13 +265,24 @@ def sync_flex_positions(
             delete_stmt = delete_stmt.where(Position.con_id.notin_(snapshot_con_ids))
         deleted = session.execute(delete_stmt).rowcount
 
+        # Settled data has landed, so anything it supersedes in the live TWS
+        # overlay goes too -- same transaction, so a reader never sees a
+        # superseded overlay row alongside the snapshot that retired it.
+        live_purged = _purge_superseded_live_positions(session, account_id, as_of)
+
         session.commit()
 
     logger.info(
-        "[flex_position_sync] account=%s as_of=%s rows=%d deleted=%d",
+        "[flex_position_sync] account=%s as_of=%s rows=%d deleted=%d live_purged=%d",
         account_code,
         as_of.isoformat() if as_of else "unknown",
         len(aggregated),
         deleted,
+        live_purged,
     )
-    return {"upserted_count": len(aggregated), "deleted_count": deleted, "as_of_date": as_of}
+    return {
+        "upserted_count": len(aggregated),
+        "deleted_count": deleted,
+        "live_purged": live_purged,
+        "as_of_date": as_of,
+    }

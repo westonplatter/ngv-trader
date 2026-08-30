@@ -4,6 +4,7 @@
 // component-test harness, so anything worth asserting has to be a function over
 // plain data.
 
+import { formatMarkTime } from "./markTime";
 import type { TradeGroupPnlRow } from "./tradeGroups";
 
 export type SortColumn =
@@ -186,15 +187,6 @@ export interface Freshness {
   title: string;
 }
 
-function markTime(value: string): string {
-  const parsed = Date.parse(value);
-  if (Number.isNaN(parsed)) return "";
-  return new Date(parsed).toLocaleTimeString(undefined, {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
 /** How current the row's marks are, matching the Strategies/Positions wording. */
 export function formatFreshness(
   marksAsOf: string | null,
@@ -208,13 +200,19 @@ export function formatFreshness(
         "No live TWS data for this group — figures are the settled snapshot.",
     };
   }
-  const time = markTime(marksAsOf);
+  const time = formatMarkTime(marksAsOf);
   if (liveIsStale) {
+    // The figures in this row ARE the settled snapshot: a superseded overlay no
+    // longer supplies quantity, cost or marks. So the label states what is on
+    // screen, not that an old capture exists — that goes in the tooltip. Saying
+    // "stale" here described the overlay while the numbers came from elsewhere,
+    // and contradicted the Strategies detail page, which shows these as settled.
     return {
-      label: time ? `stale ${time}` : "stale",
-      tone: "stale",
-      title:
-        "Every live mark behind this group is older than the latest settled snapshot. Refresh Live (TWS) to update.",
+      label: "settled",
+      tone: "none",
+      title: time
+        ? `Figures are the settled snapshot. A live TWS capture from ${time} exists but is older, so it is not used. Refresh Live (TWS) to update.`
+        : "Figures are the settled snapshot; the live TWS capture is older and not used.",
     };
   }
   return {

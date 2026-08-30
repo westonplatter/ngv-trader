@@ -1329,7 +1329,7 @@ def _build_open_positions_overlay(
     context = load_overlay_context(db, account_con_pairs)
     flex_rows, live_rows, live_execs = context.flex_rows, context.live_rows, context.live_execs
     expiries = context.expiries
-    views = merge_positions(flex_rows, live_rows, context.quotes, context.magnifiers, context.metrics)
+    views = merge_positions(flex_rows, live_rows, context.quotes, context.magnifiers, context.metrics, context.account_as_of)
 
     view_account_ids = {v.account_id for v in views}
     alias_by_id = {}

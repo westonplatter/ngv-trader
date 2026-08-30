@@ -434,3 +434,36 @@ def test_account_with_no_legs_in_the_group_reports_nothing(db_session: Session) 
     assert row.realized_pnl is None
     assert row.settled_unrealized_pnl is None
     assert row.intraday_total_pnl is None
+
+
+# --------------------------------------------------------------------------
+# Superseded overlay rows are excluded from the group view
+# --------------------------------------------------------------------------
+
+
+def test_superseded_live_only_row_is_excluded_from_the_group(db_session: Session) -> None:
+    """A position closed after the last TWS capture must not carry P&L."""
+    account = make_account(db_session)
+    group = make_group(db_session, "CL closed", account.id)
+    make_execution(db_session, group=group, account=account, con_id=CON_CL, realized=None, exec_id=make_exec_id(15151515))
+    make_live_position(db_session, account=account, con_id=CON_CL, fetched_at=now() - timedelta(days=4))
+    make_quote(db_session, CON_CL)
+    # A settled row on another instrument dates the account.
+    make_position(db_session, account=account, con_id=CON_NG, fetched_at=now(), unrealized=1_000.0)
+
+    assert _batch_one(db_session, group.id).intraday_unrealized_pnl is None
+
+
+def test_superseded_row_with_a_settled_counterpart_is_flagged_not_dropped(db_session: Session) -> None:
+    """R7: a live row with a settled row behind it is held, not closed."""
+    account = make_account(db_session)
+    group = make_group(db_session, "CL held but stale", account.id)
+    make_execution(db_session, group=group, account=account, con_id=CON_CL, realized=None, exec_id=make_exec_id(18181818))
+    make_live_position(db_session, account=account, con_id=CON_CL, fetched_at=now() - timedelta(days=4))
+    make_position(db_session, account=account, con_id=CON_CL, fetched_at=now(), unrealized=1_000.0)
+    make_quote(db_session, CON_CL)
+
+    result = _batch_one(db_session, group.id)
+
+    assert result.live_is_stale is True
+    assert result.intraday_unrealized_pnl is not None, "the position is still held"

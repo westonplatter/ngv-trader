@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
 from sqlalchemy import func, select
@@ -40,7 +40,12 @@ from src.models import (
     TradeGroupLiveExecution,
 )
 from src.services.execution_pnl import execution_realized_pnl as _execution_realized_pnl
-from src.services.intraday_overlay import is_live_stale, merge_positions, overlay_totals
+from src.services.intraday_overlay import (
+    is_live_stale,
+    is_overlay_superseded,
+    merge_positions,
+    overlay_totals,
+)
 
 
 def trade_group_realized_pnl(executions: list[Any]) -> float | None:
@@ -86,14 +91,18 @@ class OverlayContext:
     # Security-master expiry, so a position opened intraday (no settled snapshot)
     # still renders its expiry/DTE instead of collapsing onto same-strike siblings.
     expiries: dict[int, str]
+    # Newest settled ``Position.as_of_date`` per account. The watermark that says
+    # which live captures are still current — needed by ``merge_positions`` as
+    # well as by the row filter below, so it travels with the rows it qualifies.
+    account_as_of: dict[int, date]
 
     @classmethod
     def empty(cls) -> OverlayContext:
-        return cls(flex_rows=[], live_rows=[], quotes={}, live_execs=[], magnifiers={}, metrics={}, expiries={})
+        return cls(flex_rows=[], live_rows=[], quotes={}, live_execs=[], magnifiers={}, metrics={}, expiries={}, account_as_of={})
 
 
 def load_overlay_context(session: Session, account_con_pairs: set[tuple[int, int]]) -> OverlayContext:
-    """Load the settled + live rows the overlay merge needs, in a fixed 6 queries.
+    """Load the settled + live rows the overlay merge needs, in a fixed 7 queries.
 
     Query count does not depend on how many groups the pairs came from, which is
     what makes :func:`trade_group_batch_pnls` possible without an N+1.
@@ -111,11 +120,31 @@ def load_overlay_context(session: Session, account_con_pairs: set[tuple[int, int
         .scalars()
         .all()
     )
-    live_rows = list(
-        session.execute(select(LivePosition).where(sa_tuple(LivePosition.account_id, LivePosition.con_id).in_(pairs), LivePosition.position != 0))
+    # Newest settled snapshot per account, over the whole account rather than the
+    # requested pairs — a superseded live row's own contract is by definition
+    # absent from the snapshot, so a pair-scoped max would miss it.
+    account_as_of = dict(
+        session.execute(
+            select(Position.account_id, func.max(Position.as_of_date))
+            .where(Position.account_id.in_({account_id for account_id, _ in pairs}))
+            .group_by(Position.account_id)
+        ).all()
+    )
+    # Only live rows with NO settled counterpart are candidates for dropping.
+    # A row that has both is already handled by the per-row is_live_stale flag,
+    # which the display layer honours — dropping it here would silently remove a
+    # held position instead of marking its overlay stale.
+    settled_keys = {(row.account_id, row.con_id) for row in flex_rows}
+    live_rows = [
+        row
+        for row in session.execute(select(LivePosition).where(sa_tuple(LivePosition.account_id, LivePosition.con_id).in_(pairs), LivePosition.position != 0))
         .scalars()
         .all()
-    )
+        # Same blind spot the positions router had: a position closed since the
+        # last TWS capture keeps an overlay row with no settled row behind it,
+        # and nothing here would drop it.
+        if (row.account_id, row.con_id) in settled_keys or not is_overlay_superseded(row.fetched_at, account_as_of.get(row.account_id))
+    ]
     con_ids = {p.con_id for p in flex_rows} | {p.con_id for p in live_rows}
     quotes: dict[int, Any] = {}
     magnifiers: dict[int, Any] = {}
@@ -139,6 +168,7 @@ def load_overlay_context(session: Session, account_con_pairs: set[tuple[int, int
         magnifiers=magnifiers,
         metrics=metrics,
         expiries=expiries,
+        account_as_of=account_as_of,
     )
 
 
@@ -231,10 +261,16 @@ def trade_group_account_con_pairs(session: Session, group_id: int) -> set[tuple[
 
 
 def _group_live_is_stale(views: list[Any], flex_rows: list[Any], live_rows: list[Any]) -> bool:
-    """True when the group has live-sourced marks and every one of them is stale."""
+    """True when the group has overlay-backed rows and every one of them is stale.
+
+    Keyed on whether a live row *exists* for the view, not on the view's
+    resulting ``source``. A stale overlay now resolves to ``source="settled"``
+    (the snapshot supplies the numbers), so filtering on ``source == "live"``
+    would find nothing and report a fully-stale group as fresh.
+    """
     flex_fetched = {(p.account_id, p.con_id): p.fetched_at for p in flex_rows}
     live_fetched = {(p.account_id, p.con_id): p.fetched_at for p in live_rows}
-    flags = [is_live_stale(live_fetched.get(key), flex_fetched.get(key)) for view in views if view.source == "live" for key in [(view.account_id, view.con_id)]]
+    flags = [is_live_stale(live_fetched.get(key), flex_fetched.get(key)) for view in views for key in [(view.account_id, view.con_id)] if key in live_fetched]
     return bool(flags) and all(flags)
 
 
@@ -310,7 +346,7 @@ def trade_group_batch_pnls(
         flex_slice = [row for row in context.flex_rows if (row.account_id, row.con_id) in pairs]
         live_slice = [row for row in context.live_rows if (row.account_id, row.con_id) in pairs]
         exec_slice = [row for row in context.live_execs if (row.account_id, row.con_id) in pairs]
-        views = merge_positions(flex_slice, live_slice, context.quotes, context.magnifiers, context.metrics)
+        views = merge_positions(flex_slice, live_slice, context.quotes, context.magnifiers, context.metrics, context.account_as_of)
         totals = overlay_totals(
             flex_slice,
             views,
@@ -483,7 +519,7 @@ def compute_trade_group_pnl(session: Session, group_id: int) -> TradeGroupPnl:
     settled_exec_ids = {ex.ib_exec_id for ex in executions if ex.ib_exec_id}
 
     context = load_overlay_context(session, account_con_pairs)
-    views = merge_positions(context.flex_rows, context.live_rows, context.quotes, context.magnifiers, context.metrics)
+    views = merge_positions(context.flex_rows, context.live_rows, context.quotes, context.magnifiers, context.metrics, context.account_as_of)
     totals = overlay_totals(context.flex_rows, views, context.live_execs, settled_exec_ids, realized)
 
     return TradeGroupPnl(

@@ -277,10 +277,19 @@ describe("formatFreshness", () => {
     expect(freshness.label).toStartWith("live ");
   });
 
-  test("labels a stale mark as stale", () => {
+  test("labels a superseded overlay as settled, not stale", () => {
+    // The figures shown ARE the settled snapshot once the overlay is
+    // superseded, so the label must say so. Calling it "stale" described the
+    // overlay while the numbers came from elsewhere.
     const freshness = formatFreshness("2026-06-21T14:29:55Z", true);
-    expect(freshness.tone).toBe("stale");
-    expect(freshness.label).toStartWith("stale ");
+    expect(freshness.label).toBe("settled");
+    expect(freshness.tone).toBe("none");
+  });
+
+  test("keeps the superseded capture's age in the tooltip", () => {
+    const freshness = formatFreshness("2026-06-21T14:29:55Z", true);
+    expect(freshness.title).toContain("older");
+    expect(freshness.title).toMatch(/\d{1,2}:\d{2}/);
   });
 
   test("says settled when there is no live mark at all", () => {
