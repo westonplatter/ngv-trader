@@ -2,28 +2,27 @@ import type { CSSProperties } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { API_BASE_URL } from "../config";
-import { usePrivacy } from "../contexts/PrivacyContext";
+import type { TradeGroupPnlRow } from "../lib/tradeGroups";
+import { usePrivacy } from "../contexts/usePrivacy";
 import { useResizableColumn } from "../hooks/useResizableColumn";
 import { ibCodesTitle, parseIbCodes } from "../lib/ibCodes";
+import { formatMarkTime } from "../lib/markTime";
 import { linkify } from "../utils/linkify";
-import { formatGreek, formatPercent } from "../utils/number";
+import { formatGreek, formatMoney, formatPercent } from "../utils/number";
 import { PRIVACY_MASK, formatRelativeReturn } from "../utils/privacy";
 
-export type TradeGroup = {
-  id: number;
-  account_id: number | null;
-  name: string;
+// The list-endpoint row (id/name/status/strategy plus the P&L split and
+// instruments, all in ../lib/tradeGroups) with the fields only the workspace
+// needs. One source for the P&L shape, so this page and the Strategy P&L table
+// cannot describe the same payload differently.
+export type TradeGroup = TradeGroupPnlRow & {
   notes: string | null;
   meta_yaml: string | null;
   status: "open" | "closed" | "archived";
-  primary_strategy_value: string | null;
   opened_at: string;
   closed_at: string | null;
   opened_by: string | null;
   closed_by: string | null;
-  // Settled Total PnL (realized + settled unrealized) for the group. Matches the
-  // detail panel's "Total PnL" headline. Null when the group has no PnL data.
-  total_pnl: number | null;
 };
 
 export type TradeGroupDetail = TradeGroup & {
@@ -143,16 +142,6 @@ function formatDate(value: string | null): string {
   const parsed = Date.parse(value);
   if (Number.isNaN(parsed)) return "-";
   return new Date(parsed).toLocaleString();
-}
-
-function formatMarkTime(value: string | null | undefined): string {
-  if (!value) return "";
-  const parsed = Date.parse(value);
-  if (Number.isNaN(parsed)) return "";
-  return new Date(parsed).toLocaleTimeString(undefined, {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
 }
 
 async function readErrorMessage(
@@ -606,6 +595,12 @@ export default function TradeTaggingPage() {
     if (loading) return;
 
     if (!selectedStrategy) {
+      // Clearing dependent state when the selection empties. The rule's remedy
+      // is to derive this instead of storing it, which means restructuring the
+      // group/detail state of this 2.5k-line component; deferred deliberately
+      // rather than refactored blind. Clearing must stay synchronous — deferring
+      // it flashes the previous strategy's groups.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setGroups([]);
       setSelectedGroupId(null);
       return;
@@ -632,6 +627,10 @@ export default function TradeTaggingPage() {
 
   useEffect(() => {
     if (selectedGroupId == null) {
+      // Same trade-off as the effect above: synchronous clearing of the
+      // previously selected group's detail, pending a derive-instead-of-store
+      // refactor of this component.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setGroupDetail(null);
       setExecutions([]);
       setTotalRealizedPnl(null);
@@ -1997,14 +1996,14 @@ export default function TradeTaggingPage() {
                                   ? PRIVACY_MASK
                                   : positionTotals.avgCost.count === 0
                                     ? "—"
-                                    : positionTotals.avgCost.sum.toFixed(2)}
+                                    : formatMoney(positionTotals.avgCost.sum)}
                               </td>
                               <td className="px-2 py-1 text-right font-mono text-gray-700">
                                 {privacyMode
                                   ? PRIVACY_MASK
                                   : positionTotals.costBasis.count === 0
                                     ? "—"
-                                    : positionTotals.costBasis.sum.toFixed(2)}
+                                    : formatMoney(positionTotals.costBasis.sum)}
                               </td>
                               <td className="px-2 py-1 text-right"></td>
                               <td className="px-2 py-1 text-right"></td>
@@ -2013,7 +2012,7 @@ export default function TradeTaggingPage() {
                                   ? PRIVACY_MASK
                                   : positionTotals.value.count === 0
                                     ? "—"
-                                    : positionTotals.value.sum.toFixed(2)}
+                                    : formatMoney(positionTotals.value.sum)}
                               </td>
                               <td
                                 className={`px-2 py-1 text-right font-mono ${
@@ -2028,7 +2027,9 @@ export default function TradeTaggingPage() {
                                   ? PRIVACY_MASK
                                   : positionTotals.unrealized.count === 0
                                     ? "—"
-                                    : positionTotals.unrealized.sum.toFixed(2)}
+                                    : formatMoney(
+                                        positionTotals.unrealized.sum,
+                                      )}
                               </td>
                               <td
                                 className={`px-2 py-1 text-right font-mono ${
@@ -2043,8 +2044,8 @@ export default function TradeTaggingPage() {
                                   ? PRIVACY_MASK
                                   : positionTotals.liveUnrealized.count === 0
                                     ? "—"
-                                    : positionTotals.liveUnrealized.sum.toFixed(
-                                        2,
+                                    : formatMoney(
+                                        positionTotals.liveUnrealized.sum,
                                       )}
                               </td>
                               <td className="px-2 py-1"></td>
@@ -2130,13 +2131,13 @@ export default function TradeTaggingPage() {
                                   <td className="px-2 py-1 text-right font-mono text-gray-700">
                                     {privacyMode
                                       ? PRIVACY_MASK
-                                      : pos.avg_cost.toFixed(2)}
+                                      : formatMoney(pos.avg_cost)}
                                   </td>
                                   <td className="px-2 py-1 text-right font-mono text-gray-700">
                                     {privacyMode
                                       ? PRIVACY_MASK
-                                      : (pos.avg_cost * pos.position).toFixed(
-                                          2,
+                                      : formatMoney(
+                                          pos.avg_cost * pos.position,
                                         )}
                                   </td>
                                   <td className="px-2 py-1 text-right font-mono text-gray-700">
@@ -2144,21 +2145,21 @@ export default function TradeTaggingPage() {
                                       ? PRIVACY_MASK
                                       : pos.mark_price == null
                                         ? "—"
-                                        : pos.mark_price.toFixed(2)}
+                                        : formatMoney(pos.mark_price)}
                                   </td>
                                   <td className="px-2 py-1 text-right font-mono text-gray-700">
                                     {privacyMode
                                       ? PRIVACY_MASK
                                       : liveStale || pos.mark == null
                                         ? "—"
-                                        : pos.mark.toFixed(2)}
+                                        : formatMoney(pos.mark)}
                                   </td>
                                   <td className="px-2 py-1 text-right font-mono text-gray-700">
                                     {privacyMode
                                       ? PRIVACY_MASK
                                       : pos.position_value == null
                                         ? "—"
-                                        : pos.position_value.toFixed(2)}
+                                        : formatMoney(pos.position_value)}
                                   </td>
                                   <td
                                     className={`px-2 py-1 text-right font-mono ${pnlClass}`}
@@ -2170,7 +2171,7 @@ export default function TradeTaggingPage() {
                                         )
                                       : pos.fifo_pnl_unrealized == null
                                         ? "—"
-                                        : pos.fifo_pnl_unrealized.toFixed(2)}
+                                        : formatMoney(pos.fifo_pnl_unrealized)}
                                   </td>
                                   <td
                                     className={`px-2 py-1 text-right font-mono ${livePnlClass}`}
@@ -2186,7 +2187,7 @@ export default function TradeTaggingPage() {
                                           )
                                       : liveStale || pos.live_unrealized == null
                                         ? "—"
-                                        : pos.live_unrealized.toFixed(2)}
+                                        : formatMoney(pos.live_unrealized)}
                                   </td>
                                   <td className="px-2 py-1 text-gray-500">
                                     {pos.as_of_date ?? "—"}

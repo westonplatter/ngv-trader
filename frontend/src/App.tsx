@@ -12,27 +12,18 @@ import MarketDataPage from "./components/MarketDataPage";
 import PricingPage from "./components/PricingPage";
 import OrdersTable from "./components/OrdersTable";
 import PositionsTable from "./components/PositionsTable";
+import StrategyPnlTable from "./components/StrategyPnlTable";
 import TradebotChat from "./components/TradebotChat";
 import TradeTaggingPage from "./components/TradeTaggingPage";
 import TradesTable from "./components/TradesTable";
 import WatchListsPage from "./components/WatchListsPage";
 import WorkerStatusLights from "./components/WorkerStatusLights";
-import { PrivacyProvider, usePrivacy } from "./contexts/PrivacyContext";
+import { PrivacyProvider } from "./contexts/PrivacyContext";
+import { usePrivacy } from "./contexts/usePrivacy";
 import { isDemoMode } from "./lib/demoMode";
+import { NAV_ITEMS } from "./navItems";
 
 const DEMO_MODE = isDemoMode();
-
-const NAV_ITEMS = [
-  { label: "Accounts", path: "/accounts" },
-  { label: "Orders", path: "/orders" },
-  { label: "Positions", path: "/positions" },
-  { label: "Trades", path: "/trades" },
-  { label: "Strategies", path: "/strategies" },
-  { label: "Watch Lists", path: "/watchlists" },
-  { label: "Market Data", path: "/market-data" },
-  { label: "Structures", path: "/structures" },
-  { label: "Tradebot", path: "/tradebot" },
-] as const;
 
 function PrivacyToggle() {
   const { privacyMode, togglePrivacy } = usePrivacy();
@@ -93,6 +84,7 @@ function App() {
           <NavLink
             key={item.path}
             to={item.path}
+            end={item.end}
             className={({ isActive }) =>
               `text-sm ${isActive ? "text-black font-semibold" : "text-gray-500 hover:text-gray-800"}`
             }
@@ -122,6 +114,7 @@ function App() {
           <Route path="/orders" element={<OrdersTable />} />
           <Route path="/trades" element={<TradesTable />} />
           <Route path="/strategies" element={<TradeTaggingPage />} />
+          <Route path="/strategies/table" element={<StrategyPnlTable />} />
           <Route path="/watchlists" element={<WatchListsPage />} />
           <Route path="/market-data" element={<MarketDataPage />} />
           <Route path="/structures" element={<PricingPage />} />

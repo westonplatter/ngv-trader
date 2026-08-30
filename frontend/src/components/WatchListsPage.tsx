@@ -228,6 +228,13 @@ export default function WatchListsPage() {
       .finally(() => setLoading(false));
   }, []);
 
+  // Switching lists drops any "quotes refreshed" banner from the previous one.
+  // Done at the point of selection rather than in the polling effect below.
+  const selectWatchList = (id: number | null) => {
+    setSelectedId(id);
+    setQuotesRefreshMessage(null);
+  };
+
   const fetchDetail = useCallback((id: number) => {
     fetch(`${API_BASE}/watch-lists/${id}`)
       .then((res) => {
@@ -245,7 +252,6 @@ export default function WatchListsPage() {
   // Poll detail every 5s
   useEffect(() => {
     if (selectedId === null) return;
-    setQuotesRefreshMessage(null);
     fetchDetail(selectedId);
     const interval = setInterval(() => {
       fetchDetail(selectedId);
@@ -295,7 +301,7 @@ export default function WatchListsPage() {
         setNewName("");
         setNewDesc("");
         fetchLists();
-        setSelectedId(created.id);
+        selectWatchList(created.id);
       })
       .catch((err) => setError(err.message))
       .finally(() => setCreating(false));
@@ -307,7 +313,7 @@ export default function WatchListsPage() {
       .then((res) => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         if (selectedId === id) {
-          setSelectedId(null);
+          selectWatchList(null);
           setDetail(null);
         }
         fetchLists();
@@ -413,7 +419,7 @@ export default function WatchListsPage() {
                   key={wl.id}
                   wl={wl}
                   isSelected={selectedId === wl.id}
-                  onSelect={() => setSelectedId(wl.id)}
+                  onSelect={() => selectWatchList(wl.id)}
                 />
               ))}
             </SortableContext>

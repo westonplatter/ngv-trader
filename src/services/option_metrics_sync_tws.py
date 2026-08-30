@@ -8,6 +8,10 @@ jobs never clobber each other's columns and can run on independent cadences.
 Source of held instruments is ``ib.positions()`` (self-contained — no dependency
 on the mark job having run first), filtered to option sec types. Greeks are read
 off the same ticker shape the research path uses in ``market_data.py``.
+
+Writes are **preserving**: a con_id whose fetch carried no greeks keeps whatever
+is already stored (see ``_write_option_metrics``), so rerunning the job can never
+leave you with less than you had.
 """
 
 from __future__ import annotations
@@ -58,18 +62,33 @@ def _extract_greeks(ticker: Any) -> dict[str, float | None]:
 
 
 def _write_option_metrics(session: Session, tickers_by_con_id: dict[int, Any], now: datetime) -> tuple[int, int]:
-    """Upsert one ``latest_option_metrics`` row per held option con_id.
+    """Upsert ``latest_option_metrics`` for held options, preserving prior greeks.
 
-    Returns ``(written, with_greeks)`` so the caller can log coverage.
+    A fetch that returns no ``modelGreeks`` writes **nothing** for that con_id:
+    the stored row keeps its last good values and its original timestamps. This
+    matters because ``reqTickers`` is a snapshot and the model-greeks tick often
+    arrives after the snapshot ends, so coverage varies run to run — an
+    unconditional upsert let an empty run erase greeks captured earlier in the
+    day. A partial fetch writes only the fields that actually arrived, for the
+    same reason.
+
+    ``market_ts``/``ingested_at`` therefore advance only when greeks were
+    received, so a stored row's timestamp reflects the freshness of its values
+    rather than the time of the last attempt.
+
+    Returns ``(written, skipped)`` so the caller can log coverage.
     """
     written = 0
-    with_greeks = 0
+    skipped = 0
     for con_id, ticker in tickers_by_con_id.items():
-        greeks = _extract_greeks(ticker)
-        if any(v is not None for v in greeks.values()):
-            with_greeks += 1
-        else:
-            logger.warning("No modelGreeks for held option con_id=%d", con_id)
+        greeks = {k: v for k, v in _extract_greeks(ticker).items() if v is not None}
+        if not greeks:
+            logger.warning(
+                "No modelGreeks for held option con_id=%d; leaving stored metrics untouched",
+                con_id,
+            )
+            skipped += 1
+            continue
         vals = {"con_id": con_id, "market_ts": now, "ingested_at": now, **greeks}
         session.execute(
             insert(LatestOptionMetrics)
@@ -80,14 +99,18 @@ def _write_option_metrics(session: Session, tickers_by_con_id: dict[int, Any], n
             )
         )
         written += 1
-    return written, with_greeks
+    return written, skipped
 
 
 def run_option_metrics_sync(engine: Engine, ib: IB) -> dict:
     """Fetch greeks/IV for held options and write ``latest_option_metrics``.
 
     The IB session is provided by the caller (worker pool), matching
-    ``run_intraday_sync``. Returns counts ``{options, quotes, with_greeks}``.
+    ``run_intraday_sync``. Returns counts
+    ``{options, quotes, with_greeks, skipped_no_greeks}`` — ``quotes`` is tickers
+    received, ``with_greeks`` is rows actually written, and ``skipped_no_greeks``
+    counts held options whose stored metrics were left untouched because the
+    fetch carried no greeks.
     """
     now = _now_utc()
 
@@ -95,7 +118,7 @@ def run_option_metrics_sync(engine: Engine, ib: IB) -> dict:
     option_contracts = [p.contract for p in positions if getattr(p.contract, "conId", None) and getattr(p.contract, "secType", None) in OPTION_SEC_TYPES]
     logger.info("Option-metrics sync: %d held option contracts", len(option_contracts))
     if not option_contracts:
-        return {"options": 0, "quotes": 0, "with_greeks": 0}
+        return {"options": 0, "quotes": 0, "with_greeks": 0, "skipped_no_greeks": 0}
 
     # ib.positions() contracts carry a conId but no exchange, which reqTickers
     # rejects; qualify them first (same as the mark job).
@@ -103,9 +126,14 @@ def run_option_metrics_sync(engine: Engine, ib: IB) -> dict:
     tickers_by_con_id = _fetch_tickers(ib, option_contracts)
 
     with Session(engine) as session:
-        written, with_greeks = _write_option_metrics(session, tickers_by_con_id, now)
+        written, skipped = _write_option_metrics(session, tickers_by_con_id, now)
         session.commit()
 
-    counts = {"options": len(option_contracts), "quotes": written, "with_greeks": with_greeks}
+    counts = {
+        "options": len(option_contracts),
+        "quotes": len(tickers_by_con_id),
+        "with_greeks": written,
+        "skipped_no_greeks": skipped,
+    }
     logger.info("Option-metrics sync complete: %s", counts)
     return counts

@@ -127,7 +127,12 @@ export function useSSE<T>(
 ): ConnectionStatus {
   const [status, setStatus] = useState<ConnectionStatus>(currentStatus);
   const onEventRef = useRef(onEvent);
-  onEventRef.current = onEvent;
+  // Keep the ref pointing at the latest callback without writing to it during
+  // render — the subscription below reads it from async SSE callbacks, which
+  // always run after commit.
+  useEffect(() => {
+    onEventRef.current = onEvent;
+  });
 
   useEffect(() => {
     const statusListener = (s: ConnectionStatus) => setStatus(s);
