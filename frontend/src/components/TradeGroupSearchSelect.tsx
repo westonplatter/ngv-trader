@@ -11,12 +11,17 @@ const SEARCH_TIMEOUT_MS = 8000;
 
 // The contract's symbol root — the first whitespace-delimited token of the
 // display name. Works for shares ("GLD" → "GLD") and options
-// ("GLD Dec31'25 412 CALL" → "GLD"), so it can seed a recommended-group search
-// (q=GLD matches a group named "GLD Rolling Diagonals").
+// ("GLD Dec31'25 412 CALL" → "GLD"), so it can seed a recommended-group search.
 function contractSymbol(display: string | null): string | null {
   if (!display) return null;
   const token = display.trim().split(/\s+/)[0];
   return token ? token.toUpperCase() : null;
+}
+
+// The `instrument` filter is a Postgres case-insensitive regex, so a symbol with
+// a metacharacter in it ("BRK.B") has to be escaped before it becomes a pattern.
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 /**
@@ -76,9 +81,9 @@ export default function TradeGroupSearchSelect({
     });
   }, []);
 
-  const searchGroups = useCallback(async (searchQuery: string) => {
-    const params = new URLSearchParams({ limit: "20", status: "open" });
-    if (searchQuery.trim()) params.set("q", searchQuery.trim());
+  const fetchGroups = useCallback(async (params: URLSearchParams) => {
+    params.set("limit", "20");
+    params.set("status", "open");
     const response = await fetch(
       `${API_BASE_URL}/trade-groups?${params.toString()}`,
       { signal: AbortSignal.timeout(SEARCH_TIMEOUT_MS) },
@@ -88,6 +93,34 @@ export default function TradeGroupSearchSelect({
     }
     return (await response.json()) as TradeGroupResult[];
   }, []);
+
+  // What the operator types: a free-text match on group name / strategy value.
+  const searchGroups = useCallback(
+    (searchQuery: string) => {
+      const params = new URLSearchParams();
+      if (searchQuery.trim()) params.set("q", searchQuery.trim());
+      return fetchGroups(params);
+    },
+    [fetchGroups],
+  );
+
+  // What we recommend before they type: groups that already hold fills on this
+  // underlying, which is the signal `q` cannot see — a group named "Nat Gas
+  // Winter Spread" is where NG was tagged last time, and no text match finds it.
+  // `instrument` matches the derived underlying root of a group's assigned
+  // executions, falling back to its name (so a group opened today with no fills
+  // yet still surfaces). Anchoring at the start is what keeps that name fallback
+  // from firing on any substring — unanchored, "NG" recommends "Gold Holdings"
+  // and "Long Delta".
+  const recommendGroups = useCallback(
+    (symbol: string) => {
+      const params = new URLSearchParams({
+        instrument: `^${escapeRegex(symbol)}`,
+      });
+      return fetchGroups(params);
+    },
+    [fetchGroups],
+  );
 
   // Replace the result set and reset the keyboard highlight in one step, so we
   // don't need a separate effect that re-renders just to reset the index.
@@ -133,10 +166,10 @@ export default function TradeGroupSearchSelect({
     // shares searchVersionRef; the latest interaction wins).
     const version = ++searchVersionRef.current;
     const symbol = contractSymbol(contractDisplayName);
-    // Recommended = groups whose name/strategy matches the contract symbol. Take
-    // the top 2 and float them to the top of the list, then all other open groups
-    // (recency order) with the shown recs de-duped out. No visual label (1B).
-    const recommended = symbol ? searchGroups(symbol) : Promise.resolve([]);
+    // Recommended = groups already carrying this underlying. Take the top 2 and
+    // float them to the top of the list, then all other open groups (recency
+    // order) with the shown recs de-duped out. No visual label (1B).
+    const recommended = symbol ? recommendGroups(symbol) : Promise.resolve([]);
     void Promise.all([recommended, searchGroups("")])
       .then(([recs, all]) => {
         if (searchVersionRef.current !== version) return;
@@ -151,7 +184,13 @@ export default function TradeGroupSearchSelect({
       .finally(() => {
         if (searchVersionRef.current === version) setLoading(false);
       });
-  }, [searchGroups, applyResults, applyFailure, contractDisplayName]);
+  }, [
+    searchGroups,
+    recommendGroups,
+    applyResults,
+    applyFailure,
+    contractDisplayName,
+  ]);
 
   // Focus the input and position the popover once we've entered search mode.
   useEffect(() => {
