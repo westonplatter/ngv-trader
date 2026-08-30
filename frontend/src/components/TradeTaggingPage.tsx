@@ -6,6 +6,7 @@ import type { TradeGroupPnlRow } from "../lib/tradeGroups";
 import { usePrivacy } from "../contexts/usePrivacy";
 import { useResizableColumn } from "../hooks/useResizableColumn";
 import { ibCodesTitle, parseIbCodes } from "../lib/ibCodes";
+import { formatMarkTime } from "../lib/markTime";
 import { linkify } from "../utils/linkify";
 import { formatGreek, formatPercent } from "../utils/number";
 import { PRIVACY_MASK, formatRelativeReturn } from "../utils/privacy";
@@ -141,16 +142,6 @@ function formatDate(value: string | null): string {
   const parsed = Date.parse(value);
   if (Number.isNaN(parsed)) return "-";
   return new Date(parsed).toLocaleString();
-}
-
-function formatMarkTime(value: string | null | undefined): string {
-  if (!value) return "";
-  const parsed = Date.parse(value);
-  if (Number.isNaN(parsed)) return "";
-  return new Date(parsed).toLocaleTimeString(undefined, {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
 }
 
 async function readErrorMessage(

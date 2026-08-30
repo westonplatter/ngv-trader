@@ -5,6 +5,7 @@ import { usePrivacy } from "../contexts/usePrivacy";
 import { PRIVACY_MASK, formatRelativeReturn } from "../utils/privacy";
 import { API_BASE_URL } from "../config";
 import { useSSE } from "../lib/events";
+import { formatMarkTime } from "../lib/markTime";
 import {
   formatDelta,
   formatGreek,
@@ -66,16 +67,6 @@ export interface Position {
   und_price: number | null;
   intrinsic_value: number | null;
   extrinsic_value: number | null;
-}
-
-function formatMarkTime(value: string | null | undefined): string {
-  if (!value) return "";
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return "";
-  return d.toLocaleTimeString(undefined, {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
 }
 
 type SortDirection = "none" | "desc" | "asc";
