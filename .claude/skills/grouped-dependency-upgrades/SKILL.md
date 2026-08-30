@@ -101,6 +101,15 @@ moved packages. If the count exceeds what you bumped, reset the lock and use
 the adapter's surgical form; do not ship the extra upgrades inside a low-tier
 PR, where nobody is reviewing them.
 
+**An overshoot is not automatically a re-resolve.** A package released in
+lockstep with siblings brings them along legitimately — `ai` 7.0.52 → 7.0.62
+moved 7 lock entries: itself, one other direct bump, and four `@ai-sdk/*`
+internals it depends on. Name every extra entry and decide, rather than
+resetting on the count alone. What distinguishes the two: a re-resolve moves
+packages unrelated to anything you named. Run the extras through
+`check_cooldown.py` as well — they were never in a bot PR, so nothing else
+checked their publish dates.
+
 ### 4. Verify against the baseline
 
 Re-run `compare_baseline.py --adapter <id>`. Every metric must be **identical
@@ -143,9 +152,26 @@ Merging does **not** close them:
 - Dependabot does eventually close its own superseded PRs, but only on its next
   scheduled run — up to a week with `interval: "weekly"`.
 
-Close them explicitly once the grouped PR merges: `gh pr close <n> --comment
-"..."`, or the MCP `update_pull_request` with `state: "closed"` plus an
-`add_issue_comment` saying which PR carried the bump.
+**Comment on each superseded PR as soon as the grouped PR opens** — not at
+merge. Between opening and merging, those PRs are still in the queue and still
+look live; a reviewer or a later agent will otherwise re-do work that is
+already done. One comment per superseded PR, naming the grouped PR number, the
+verification it passed, and that this one stays open until the grouped PR
+merges. Cross-reference the other direction too: list every superseded number
+in the grouped PR body.
+
+```bash
+gh pr comment <n> --body "Superseded by #<grouped>, which carries this bump
+alongside the other <tier> <ecosystem> updates in one reviewable PR. Verified
+there against the base-branch baseline (<numbers>) and past the cooldown.
+
+Leaving this open until #<grouped> merges; it will be closed then."
+```
+
+Then close them explicitly once the grouped PR merges: `gh pr close <n>
+--comment "Merged as part of #<grouped>."`. Without `gh` (web and mobile
+sessions), the same two steps are the MCP `add_issue_comment` and
+`update_pull_request` with `state: "closed"`.
 
 ## Cooldown
 

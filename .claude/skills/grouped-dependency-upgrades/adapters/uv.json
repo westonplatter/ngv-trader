@@ -54,9 +54,10 @@
     },
     {
       "name": "tests",
-      "cmd": "uv run --group dev --extra mcp pytest -q",
+      "cmd": "uv run --group dev --extra mcp pytest",
       "mode": "capture",
-      "pattern": "^[=\\s]*(?:[0-9]+ (?:passed|skipped|deselected|xfailed|xpassed|warnings?), )*([0-9]+) (?:failed|error)s?\\b.*\\bin [0-9]"
+      "pattern": "^[=\\s]*(?:[0-9]+ (?:passed|skipped|deselected|xfailed|xpassed|warnings?), )*([0-9]+) (?:failed|error)s?\\b.*\\bin [0-9]",
+      "note": "No -q here: pyproject addopts already sets it, and -qq suppresses the 'N failed ... in Xs' summary this pattern reads -- a real failure then scores UNMEASURABLE instead of a count."
     }
   ],
   "reference": "references/uv.md",

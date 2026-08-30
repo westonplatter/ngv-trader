@@ -7,12 +7,24 @@ Everything below was measured in this repo, not read off the docs.
 Match the command to what the PR actually changes — the two title grammars in
 [triage.md](triage.md) map straight onto them:
 
+**Read the manifest constraint first — it, not the dependency group, picks the
+command.** A project that declares floors (`sqlalchemy>=2.0.51`) already admits
+the new version, so every ordinary bump is lock-only and `pyproject.toml` must
+come out of it unchanged. `uv add 'X==b'` there does something dependabot never
+does: it rewrites the floor into an exact pin, freezing the package for every
+future resolve. Reach for `uv add` only when the constraint genuinely has to
+move, or the package is new.
+
 | PR shape | Command |
 | --- | --- |
-| `bump X from a to b` on a **dev-group** package | `uv add --group dev 'X==b'` |
-| `bump X from a to b` on a **runtime** package | `uv add 'X==b'` |
-| lock-only move, manifest floor already fits | `uv lock --upgrade-package X==b` |
-| `update X requirement from >=a to >=b` | edit the floor in `pyproject.toml`, then `uv lock` |
+| the declared constraint already admits `b` — **the common case** | `uv lock --upgrade-package X==b` |
+| `update X requirement from >=a to >=b` (the floor itself moves) | edit `pyproject.toml`, then `uv lock` |
+| `X` is not in the manifest yet, **dev-group** | `uv add --group dev 'X==b'` |
+| `X` is not in the manifest yet, **runtime** | `uv add 'X==b'` |
+
+Measured in this repo: all four packages of a low-tier batch (`alembic`,
+`sqlalchemy`, `langgraph`, `ruff`) were lock-only, one `uv lock` call, exactly
+4 moved version lines, zero manifest diff.
 
 **Omit `--group dev` on a dev tool and uv writes it into
 `[project.dependencies]` as a runtime dependency**, leaving the real entry

@@ -40,8 +40,10 @@ $SKILL/scripts/compare_baseline.py --adapter uv --metrics imports,lint
 
 On a clean tree both columns should read identical and every verdict `same` —
 that is the run confirming your starting point, and those are the numbers you
-will cite in the PR. Current values on `origin/main`: bun 17 build / 13 lint /
-2 audit, uv 0 imports / 76 lint.
+will cite in the PR. Values on `origin/main` as of 2026-08-29: bun 0 build /
+1 lint / 2 audit, uv 0 imports / 76 lint / 245 tests passing. They drift —
+measure, do not quote these. A regression on a tree you have not touched
+usually means the branch is behind `origin/main`, not that anything broke.
 
 ## 3. Branch, one tier and one ecosystem at a time
 
@@ -67,10 +69,13 @@ is the policy working. Do not add a `minimumReleaseAgeExcludes` entry.
 **Python** — the command depends on where the package lives:
 
 ```bash
-uv add --group dev 'ruff==0.16.1'              # dev-group tool
-uv add 'alembic==1.19.0'                       # runtime dependency
-uv lock --upgrade-package fastapi==0.141.1     # lock-only, manifest floor already fits
+uv lock --upgrade-package ruff==0.16.2         # the usual case: the >= floor already fits
+uv add --group dev 'ruff==0.16.2'              # only if the constraint itself must move
+uv add 'alembic==1.19.1'                       # ditto, runtime dependency
 ```
+
+Check `pyproject.toml` before choosing: with `>=` floors every ordinary bump is
+lock-only, and `uv add 'X==b'` would rewrite the floor into an exact pin.
 
 **Never add `--exclude-newer` to a bump.** On an existing lock it re-resolves
 the whole graph — measured at 94 moved packages for one dev patch bump. Omitting
@@ -78,7 +83,9 @@ the whole graph — measured at 94 moved packages for one dev patch bump. Omitti
 
 ## 5. Check the blast radius and the cooldown
 
-The lock should move exactly the packages you bumped:
+The lock should move the packages you bumped, plus any sibling a bumped
+package legitimately pulls with it (`ai` 7.0.62 brought four `@ai-sdk/*`
+internals). Name the extras; a count you cannot account for is a re-resolve:
 
 ```bash
 git diff frontend/bun.lock | grep -cE '^\+ +"[^"]+": \["'    # JS
