@@ -8,7 +8,7 @@
 
 - **Positions & live P&L** — Track positions across accounts with unrealized P&L, plus a live intraday TWS overlay for current-state marks.
 
-- **Stragies** — Organized trades and executions into strategies and trade groups, with spread-aware, per-account realized/unrealized P&L rolled up per group.
+- **Strategies** — Organized trades and executions into strategies and trade groups, with spread-aware, per-account realized/unrealized P&L rolled up per group.
 
 ## Getting Started
 
