@@ -85,8 +85,21 @@ def published_crates(pkg: str, version: str) -> datetime:
     raise LookupError(f"{pkg} {version} not found on crates.io")
 
 
+def escape_go(path: str) -> str:
+    """Go proxy paths are case-folded: every uppercase letter becomes `!` + lowercase.
+
+    proxy.golang.org happens to answer the plain-lowercase path too, so this is
+    protocol conformance rather than a fix for an observed 404 -- but a strict
+    proxy (Athens, a private GOPROXY) resolves only the escaped form, and two
+    modules differing in case share one lowercase path.
+    See https://go.dev/ref/mod#goproxy-protocol.
+    """
+    return "".join(f"!{c.lower()}" if c.isupper() else c for c in path)
+
+
 def published_go(module: str, version: str) -> datetime:
-    data = json.loads(fetch_text(f"https://proxy.golang.org/{module.lower()}/@v/{version}.info"))
+    path = escape_go(module)
+    data = json.loads(fetch_text(f"https://proxy.golang.org/{path}/@v/{escape_go(version)}.info"))
     return parse_ts(data["Time"])
 
 
@@ -119,7 +132,8 @@ def split_spec(spec: str) -> tuple[str, str]:
     return pkg.strip(), version.strip()
 
 
-def main() -> int:
+def parse_args() -> tuple[argparse.Namespace, str]:
+    """Resolve the registry and window, from flags or the adapter that declares them."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("specs", nargs="+", help="pkg@version or pkg==version")
     parser.add_argument("--registry", choices=sorted(REGISTRIES))
@@ -135,6 +149,16 @@ def main() -> int:
         args.days = cfg.get("cooldown", {}).get("days", args.days)
     if not registry:
         parser.error("pass --registry or an --adapter that declares one")
+    # Checked after the adapter resolves, so an adapter's own `cooldown.days` is
+    # covered too: a negative window puts the cutoff in the future and every
+    # version ever published clears the check -- a silent pass, not an error.
+    if args.days < 0:
+        parser.error(f"--days must be >= 0, got {args.days}")
+    return args, registry
+
+
+def main() -> int:
+    args, registry = parse_args()
 
     cutoff = datetime.now(timezone.utc) - timedelta(days=args.days)
     rows, failed = [], False

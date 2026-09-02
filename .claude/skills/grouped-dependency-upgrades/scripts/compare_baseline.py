@@ -145,8 +145,17 @@ def carry_untracked(repo_root: Path, worktree: Path, adapter: dict) -> None:
 
 
 def measure_baseline(repo_root: Path, adapter: dict, wanted: list[str],
-                     base: str) -> dict[str, int | None]:
-    subprocess.run(["git", "-C", str(repo_root), "fetch", "-q", "origin"], check=False)
+                     base: str, fetch: bool = True) -> dict[str, int | None]:
+    if fetch:
+        # A failed fetch leaves a stale `origin/main` that still *looks* like the
+        # requested baseline, so a real regression can read as "same". Fail loudly;
+        # --no-fetch is how you say you meant to compare against the local ref.
+        got = subprocess.run(["git", "-C", str(repo_root), "fetch", "-q", "origin"],
+                             capture_output=True, text=True)
+        if got.returncode != 0:
+            sys.exit(f"ERROR: `git fetch origin` exited {got.returncode}; '{base}' may be "
+                     f"stale and the comparison meaningless.\n{got.stderr.strip()}\n"
+                     "Fix the network, or pass --no-fetch to compare against the local ref.")
     worktree = Path(tempfile.mkdtemp()) / "baseline"
     add = subprocess.run(
         ["git", "-C", str(repo_root), "worktree", "add", "--detach", "-q", str(worktree), base],
@@ -194,6 +203,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--base", default="origin/main", help="baseline ref")
     parser.add_argument("--metrics", help="comma-separated subset; default all")
     parser.add_argument("--current-only", action="store_true", help="skip the baseline worktree")
+    parser.add_argument("--no-fetch", action="store_true",
+                        help="do not `git fetch` first; compare against the local base ref as-is")
     parser.add_argument("--json", action="store_true", dest="as_json")
     parser.add_argument("--list", action="store_true", help="list adapters and exit")
     args = parser.parse_args()
@@ -212,15 +223,17 @@ def summarize(wanted: list[str], base_results: dict, cur_results: dict,
         print(f"UNMEASURED: {unmeasured} did not produce a readable result. That is not a pass —")
         print("  fix the environment (a database, an env file, a missing tool), or drop the "
               "metric with --metrics and say so in the PR.")
+        if regressed:
+            print(f"REGRESSION in {regressed} vs {args.base}. Do not ship.")
+        return 1
     if regressed:
         print(f"REGRESSION in {regressed} vs {args.base}. Do not ship.")
         return 1
 
-    scope = f" ({len(wanted) - len(unmeasured)} of {len(wanted)} metrics ran)" if unmeasured else ""
     if args.current_only:
-        print(f"Recorded current counts only, no baseline compared{scope}.")
+        print("Recorded current counts only, no baseline compared.")
         return 0
-    print(f"OK: no regression vs {args.base}{scope}. Cite these counts in the PR body.")
+    print(f"OK: no regression vs {args.base}. Cite these counts in the PR body.")
     return 0
 
 
@@ -243,7 +256,8 @@ def main() -> int:
 
     base_results: dict[str, int | None] = {name: None for name in wanted}
     if not args.current_only:
-        base_results = measure_baseline(repo_root, adapter, wanted, args.base)
+        base_results = measure_baseline(repo_root, adapter, wanted, args.base,
+                                        fetch=not args.no_fetch)
 
     print("Measuring working tree...", file=sys.stderr)
     cur_results = measure(repo_root, adapter, wanted, "work")
