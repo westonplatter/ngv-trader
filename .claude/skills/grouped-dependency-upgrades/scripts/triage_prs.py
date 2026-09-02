@@ -174,6 +174,15 @@ def triage(pr: dict, adapters: list[dict]) -> dict:
         return {**pr, "ecosystem": eco, "package": None, "old": None, "new": None,
                 "kind": "unknown", "tier": "unknown", "why": "unrecognized title"}
 
+    if adapter is None:
+        # classify() on an empty config silently loses this ecosystem's toolchain
+        # and types_prefixes, so a toolchain major could land in a low batch --
+        # and the branch name reads `chore/deps-None-low`. Route it to a human.
+        return {**pr, "ecosystem": eco, "package": match.group("pkg"),
+                "old": match.group("old"), "new": match.group("new"),
+                "kind": "unknown", "tier": "unknown",
+                "why": f"no adapter for ecosystem {eco!r}"}
+
     pkg, old, new = match.group("pkg"), match.group("old"), match.group("new")
     kind = "widen" if widening else bump_kind(old, new)
     dev = "deps-dev" in title
