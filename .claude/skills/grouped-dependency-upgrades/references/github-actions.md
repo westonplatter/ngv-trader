@@ -8,7 +8,10 @@ says so rather than printing a comfortable zero.
 - **No `add` command.** The version is a pin in the workflow YAML; edit it
   directly. `manual_edit: true` records that.
 - **Cooldown is config-side**, via `.github/dependabot.yml`.
-- Group action bumps the same way — one PR for the batch — but expect them to be
-  low tier almost always. The exception is a major on an action that gates a
-  release (`release-please-action`, publish actions): treat those as high and
-  let the individual PR run alone.
+- Group action bumps the same way — one PR for the batch — and expect them to be
+  low tier almost always, because most are patches or minors.
+- **Every action major is high tier**, like every other major: it stays out of
+  the grouped PR and runs alone. `triage_prs.py` already tiers it that way.
+  An action that gates a release (`release-please-action`, publish actions) is
+  the sharpest case — a broken one is noticed after the release, not before —
+  but it is the reason to be careful, not the boundary of the rule.

@@ -111,8 +111,12 @@ Every metric must read `same` or `BETTER`; the script exits 1 on any `WORSE`.
 Two results that are **not** a pass:
 
 - `UNMEASURABLE` — the command failed and printed nothing parseable (no
-  database, a broken config). Fix it or drop the metric with `--metrics`, and
-  say which checks did not run.
+  database, a broken config). Also exits 1. Fix it or drop the metric with
+  `--metrics`, and say which checks did not run.
+
+The script fetches `origin` first and stops if that fails, rather than
+measuring against a stale `origin/main` that still reads as the right baseline.
+Offline, pass `--no-fetch` to compare against the local ref on purpose.
 - Counts that moved when you bumped a linter or type checker — those tools
   produce the numbers, so read the findings diff instead. An
   `eslint-plugin-react-hooks` patch moved lint 6 → 13 here with no source
@@ -124,8 +128,18 @@ Two results that are **not** a pass:
 cd frontend && bun audit        # Python has no local audit command
 ```
 
-Commit per AGENTS.md, cite the baseline numbers in the PR body, and after merge
-close the superseded PRs by hand — `supersedes #164` closes nothing.
+Commit per AGENTS.md and cite the baseline numbers in the PR body. Then handle
+the superseded PRs in two steps — `supersedes #164` closes nothing on its own:
+
+1. **When the grouped PR opens**, comment on each superseded PR naming the
+   grouped PR, the verification it passed, and that it stays open until that
+   one merges. Skipping this leaves them looking live for the whole review.
+2. **After the grouped PR merges**, close each one by hand.
+
+```bash
+gh pr comment <n> --body "Superseded by #<grouped> — ..."   # at open
+gh pr close   <n> --comment "Merged as part of #<grouped>." # after merge
+```
 
 ## Without `gh`
 

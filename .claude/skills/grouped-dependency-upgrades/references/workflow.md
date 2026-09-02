@@ -15,10 +15,15 @@ flowchart LR
   V -->|any metric worse| X["fix or drop the package"]
   X --> BUMP
   A --> SHIP["commit + PR<br/>cite the counts"]
-  SHIP --> CLOSE["merge → close superseded PRs"]
+  SHIP --> NOTE["on open: comment on each<br/>superseded PR, naming the group"]
+  NOTE --> CLOSE["after merge:<br/>close superseded PRs"]
 ```
 
 One branch per ecosystem per tier. Never mix tiers, never mix ecosystems.
+
+Superseded PRs are handled in two steps, not one: comment the moment the
+grouped PR **opens** (until then the queue still looks live), close them once
+it **merges**. See SKILL.md step 7.
 
 ## The baseline diff
 

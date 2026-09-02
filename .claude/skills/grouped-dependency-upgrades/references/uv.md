@@ -56,8 +56,15 @@ check_cooldown.py --adapter uv 'ruff==0.16.1'
 ## Confirm the blast radius after every bump
 
 ```bash
-git diff uv.lock | grep -c '^+version = '     # should equal the number of packages you bumped
+git diff uv.lock | grep -c '^+version = '     # every line must be a package you can name
 ```
+
+The count is not required to equal the number of packages you asked for: a bump
+legitimately drags its own internals along. What matters is that **every moved
+package is either one you requested or one you can name and explain** — and the
+extras get a `check_cooldown.py` run too, since no bot PR ever proposed them.
+Reset the lock only when something moved that you cannot tie to anything you
+asked for; that is a re-resolve of the whole graph, not a bump.
 
 Verified good case: `uv add --group dev 'ruff==0.16.1'` → exactly 1 version
 line, 27 lock lines (its wheel hashes), one `pyproject.toml` line.
@@ -85,8 +92,9 @@ With no Postgres reachable, pytest never reaches a test body. The `tests`
 metric then reports **UNMEASURABLE**, not 0 — deliberately. Its pattern is
 anchored to pytest's summary line for the same reason: an unanchored
 `([0-9]+) failed` matches `port 5432 failed: Connection refused` and reports a
-tidy, meaningless `5432` on both sides. Drop the metric with
-`--metrics imports,lint` and say so in the PR, or bring up a database.
+tidy, meaningless `5432` on both sides. UNMEASURABLE exits 1, so the run stops
+rather than reading as clean: drop the metric with `--metrics imports,lint` and
+say so in the PR, or bring up a database.
 
 ## No local audit command
 

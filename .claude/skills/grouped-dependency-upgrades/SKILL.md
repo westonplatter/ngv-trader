@@ -125,9 +125,10 @@ repo took the lint count from 6 to 13 with no source change.
 
 **A metric can also come back `UNMEASURABLE`** — the command failed and printed
 nothing the pattern recognizes (a suite that never reached a test body, a
-linter that died on its config). That is not a pass. Fix the environment or
-drop the metric explicitly with `--metrics`, and say which checks did not run
-in the PR.
+linter that died on its config). That is not a pass, and the script exits 1 to
+say so, `--current-only` included. Fix the environment or drop the metric
+explicitly with `--metrics`, and say which checks did not run in the PR.
+Dropping it is the deliberate, visible choice; a silent zero is not.
 
 ### 5. Audit
 
@@ -196,7 +197,11 @@ it — leave the bump for next week.
 Audit findings usually sit in packages with **no direct entry** in the
 manifest. No bot PR can fix these — they are blocked until each parent ships a
 release. Force them with the adapter's `transitive_pin` mechanism (npm
-`overrides`, uv `constraint-dependencies`, cargo `[patch]`, go `replace`).
+`overrides`, uv `constraint-dependencies`, cargo `cargo update --precise`, go
+`replace`). Cargo is the odd one: `[patch.crates-io]` re-points a crate at a
+*different source* and cannot select another published crates.io version, so
+the pin is a lockfile update (or an exact-version direct dependency), not a
+manifest patch.
 
 1. **Check the cooldown per pin.** A pin bypasses the installer's own check, so
    nothing stops you pinning a package published yesterday. Inside the window →

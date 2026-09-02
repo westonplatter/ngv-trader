@@ -24,9 +24,9 @@
   },
   "audit_cmd": "cargo audit",
   "transitive_pin": {
-    "file": "Cargo.toml",
-    "field": "[patch.crates-io]",
-    "note": "Ship pins as their own PR."
+    "file": "Cargo.lock",
+    "cmd": "cargo update -p {pkg} --precise {version}",
+    "note": "Ship pins as their own PR. NOT [patch.crates-io] -- a patch must point at a different source (git or path) and cannot select another published crates.io version. If the resolver will not take the version, add it to [dependencies] as an exact pin instead."
   },
   "toolchain": [],
   "types_prefixes": [],

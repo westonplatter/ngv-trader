@@ -47,7 +47,7 @@ PR which check moved and why.
 13 open dependabot PRs across two ecosystems sorted into 4 grouped PRs and 4
 left alone:
 
-```
+```text
 [bun] LOW      -> chore/deps-bun-low       #180 @types/react-dom 19.2.3->19.2.4, #189 ai 7.0.41->7.0.52
 [bun] MEDIUM   -> chore/deps-bun-medium    #161 @types/node 24->26 (type-stub major)
                                            #186 eslint-plugin-react-hooks 7.0->7.1 (moves the baseline)

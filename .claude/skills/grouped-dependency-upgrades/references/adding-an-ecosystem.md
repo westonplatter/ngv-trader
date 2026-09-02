@@ -49,10 +49,14 @@ summary. Anchor on the tool's summary line.
 | --- | --- | --- | --- | --- | --- |
 | bun / npm | `bun install` | `bun add p@v` | `bun audit` | `overrides` | npm |
 | uv / pip | `uv sync` | `uv add 'p==v'` | none built in | `[tool.uv] constraint-dependencies` | pypi |
-| cargo | `cargo fetch` | `cargo update -p p --precise v` | `cargo audit` | `[patch.crates-io]` | crates |
+| cargo | `cargo fetch` | `cargo update -p p --precise v` | `cargo audit` | `cargo update -p c --precise v`, else an exact `[dependencies]` pin | crates |
 | go | `go mod download` | `go get p@v` | `govulncheck ./...` | `replace` | go |
 | bundler | `bundle install` | `bundle update p` | `bundle audit` | — | rubygems |
 | github-actions | — | edit the workflow pin | — | — | — |
+
+`[patch.crates-io]` is **not** a transitive pin: cargo requires a patch to
+point at a different source (git or path), so it cannot force another version
+already published on crates.io.
 
 Only adapters validated against this repo ship here. Add one when you have run
 its metrics and seen real numbers — an unvalidated adapter is worse than none,
