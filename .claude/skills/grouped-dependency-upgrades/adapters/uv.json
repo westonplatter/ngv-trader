@@ -57,7 +57,7 @@
       "cmd": "uv run --group dev --extra mcp pytest",
       "mode": "capture",
       "pattern": "^[=\\s]*(?:[0-9]+ (?:passed|skipped|deselected|xfailed|xpassed|warnings?), )*([0-9]+) (?:failed|error)s?\\b.*\\bin [0-9]",
-      "note": "No -q here: pyproject addopts already sets it, and -qq suppresses the 'N failed ... in Xs' summary this pattern reads -- a real failure then scores UNMEASURABLE instead of a count."
+      "note": "Counts FAILURES, lower-is-better, like imports and lint -- not tests run. A green suite matches nothing and scores 0 via exit 0; '1 failed, 244 passed' scores 1, which is the point. No -q here: pyproject addopts already sets it, and -qq suppresses the 'N failed ... in Xs' summary this pattern reads -- a real failure then scores UNMEASURABLE instead of a count."
     }
   ],
   "reference": "references/uv.md",

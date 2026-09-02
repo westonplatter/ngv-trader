@@ -88,6 +88,11 @@ The suite connects to Postgres and reads `.env.dev` (see `tests/conftest.py`),
 which is gitignored — so a baseline worktree has neither. The adapter's
 `link_untracked` copies `.env.dev` in and warns when it is absent.
 
+`tests` counts **failures, not tests run** — the same lower-is-better shape as
+`imports` and `lint`, so one comparison rule covers all three. A green suite
+matches nothing and scores 0 through its exit code; `1 failed, 244 passed`
+scores 1. A rising count is the regression signal.
+
 With no Postgres reachable, pytest never reaches a test body. The `tests`
 metric then reports **UNMEASURABLE**, not 0 — deliberately. Its pattern is
 anchored to pytest's summary line for the same reason: an unanchored
