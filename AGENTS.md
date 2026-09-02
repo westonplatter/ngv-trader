@@ -202,6 +202,12 @@ The suite is a dependency-bump canary (see `.github/dependabot.yml`): every `src
 
 CI runs the same suite on every PR and push to `main` via `.github/workflows/tests.yml`, against a Postgres 17 service container. There, `TEST_ENV_FILE` points at a nonexistent file so no `.env` is loaded and `DB_*` come from the workflow env.
 
+### Frontend checks
+
+The same workflow runs a `frontend` job over `frontend/`: `bun install --frozen-lockfile`, then `bun run typecheck`, `bun run lint`, `bun test`, `bun run build`. Run those four locally before pushing frontend changes — `task test` covers only the Python suite.
+
+`typecheck` is `tsc -b --force`, not `tsc --noEmit`: the root `tsconfig.json` is a solution file (`files: []`, references only), so `--noEmit` against it checks nothing and always exits 0.
+
 ## Doc Validation
 
 After any doc change, run `scripts/docs_check.py` to catch broken links, missing script paths, bad task commands, and missing spec banners.
