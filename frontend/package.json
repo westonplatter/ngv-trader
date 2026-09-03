@@ -12,11 +12,11 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@ai-sdk/react": "^4.0.65",
+    "@ai-sdk/react": "^4.0.71",
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
-    "ai": "^7.0.62",
+    "ai": "^7.0.68",
     "plotly.js": "^3.7.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
@@ -27,18 +27,18 @@
     "@eslint/js": "^10.0.1",
     "@tailwindcss/vite": "^4.3.3",
     "@types/bun": "^1.2.4",
-    "@types/node": "^26.1.2",
+    "@types/node": "^26.2.0",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
-    "@vitejs/plugin-react": "^6.0.4",
-    "eslint": "^10.8.0",
+    "@vitejs/plugin-react": "^6.0.5",
+    "eslint": "^10.8.1",
     "eslint-plugin-react-hooks": "^7.1.1",
-    "eslint-plugin-react-refresh": "^0.5.3",
-    "globals": "^17.8.0",
+    "eslint-plugin-react-refresh": "^0.5.4",
+    "globals": "^17.10.0",
     "tailwindcss": "^4.3.3",
     "typescript": "~6.0.3",
     "typescript-eslint": "^8.66.0",
-    "vite": "^8.2.0"
+    "vite": "^8.2.1"
   },
   "overrides": {
     "brace-expansion": "^5.0.9",
