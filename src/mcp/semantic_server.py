@@ -24,7 +24,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server import MCPServer
 from src.services.semantic.executor import run_metric_query
 from src.services.semantic.loader import get_model
 from src.services.semantic.resolver import ALLOWED_TIME_GRAINS, build_metric_query
@@ -34,7 +34,7 @@ from src.services.trade_group_pnl import (
     search_trade_groups,
 )
 
-mcp = FastMCP("ngv-semantic")
+mcp = MCPServer("ngv-semantic")
 
 
 @lru_cache(maxsize=1)

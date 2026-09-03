@@ -23,7 +23,7 @@ dependencies = [
 [project.optional-dependencies]
 # Semantic-layer MCP server (src/mcp/semantic_server.py). Install with
 # `uv sync --extra mcp` or run via `uv run --extra mcp`.
-mcp = ["mcp>=1.2"]
+mcp = ["mcp>=2.0"]
 
 [build-system]
 requires = ["hatchling"]
