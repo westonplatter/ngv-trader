@@ -1,0 +1,31 @@
+{
+  "id": "github-actions",
+  "description": "Action versions pinned in .github/workflows/",
+  "dir": ".",
+  "dependabot_ecosystems": [
+    "github_actions"
+  ],
+  "labels": [
+    "github_actions"
+  ],
+  "registry": null,
+  "manifests": [
+    ".github/workflows/*.yml"
+  ],
+  "install": null,
+  "add": null,
+  "manual_edit": true,
+  "cooldown": {
+    "days": 14,
+    "mode": "dependabot",
+    "where": ".github/dependabot.yml cooldown.default-days"
+  },
+  "audit_cmd": null,
+  "transitive_pin": null,
+  "toolchain": [],
+  "types_prefixes": [],
+  "metrics": [],
+  "reference": "references/github-actions.md",
+  "add_lock_only": null,
+  "lock_delta_cmd": null
+}

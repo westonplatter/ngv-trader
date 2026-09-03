@@ -1,0 +1,160 @@
+# Running it locally
+
+Ask Claude Code to "batch the dependabot PRs" and the skill drives this itself.
+These are the same steps run by hand.
+
+**Prerequisites:** `bun`, `uv`, and a git remote you can fetch. `gh` is optional
+(see [Without `gh`](#without-gh)). Registry lookups need network. Postgres is
+needed only for the Python `tests` metric.
+
+```bash
+SKILL=.claude/skills/grouped-dependency-upgrades   # all commands run from the repo root
+```
+
+## 1. See the queue (both ecosystems at once)
+
+```bash
+$SKILL/scripts/triage_prs.py --repo westonplatter/ngv-trader
+```
+
+Prints every open bot PR grouped by ecosystem and tier, with the branch name to
+use. Nothing is written. Majors and toolchain bumps are listed as HIGH — leave
+those PRs alone.
+
+## 2. Record the baseline — before touching anything
+
+This must run on a **clean tree**, or the "before" number already contains your
+change.
+
+```bash
+$SKILL/scripts/compare_baseline.py --adapter bun    # ~3 min
+$SKILL/scripts/compare_baseline.py --adapter uv     # ~2 min, needs Postgres for `tests`
+```
+
+No database running? Drop that metric explicitly rather than letting it report
+a meaningless number:
+
+```bash
+$SKILL/scripts/compare_baseline.py --adapter uv --metrics imports,lint
+```
+
+On a clean tree both columns should read identical and every verdict `same` —
+that is the run confirming your starting point, and those are the numbers you
+will cite in the PR. Values on `origin/main` as of 2026-08-29: bun 0 build /
+1 lint / 2 audit, uv 0 imports / 76 lint / 245 tests passing. They drift —
+measure, do not quote these. A regression on a tree you have not touched
+usually means the branch is behind `origin/main`, not that anything broke.
+
+## 3. Branch, one tier and one ecosystem at a time
+
+```bash
+git fetch origin main && git checkout -b chore/deps-bun-low origin/main
+```
+
+## 4. Bump
+
+**JavaScript** — `bun add` strips the caret and pins exact, so put the range
+back:
+
+```bash
+cd frontend
+bun add ai@7.0.52 @types/react-dom@19.2.4
+# edit package.json: "7.0.52" -> "^7.0.52" for each package
+bun install && cd ..
+```
+
+The 14-day cooldown is mechanical here — if `bun add` refuses a version, that
+is the policy working. Do not add a `minimumReleaseAgeExcludes` entry.
+
+**Python** — the command depends on where the package lives:
+
+```bash
+uv lock --upgrade-package ruff==0.16.2         # the usual case: the >= floor already fits
+uv add --group dev 'ruff==0.16.2'              # only if the constraint itself must move
+uv add 'alembic==1.19.1'                       # ditto, runtime dependency
+```
+
+Check `pyproject.toml` before choosing: with `>=` floors every ordinary bump is
+lock-only, and `uv add 'X==b'` would rewrite the floor into an exact pin.
+
+**Never add `--exclude-newer` to a bump.** On an existing lock it re-resolves
+the whole graph — measured at 94 moved packages for one dev patch bump. Omitting
+`--group dev` is the other trap: uv files the dev tool as a runtime dependency.
+
+## 5. Check the blast radius and the cooldown
+
+The lock should move the packages you bumped, plus any sibling a bumped
+package legitimately pulls with it (`ai` 7.0.62 brought four `@ai-sdk/*`
+internals). Name the extras; a count you cannot account for is a re-resolve:
+
+```bash
+git diff frontend/bun.lock | grep -cE '^\+ +"[^"]+": \["'    # JS
+git diff uv.lock | grep -c '^+version = '                    # Python
+```
+
+More than that means the tool re-resolved: reset the lock and use the surgical
+form. Then confirm every version is past the cooldown — mandatory for Python
+and for any `overrides` pin, since neither is checked at install time:
+
+```bash
+$SKILL/scripts/check_cooldown.py --adapter uv 'ruff==0.16.1' 'alembic==1.19.0'
+$SKILL/scripts/check_cooldown.py --adapter bun ai@7.0.52
+```
+
+## 6. Verify against the baseline
+
+```bash
+$SKILL/scripts/compare_baseline.py --adapter bun
+```
+
+Every metric must read `same` or `BETTER`; the script exits 1 on any `WORSE`.
+Two results that are **not** a pass:
+
+- `UNMEASURABLE` — the command failed and printed nothing parseable (no
+  database, a broken config). Also exits 1. Fix it or drop the metric with
+  `--metrics`, and say which checks did not run.
+
+The script fetches `origin` first and stops if that fails, rather than
+measuring against a stale `origin/main` that still reads as the right baseline.
+Offline, pass `--no-fetch` to compare against the local ref on purpose.
+- Counts that moved when you bumped a linter or type checker — those tools
+  produce the numbers, so read the findings diff instead. An
+  `eslint-plugin-react-hooks` patch moved lint 6 → 13 here with no source
+  change.
+
+## 7. Audit, ship, close
+
+```bash
+cd frontend && bun audit        # Python has no local audit command
+```
+
+Commit per AGENTS.md and cite the baseline numbers in the PR body. Then handle
+the superseded PRs in two steps — `supersedes #164` closes nothing on its own:
+
+1. **When the grouped PR opens**, comment on each superseded PR naming the
+   grouped PR, the verification it passed, and that it stays open until that
+   one merges. Skipping this leaves them looking live for the whole review.
+2. **After the grouped PR merges**, close each one by hand.
+
+```bash
+gh pr comment <n> --body "Superseded by #<grouped> — ..."   # at open
+gh pr close   <n> --comment "Merged as part of #<grouped>." # after merge
+```
+
+## Without `gh`
+
+Claude Code web sessions have no GitHub CLI. Fetch the PRs with the MCP tool
+`list_pull_requests` (fields `number,title,user,labels,head`), save the JSON,
+and feed it in:
+
+```bash
+$SKILL/scripts/triage_prs.py --from-file prs.json
+```
+
+## Try it without touching anything
+
+```bash
+$SKILL/scripts/compare_baseline.py --list                    # adapters and their metrics
+$SKILL/scripts/check_cooldown.py --registry pypi 'ruff==0.16.1'
+$SKILL/scripts/compare_baseline.py --adapter bun --current-only   # measure, no worktree
+```

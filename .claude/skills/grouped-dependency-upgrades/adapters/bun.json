@@ -1,0 +1,71 @@
+{
+  "id": "bun",
+  "description": "JS/TS frontend installed with bun",
+  "dir": "frontend",
+  "dependabot_ecosystems": [
+    "bun",
+    "npm_and_yarn"
+  ],
+  "labels": [
+    "javascript"
+  ],
+  "registry": "npm",
+  "manifests": [
+    "package.json",
+    "bun.lock"
+  ],
+  "install": "bun install",
+  "add": "bun add {pkg}@{version}",
+  "post_add_fixup": "bun add writes an exact version and discards the caret range. Restore \"^{version}\" in package.json, then re-run `bun install`. Verify with `git diff frontend/package.json` that nothing moved dep/devDep sections.",
+  "cooldown": {
+    "days": 14,
+    "mode": "mechanical",
+    "where": "frontend/bunfig.toml minimumReleaseAge",
+    "note": "A refused install is the policy working. Never add a minimumReleaseAgeExcludes entry to get around it. Overrides bypass this check entirely -- run check_cooldown.py for every pin."
+  },
+  "audit_cmd": "bun audit",
+  "transitive_pin": {
+    "file": "package.json",
+    "field": "overrides",
+    "note": "Ship overrides as their own PR, never folded into a version-bump PR."
+  },
+  "toolchain": [
+    "vite",
+    "typescript",
+    "@vitejs/plugin-react"
+  ],
+  "types_prefixes": [
+    "@types/"
+  ],
+  "metrics": [
+    {
+      "name": "build",
+      "cmd": "bun run build",
+      "mode": "count",
+      "pattern": "error TS"
+    },
+    {
+      "name": "lint",
+      "cmd": "bun run lint",
+      "mode": "capture",
+      "pattern": "\\(([0-9]+) errors?,"
+    },
+    {
+      "name": "audit",
+      "cmd": "bun audit",
+      "mode": "capture",
+      "pattern": "^([0-9]+) vulnerabilit"
+    }
+  ],
+  "reference": "references/bun.md",
+  "baseline_tools": [
+    "eslint",
+    "typescript",
+    "typescript-eslint",
+    "eslint-plugin-react-hooks",
+    "eslint-plugin-react-refresh",
+    "vite"
+  ],
+  "baseline_tools_note": "These produce the build/lint counts compare_baseline.py diffs. Bumping one moves its own yardstick: an unchanged count is no longer evidence -- read the message diff.",
+  "lock_delta_cmd": "git diff frontend/bun.lock | grep -cE '^\\+ +\"[^\"]+\": \\[\"'"
+}

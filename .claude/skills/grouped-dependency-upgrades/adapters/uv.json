@@ -1,0 +1,72 @@
+{
+  "id": "uv",
+  "description": "Python backend installed with uv",
+  "dir": ".",
+  "dependabot_ecosystems": [
+    "uv",
+    "pip"
+  ],
+  "labels": [
+    "python:uv"
+  ],
+  "registry": "pypi",
+  "manifests": [
+    "pyproject.toml",
+    "uv.lock"
+  ],
+  "install": "uv sync --group dev --extra mcp",
+  "add": "uv add --group dev '{pkg}=={version}'   # omit --group for a runtime dependency",
+  "post_add_fixup": "Two hazards, both measured. (1) Never pass --exclude-newer when bumping an existing lock: it re-resolves the whole graph -- one dev patch bump moved 94 packages, including uvicorn, pandas and mcp. Verify the date with check_cooldown.py instead; --exclude-newer belongs on `uv add` for a brand-new dependency, where a full resolve is expected. (2) Omit --group and uv writes a dev tool into [project.dependencies] as a runtime dep, leaving the real entry in place. Always diff pyproject.toml.",
+  "cooldown": {
+    "days": 14,
+    "mode": "manual",
+    "where": "no mechanical enforcement; check_cooldown.py --adapter uv",
+    "note": "Nothing enforces this at install time. Dependabot's own cooldown covers the PRs it opens; a hand-typed version or a transitive pin is unguarded. Do not reach for --exclude-newer on a bump -- see post_add_fixup."
+  },
+  "audit_cmd": null,
+  "transitive_pin": {
+    "file": "pyproject.toml",
+    "field": "[tool.uv] constraint-dependencies",
+    "note": "constraint-dependencies bounds an existing transitive dep without adding it as a direct one; override-dependencies forces a version against a parent's stated requirement. Prefer the former."
+  },
+  "toolchain": [
+    "hatchling",
+    "uv"
+  ],
+  "types_prefixes": [
+    "types-"
+  ],
+  "link_untracked": [
+    ".env.dev"
+  ],
+  "metrics": [
+    {
+      "name": "imports",
+      "cmd": "uv run --group dev python scripts/check.py",
+      "mode": "capture",
+      "pattern": "([0-9]+) failed out of"
+    },
+    {
+      "name": "lint",
+      "cmd": "uv run --group dev ruff check .",
+      "mode": "capture",
+      "pattern": "Found ([0-9]+) error"
+    },
+    {
+      "name": "tests",
+      "cmd": "uv run --group dev --extra mcp pytest",
+      "mode": "capture",
+      "pattern": "^[=\\s]*(?:[0-9]+ (?:passed|skipped|deselected|xfailed|xpassed|warnings?), )*([0-9]+) (?:failed|error)s?\\b.*\\bin [0-9]",
+      "note": "Counts FAILURES, lower-is-better, like imports and lint -- not tests run. A green suite matches nothing and scores 0 via exit 0; '1 failed, 244 passed' scores 1, which is the point. No -q here: pyproject addopts already sets it, and -qq suppresses the 'N failed ... in Xs' summary this pattern reads -- a real failure then scores UNMEASURABLE instead of a count."
+    }
+  ],
+  "reference": "references/uv.md",
+  "baseline_tools": [
+    "ruff",
+    "pytest",
+    "typer"
+  ],
+  "baseline_tools_note": "ruff produces the lint count and pytest the test count. A ruff bump can add rules, so a changed count is expected -- read the new findings rather than trusting the delta.",
+  "add_lock_only": "uv lock --upgrade-package {pkg}=={version}",
+  "lock_delta_cmd": "git diff uv.lock | grep -c '^+version = '"
+}
