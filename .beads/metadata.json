@@ -1,7 +1,8 @@
 {
   "database": "dolt",
   "backend": "dolt",
-  "dolt_mode": "embedded",
-  "dolt_database": "ngv_trader",
-  "project_id": "5c25995b-f54d-4129-884f-28d808eaa3f1"
+  "dolt_mode": "server",
+  "dolt_server_port": 3307,
+  "dolt_database": "ngv_fund",
+  "project_id": "0e398e29-1f99-4f2a-889e-37d3591e5d9e"
 }
