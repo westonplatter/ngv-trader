@@ -17,7 +17,7 @@ Today the live system supports:
 2. theme catalog CRUD at the API layer
 3. trade-group CRUD
 4. execution-to-trade-group assignment, unassignment, and reassignment
-5. assignment history and a timeline view
+5. assignment history and a timeline read path (API only — see below; no frontend UI renders it yet)
 6. trades-page assignment into groups
 
 > The TradeGroup executions view also supports an optional **intraday TWS
@@ -348,7 +348,6 @@ It currently supports:
 5. viewing group detail
 6. editing group name, notes, and status
 7. deleting trade groups
-8. viewing a read-only timeline
 
 The current page does not provide:
 
@@ -356,10 +355,13 @@ The current page does not provide:
 2. theme management UI
 3. generic tag-link editing UI
 4. UI for trade-group linking such as manual roll-link creation
+5. a rendered timeline view — the `GET .../timeline` endpoint exists (see Live API Surface) but no frontend component calls it
 
 ## Timeline Semantics
 
-The timeline is descriptive, not a full accounting ledger.
+Applies to the `GET .../timeline` API response (see Live API Surface) — there is
+no frontend UI consumer yet. The timeline is descriptive, not a full accounting
+ledger.
 
 Current classification rules:
 
@@ -378,7 +380,7 @@ Typical live workflow:
 1. executions appear in `/trades`
 2. operator assigns a trade's executions to a trade group from the trades page
 3. operator manages strategy and trade-group metadata in `/strategies`
-4. timeline and counts update from the group detail endpoints
+4. execution counts update from the group detail endpoints
 
 ## Important Constraints
 
