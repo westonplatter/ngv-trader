@@ -1,5 +1,45 @@
 # Changelog
 
+## [0.1.16](https://github.com/westonplatter/ngv-trader/compare/v0.1.15...v0.1.16) (2026-09-03)
+
+
+### Features
+
+* adopt beads tracker, add 3 day sync, preserve stored greeks ([#203](https://github.com/westonplatter/ngv-trader/issues/203)) ([ee829be](https://github.com/westonplatter/ngv-trader/commit/ee829be0e9c37e48bdb04a04ea83eca97d4b8972))
+
+
+### Bug Fixes
+
+* **frontend:** green the frontend — typescript 6, build, lint, tests ([#198](https://github.com/westonplatter/ngv-trader/issues/198)) ([708efcf](https://github.com/westonplatter/ngv-trader/commit/708efcf712919cfb42347b283f0dca03b62bae32))
+* **positions:** stop trusting a stale live overlay over settled data ([#219](https://github.com/westonplatter/ngv-trader/issues/219)) ([5ae732b](https://github.com/westonplatter/ngv-trader/commit/5ae732bf6c2958ddd1c2cb38010b7be178d6806e))
+* **tests:** date the settled snapshot fixture on the CT clock ([#223](https://github.com/westonplatter/ngv-trader/issues/223)) ([6be2651](https://github.com/westonplatter/ngv-trader/commit/6be26513b78052943e4d6a8dd3c82f8b0d8f420c))
+
+
+### Documentation
+
+* keep account aliases out of committed content ([#220](https://github.com/westonplatter/ngv-trader/issues/220)) ([3ef7cec](https://github.com/westonplatter/ngv-trader/commit/3ef7cec362bdc78c34dd0aec8fa45aac15c25d02))
+
+
+### Code Refactoring
+
+* **skills:** generalize grouped dependency upgrades ([#227](https://github.com/westonplatter/ngv-trader/issues/227)) ([e1adade](https://github.com/westonplatter/ngv-trader/commit/e1adade076e2fb7ed682dcb16cd24c127e8f87f2))
+
+
+### Miscellaneous Chores
+
+* **deps-dev:** bump @types/node from 24.12.0 to 26.1.2 in /frontend ([#161](https://github.com/westonplatter/ngv-trader/issues/161)) ([e9da3a8](https://github.com/westonplatter/ngv-trader/commit/e9da3a89046daaf0fac09fb9a6be8696965d1a5e))
+* **deps-dev:** bump ruff from 0.16.0 to 0.16.1 ([#181](https://github.com/westonplatter/ngv-trader/issues/181)) ([b25ba48](https://github.com/westonplatter/ngv-trader/commit/b25ba48f4c11f04e6f44cc8e61c1b3ed745e84cb))
+* **deps:** bump typescript-eslint from 8.66.0 to 8.67.0 in frontend ([#230](https://github.com/westonplatter/ngv-trader/issues/230)) ([f5b6b4c](https://github.com/westonplatter/ngv-trader/commit/f5b6b4c8912885c91b708d21f52be7bb7e24633d))
+* **deps:** group low-risk frontend bumps (ai, @ai-sdk/react, @types/react) ([#221](https://github.com/westonplatter/ngv-trader/issues/221)) ([3f4f238](https://github.com/westonplatter/ngv-trader/commit/3f4f23891f79056df987fd2d69e85543cb66835b))
+* **deps:** group low-risk frontend bumps (ai, eslint, vite, types) ([#229](https://github.com/westonplatter/ngv-trader/issues/229)) ([bc86752](https://github.com/westonplatter/ngv-trader/commit/bc867528e5706172c983ed7cadf79519d1ba08c8))
+* **deps:** group low-risk python bumps (alembic, sqlalchemy, langgraph, ruff) ([#222](https://github.com/westonplatter/ngv-trader/issues/222)) ([1bb997c](https://github.com/westonplatter/ngv-trader/commit/1bb997c4c1eb7f22799c97a1f79eab07ff4f2a3f))
+* **deps:** group low-risk python bumps (python-dotenv, ruff) ([#228](https://github.com/westonplatter/ngv-trader/issues/228)) ([4fb4d88](https://github.com/westonplatter/ngv-trader/commit/4fb4d88ea40ae2b8d30ca325f9fd0953d971fcc8))
+
+
+### Continuous Integration
+
+* run frontend typecheck, lint, tests and build ([#202](https://github.com/westonplatter/ngv-trader/issues/202)) ([3dbed96](https://github.com/westonplatter/ngv-trader/commit/3dbed966a1d519f0cc6379d00694451fca0734eb))
+
 ## [0.1.15](https://github.com/westonplatter/ngv-trader/compare/v0.1.14...v0.1.15) (2026-08-24)
 
 
