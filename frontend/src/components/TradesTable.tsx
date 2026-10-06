@@ -1259,7 +1259,20 @@ export default function TradesTable() {
                         {privacyMode ? PRIVACY_MASK : row.ib_exec_id}
                       </td>
                       <td className="whitespace-nowrap px-3 py-2 font-mono text-xs text-gray-600">
-                        {row.con_id ?? "-"}
+                        {row.con_id ? (
+                          <Link
+                            to={`/trades?con_id=${row.con_id}`}
+                            // Same-page navigation doesn't remount, so widen
+                            // the time range here (initial state covers mount).
+                            onClick={() => setTimeRange("all")}
+                            className="text-blue-600 hover:underline"
+                            title="Search all trades for this Contract ID (all time, all accounts)"
+                          >
+                            {row.con_id}
+                          </Link>
+                        ) : (
+                          "-"
+                        )}
                       </td>
                     </>
                   )}
