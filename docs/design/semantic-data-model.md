@@ -113,19 +113,20 @@ Two different figures; don't confuse them:
 
 ## 6. Worked example — covered-call financing for a trade group
 
-_"For MP LT: how much option premium have we collected vs. paid for the long
-LEAP, and where do realized/unrealized stand?"_ — all via MCP:
+_"For `<GROUP>`: how much option premium have we collected vs. paid for the long
+LEAP, and where do realized/unrealized stand?"_ — all via MCP. The figures are
+illustrative, not from a real group:
 
-| Question                              | Call                                                                                    |
-| ------------------------------------- | --------------------------------------------------------------------------------------- |
-| Premium collected (options only)      | `query_metric("premium_collected", filters={tag:"MP LT", sec_type:"OPT"})` → **$1,451** |
-| Premium paid on options (incl. LEAP)  | `query_metric("premium_paid", filters={tag:"MP LT", sec_type:"OPT"})` → **$2,299**      |
-| Net cash flow, all legs (incl. stock) | `query_metric("gross_premium", filters={tag:"MP LT"})` → **−$6,863**                    |
-| Realized PnL                          | `query_metric("realized_pnl", filters={tag:"MP LT"})` → **$1,100**                      |
-| Settled unrealized PnL                | `query_metric("settled_unrealized_pnl", filters={tag:"MP LT"})` → **−$1,383**           |
-| Live/intraday unrealized              | `trade_group_pnl("MP LT")` → intraday unrealized **−$1,246**                            |
+| Question                              | Call                                                                                      |
+| ------------------------------------- | ----------------------------------------------------------------------------------------- |
+| Premium collected (options only)      | `query_metric("premium_collected", filters={tag:"<GROUP>", sec_type:"OPT"})` → **$1,000** |
+| Premium paid on options (incl. LEAP)  | `query_metric("premium_paid", filters={tag:"<GROUP>", sec_type:"OPT"})` → **$2,500**      |
+| Net cash flow, all legs (incl. stock) | `query_metric("gross_premium", filters={tag:"<GROUP>"})` → **−$8,000**                    |
+| Realized PnL                          | `query_metric("realized_pnl", filters={tag:"<GROUP>"})` → **$500**                        |
+| Settled unrealized PnL                | `query_metric("settled_unrealized_pnl", filters={tag:"<GROUP>"})` → **−$1,000**           |
+| Live/intraday unrealized              | `trade_group_pnl("<GROUP>")` → intraday unrealized **−$900**                              |
 
-Financing so far ≈ collected $1,451 / LEAP cost $2,176 ≈ **67%**. (Isolating the
+Financing so far ≈ collected $1,000 / LEAP cost $2,000 ≈ **50%**. (Isolating the
 _exact_ LEAP leg by `strike`/`right` is limited by the contracts caveat in §4.)
 
 ## 7. Other common questions
@@ -137,20 +138,20 @@ _exact_ LEAP leg by `strike`/`right` is limited by the contracts caveat in §4.)
 
 ## 8. Finding a trade group by phrase (`phrase → find → PnL`)
 
-You often don't know a group's exact name — you have a phrase ("MP", "gamma
-delta", "the CL Dec 27 thing"). **Don't filter a metric by `symbol` to find it**:
+You often don't know a group's exact name — you have a phrase ("vega theta",
+"the NQ Jun 28 thing"). **Don't filter a metric by `symbol` to find it**:
 on `execution_facts`, `symbol` comes from the incomplete `contracts` join (§4),
 so symbol-filtered PnL silently undercounts, and a symbol isn't even the right
 key (the phrase may be a strategy description, not a ticker). Use the two-step
 flow:
 
-1. **Resolve** — `find_trade_groups("gamma delta")` → `[{id:19, name:"CL Short Gamma + Long Delta --- Dec'27", score:…}]`.
+1. **Resolve** — `find_trade_groups("vega theta")` → `[{id:<GROUP_ID>, name:"NQ Long Vega + Short Theta --- Jun'28", score:…}]`.
    Every token in the phrase must appear in the name (order/punctuation-independent),
-   so `"gamma delta"`, `"cl dec 27"`, `"dec'27"` all hit the same group. If **more
-   than one** match comes back the phrase is ambiguous (e.g. `"dec 27"` → GOOGL,
-   CL, HE Butterfly) — pick one, don't guess.
+   so `"vega theta"`, `"nq jun 28"`, `"jun'28"` all hit the same group. If **more
+   than one** match comes back the phrase is ambiguous (e.g. `"jun 28"` → an ES,
+   an NQ, and a ZC group) — pick one, don't guess.
 2. **Look up** — pass the chosen `id` (or exact `name`) to:
-   - `trade_group_pnl(19)` → realized + settled + intraday unrealized in one call, or
+   - `trade_group_pnl(<GROUP_ID>)` → realized + settled + intraday unrealized in one call, or
    - `query_metric(..., filters={tag: name})` for a specific metric.
 
 `trade_group_pnl` also accepts a fuzzy phrase directly and auto-resolves it **when

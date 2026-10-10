@@ -25,7 +25,7 @@ Select Instrument (/CL, /NQ, /ES)
         │
         ├── Type (Call / Put / D1 / Cash)
         │     │
-        │     ├── Call/Put: Strike combobox → DTE dropdown → auto-populate
+        │     ├── Call/Put: Expiry select → Strike combobox → auto-populate
         │     ├── D1: Futures contract combobox → auto-populate
         │     └── Cash: Manual strike/DTE entry
         │
@@ -70,13 +70,16 @@ All `/api/v1/*` routes are served by the local FastAPI backend (`:8000`). The `/
 Each selection narrows the next:
 
 1. **Type** — filters chain entries by right (C/P)
-2. **Strike** — combobox with fuzzy search over available strikes for that right
-3. **DTE** — dropdown of available DTEs for that type+strike combination
+2. **Expiry** — select of the expirations available for that right, one entry per
+   expiration and trading class, labeled with days to expiry and sorted nearest
+   first. Choosing an expiry clears any strike.
+3. **Strike** — combobox with fuzzy search over the strikes for the selected
+   expiry. Shows "Pick expiry first" until an expiry is chosen.
 4. **Qty** — manual input, defaults to 1
 
 ### Auto-populated fields
 
-When a contract is selected (via DTE dropdown or auto-select if only one DTE):
+When a strike is selected:
 
 - IV (from `LatestFuturesOptions.iv`)
 - Bid, Ask (from pricing data)
@@ -99,7 +102,10 @@ All auto-populated fields remain manually editable for overrides.
 The expected PnL endpoint receives:
 
 - `spot_price`, `spot_min`, `spot_max` — price range for the underlying
-- `legs[]` — each with `option_type`, `strike`, `dte`, `ivstart`, `quantity`, `trade_price`
+- `legs[]` — each with `option_type`, `strike`, `dte`, `ivstart`, `ivend`,
+  `quantity`, `trade_price`, `rate`, `underlying` (the page sends `rate` and
+  `underlying` as `null`)
+- `days_into_future` — the largest leg `dte` (at least 1)
 - `day_step`, `strike_step` — resolution controls
 
 Returns `{ model_inputs, model_outputs: { min_dte, pnl_records, pnl_records_count } }`. `pnl_records[]` holds `(spot_price, days_into_future, value)` tuples, rendered as a Plotly line chart with one trace per sampled day.

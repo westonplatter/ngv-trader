@@ -30,17 +30,17 @@ The design docs were written as features shipped and were not revisited when lat
 
 ### Requirements
 
-**Accuracy**
+#### Accuracy
 
 - R1. Every passage listed under Implementation Units is rewritten to describe current behavior, with the governing code path named in the doc the way surrounding text already names code.
 - R2. A rewrite adds no claim the executor has not confirmed by reading the cited code.
 - R3. Where the SQL metric and the MCP tool now differ, the doc states the difference explicitly instead of asserting they share a rule.
 
-**Data policy**
+#### Data policy
 
 - R4. `docs/design/semantic-data-model.md` carries no account alias and no trade group tied to real P&L figures. Examples use the placeholder conventions in `docs/ibkr-sample-data.md` under "Account References in Committed Content".
 
-**Hygiene**
+#### Hygiene
 
 - R5. `uv run python scripts/docs_check.py` passes after the edits.
 - R6. Each doc's remaining content is left as written. This plan fixes the flagged passages; it is not a rewrite.
@@ -56,6 +56,8 @@ The design docs were written as features shipped and were not revisited when lat
 - Code gap, not a doc fix: the docstring on the FlexQuery trade-matching function in `src/services/trade_sync_flexquery.py` still describes a `trade_date` check the function does not perform and names an unused parameter. The doc is right and the docstring is wrong. File it as a separate code change.
 - Incomplete lists that are not wrong: `user-preferences-privacy-mode.md` omits `StrategyPnlTable` from its affected-components list, and `trade-tagging.md`'s workspace feature list omits strategy archive/unarchive and the meta YAML editor.
 - Wording only: `workers.md` says the positions sync default window is "one day"; the code passes a zero-day span ending on the prior business day.
+- Code gap, not a doc fix: the `v_position_trade_group` docstring in `alembic/versions/20260704214134_position_trade_group_bridge_view.py` still says the bridge "matches the attribution of the `trade_group_pnl` tool exactly". The tool now apportions shared positions (`apportion_to_group`).
+- Code gap, data policy: the `search_trade_groups` docstring in `src/services/trade_group_pnl.py` uses a real trade group name as its example. U3 removed the same name from `semantic-data-model.md`.
 
 ### Open Questions
 
@@ -105,6 +107,8 @@ Code the review used to confirm each finding. Symbols are stable; line numbers a
   2. In section 9, replace the attribution rule "a position is attributed to a group when any of the group's executions touched its (account_id, con_id)" with the pro-rata rule: the group holds the part of each position its own tagged fills opened, so a contract split across groups is counted once. Name `apportion_to_group`.
   3. In section 9's `settled_unrealized_pnl` note, keep the "not additive across groups" warning for the SQL metric. Remove "same attribution rule as the tool below" and state that the SQL metric and the tool attribute differently.
   4. In section 8, add `latest_option_metrics` and `trade_group_live_executions` to the `ngv_analyst` GRANT list.
+  5. Added at execution: in section 9's `settled_unrealized_pnl` note, drop "Filtered to one group it equals the detail view's settled Unrealized PnL". The detail view apportions the settled figure too (`overlay_totals` with `flex_shares`), so the two differ for a group that shares a position.
+  6. Added at execution: in section 10, replace "Safe today only because the tag bridge is 1:1" with the per-grain truth. The execution-grain `trade_group_executions` bridge is 1:1. The position-grain `v_position_trade_group` bridge is many-to-many across groups and DISTINCT within one group.
 - **Patterns to follow:** The existing section 9 prose, which names functions in backticks and keeps one claim per paragraph.
 - **Test scenarios:** Test expectation: none -- documentation only. Verification is a read against the cited code.
 - **Verification:** Each rewritten sentence can be traced to a symbol in the Evidence table. `uv run python scripts/docs_check.py` passes.
@@ -132,6 +136,7 @@ Code the review used to confirm each finding. Symbols are stable; line numbers a
   1. In section 4, replace each concrete account alias with a placeholder such as `<ACCOUNT>` or the anonymized account ids from `docs/ibkr-sample-data.md`. Keep the column name `accounts.alias` where the text is about the column.
   2. In section 6, replace the named trade group and its real P&L figures with a placeholder group name and round, obviously illustrative numbers. Keep symbols, sec types, and exchanges real.
   3. Keep the shape of every worked example. The point of each example must survive the substitution.
+  4. Added at execution: in section 1 and section 8, replace the "MP" phrase, which abbreviates the real group removed from section 6. In section 8, replace the real group name, its prod row id, and the real ambiguous-match group names with an invented group name, `<GROUP_ID>`, and generic descriptions.
 - **Patterns to follow:** `docs/ibkr-sample-data.md`, "Account References in Committed Content", and the placeholder style in `docs/plans/2026-07-14-001-fix-missing-opening-execution-plan.md`.
 - **Test scenarios:** Test expectation: none -- documentation only.
 - **Verification:** A read of sections 4 and 6 finds no alias and no figure that could be matched to a real account. `uv run python scripts/ibkr_sensitive_data_check.py --paths docs/design/semantic-data-model.md` passes. Note that this scanner does not detect aliases, so the read is the real check.
