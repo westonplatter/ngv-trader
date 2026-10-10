@@ -131,7 +131,7 @@ def _groups_for(key, open_map, all_map) -> list[TradeGroupRef]:
     return all_map.get(key, [])
 ```
 
-The user-facing rule this produces is documented in [trade-tagging.md](../../trade-tagging.md) under _Which groups a position row shows_; this learning records the failure, the evidence, and the reusable technique rather than restating the rule.
+The user-facing rule this produces is documented in [trade-tagging.md](../../design/trade-tagging.md) under _Which groups a position row shows_; this learning records the failure, the evidence, and the reusable technique rather than restating the rule.
 
 ## Why This Works
 
@@ -182,7 +182,7 @@ The same endpoint carries [a separate silent-204 defect](./tws-fills-window-anch
 
 ## Related
 
-- [Trade tagging](../../trade-tagging.md) — per-fill membership model and the current open-lot chip rule.
+- [Trade tagging](../../design/trade-tagging.md) — per-fill membership model and the current open-lot chip rule.
 - [Intraday TWS overlay](../../design/intraday-tws-overlay.md) — the `/positions` merge the chip map hangs off, and the live/settled two-tier model that makes unsettled fills unconditionally open.
 - [Intraday fills window anchored to the session roll](./tws-fills-window-anchored-to-session-roll.md) — the opposite failure on the same UI element (zero chips, not too many), and the write-path silent-204 sibling.
 - [Peer BAG combo summaries deadlocked the purge](./bag-combo-summary-purge-deadlocks-on-peer-summaries.md) — origin of the read-only old-vs-new verification rule reused here.

@@ -24,3 +24,4 @@
 | [Working-Orders Strategy Overlay - Plan](2026-08-08-002-feat-working-orders-strategy-overlay-plan.md)                                                                          |                               |        |             |
 | [Strategy P&L Table - Plan](2026-08-25-001-feat-strategy-pnl-table-plan.md)                                                                                                    |                               |        |             |
 | [fix: invalidate the live position overlay when settled data supersedes it](2026-08-29-001-fix-stale-live-position-overlay-plan.md)                                            |                               |        |             |
+| [Fix Stale Descriptions in docs/design - Plan](2026-10-10-1542-docs-fix-stale-design-docs-plan.md)                                                                             |                               |        |             |

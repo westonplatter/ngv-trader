@@ -24,12 +24,12 @@ description: Analyst-facing catalog for the semantic layer — metrics, dimensio
 
 ## 1. Start here — the four tools
 
-| Tool                                                                               | Use it for                                                                                                                                                        |
-| ---------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `describe_semantic_model()`                                                        | List every metric + dimension + which grain each lives on. Call first.                                                                                            |
-| `query_metric(metric, group_by, filters, start_date, end_date, time_grain, limit)` | Run one metric, sliced by dimensions. Returns rows **+ the compiled SQL**.                                                                                        |
-| `find_trade_groups(query, limit)`                                                  | **Fuzzy-find a trade group by a free-text phrase** ("MP", "gamma delta", "covered call") when you don't know the exact name. Resolution step before PnL (see §8). |
-| `trade_group_pnl(group)`                                                           | Realized + settled + **intraday/live** unrealized PnL for one trade group. Accepts an id, exact name, or an unambiguous fuzzy phrase (see §5, §8).                |
+| Tool                                                                               | Use it for                                                                                                                                                 |
+| ---------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `describe_semantic_model()`                                                        | List every metric + dimension + which grain each lives on. Call first.                                                                                     |
+| `query_metric(metric, group_by, filters, start_date, end_date, time_grain, limit)` | Run one metric, sliced by dimensions. Returns rows **+ the compiled SQL**.                                                                                 |
+| `find_trade_groups(query, limit)`                                                  | **Fuzzy-find a trade group by a free-text phrase** ("vega theta", "covered call") when you don't know the exact name. Resolution step before PnL (see §8). |
+| `trade_group_pnl(group)`                                                           | Realized + settled + **intraday/live** unrealized PnL for one trade group. Accepts an id, exact name, or an unambiguous fuzzy phrase (see §5, §8).         |
 
 ## 2. The grains (facts) — pick a metric, you pick a grain
 
@@ -69,7 +69,7 @@ per metric; an invalid pick errors with the valid options).
 
 | Dimension                    | On grain(s)                                    | Notes                                                                                                                                                           |
 | ---------------------------- | ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `account`                    | all                                            | Human alias (`main`, `sep`, `lsc`, `mini`) — never the raw account number.                                                                                      |
+| `account`                    | all                                            | Human alias from `accounts.alias` — never the raw account number.                                                                                               |
 | `tag`                        | execution, position                            | **Trade group / strategy name.** The key slice for a strategy review.                                                                                           |
 | `sec_type`                   | execution, position, trade                     | STK / FUT / OPT / FOP. On execution & position grains it comes straight off the fill/position, so it's **always populated** — use it to split stock vs options. |
 | `symbol`                     | all                                            | Underlying ticker. Native (complete) on `trade_facts`/`position_facts`; on `execution_facts` it comes via the `contracts` join — see the caveat below.          |
@@ -100,10 +100,16 @@ Two different figures; don't confuse them:
   SQL — and returns `settled_unrealized_pnl`, `intraday_unrealized_pnl`,
   `intraday_total_pnl`, realized, and `marks_as_of`.
 
-**Attribution caveat (both):** unrealized-by-group is a _per-group_ attribution —
-a position shared by two groups counts in **both**. So `settled_unrealized_pnl`
-summed with **no `tag` filter double-counts** shared positions. **Query one group
-at a time.**
+**Attribution caveat — the two attribute differently:**
+
+- **`settled_unrealized_pnl` (via `query_metric`)** counts a position in full in
+  every group whose executions touched it — a position shared by two groups
+  counts in **both**. So summed with **no `tag` filter it double-counts** shared
+  positions. **Query one group at a time.**
+- **`trade_group_pnl`** gives the group only the part of a shared position its
+  own tagged fills opened, so the position is counted once across groups. For a
+  group that shares a position, its settled figure therefore differs from the
+  SQL metric's. See §9 of [semantic-queries.md](semantic-queries.md).
 
 ## 6. Worked example — covered-call financing for a trade group
 

@@ -83,4 +83,4 @@ profit-target hits.
 
 - `src/models.py` (`TradeGroup.meta_yaml`), `src/services/trade_group_meta.py`,
   `src/api/routers/trade_groups.py`
-- [../trade-tagging.md](../trade-tagging.md) — trade groups, tags, assignment
+- [../trade-tagging.md](trade-tagging.md) — trade groups, tags, assignment

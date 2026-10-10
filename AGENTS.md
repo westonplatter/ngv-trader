@@ -25,7 +25,7 @@ working in its area.
 - **Secrets.** `.env.*` holds `op://` references. Scripts that read raw `os.environ`
   run under `op run --env-file=.env.<env> --`; migrations and `src/utils/env_vars.py`
   readers need no wrapper. FlexQuery tokens live encrypted in the DB, not in env. See
-  [secrets-using-1password.md](docs/secrets-using-1password.md).
+  [secrets-using-1password.md](docs/design/secrets-using-1password.md).
 - **Python.** Always `uv run python`. Imports at the top of the file, type hints
   everywhere. Verify with `scripts/check.py`, Ruff, and Pyright; never run Python or
   shell to test code. New dependencies honor the 14-day cooldown. See
@@ -57,13 +57,13 @@ What each check covers: [validation.md](docs/contributing/validation.md).
 
 ## Where to look
 
-| Topic                                                   | Doc                                                                 |
-| ------------------------------------------------------- | ------------------------------------------------------------------- |
-| Repo layout, primitives, services, key files by concern | [codebase-map.md](docs/contributing/codebase-map.md)                |
-| Domain vocabulary                                       | [CONCEPTS.md](CONCEPTS.md)                                          |
-| Setup, architecture diagram, running locally            | [getting-started.md](docs/getting-started.md)                       |
-| Workers and the job queue                               | [workers.md](docs/workers.md)                                       |
-| Trade and execution sync                                | [trades-and-executions-sync.md](docs/trades-and-executions-sync.md) |
-| Semantic layer, UX actions, pricing, SSE                | [docs/design/](docs/design/README.md)                               |
-| Past problems and their fixes                           | [docs/solutions/](docs/solutions/README.md)                         |
-| Doc review process                                      | [doc-review.md](docs/doc-review.md)                                 |
+| Topic                                                                    | Doc                                                                        |
+| ------------------------------------------------------------------------ | -------------------------------------------------------------------------- |
+| Repo layout, primitives, services, key files by concern                  | [codebase-map.md](docs/contributing/codebase-map.md)                       |
+| Domain vocabulary                                                        | [CONCEPTS.md](CONCEPTS.md)                                                 |
+| Setup, architecture diagram, running locally                             | [getting-started.md](docs/getting-started.md)                              |
+| Workers and the job queue                                                | [workers.md](docs/design/workers.md)                                       |
+| Trade and execution sync                                                 | [trades-and-executions-sync.md](docs/design/trades-and-executions-sync.md) |
+| How each feature works: sync, overlays, tagging, semantic layer, UX, SSE | [docs/design/](docs/design/README.md)                                      |
+| Past problems and their fixes                                            | [docs/solutions/](docs/solutions/README.md)                                |
+| Doc review process                                                       | [doc-review.md](docs/doc-review.md)                                        |

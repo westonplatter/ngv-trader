@@ -42,7 +42,7 @@ For domain vocabulary, see [CONCEPTS.md](../../CONCEPTS.md).
 ## Services
 
 - `worker:jobs` (`scripts/work_jobs.py` shim → `src/workers/jobs.py`): background job handlers — FlexQuery trade/position sync, market data, contracts, watchlists, order fetch. Queue primitive `src/services/jobs.py`.
-- `worker:orders` (`scripts/work_order_queue.py`): order-lifecycle scaffold; **submission is disabled** (see [workers.md](../workers.md)).
+- `worker:orders` (`scripts/work_order_queue.py`): order-lifecycle scaffold; **submission is disabled** (see [workers.md](../design/workers.md)).
 - Sync services: `src/services/{trade,position}_sync_flexquery.py` (active), `..._tws.py` (dormant), `contract_sync.py`, `market_data.py`.
 - `src/services/tradebot_agent.py`: LangGraph chat agent (DB reads + job enqueue; no `ib_async` import).
 - Operator utilities: `scripts/setup_db.py` (DB + migrations), `scripts/download_positions.py` (one-time TWS position bootstrap), `scripts/fetch_flex_trades.py`, `scripts/test_tws_connection.py`, `scripts/validate_env.py`.
@@ -63,7 +63,7 @@ For domain vocabulary, see [CONCEPTS.md](../../CONCEPTS.md).
 - API surface: `src/api/main.py`, `src/api/routers/`
 - UI surface: `frontend/src/App.tsx`, `frontend/src/components/`
 - Workers/jobs: `src/workers/jobs.py`, `src/services/jobs.py`, `scripts/work_jobs.py`, `scripts/work_order_queue.py`
-- Ops docs: [getting-started.md](../getting-started.md), [workers.md](../workers.md), [trades-and-executions-sync.md](../trades-and-executions-sync.md), [secrets-using-1password.md](../secrets-using-1password.md)
+- Ops docs: [getting-started.md](../getting-started.md), [workers.md](../design/workers.md), [trades-and-executions-sync.md](../design/trades-and-executions-sync.md), [secrets-using-1password.md](../design/secrets-using-1password.md)
 
 ## Active architecture direction
 

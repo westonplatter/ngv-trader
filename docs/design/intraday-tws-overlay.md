@@ -43,7 +43,7 @@ Three additive tables hold the overlay; the FlexQuery `positions` /
 
 `latest_quote` is sec-type-agnostic (FUT/FOP/STK/OPT) and intentionally **not**
 FK'd to the futures-only `contracts` table — distinct from `latest_futures*`
-(which the term-structure feature continues to own; see [security-data.md](../security-data.md)).
+(which the term-structure feature continues to own; see [security-data.md](security-data.md)).
 
 ## Sync flow
 
@@ -60,7 +60,7 @@ One manual-triggered job does all three fetches in a single IB session.
 ```
 
 Service: `src/services/intraday_sync_tws.py` (`run_intraday_sync`). Job type
-`intraday.sync.tws`; handler in `src/workers/jobs.py`; see [workers.md](../workers.md).
+`intraday.sync.tws`; handler in `src/workers/jobs.py`; see [workers.md](workers.md).
 
 Key rules (defined once in the service):
 

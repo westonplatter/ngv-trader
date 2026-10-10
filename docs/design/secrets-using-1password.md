@@ -88,7 +88,7 @@ op run --env-file=.env.<env> -- uv run python scripts/<script>.py
 Vars read through `src/utils/env_vars.py` — `FLEX_TOKEN_ENCRYPTION_KEY`,
 `BROKER_TWS_PORT`, `TRADEBOT_LLM_API_KEY` — self-resolve `op://` and need no wrapper.
 Migrations are exempt (plain `DB_*` vars; see
-[contributing/database-migrations.md](contributing/database-migrations.md)).
+[contributing/database-migrations.md](../contributing/database-migrations.md)).
 
 ## FlexQuery tokens
 

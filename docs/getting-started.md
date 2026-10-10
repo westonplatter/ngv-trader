@@ -131,7 +131,7 @@ op run --env-file=.env.dev -- uv run python scripts/setup_db.py --env dev
 
 `op run` resolves the references and injects the real values as environment variables before the inner command starts. Only `task api`, `task worker:jobs`, and `task worker:orders` embed `op run` internally — run those directly. `task migrate`, `task migrate:down`, `task migrate:new`, and `task validate` load `.env.<ENV>` themselves but do not wrap `op run`, so prefix them with `op run --env-file=.env.dev -- ...` if your env file has `op://` references. `task frontend` and `task frontend:install` don't read `.env.dev`/`.env.prod` at all.
 
-See [secrets-using-1password.md](secrets-using-1password.md) for details.
+See [secrets-using-1password.md](design/secrets-using-1password.md) for details.
 
 If you do **not** use 1Password, just use plain values in `.env.dev` and run commands directly.
 
@@ -236,7 +236,7 @@ With TWS/Gateway running, pull your current positions into the database:
 uv run python scripts/download_positions.py --env dev
 ```
 
-This connects to IBKR, fetches all positions across your managed accounts, creates `Account` rows, and upserts positions into the `positions` table. This is a one-time bootstrap; ongoing settled position and trade sync runs through the FlexQuery jobs in `worker:jobs` (see [workers.md](workers.md)).
+This connects to IBKR, fetches all positions across your managed accounts, creates `Account` rows, and upserts positions into the `positions` table. This is a one-time bootstrap; ongoing settled position and trade sync runs through the FlexQuery jobs in `worker:jobs` (see [workers.md](design/workers.md)).
 
 A live TWS/Gateway session also powers the on-demand **real-time intraday overlay** (live quantity, marks, and today's realized P&L layered on the settled FlexQuery snapshot), triggered by the **Refresh Live (TWS)** button on the Positions and Strategies pages. See [intraday TWS overlay](design/intraday-tws-overlay.md).
 
@@ -288,7 +288,7 @@ ENV=dev task worker:jobs
 
 `worker:jobs` dispatches every job type by `job_type`. A live TWS/Gateway session is required for contract-metadata sync, watchlist quotes, and the real-time intraday TWS overlay (`intraday.sync.tws`, triggered by the **Refresh Live (TWS)** button on the Positions and Strategies pages — see [intraday TWS overlay](design/intraday-tws-overlay.md)). FlexQuery trade/position sync (the active settled-sync path) works without a session as long as at least one token is seeded (see [FlexQuery tokens](#flexquery-tokens) above). The UI header shows worker health lights (green/yellow/red) based on heartbeat freshness.
 
-See [workers.md](workers.md) for worker architecture details.
+See [workers.md](design/workers.md) for worker architecture details.
 
 ## 7. Using the Application
 
@@ -334,7 +334,7 @@ See [workers.md](workers.md) for worker architecture details.
 
 The Tradebot is an LLM-powered assistant that can read your portfolio data and take actions. It requires `TRADEBOT_LLM_API_KEY` to be set in your env file.
 
-Available commands include listing accounts/positions/orders, syncing positions and contracts, and managing watchlists. See [tradebot-chatbot.md](tradebot-chatbot.md) for the full tool list.
+Available commands include listing accounts/positions/orders, syncing positions and contracts, and managing watchlists. See [tradebot-chatbot.md](design/tradebot-chatbot.md) for the full tool list.
 
 ## Quick Reference: Task Commands
 
@@ -379,11 +379,11 @@ Empty output = TWS not listening; fix on the TWS side.
 
 ## Further Reading
 
-| Doc                                                            | Topic                                                 |
-| -------------------------------------------------------------- | ----------------------------------------------------- |
-| [contract-ref-setup.md](contract-ref-setup.md)                 | Contract caching and sync architecture                |
-| [trades-and-executions-sync.md](trades-and-executions-sync.md) | Trade/position sync (FlexQuery), spreads, corrections |
-| [secrets-using-1password.md](secrets-using-1password.md)       | 1Password CLI integration                             |
-| [tradebot-chatbot.md](tradebot-chatbot.md)                     | Tradebot architecture, tools, and safety constraints  |
-| [workers.md](workers.md)                                       | Worker processes, heartbeats, and job dispatch        |
-| [README.md](README.md)                                         | Generated documentation index                         |
+| Doc                                                                   | Topic                                                 |
+| --------------------------------------------------------------------- | ----------------------------------------------------- |
+| [contract-ref-setup.md](design/contract-ref-setup.md)                 | Contract caching and sync architecture                |
+| [trades-and-executions-sync.md](design/trades-and-executions-sync.md) | Trade/position sync (FlexQuery), spreads, corrections |
+| [secrets-using-1password.md](design/secrets-using-1password.md)       | 1Password CLI integration                             |
+| [tradebot-chatbot.md](design/tradebot-chatbot.md)                     | Tradebot architecture, tools, and safety constraints  |
+| [workers.md](design/workers.md)                                       | Worker processes, heartbeats, and job dispatch        |
+| [README.md](README.md)                                                | Generated documentation index                         |

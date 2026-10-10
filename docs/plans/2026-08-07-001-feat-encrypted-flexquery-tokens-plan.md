@@ -371,7 +371,7 @@ The R2 proof is specific and worth naming: after seeding, a raw `SELECT token_en
 
 ## Operational Notes
 
-Take a Postgres snapshot before running the migration in prod — see [db-snapshots.md](../db-snapshots.md). The migration is additive and reversible, so this is precaution rather than necessity; the seeding step that follows is what actually changes credential handling.
+Take a Postgres snapshot before running the migration in prod — see [db-snapshots.md](../contributing/db-snapshots.md). The migration is additive and reversible, so this is precaution rather than necessity; the seeding step that follows is what actually changes credential handling.
 
 Deploy order matters, because KTD5 leaves no fallback:
 

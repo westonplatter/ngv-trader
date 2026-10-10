@@ -13,7 +13,7 @@ execution: code
 ## Goal Capsule
 
 - **Objective:** A strategy (trade group) shows not just where it _has been_ (settled trades) and where it _is_ (positions + intraday overlay), but where it **will be** once resting orders fill — so a resting far-from-market limit reads as "rebalance pending", not as invisible intent.
-- **Authority hierarchy:** TWS is the sole source of truth for order state. The app never invents or mutates broker order state; the write path stays disabled (see [workers.md](../workers.md)).
+- **Authority hierarchy:** TWS is the sole source of truth for order state. The app never invents or mutates broker order state; the write path stays disabled (see [workers.md](../design/workers.md)).
 - **Execution profile:** Vertical slices — every slice ships backend, worker, and frontend together and ends at something visible on `/orders` or the strategy view. Order: spike → order appears live → order resolves → legs → strategy link → projection → persistent subscription.
 - **Stop conditions:** Stop and ask if S0 shows TWS returns combo orders in a shape the `order_legs` schema in S3 can't hold. Stop if any slice would require writing FlexQuery tables (`positions`, `trades`, `trade_executions`).
 - **Tail ownership:** Standard repo flow — feature branch per slice, `task test`, PR with a demo-mode screenshot for UI phases.
@@ -97,7 +97,7 @@ The combo shape decides S3's schema and the clientId answer decides S1's default
 The smallest end-to-end win: place a limit order in TWS, watch it appear on `/orders`
 without touching the browser.
 
-- **Backend.** Normalize `permId` 0 → NULL — `_create_order_from_trade` (`order_sync_tws.py:224`) stores `parse_int(permId)` verbatim and TWS reports `0` until it acks, so a partial unique index would fail on the second unacked order (line 296 already treats `0` as falsy). Widen `orders.ib_perm_id` (`models.py:279`) and `live_executions.ib_perm_id` (`:959`) from `Integer` to `BigInteger` to match `trades` / `trade_executions` (`:387`, `:427`) — S4 keys the whole carryover on permId across all three, so this is cheap now and a data migration later. Dedup existing rows (duplicate permIds are already possible: matching resolves `ORDER BY updated_at DESC LIMIT 1`), then add the partial unique index. Snapshot per [db-snapshots.md](../db-snapshots.md) first — this migration is not additive. Reorder `_find_matching_order` (`:143`) to permId-first, and guard the orderRef fallback: it resolves `ngtrader-order-<id>` straight to `session.get(Order, id)` with no check the row belongs to that broker order, so a recycled ref clobbers an unrelated one.
+- **Backend.** Normalize `permId` 0 → NULL — `_create_order_from_trade` (`order_sync_tws.py:224`) stores `parse_int(permId)` verbatim and TWS reports `0` until it acks, so a partial unique index would fail on the second unacked order (line 296 already treats `0` as falsy). Widen `orders.ib_perm_id` (`models.py:279`) and `live_executions.ib_perm_id` (`:959`) from `Integer` to `BigInteger` to match `trades` / `trade_executions` (`:387`, `:427`) — S4 keys the whole carryover on permId across all three, so this is cheap now and a data migration later. Dedup existing rows (duplicate permIds are already possible: matching resolves `ORDER BY updated_at DESC LIMIT 1`), then add the partial unique index. Snapshot per [db-snapshots.md](../contributing/db-snapshots.md) first — this migration is not additive. Reorder `_find_matching_order` (`:143`) to permId-first, and guard the orderRef fallback: it resolves `ngtrader-order-<id>` straight to `session.get(Order, id)` with no check the row belongs to that broker order, so a recycled ref clobbers an unrelated one.
 - **Worker.** Return created/updated order ids from `sync_orders_with_ib` (`:447`) and POST them to the existing `POST /events/notify-order`. `scripts/work_jobs.py:46` already has `_notify_api` doing exactly this for jobs/trades/positions — ~20 lines against a working pattern. This is R9, and there is no reason it should wait on S6.
 - **Frontend.** Add `demoOrders` to `demoData.ts` and the `/orders` route to `demoApi.ts`. Drop the sync button's 1s `setTimeout` re-fetch (`OrdersTable.tsx:211`) — it races a job whose TWS connect timeout is 20s; the SSE event is the refresh now. Surface sync outcome instead of guessing: job state and a "last synced" timestamp.
 - **Tests.** `tests/` has no order-sync coverage at all. Fake `Trade` objects exercise create / update / dedup / permId-0 with no TWS session. Highest-value item in the slice — S0 is manual and unrepeatable.
@@ -161,8 +161,8 @@ without touching the browser.
 
 ## Docs to Update
 
-- [workers.md](../workers.md) — `worker:orders` behavior change in S6; `order.fetch_sync` notes.
+- [workers.md](../design/workers.md) — `worker:orders` behavior change in S6; `order.fetch_sync` notes.
 - [core/api-ux-sse.md](../design/api-ux-sse.md) — remove the "order sync events are currently broken" note once the R9 fix lands in S1; the consumer table also still lists `OrdersTable` as 3s polling when it is SSE with a reconnect re-fetch.
 - [core/intraday-tws-overlay.md](../design/intraday-tws-overlay.md) — the working layer joins current/settled as a third overlay.
-- [trade-tagging.md](../trade-tagging.md) — order-to-group assignment joins the existing assignment surfaces.
+- [trade-tagging.md](../design/trade-tagging.md) — order-to-group assignment joins the existing assignment surfaces.
 - `docs/_index.md` per the docs index rule for any new current-state doc.

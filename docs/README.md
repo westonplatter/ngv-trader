@@ -13,18 +13,8 @@
 
 ## Files
 
-| Doc                                                                  | Status | Topics | Description |
-| -------------------------------------------------------------------- | ------ | ------ | ----------- |
-| [contract-display-names.md](contract-display-names.md)               |        |        |             |
-| [contract-ref-setup.md](contract-ref-setup.md)                       |        |        |             |
-| [db-snapshots.md](db-snapshots.md)                                   |        |        |             |
-| [doc-review.md](doc-review.md)                                       |        |        |             |
-| [getting-started.md](getting-started.md)                             |        |        |             |
-| [ibkr-sample-data.md](ibkr-sample-data.md)                           |        |        |             |
-| [secrets-using-1password.md](secrets-using-1password.md)             |        |        |             |
-| [security-data.md](security-data.md)                                 |        |        |             |
-| [trade-tagging.md](trade-tagging.md)                                 |        |        |             |
-| [tradebot-chatbot.md](tradebot-chatbot.md)                           |        |        |             |
-| [trades-and-executions-sync.md](trades-and-executions-sync.md)       |        |        |             |
-| [user-preferences-privacy-mode.md](user-preferences-privacy-mode.md) |        |        |             |
-| [workers.md](workers.md)                                             |        |        |             |
+| Doc                                        | Status | Topics | Description |
+| ------------------------------------------ | ------ | ------ | ----------- |
+| [doc-review.md](doc-review.md)             |        |        |             |
+| [getting-started.md](getting-started.md)   |        |        |             |
+| [ibkr-sample-data.md](ibkr-sample-data.md) |        |        |             |

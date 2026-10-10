@@ -46,7 +46,7 @@ existing ones.
 
 Before any hard-to-reverse DB change (destructive/data-mutating migration, backfill,
 prod `downgrade`, bulk delete), take a Postgres snapshot first. See
-[db-snapshots.md](../db-snapshots.md) for the snapshot/verify/restore commands and the
+[db-snapshots.md](db-snapshots.md) for the snapshot/verify/restore commands and the
 recommended flow.
 
 ## Tests
