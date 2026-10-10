@@ -12,21 +12,9 @@
 
 ![Trades page showing executions with their trade-group tags, sync controls, and a contract-scoped filter](docs/screenshots/trades-trade-group-detail-link.png)
 
-_Trades page: executions tagged to trade groups, with FlexQuery and intraday TWS sync controls. Captured in demo mode._
-
 ## Getting Started
 
 New to the project? Follow the [Getting Started guide](docs/getting-started.md) for a full walkthrough covering prerequisites, database setup, IBKR configuration, and running the app.
-
-**You assume all risk.**
-
-## Tests
-
-```bash
-task test
-```
-
-Runs the pytest suite against a dedicated `ngv_trader_test` database, created and migrated on demand — dev and prod data are never touched.
 
 ## License
 
