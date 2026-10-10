@@ -61,6 +61,10 @@ export type GroupExecution = {
   ib_codes: string | null;
   // False for preemptively-tagged live fills not yet settled.
   settled?: boolean;
+  multiplier?: number;
+  // Signed qty × price × multiplier + commission (debit positive, credit
+  // negative). Null on combo_summary rows so legs aren't double-counted.
+  cost_basis?: number | null;
 };
 
 export type GroupOpenPosition = {
@@ -2261,6 +2265,12 @@ export default function TradeTaggingPage() {
                               <th className="px-2 py-1 text-right font-medium">
                                 Price
                               </th>
+                              <th
+                                className="px-2 py-1 text-right font-medium"
+                                title="Signed qty × price × contract multiplier + commission. Positive = debit paid, negative = credit received. Combo summary rows show — so legs aren't double-counted."
+                              >
+                                Cost Basis
+                              </th>
                               <th className="px-2 py-1 text-right font-medium">
                                 Realized
                               </th>
@@ -2370,6 +2380,13 @@ export default function TradeTaggingPage() {
                                         {privacyMode
                                           ? PRIVACY_MASK
                                           : Number(ex.price.toFixed(4))}
+                                      </td>
+                                      <td className="px-2 py-1 text-right font-mono text-gray-800">
+                                        {privacyMode
+                                          ? PRIVACY_MASK
+                                          : ex.cost_basis == null
+                                            ? "—"
+                                            : formatMoney(ex.cost_basis)}
                                       </td>
                                       <td
                                         className={`px-2 py-1 text-right font-mono ${pnlClass}`}

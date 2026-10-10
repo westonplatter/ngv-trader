@@ -37,6 +37,7 @@ from src.services.intraday_overlay import (
     is_live_stale,
     merge_positions,
     overlay_totals,
+    parse_multiplier,
 )
 from src.services.trade_group_instruments import (
     InstrumentPatternError,
@@ -1205,6 +1206,37 @@ class TradeGroupExecutionItem(BaseModel):
     # False for preemptively-tagged live fills not yet settled.
     settled: bool = True
     ib_exec_id: str | None = None
+    multiplier: float = 1.0
+    # Signed qty x price x multiplier + commission: positive = debit paid,
+    # negative = credit received (matches the open positions' Cost Basis).
+    # Null for combo_summary rows so their legs are not double-counted.
+    cost_basis: float | None = None
+
+
+def _execution_cost_basis(
+    *,
+    side: str | None,
+    quantity: float,
+    price: float,
+    multiplier: float,
+    commission: float | None,
+    exec_role: str,
+) -> float | None:
+    """Commission-inclusive cost basis of one fill (debit positive, credit negative).
+
+    Sign comes from ``side`` because FlexQuery stores quantity signed and
+    commission negative while TWS stores both unsigned; the commission is always
+    a cost, so it adds to a debit and shrinks a credit.
+    """
+    if exec_role == "combo_summary":
+        return None
+    if side is None:
+        signed_qty = quantity
+    elif side.upper() in {"SLD", "SELL"}:
+        signed_qty = -abs(quantity)
+    else:
+        signed_qty = abs(quantity)
+    return signed_qty * price * multiplier + abs(commission or 0.0)
 
 
 class TradeGroupOpenPositionItem(BaseModel):
@@ -1485,6 +1517,7 @@ def trade_group_executions(trade_group_id: int, db: Session = DB_SESSION_DEPENDE
         execution, contract_ref, _trade, account = row
         rows_by_account.setdefault(execution.account_id, []).append(row)
         alias_by_account.setdefault(execution.account_id, account.alias if account else None)
+        multiplier = parse_multiplier(contract_ref.multiplier if contract_ref else None)
         items.append(
             TradeGroupExecutionItem(
                 id=execution.id,
@@ -1504,6 +1537,15 @@ def trade_group_executions(trade_group_id: int, db: Session = DB_SESSION_DEPENDE
                 ib_codes=_execution_ib_codes(execution.raw),
                 settled=True,
                 ib_exec_id=execution.ib_exec_id,
+                multiplier=multiplier,
+                cost_basis=_execution_cost_basis(
+                    side=execution.side,
+                    quantity=execution.quantity,
+                    price=execution.price,
+                    multiplier=multiplier,
+                    commission=execution.commission,
+                    exec_role=execution.exec_role,
+                ),
             )
         )
 
@@ -1521,6 +1563,7 @@ def trade_group_executions(trade_group_id: int, db: Session = DB_SESSION_DEPENDE
         .order_by(LiveExecution.exec_time.asc(), LiveExecution.id.asc())
     ).all()
     for live_exec, account in live_rows:
+        live_multiplier = parse_multiplier(live_exec.multiplier)
         items.append(
             TradeGroupExecutionItem(
                 id=-live_exec.id,
@@ -1549,6 +1592,15 @@ def trade_group_executions(trade_group_id: int, db: Session = DB_SESSION_DEPENDE
                 data_source="tws-live",
                 settled=False,
                 ib_exec_id=live_exec.ib_exec_id,
+                multiplier=live_multiplier,
+                cost_basis=_execution_cost_basis(
+                    side=live_exec.side,
+                    quantity=live_exec.quantity,
+                    price=live_exec.price,
+                    multiplier=live_multiplier,
+                    commission=None,
+                    exec_role=live_exec.exec_role,
+                ),
             )
         )
 

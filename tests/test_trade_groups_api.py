@@ -310,3 +310,26 @@ def test_a_group_with_no_fills_yet_still_appears_under_its_owning_account(client
     db_session.flush()
 
     assert [r["name"] for r in client.get(BASE, params={"account_id": main.id}).json()] == ["No fills yet"]
+
+
+def test_execution_cost_basis_is_signed_multiplier_and_commission_inclusive(client: TestClient, db_session: Session) -> None:
+    """Debit positive, credit negative; FlexQuery's negative commission is a cost."""
+    main = make_account(db_session)
+    group = make_group(db_session, "Cost basis", main.id)
+    make_contract(db_session, con_id=CON_CL, symbol="CL", multiplier="1000")
+    buy = make_execution(db_session, group=group, account=main, con_id=CON_CL, exec_id=make_exec_id(84000001), side="BUY", quantity=1.0)
+    sell = make_execution(db_session, group=group, account=main, con_id=CON_CL, exec_id=make_exec_id(84000002), side="SELL", quantity=-1.0)
+    no_ref = make_execution(db_session, group=group, account=main, con_id=CON_NG, exec_id=make_exec_id(84000003), side="BUY", quantity=2.0)
+    combo = make_execution(db_session, group=group, account=main, con_id=None, exec_id=make_exec_id(84000004), exec_role="combo_summary")
+    buy.commission = -2.5
+    sell.commission = -2.5
+    db_session.flush()
+
+    rows = {row["id"]: row for row in client.get(f"{BASE}/{group.id}/executions").json()["executions"]}
+
+    assert rows[buy.id]["multiplier"] == 1000.0
+    assert rows[buy.id]["cost_basis"] == pytest.approx(70_002.5)
+    assert rows[sell.id]["cost_basis"] == pytest.approx(-69_997.5)
+    assert rows[no_ref.id]["multiplier"] == 1.0
+    assert rows[no_ref.id]["cost_basis"] == pytest.approx(140.0)
+    assert rows[combo.id]["cost_basis"] is None
