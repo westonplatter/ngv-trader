@@ -162,7 +162,7 @@ without touching the browser.
 ## Docs to Update
 
 - [workers.md](../workers.md) — `worker:orders` behavior change in S6; `order.fetch_sync` notes.
-- [core/api-ux-sse.md](../core/api-ux-sse.md) — remove the "order sync events are currently broken" note once the R9 fix lands in S1; the consumer table also still lists `OrdersTable` as 3s polling when it is SSE with a reconnect re-fetch.
-- [core/intraday-tws-overlay.md](../core/intraday-tws-overlay.md) — the working layer joins current/settled as a third overlay.
+- [core/api-ux-sse.md](../design/api-ux-sse.md) — remove the "order sync events are currently broken" note once the R9 fix lands in S1; the consumer table also still lists `OrdersTable` as 3s polling when it is SSE with a reconnect re-fetch.
+- [core/intraday-tws-overlay.md](../design/intraday-tws-overlay.md) — the working layer joins current/settled as a third overlay.
 - [trade-tagging.md](../trade-tagging.md) — order-to-group assignment joins the existing assignment surfaces.
 - `docs/_index.md` per the docs index rule for any new current-state doc.

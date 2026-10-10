@@ -3,7 +3,7 @@
 # Vendor-neutral business definitions the tradebot's `query_metric` tool and the
 # semantic MCP server resolve into read-only SQL. The agent picks metric and
 # dimension NAMES; the resolver compiles the join + aggregation. See the spec at
-# docs/core/semantic-queries.md.
+# docs/design/semantic-queries.md.
 #
 # Shape (consumed by src/services/semantic/loader.py):
 #   - Multiple `datasets`, each a physical table/view with a primary_key and

@@ -25,7 +25,7 @@ Today the live system supports:
 > (live qty/mark/unrealized + intraday totals) alongside the settled snapshot,
 > with a freshness indicator. The overlay is additive and degrades to settled
 > values when no live data is present. See
-> [core/intraday-tws-overlay.md](core/intraday-tws-overlay.md).
+> [core/intraday-tws-overlay.md](design/intraday-tws-overlay.md).
 
 ## Core Data Model
 
@@ -53,7 +53,7 @@ Notes:
 1. `account_id` is nullable at creation
 2. when the first execution is assigned, the group auto-populates `account_id` from that execution
 3. assignment is intentionally cross-account in V1, so group membership is not limited by `account_id`
-4. `meta_yaml` holds an optional free-form YAML "management spec" (target delta, estimated entry/exit dates, dated profit targets, plus arbitrary keys). Stored verbatim; validated on write; `GET /trade-groups/{id}` returns the parsed form as `meta`. See [core/trade-group-meta-yaml.md](core/trade-group-meta-yaml.md).
+4. `meta_yaml` holds an optional free-form YAML "management spec" (target delta, estimated entry/exit dates, dated profit targets, plus arbitrary keys). Stored verbatim; validated on write; `GET /trade-groups/{id}` returns the parsed form as `meta`. See [core/trade-group-meta-yaml.md](design/trade-group-meta-yaml.md).
 
 ### `trade_group_executions`
 
@@ -73,7 +73,7 @@ preemptively tag a live fill to a group before it settles. On settlement the
 carry-over (`src/services/group_link_carryover.py`) folds the link into
 `trade_group_executions` and drops the live row; it runs in both the intraday
 purge and the FlexQuery trade sync. See
-[core/intraday-tws-overlay.md](core/intraday-tws-overlay.md).
+[core/intraday-tws-overlay.md](design/intraday-tws-overlay.md).
 
 ### `trade_group_execution_events`
 
@@ -278,7 +278,7 @@ This makes the trades page the main operational entry point for tagging fills in
 `frontend/src/components/PositionsTable.tsx` supports group assignment and
 unassignment directly from the Positions page, via the
 `positions:assign`/`positions:unassign` endpoints (see
-[core/intraday-tws-overlay.md](core/intraday-tws-overlay.md) for how live
+[core/intraday-tws-overlay.md](design/intraday-tws-overlay.md) for how live
 positions are computed).
 
 #### Which groups a position row shows
@@ -317,7 +317,7 @@ Each row's three P&L columns come from the same layer as each other: the
 intraday figures when the group has live data, the settled ones otherwise, so
 Total always reconciles to Realized + Unrealized. Freshness renders as
 `live HH:MM`, an amber `stale HH:MM`, or `settled`. See
-[core/intraday-tws-overlay.md](core/intraday-tws-overlay.md) for how the batched
+[core/intraday-tws-overlay.md](design/intraday-tws-overlay.md) for how the batched
 overlay is computed.
 
 #### Deriving a group's instruments

@@ -38,11 +38,11 @@ Read tools:
 - `list_activated_products` — list products maintained in the security master with discovered exchange/status. See [activated products plan](plans/2026-06-20-001-feat-activated-products-security-master-plan.md).
 - `query_metric` — run business-analyst metrics (realized PnL, win rate, trade
   count) from the OSI semantic model as read-only SQL, by metric/dimension name.
-  See [core/semantic-queries.md](core/semantic-queries.md). The agent picks names only;
+  See [core/semantic-queries.md](design/semantic-queries.md). The agent picks names only;
   it does not write SQL.
 - `trade_group_pnl` — realized + settled/intraday unrealized PnL for one trade
   group (the detail-view figures), reusing the live overlay. See
-  [core/semantic-queries.md](core/semantic-queries.md) §9.
+  [core/semantic-queries.md](design/semantic-queries.md) §9.
 
 Action tools:
 

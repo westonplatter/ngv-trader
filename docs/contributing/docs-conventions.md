@@ -20,7 +20,7 @@ uv run python scripts/docs_index.py
 ```
 
 This writes a `README.md` into `docs/` and every docs subdirectory that contains
-`.md` files (GitHub auto-renders these), `docs/core/` included. Index files are
+`.md` files (GitHub auto-renders these), `docs/design/` included. Index files are
 generated artifacts — never edit them by hand.
 
 ## Front matter

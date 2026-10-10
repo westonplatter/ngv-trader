@@ -64,6 +64,6 @@ What each check covers: [validation.md](docs/contributing/validation.md).
 | Setup, architecture diagram, running locally            | [getting-started.md](docs/getting-started.md)                       |
 | Workers and the job queue                               | [workers.md](docs/workers.md)                                       |
 | Trade and execution sync                                | [trades-and-executions-sync.md](docs/trades-and-executions-sync.md) |
-| Semantic layer, UX actions, pricing, SSE                | [docs/core/](docs/core/README.md)                                   |
+| Semantic layer, UX actions, pricing, SSE                | [docs/design/](docs/design/README.md)                               |
 | Past problems and their fixes                           | [docs/solutions/](docs/solutions/README.md)                         |
 | Doc review process                                      | [doc-review.md](docs/doc-review.md)                                 |

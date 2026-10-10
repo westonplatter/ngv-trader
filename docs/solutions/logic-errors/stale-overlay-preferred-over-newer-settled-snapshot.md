@@ -152,7 +152,7 @@ which is least readable exactly when staleness matters most.
 
 ## Related
 
-- [Intraday TWS overlay](../../core/intraday-tws-overlay.md) — current-state docs
+- [Intraday TWS overlay](../../design/intraday-tws-overlay.md) — current-state docs
   for the overlay's invalidation rules, precedence, and cost-basis convention.
 - [Intraday fills window anchored to the session roll](./tws-fills-window-anchored-to-session-roll.md)
   — the executions half of the same settled-wins story, and the source of the

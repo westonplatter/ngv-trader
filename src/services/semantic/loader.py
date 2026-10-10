@@ -7,7 +7,7 @@ model is the allow-list — only names defined here can be referenced — and it
 provides the graph helpers the resolver uses to route a query to a metric's fact
 and join in only the dimensions reachable from it.
 
-See docs/core/semantic-queries.md for the design and authoring guide.
+See docs/design/semantic-queries.md for the design and authoring guide.
 """
 
 from __future__ import annotations

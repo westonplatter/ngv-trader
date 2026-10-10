@@ -7,7 +7,7 @@ Create Date: 2026-07-04 21:41:34.241514
 Adds ``v_position_trade_group`` — a DISTINCT bridge mapping each position
 (``account_id``, ``con_id``) to every trade group whose executions touched it.
 This lets the semantic layer expose **settled unrealized PnL by trade group**
-(``tag``) over ``v_position_facts`` (see docs/core/semantic-data-model.md).
+(``tag``) over ``v_position_facts`` (see docs/design/semantic-data-model.md).
 
 The bridge is DISTINCT on (trade_group_id, account_id, con_id), so joining
 ``v_position_facts`` → bridge → ``trade_groups`` does not fan out a position's

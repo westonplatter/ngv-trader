@@ -7,7 +7,7 @@
 | Directory       | Index                               |
 | --------------- | ----------------------------------- |
 | `contributing/` | [README.md](contributing/README.md) |
-| `core/`         | [README.md](core/README.md)         |
+| `design/`       | [README.md](design/README.md)       |
 | `plans/`        | [README.md](plans/README.md)        |
 | `solutions/`    | [README.md](solutions/README.md)    |
 
@@ -21,8 +21,6 @@
 | [doc-review.md](doc-review.md)                                       |        |        |             |
 | [getting-started.md](getting-started.md)                             |        |        |             |
 | [ibkr-sample-data.md](ibkr-sample-data.md)                           |        |        |             |
-| [planning-agents-quorum.md](planning-agents-quorum.md)               |        |        |             |
-| [planning-spec-format.md](planning-spec-format.md)                   |        |        |             |
 | [secrets-using-1password.md](secrets-using-1password.md)             |        |        |             |
 | [security-data.md](security-data.md)                                 |        |        |             |
 | [trade-tagging.md](trade-tagging.md)                                 |        |        |             |

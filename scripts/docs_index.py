@@ -6,7 +6,7 @@ For each directory under docs/ that contains .md files, writes a README.md
 recursive) with their index-visible front matter. Every README also links to
 subdirectory READMEs at the top.
 
-docs/core/ is indexed here too (it previously had its own generator).
+docs/design/ is indexed here too (it previously had its own generator).
 
 Overwrites existing README.md files; never lists README.md itself.
 

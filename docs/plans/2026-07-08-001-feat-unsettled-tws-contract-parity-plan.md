@@ -19,7 +19,7 @@ information than settled FlexQuery rows. Four layered fixes; **all shipped**.
 | **D** | Action (Open/Close) blank           | **shipped** 2026-08-01             |
 
 Shipped behavior lives in the subsystem docs, not here:
-[core/intraday-tws-overlay.md](../core/intraday-tws-overlay.md) (combo roles,
+[core/intraday-tws-overlay.md](../design/intraday-tws-overlay.md) (combo roles,
 order key, unit tagging, and the **Display parity with settled rows** section
 covering B and D) and
 [trades-and-executions-sync.md](../trades-and-executions-sync.md) (shared

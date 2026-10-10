@@ -45,7 +45,7 @@ retries up to `max_attempts`. Queue primitive: `src/services/jobs.py`.
 | `market_data.snapshot`                 | `handle_market_data_snapshot`                 | Targeted price snapshot                                                                                                                                                                                                                                                                                                    |
 | `intraday.sync.tws`                    | `handle_intraday_sync_tws`                    | Live intraday overlay: `ib.positions()` + marks + today's fills → `live_positions`/`latest_quote`/`live_executions` (read-time merge in the TradeGroup view). Requires a TWS/Gateway session during market hours; if unavailable, the overlay simply shows no live data and the view degrades to settled FlexQuery values. |
 | `contracts.sync_activated`             | `handle_contracts_sync_activated`             | Discover exchange/metadata + sync next-12-calendar-month FUT contracts for each row in `activated_products`. See [activated products plan](plans/2026-06-20-001-feat-activated-products-security-master-plan.md).                                                                                                          |
-| `option_metrics.sync.tws`              | `handle_option_metrics_sync_tws`              | Live option metrics overlay. See [option-metrics-overlay.md](core/option-metrics-overlay.md).                                                                                                                                                                                                                              |
+| `option_metrics.sync.tws`              | `handle_option_metrics_sync_tws`              | Live option metrics overlay. See [option-metrics-overlay.md](design/option-metrics-overlay.md).                                                                                                                                                                                                                            |
 
 ### Defined but NOT registered (dormant)
 
@@ -85,7 +85,7 @@ enqueue `order.fetch_sync`. See [tradebot-chatbot.md](tradebot-chatbot.md).
 - Heartbeats are stored in `worker_heartbeats`; helper `src/services/worker_heartbeat.py`.
 - Status endpoint: `GET /api/v1/workers/status`.
 - The UI header maps heartbeat freshness to green/yellow/red lights.
-- Workers publish SSE events after committing; see [core/api-ux-sse.md](core/api-ux-sse.md).
+- Workers publish SSE events after committing; see [core/api-ux-sse.md](design/api-ux-sse.md).
 
 ## Key files
 

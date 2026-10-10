@@ -20,13 +20,13 @@ ngv-trader has four main components that work together:
                         └──────────────┘         └──────────────┘
 ```
 
-| Component              | Purpose                                                                                                                                                                    |
-| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Frontend**           | React/TypeScript UI for viewing positions, orders, trades, watchlists, and the Tradebot chat                                                                               |
-| **Backend**            | FastAPI REST API serving data from Postgres and proxying LLM chat                                                                                                          |
-| **Workers**            | Background processes that sync data (positions, contracts, quotes) with IBKR                                                                                               |
-| **PostgreSQL**         | Stores accounts, positions, orders, trades, contracts, watchlists, and jobs                                                                                                |
-| **IBKR TWS / Gateway** | Interactive Brokers connection for live market data (required only for the optional [intraday TWS overlay](core/intraday-tws-overlay.md); FlexQuery sync needs no session) |
+| Component              | Purpose                                                                                                                                                                      |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Frontend**           | React/TypeScript UI for viewing positions, orders, trades, watchlists, and the Tradebot chat                                                                                 |
+| **Backend**            | FastAPI REST API serving data from Postgres and proxying LLM chat                                                                                                            |
+| **Workers**            | Background processes that sync data (positions, contracts, quotes) with IBKR                                                                                                 |
+| **PostgreSQL**         | Stores accounts, positions, orders, trades, contracts, watchlists, and jobs                                                                                                  |
+| **IBKR TWS / Gateway** | Interactive Brokers connection for live market data (required only for the optional [intraday TWS overlay](design/intraday-tws-overlay.md); FlexQuery sync needs no session) |
 
 ## Prerequisites
 
@@ -238,7 +238,7 @@ uv run python scripts/download_positions.py --env dev
 
 This connects to IBKR, fetches all positions across your managed accounts, creates `Account` rows, and upserts positions into the `positions` table. This is a one-time bootstrap; ongoing settled position and trade sync runs through the FlexQuery jobs in `worker:jobs` (see [workers.md](workers.md)).
 
-A live TWS/Gateway session also powers the on-demand **real-time intraday overlay** (live quantity, marks, and today's realized P&L layered on the settled FlexQuery snapshot), triggered by the **Refresh Live (TWS)** button on the Positions and Strategies pages. See [intraday TWS overlay](core/intraday-tws-overlay.md).
+A live TWS/Gateway session also powers the on-demand **real-time intraday overlay** (live quantity, marks, and today's realized P&L layered on the settled FlexQuery snapshot), triggered by the **Refresh Live (TWS)** button on the Positions and Strategies pages. See [intraday TWS overlay](design/intraday-tws-overlay.md).
 
 ## 6. Start the Application
 
@@ -286,7 +286,7 @@ Workers are background processes that sync data with IBKR. Run in its own termin
 ENV=dev task worker:jobs
 ```
 
-`worker:jobs` dispatches every job type by `job_type`. A live TWS/Gateway session is required for contract-metadata sync, watchlist quotes, and the real-time intraday TWS overlay (`intraday.sync.tws`, triggered by the **Refresh Live (TWS)** button on the Positions and Strategies pages — see [intraday TWS overlay](core/intraday-tws-overlay.md)). FlexQuery trade/position sync (the active settled-sync path) works without a session as long as at least one token is seeded (see [FlexQuery tokens](#flexquery-tokens) above). The UI header shows worker health lights (green/yellow/red) based on heartbeat freshness.
+`worker:jobs` dispatches every job type by `job_type`. A live TWS/Gateway session is required for contract-metadata sync, watchlist quotes, and the real-time intraday TWS overlay (`intraday.sync.tws`, triggered by the **Refresh Live (TWS)** button on the Positions and Strategies pages — see [intraday TWS overlay](design/intraday-tws-overlay.md)). FlexQuery trade/position sync (the active settled-sync path) works without a session as long as at least one token is seeded (see [FlexQuery tokens](#flexquery-tokens) above). The UI header shows worker health lights (green/yellow/red) based on heartbeat freshness.
 
 See [workers.md](workers.md) for worker architecture details.
 
@@ -323,7 +323,7 @@ See [workers.md](workers.md) for worker architecture details.
 
 - Click **Refresh Live (TWS)** on the Positions or Strategies page
 - Requires a running TWS/Gateway session and `worker:jobs`
-- Overlays live quantity, blended cost, marks, and today's realized P&L on the settled (T-1) FlexQuery snapshot; degrades silently to settled values when no session is available (see [intraday TWS overlay](core/intraday-tws-overlay.md))
+- Overlays live quantity, blended cost, marks, and today's realized P&L on the settled (T-1) FlexQuery snapshot; degrades silently to settled values when no session is available (see [intraday TWS overlay](design/intraday-tws-overlay.md))
 
 **Fetch contract metadata:**
 

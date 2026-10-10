@@ -5,7 +5,7 @@ Revises: e7a1c9d4b2f8
 Create Date: 2026-06-26 14:00:00.000000
 
 Replaces the single pre-aggregated v_trade_realized_pnl view with two fact
-sources for the semantic layer (see docs/core/semantic-queries.md):
+sources for the semantic layer (see docs/design/semantic-queries.md):
 
   - v_execution_facts: one row per canonical execution (base grain). Additive
     measures (realized_pnl, commission) live here. realized_pnl is combo-safe

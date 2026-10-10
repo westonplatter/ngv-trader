@@ -183,7 +183,7 @@ The same endpoint carries [a separate silent-204 defect](./tws-fills-window-anch
 ## Related
 
 - [Trade tagging](../../trade-tagging.md) — per-fill membership model and the current open-lot chip rule.
-- [Intraday TWS overlay](../../core/intraday-tws-overlay.md) — the `/positions` merge the chip map hangs off, and the live/settled two-tier model that makes unsettled fills unconditionally open.
+- [Intraday TWS overlay](../../design/intraday-tws-overlay.md) — the `/positions` merge the chip map hangs off, and the live/settled two-tier model that makes unsettled fills unconditionally open.
 - [Intraday fills window anchored to the session roll](./tws-fills-window-anchored-to-session-roll.md) — the opposite failure on the same UI element (zero chips, not too many), and the write-path silent-204 sibling.
 - [Peer BAG combo summaries deadlocked the purge](./bag-combo-summary-purge-deadlocks-on-peer-summaries.md) — origin of the read-only old-vs-new verification rule reused here.
 - [Auto-tag suggestions plan](../../plans/2026-06-20-002-feat-auto-tag-suggestions-plan.md) — its core matching question ("which group holds the open position this fill is closing") now has a working primitive in `_open_lot_trade_groups`; reuse it rather than writing a second matcher.

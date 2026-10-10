@@ -231,7 +231,7 @@ function statusHeaderClassName(status: TradeGroup["status"]): string {
 const GROUP_STATUSES: TradeGroup["status"][] = ["open", "closed", "archived"];
 
 // Shown as placeholder text in the empty meta editor, so the recognized blocks
-// are discoverable without leaving the page. See docs/core/trade-group-meta-yaml.md.
+// are discoverable without leaving the page. See docs/design/trade-group-meta-yaml.md.
 const META_YAML_PLACEHOLDER = `targets:
   delta:
     target: 120

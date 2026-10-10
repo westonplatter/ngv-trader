@@ -15,7 +15,7 @@ from the live side instead (no sibling shares the order key) and corroborates
 with settled `leg` rows at the summary's account and `exec_time`. The group tag
 fans out onto every settled leg via `carry_over_link_to_executions`, since there
 is no single settled row to hand it to. Current behavior is documented in
-[../core/intraday-tws-overlay.md](../core/intraday-tws-overlay.md#orphan-reconciliation).
+[../core/intraday-tws-overlay.md](../design/intraday-tws-overlay.md#orphan-reconciliation).
 
 ## Summary
 
