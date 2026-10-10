@@ -184,7 +184,7 @@ def _fetch_tickers(ib: IB, contracts: list) -> dict[int, Any]:
         return {}
     batches = (total + BATCH_SIZE - 1) // BATCH_SIZE
     logger.info("Fetching tickers for %d held contracts (%d batches)", total, batches)
-    ib.reqMarketDataType(3)  # delayed-frozen if live unavailable
+    ib.reqMarketDataType(4)  # live > frozen > delayed > delayed-frozen, best entitled
     by_con_id: dict[int, Any] = {}
     for i in range(0, total, BATCH_SIZE):
         batch = contracts[i : i + BATCH_SIZE]

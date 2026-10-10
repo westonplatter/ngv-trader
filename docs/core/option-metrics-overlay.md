@@ -108,8 +108,9 @@ columns, banded with the other live (TWS) columns:
 
 - Zero extra IBKR round-trips beyond the metrics job's own `reqTickers`; greeks
   come off tickers, not a separate request.
-- `reqMarketDataType(3)` (delayed-frozen) is set, so delayed greeks return when
-  live entitlement is absent — acceptable for an overlay.
+- `reqMarketDataType(4)` (delayed-frozen) is set, so delayed greeks return when
+  live entitlement is absent, and frozen (last close) greeks return after hours —
+  acceptable for an overlay.
 - The sync logs option-quote coverage (`with_greeks` vs total) and warns per
   option `con_id` that returns no `modelGreeks`, without failing the run.
 
