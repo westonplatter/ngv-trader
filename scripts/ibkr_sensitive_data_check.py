@@ -37,6 +37,8 @@ ALLOWED: frozenset[str] = frozenset(
         "234567890",
         "345678901",
         "400000001",
+        # Continues the conId series ("400000001, etc.") for fixtures needing more.
+        *(f"4{n:08d}" for n in range(2, 11)),
         "111111111",
         "222222222",
         "333333333",
