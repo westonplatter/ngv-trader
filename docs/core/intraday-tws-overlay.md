@@ -273,8 +273,9 @@ are blank.
 - Requires a TWS/Gateway session reachable during market hours; `reqTickers` on
   all held conids consumes IBKR market-data lines (manual trigger keeps this
   bounded). FlexQuery sync remains session-free.
-- Worker uses delayed-frozen market data (`reqMarketDataType(3)`) so it returns
-  marks when live data isn't entitled.
+- Worker uses delayed-frozen market data (`reqMarketDataType(4)`): IBKR returns
+  the best entitled type (live, then frozen, delayed, delayed-frozen), so marks
+  return when live data isn't entitled and the last close returns after hours.
 
 ## Preemptive tagging of unsettled fills
 

@@ -19,7 +19,8 @@ figures the semantic resolver can't express.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from collections.abc import Iterable
+from dataclasses import dataclass, replace
 from datetime import date, datetime
 from typing import Any
 
@@ -39,8 +40,10 @@ from src.models import (
     TradeGroupExecution,
     TradeGroupLiveExecution,
 )
+from src.services.execution_pnl import execution_lifecycle
 from src.services.execution_pnl import execution_realized_pnl as _execution_realized_pnl
 from src.services.intraday_overlay import (
+    PositionView,
     is_live_stale,
     is_overlay_superseded,
     merge_positions,
@@ -69,6 +72,107 @@ def _combine_total(realized: float | None, settled_unrealized: float | None) -> 
     if realized is None and settled_unrealized is None:
         return None
     return (realized or 0.0) + (settled_unrealized or 0.0)
+
+
+PairKey = tuple[int, int]
+
+
+def _signed_quantity(side: str | None, quantity: float) -> float:
+    """Signed fill quantity: FlexQuery stores it signed, TWS unsigned with a side."""
+    if side is None:
+        return quantity
+    return -abs(quantity) if side.upper() in {"SLD", "SELL"} else abs(quantity)
+
+
+def _net_held(fills: list[tuple[float, str | None]]) -> float:
+    """Quantity a group still holds from its own ``(signed_qty, lifecycle)`` fills.
+
+    Opens (and fills with no indicator) build the holding. A tagged close only
+    reduces it when it points the other way: a same-direction close unwound a
+    lot the group never opened (e.g. selling out a prior long before opening a
+    short), so it is not this group's exposure. Never flips past zero.
+    """
+    opened = sum(qty for qty, lifecycle in fills if lifecycle != "Close")
+    held = opened + sum(qty for qty, lifecycle in fills if lifecycle == "Close" and qty * opened < 0)
+    return held if held * opened > 0 else 0.0
+
+
+@dataclass(frozen=True)
+class GroupHoldings:
+    """Signed quantity a trade group holds per ``(account_id, con_id)``.
+
+    ``settled`` counts settled fills only (it apportions the FlexQuery
+    snapshot); ``total`` adds the group's tagged unsettled fills (it apportions
+    the live position).
+    """
+
+    settled: dict[PairKey, float]
+    total: dict[PairKey, float]
+
+
+def group_holdings(settled_execs: Iterable[Any], live_execs: Iterable[Any] = ()) -> GroupHoldings:
+    """Per-position holdings from a group's tagged settled + unsettled fills.
+
+    Combo summaries are skipped (their legs carry the quantity), as are
+    superseded revisions. Unsettled fills carry no open/close indicator.
+    """
+    settled_fills: dict[PairKey, list[tuple[float, str | None]]] = {}
+    for ex in settled_execs:
+        if ex.con_id is None or ex.exec_role == "combo_summary" or not ex.is_canonical:
+            continue
+        settled_fills.setdefault((ex.account_id, ex.con_id), []).append((_signed_quantity(ex.side, ex.quantity), execution_lifecycle(ex.raw)))
+    live_fills: dict[PairKey, list[tuple[float, str | None]]] = {}
+    for ex in live_execs:
+        if ex.con_id is None or ex.exec_role == "combo_summary":
+            continue
+        live_fills.setdefault((ex.account_id, ex.con_id), []).append((_signed_quantity(ex.side, ex.quantity), None))
+    return GroupHoldings(
+        settled={key: _net_held(fills) for key, fills in settled_fills.items()},
+        total={key: _net_held(settled_fills.get(key, []) + live_fills.get(key, [])) for key in settled_fills.keys() | live_fills.keys()},
+    )
+
+
+def held_fraction(held: float | None, position: float | None) -> float:
+    """Share of an account position a group holds, in ``[0, 1]``."""
+    if held is None or not position or held * position <= 0:
+        return 0.0
+    return min(abs(held) / abs(position), 1.0)
+
+
+def _scaled(value: float | None, share: float) -> float | None:
+    return None if value is None else value * share
+
+
+def apportion_to_group(views: list[PositionView], flex_rows: list[Any], holdings: GroupHoldings) -> tuple[list[PositionView], dict[PairKey, float]]:
+    """Cut account-level positions down to the part a group's own fills hold.
+
+    Two groups that each opened one lot of the same contract would otherwise
+    both show (and total) the whole account position. Quantity, unrealized and
+    position value scale pro rata; avg cost, marks and greeks are per-unit and
+    stay as is. Views the group holds none of are dropped.
+
+    Returns ``(views, flex_shares)``; pass ``flex_shares`` to ``overlay_totals``
+    so the settled total is apportioned the same way.
+    """
+    flex_shares = {(row.account_id, row.con_id): held_fraction(holdings.settled.get((row.account_id, row.con_id)), row.position) for row in flex_rows}
+    apportioned: list[PositionView] = []
+    for view in views:
+        key = (view.account_id, view.con_id)
+        settled_share = flex_shares.get(key, 0.0)
+        # A "settled" view shows snapshot numbers, so the settled share sizes it.
+        position_share = held_fraction(holdings.total.get(key), view.position) if view.source == "live" else settled_share
+        if position_share == 0.0:
+            continue
+        apportioned.append(
+            replace(
+                view,
+                position=view.position * position_share,
+                live_unrealized=_scaled(view.live_unrealized, position_share),
+                settled_unrealized=_scaled(view.settled_unrealized, settled_share),
+                settled_position_value=_scaled(view.settled_position_value, settled_share),
+            )
+        )
+    return apportioned, flex_shares
 
 
 @dataclass(frozen=True)
@@ -252,6 +356,24 @@ def _tagged_live_pairs(session: Session, group_ids: list[int], account_id: int |
     return pairs
 
 
+def _tagged_live_fills(session: Session, group_ids: list[int], account_id: int | None = None) -> dict[int, list[Any]]:
+    """Each group's tagged unsettled ``LiveExecution`` fills, for :func:`group_holdings`."""
+    stmt = (
+        select(TradeGroupLiveExecution.trade_group_id, LiveExecution)
+        .join(LiveExecution, LiveExecution.ib_exec_id == TradeGroupLiveExecution.ib_exec_id)
+        .where(
+            TradeGroupLiveExecution.trade_group_id.in_(group_ids),
+            LiveExecution.ib_exec_id.not_in(select(TradeExecution.ib_exec_id)),
+        )
+    )
+    if account_id is not None:
+        stmt = stmt.where(LiveExecution.account_id == account_id)
+    fills: dict[int, list[Any]] = {}
+    for group_id, live_exec in session.execute(stmt).all():
+        fills.setdefault(group_id, []).append(live_exec)
+    return fills
+
+
 def trade_group_account_con_pairs(session: Session, group_id: int) -> set[tuple[int, int]]:
     """The ``(account_id, con_id)`` pairs a single group's positions are drawn from."""
     _, pairs_by_group, _, _ = _group_execution_index(session, [group_id])
@@ -284,7 +406,7 @@ def trade_group_batch_pnls(
     """Realized + settled/intraday PnL for many trade groups, without an N+1.
 
     Query count is fixed in ``len(group_ids)``: one for the groups' executions,
-    one for the preemptively-tagged unsettled fills, and the six the overlay
+    two for the preemptively-tagged unsettled fills, and the six the overlay
     context needs. Only the per-group *slicing* is per group, and that is pure
     Python over already-loaded rows.
 
@@ -292,10 +414,10 @@ def trade_group_batch_pnls(
     queries (executions + the settled Position snapshot), which is the cost the
     list endpoint's existing consumers already pay.
 
-    Attribution matches ``GET /trade-groups/{id}/executions``: a position belongs
-    to a group when any of that group's executions touched its
-    ``(account_id, con_id)``. It is a per-group figure and is **not** additive
-    across groups — a position shared by two groups is counted in full in both.
+    Attribution matches ``GET /trade-groups/{id}/executions``: a group holds the
+    part of each ``(account_id, con_id)`` position that its own tagged fills
+    opened (see :func:`apportion_to_group`), so a contract split across two
+    groups is counted once, not in full in both.
 
     ``account_id`` scopes every figure to that account's legs, matching the
     detail endpoint's per-account breakdown. Groups are cross-account, so an
@@ -309,20 +431,26 @@ def trade_group_batch_pnls(
     realized_by_group = {group_id: trade_group_realized_pnl(execs_by_group.get(group_id, [])) for group_id in group_ids}
 
     if not include_intraday:
-        settled_by_pair: dict[tuple[int, int], float] = {}
+        settled_by_pair: dict[tuple[int, int], tuple[float, float]] = {}
         if all_pairs:
             pos_rows = session.execute(
-                select(Position.account_id, Position.con_id, Position.fifo_pnl_unrealized).where(
+                select(Position.account_id, Position.con_id, Position.position, Position.fifo_pnl_unrealized).where(
                     sa_tuple(Position.account_id, Position.con_id).in_(list(all_pairs)),
                     Position.position != 0,
                 )
             ).all()
-            for account_id, con_id, fifo in pos_rows:
+            for account_id, con_id, position, fifo in pos_rows:
                 if fifo is not None:
-                    settled_by_pair[(account_id, con_id)] = fifo
+                    settled_by_pair[(account_id, con_id)] = (position, fifo)
         result: dict[int, TradeGroupBatchPnl] = {}
         for group_id in group_ids:
-            values = [settled_by_pair[pair] for pair in pairs_by_group.get(group_id, set()) if pair in settled_by_pair]
+            held = group_holdings(execs_by_group.get(group_id, [])).settled
+            values = [
+                fifo * held_fraction(held.get(pair), position)
+                for pair in pairs_by_group.get(group_id, set())
+                if pair in settled_by_pair
+                for position, fifo in [settled_by_pair[pair]]
+            ]
             result[group_id] = TradeGroupBatchPnl(
                 realized_pnl=realized_by_group[group_id],
                 settled_unrealized_pnl=sum(values) if values else None,
@@ -332,6 +460,7 @@ def trade_group_batch_pnls(
     for group_id, extra in _tagged_live_pairs(session, group_ids, account_id).items():
         pairs_by_group.setdefault(group_id, set()).update(extra)
         all_pairs |= extra
+    live_fills_by_group = _tagged_live_fills(session, group_ids, account_id)
 
     context = load_overlay_context(session, all_pairs)
 
@@ -347,12 +476,15 @@ def trade_group_batch_pnls(
         live_slice = [row for row in context.live_rows if (row.account_id, row.con_id) in pairs]
         exec_slice = [row for row in context.live_execs if (row.account_id, row.con_id) in pairs]
         views = merge_positions(flex_slice, live_slice, context.quotes, context.magnifiers, context.metrics, context.account_as_of)
+        holdings = group_holdings(execs_by_group.get(group_id, []), live_fills_by_group.get(group_id, []))
+        views, flex_shares = apportion_to_group(views, flex_slice, holdings)
         totals = overlay_totals(
             flex_slice,
             views,
             exec_slice,
             settled_ids_by_group.get(group_id, set()),
             realized_by_group[group_id],
+            flex_shares,
         )
         result[group_id] = TradeGroupBatchPnl(
             realized_pnl=realized_by_group[group_id],
@@ -492,10 +624,9 @@ def resolve_trade_group(session: Session, group: int | str) -> TradeGroup:
 def compute_trade_group_pnl(session: Session, group_id: int) -> TradeGroupPnl:
     """Compute realized + settled/intraday PnL for one trade group.
 
-    Attribution matches the detail UI: a position is attributed to the group when
-    any of the group's executions touched its ``(account_id, con_id)``. This is a
-    per-group figure and is NOT additive across groups (a position shared by two
-    groups is counted in both).
+    Attribution matches the detail UI: the group holds the part of each
+    ``(account_id, con_id)`` position its own tagged fills opened (see
+    :func:`apportion_to_group`), so a contract split across groups is counted once.
     """
     group = session.get(TradeGroup, group_id)
     if group is None:
@@ -520,7 +651,9 @@ def compute_trade_group_pnl(session: Session, group_id: int) -> TradeGroupPnl:
 
     context = load_overlay_context(session, account_con_pairs)
     views = merge_positions(context.flex_rows, context.live_rows, context.quotes, context.magnifiers, context.metrics, context.account_as_of)
-    totals = overlay_totals(context.flex_rows, views, context.live_execs, settled_exec_ids, realized)
+    holdings = group_holdings(executions, _tagged_live_fills(session, [group_id]).get(group_id, []))
+    views, flex_shares = apportion_to_group(views, context.flex_rows, holdings)
+    totals = overlay_totals(context.flex_rows, views, context.live_execs, settled_exec_ids, realized, flex_shares)
 
     return TradeGroupPnl(
         group_id=group.id,
