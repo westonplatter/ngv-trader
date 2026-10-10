@@ -32,7 +32,7 @@ Applies to any PR that changes code, schema, or UX:
   Fix hard failures (`FAIL`) before merging; route `WARN`s are informational.
 
 - **Spec lifecycle.** When a spec ships, do the wrap-up per the Docs Index Rule
-  in `AGENTS.md` (rewrite or fold, drop the `spec-` prefix, update references,
+  in [contributing/docs-conventions.md](contributing/docs-conventions.md) (rewrite or fold, drop the `spec-` prefix, update references,
   regenerate indexes). Update a spec's status banner when its state changes,
   not on a schedule.
 
