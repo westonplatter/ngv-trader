@@ -12,12 +12,12 @@ dependencies = [
   "ngv_reports_ibkr @ git+https://github.com/westonplatter/ngv_reports_ibkr.git@v0.5.0",
   "sqlalchemy>=2.0.51",
   "alembic>=1.18.5",
-  "psycopg2-binary>=2.9.12",
   "pandera[pandas]>=0.32.1",
   "fastapi>=0.140.13",
   "uvicorn[standard]>=0.51.0",
   "defusedxml>=0.7.1",
   "cryptography>=50.0.0",
+  "psycopg[binary]>=3.3.6",
 ]
 
 [project.optional-dependencies]

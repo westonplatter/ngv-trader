@@ -1,4 +1,4 @@
-"""ORM round-trip — catches SQLAlchemy/psycopg2 breakage on dependency bumps."""
+"""ORM round-trip — catches SQLAlchemy/psycopg breakage on dependency bumps."""
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
