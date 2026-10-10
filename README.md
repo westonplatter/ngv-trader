@@ -10,6 +10,10 @@
 
 - **Stragies** — Organized trades and executions into strategies and trade groups, with spread-aware, per-account realized/unrealized P&L rolled up per group.
 
+![Trades page showing executions with their trade-group tags, sync controls, and a contract-scoped filter](docs/screenshots/trades-trade-group-detail-link.png)
+
+_Trades page: executions tagged to trade groups, with FlexQuery and intraday TWS sync controls. Captured in demo mode._
+
 ## Getting Started
 
 New to the project? Follow the [Getting Started guide](docs/getting-started.md) for a full walkthrough covering prerequisites, database setup, IBKR configuration, and running the app.
