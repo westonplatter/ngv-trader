@@ -10,6 +10,11 @@ updates:
     cooldown:
       default-days: 14
     open-pull-requests-limit: 10
+    # Skip patch version bumps; security updates still open for any version
+    # (update-types only filters version updates, not security updates).
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-patch"]
     commit-message:
       prefix: "chore(deps)"
       prefix-development: "chore(deps-dev)"
@@ -23,6 +28,11 @@ updates:
     cooldown:
       default-days: 14
     open-pull-requests-limit: 10
+    # Skip patch version bumps; security updates still open for any version
+    # (update-types only filters version updates, not security updates).
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-patch"]
     commit-message:
       prefix: "chore(deps)"
       prefix-development: "chore(deps-dev)"
@@ -35,5 +45,10 @@ updates:
     cooldown:
       default-days: 14
     open-pull-requests-limit: 10
+    # Skip patch version bumps; security updates still open for any version
+    # (update-types only filters version updates, not security updates).
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-patch"]
     commit-message:
       prefix: "ci(deps)"
