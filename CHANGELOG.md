@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.18](https://github.com/westonplatter/ngv-trader/compare/v0.1.17...v0.1.18) (2026-10-10)
+
+
+### Documentation
+
+* restructure AGENTS.md and docs/ for progressive disclosure ([#295](https://github.com/westonplatter/ngv-trader/issues/295)) ([badd487](https://github.com/westonplatter/ngv-trader/commit/badd487f6485b12d735ce62cff34eda208197c9c))
+
 ## [0.1.17](https://github.com/westonplatter/ngv-trader/compare/v0.1.16...v0.1.17) (2026-10-10)
 
 
