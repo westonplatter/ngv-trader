@@ -45,7 +45,7 @@ per metric; an invalid pick errors with the valid options).
 
 ## 3. Metrics catalog
 
-**Money & activity (execution grain)**
+### Money & activity (execution grain)
 
 - `realized_pnl` — net booked PnL (FlexQuery `fifoPnlRealized`). Only populated when a position is (partly) closed.
 - `total_commissions` — fees paid. Excludes synthetic `combo_summary` rows.
@@ -57,11 +57,11 @@ per metric; an invalid pick errors with the valid options).
 - `premium_paid` — cash paid on BUY fills (debits), positive USD. _Cost to open a long option / buy-to-close._
 - `gross_premium` — net cash flow = collected − paid (signed). Positive = net credit.
 
-**Trade grain**
+### Trade grain
 
 - `trade_count`, `win_rate` (fraction of realized trades that are winners).
 
-**Open positions (position grain)**
+### Open positions (position grain)
 
 - `open_position_count`, `net_quantity` (signed), `position_market_value`, `settled_unrealized_pnl` (end-of-day snapshot; see §5).
 

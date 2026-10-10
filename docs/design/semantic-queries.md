@@ -134,7 +134,7 @@ directly on `v_execution_facts` and `v_position_facts`.
 
 ## 4. The resolver algorithm (`build_metric_query`)
 
-```
+```text
 1. metric  -> validate; fact = metric.fact
 2. for each group_by / filter name:
      dim = resolve_dimension(fact, name)         # nearest dataset reachable from fact, fact-first
