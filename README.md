@@ -4,11 +4,14 @@
 
 ## Features
 
-- **Trades** — Sync trade fills from IBKR via FlexQuery and live TWS, review trade history
+- **Supported Instruments** —- Equities, Equity Options, Futures, and Future Options.
 
-- **Positions & live P&L** — Track positions across accounts with unrealized P&L, plus a live intraday TWS overlay for current-state marks.
+- **Trades** — Pull down trade history from IBKR via either FlexQuery reports and live from the Trader Workstation.
 
-- **Stragies** — Organized trades and executions into strategies and trade groups, with spread-aware, per-account realized/unrealized P&L rolled up per group.
+- **Strategies** — Categorize trades and link to user defined 'Strategies' to track on-going realized/unrealized P&L for strategies run within your portfolio(s).
+
+- **Positions & live P&L** — Track positions across accounts with unrealized P&L, plus a live intraday TWS overlay showing current marks.
+
 
 ![Trades page showing executions with their trade-group tags, sync controls, and a contract-scoped filter](docs/screenshots/trades-trade-group-detail-link.png)
 
