@@ -529,6 +529,7 @@ def overlay_totals(
     live_execs: list[Any],
     settled_exec_ids: set[str],
     realized: float | None,
+    flex_shares: dict[tuple[int, int], float] | None = None,
 ) -> OverlayTotals:
     """Compose the settled + intraday PnL totals from already-merged rows.
 
@@ -536,8 +537,14 @@ def overlay_totals(
     endpoint and the tradebot ``trade_group_pnl`` tool both call this, so the
     live figures cannot diverge. ``realized`` is the settled realized PnL for the
     scope (the intraday realized adds live, not-yet-settled fills on top).
+    ``flex_shares`` scales each settled row's unrealized to the fraction of the
+    position the scope holds (``None`` counts every row in full).
     """
-    settled_vals = [p.fifo_pnl_unrealized for p in flex_rows if p.fifo_pnl_unrealized is not None]
+    settled_vals = [
+        p.fifo_pnl_unrealized * (1.0 if flex_shares is None else flex_shares.get(_key(p.account_id, p.con_id), 0.0))
+        for p in flex_rows
+        if p.fifo_pnl_unrealized is not None
+    ]
     settled_unrealized = sum(settled_vals) if settled_vals else None
 
     intraday_unrealized = intraday_unrealized_total(views)

@@ -1,7 +1,7 @@
 """Trades API router."""
 
 import re
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -222,9 +222,38 @@ def _execution_display_priority():
     )
 
 
-def _trade_lifecycle_from_execution(raw: dict | None, exec_role: str | None) -> str | None:
-    if exec_role == "combo_summary":
+def _combo_lifecycle(leg_lifecycles: Iterable[str | None]) -> str | None:
+    """Open/Close/Roll for a combo's BAG summary, derived from its legs.
+
+    The BAG row carries no open/close indicator of its own. A combo whose legs
+    all open (e.g. a new vertical spread) is an Open, all closing is a Close,
+    and a mix — close one leg, open another — is a Roll. ``None`` when no leg
+    reports an indicator.
+    """
+    known = {lifecycle for lifecycle in leg_lifecycles if lifecycle is not None}
+    if known == {"Open"}:
+        return "Open"
+    if known == {"Close"}:
+        return "Close"
+    if known == {"Open", "Close"}:
         return "Roll"
+    return None
+
+
+def _trade_lifecycle_from_execution(
+    raw: dict | None,
+    exec_role: str | None,
+    trade_executions: Sequence[tuple[dict | None, str | None, bool]] = (),
+) -> str | None:
+    """Open/Close for a fill; for a combo summary, the rollup of its legs.
+
+    ``trade_executions`` is the trade's ``(raw, exec_role, is_canonical)`` rows,
+    needed only to classify a ``combo_summary``.
+    """
+    if exec_role == "combo_summary":
+        return _combo_lifecycle(
+            _trade_lifecycle_from_execution(leg_raw, leg_role) for leg_raw, leg_role, is_canonical in trade_executions if leg_role == "leg" and is_canonical
+        )
 
     if not raw:
         return None
@@ -522,6 +551,7 @@ def list_trades(  # noqa: C901, PLR0912
                 lifecycle=_trade_lifecycle_from_execution(
                     raw_by_trade_id.get(trade.id),
                     raw_exec_role_by_trade_id.get(trade.id),
+                    execution_summary_by_trade_id.get(trade.id, []),
                 ),
                 is_assigned=bool(is_assigned),
                 assigned_trade_group_id=assigned_trade_group_id_by_trade_id.get(
@@ -606,7 +636,7 @@ def get_trade(trade_id: int, db: Session = DB_SESSION_DEPENDENCY):
         account_id=trade.account_id,
         account_alias=alias,
         contract_display_name=_contract_display_from_raw(execution_raw, contract_ref) or _trade_contract_display_name(trade, execution_raw),
-        lifecycle=_trade_lifecycle_from_execution(execution_raw, execution_exec_role),
+        lifecycle=_trade_lifecycle_from_execution(execution_raw, execution_exec_role, execution_summary_rows),
         is_assigned=bool(is_assigned),
         assigned_trade_group_id=assigned_trade_group_id,
         ib_perm_id=trade.ib_perm_id,
@@ -804,7 +834,11 @@ def list_all_trade_executions(  # noqa: C901, PLR0912, PLR0915
                 trade_ib_perm_id=trade.ib_perm_id if trade else None,
                 trade_order_ref=trade.order_ref if trade else None,
                 trade_status=trade.status if trade else "unknown",
-                trade_lifecycle=_trade_lifecycle_from_execution(ex.raw, ex.exec_role),
+                trade_lifecycle=_trade_lifecycle_from_execution(
+                    ex.raw,
+                    ex.exec_role,
+                    trade_executions_summary.get(ex.trade_id, []),
+                ),
                 trade_contract_display_name=trade_contract_display.get(ex.trade_id),
                 trade_realized_pnl=_trade_realized_pnl_from_executions(
                     trade_executions_summary.get(ex.trade_id, []),
@@ -861,7 +895,7 @@ def _live_contract_display(le: LiveExecution) -> str | None:
     )
 
 
-def _lifecycle_from_live_execution(le: LiveExecution) -> str | None:
+def _lifecycle_from_live_execution(le: LiveExecution, combo_lifecycle: str | None = None) -> str | None:
     """Open/Close for an unsettled live fill, derived from realized P&L.
 
     The real-time ``ib_async.Execution`` carries no ``openClose`` or
@@ -877,9 +911,12 @@ def _lifecycle_from_live_execution(le: LiveExecution) -> str | None:
 
     The Expired action is unreachable from this feed — an option expiration
     produces no fill — so unsettled rows never show it.
+
+    A combo summary has no fill-level P&L of its own; it takes
+    ``combo_lifecycle``, the rollup of its legs (see ``_combo_lifecycle``).
     """
     if le.exec_role == "combo_summary":
-        return "Roll"
+        return combo_lifecycle
     if le.realized_pnl is not None and le.realized_pnl != 0:
         return "Close"
     return "Open"
@@ -968,12 +1005,19 @@ def _unsettled_live_executions(
     }
 
     combo_exec_id_by_order_key, group_by_order_key = _live_combo_index(live_rows, group_by_exec_id)
+    leg_lifecycles_by_order_key: dict[tuple[str, int], list[str | None]] = {}
+    for le in live_rows:
+        key = _live_order_group_key(le)
+        if key is not None and le.exec_role == "leg":
+            leg_lifecycles_by_order_key.setdefault(key, []).append(_lifecycle_from_live_execution(le))
 
     items: list[TradeExecutionListItem] = []
     for le in live_rows:
         acct = account_by_id.get(le.account_id)
         alias = (acct.alias if acct.alias else acct.account) if acct else None
         display = _live_contract_display(le)
+        order_key = _live_order_group_key(le)
+        leg_lifecycles = leg_lifecycles_by_order_key.get(order_key, []) if order_key is not None else []
         items.append(
             TradeExecutionListItem(
                 id=-le.id,  # negative id space so it can't collide with settled rows
@@ -998,7 +1042,7 @@ def _unsettled_live_executions(
                 trade_ib_perm_id=None,
                 trade_order_ref=None,
                 trade_status="unsettled",
-                trade_lifecycle=_lifecycle_from_live_execution(le),
+                trade_lifecycle=_lifecycle_from_live_execution(le, _combo_lifecycle(leg_lifecycles)),
                 trade_contract_display_name=display,
                 trade_realized_pnl=None,
                 trade_assigned_trade_group_id=None,

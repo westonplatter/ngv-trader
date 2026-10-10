@@ -78,7 +78,7 @@ export const DEMO_POSITIONS: Position[] = [
     id: 1,
     account_alias: ACCOUNT_ALIAS,
     contract_display_name: "NQ Sep'26 Future",
-    con_id: 730283085,
+    con_id: 400000002,
     trade_groups: [GROUP_NQ],
     symbol: "NQ",
     sec_type: "FUT",
@@ -121,7 +121,7 @@ export const DEMO_POSITIONS: Position[] = [
     id: 2,
     account_alias: ACCOUNT_ALIAS,
     contract_display_name: "ES Jul'26 6000 Call",
-    con_id: 651244012,
+    con_id: 400000003,
     trade_groups: [GROUP_ES_DIAGONAL],
     symbol: "ES",
     sec_type: "FOP",
@@ -162,7 +162,7 @@ export const DEMO_POSITIONS: Position[] = [
     id: 3,
     account_alias: ACCOUNT_ALIAS,
     contract_display_name: "ES Sep'26 6100 Call",
-    con_id: 651244089,
+    con_id: 400000004,
     trade_groups: [GROUP_ES_DIAGONAL],
     symbol: "ES",
     sec_type: "FOP",
@@ -248,7 +248,7 @@ export const DEMO_POSITIONS: Position[] = [
     id: 5,
     account_alias: ACCOUNT_ALIAS,
     contract_display_name: "GLD Jul'26 311 Call",
-    con_id: 712880101,
+    con_id: 400000005,
     trade_groups: [GROUP_GLD_CC],
     symbol: "GLD",
     sec_type: "OPT",
@@ -289,7 +289,7 @@ export const DEMO_POSITIONS: Position[] = [
     id: 6,
     account_alias: ACCOUNT_ALIAS,
     contract_display_name: "GLD Jul'26 317 Call",
-    con_id: 712880145,
+    con_id: 400000006,
     trade_groups: [GROUP_GLD_CC],
     symbol: "GLD",
     sec_type: "OPT",
@@ -330,7 +330,7 @@ export const DEMO_POSITIONS: Position[] = [
     id: 7,
     account_alias: ACCOUNT_ALIAS,
     contract_display_name: "GLD Jul'26 324 Call",
-    con_id: 712880178,
+    con_id: 400000007,
     trade_groups: [GROUP_GLD_CC],
     symbol: "GLD",
     sec_type: "OPT",
@@ -375,7 +375,7 @@ export const DEMO_POSITIONS: Position[] = [
     account_id: ACCOUNT_ID,
     account_alias: ACCOUNT_ALIAS,
     contract_display_name: "CL Sep'26 Future",
-    con_id: 689918823,
+    con_id: 400000008,
     trade_groups: [],
     symbol: "CL",
     sec_type: "FUT",
@@ -421,7 +421,7 @@ export const DEMO_POSITIONS: Position[] = [
     account_id: ACCOUNT_ID,
     account_alias: ACCOUNT_ALIAS,
     contract_display_name: "MES Sep'26 Future",
-    con_id: 730341577,
+    con_id: 400000009,
     trade_groups: [GROUP_MES_SCALP],
     symbol: "MES",
     sec_type: "FUT",
@@ -466,7 +466,7 @@ export const DEMO_POSITIONS: Position[] = [
     account_id: ACCOUNT_ID,
     account_alias: ACCOUNT_ALIAS,
     contract_display_name: "SPY Jul'26 540 Put",
-    con_id: 712994310,
+    con_id: 400000010,
     trade_groups: [GROUP_SPY_PUTS],
     symbol: "SPY",
     sec_type: "OPT",
@@ -833,6 +833,8 @@ const GROUP_UNSETTLED_EXECUTIONS: Record<number, GroupExecution[]> = {
       data_source: "tws",
       ib_codes: null,
       settled: false,
+      multiplier: 20,
+      cost_basis: 440102.25,
     },
   ],
   // GLD Covered Calls: sold one more further-OTM call intraday (+6%).
@@ -854,6 +856,8 @@ const GROUP_UNSETTLED_EXECUTIONS: Record<number, GroupExecution[]> = {
       data_source: "tws",
       ib_codes: null,
       settled: false,
+      multiplier: 1,
+      cost_basis: -93.95,
     },
   ],
   // MES Intraday Scalp: two opening fills that build the live 3-lot position.
@@ -875,6 +879,8 @@ const GROUP_UNSETTLED_EXECUTIONS: Record<number, GroupExecution[]> = {
       data_source: "tws",
       ib_codes: null,
       settled: false,
+      multiplier: 5,
+      cost_basis: 55103.12,
     },
     {
       id: 5105,
@@ -893,6 +899,8 @@ const GROUP_UNSETTLED_EXECUTIONS: Record<number, GroupExecution[]> = {
       data_source: "tws",
       ib_codes: null,
       settled: false,
+      multiplier: 5,
+      cost_basis: 27555.31,
     },
   ],
   // SPY Protective Puts: single opening fill for the live 5-lot hedge.
@@ -914,6 +922,8 @@ const GROUP_UNSETTLED_EXECUTIONS: Record<number, GroupExecution[]> = {
       data_source: "tws",
       ib_codes: null,
       settled: false,
+      multiplier: 1,
+      cost_basis: 1928.25,
     },
   ],
 };
@@ -954,6 +964,7 @@ function toOpenPosition(pos: Position): GroupOpenPosition {
 // quantities line up with the open positions shown alongside them.
 function openingExecution(pos: Position, index: number): GroupExecution {
   const isShort = pos.position < 0;
+  const commission = pos.sec_type === "STK" ? 1.0 : 2.25;
   return {
     id: 1000 + pos.id,
     trade_id: 2000 + pos.id,
@@ -963,13 +974,16 @@ function openingExecution(pos: Position, index: number): GroupExecution {
     side: isShort ? "SLD" : "BOT",
     quantity: Math.abs(pos.position),
     price: pos.avg_cost,
-    commission: pos.sec_type === "STK" ? 1.0 : 2.25,
+    commission,
     realized_pnl: 0,
     exec_role: "opening",
     sec_type: pos.sec_type,
     contract_display: pos.contract_display_name,
     data_source: "demo",
     ib_codes: index % 3 === 0 ? "O;P" : null,
+    // price is the multiplier-inclusive avg_cost, so the multiplier is folded in.
+    multiplier: 1,
+    cost_basis: pos.avg_cost * pos.position + commission,
   };
 }
 

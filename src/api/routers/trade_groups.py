@@ -37,6 +37,7 @@ from src.services.intraday_overlay import (
     is_live_stale,
     merge_positions,
     overlay_totals,
+    parse_multiplier,
 )
 from src.services.trade_group_instruments import (
     InstrumentPatternError,
@@ -45,7 +46,10 @@ from src.services.trade_group_instruments import (
 )
 from src.services.trade_group_meta import TradeGroupMetaError, parse_meta_yaml
 from src.services.trade_group_pnl import (
+    GroupHoldings,
     TradeGroupBatchPnl,
+    apportion_to_group,
+    group_holdings,
     load_overlay_context,
     trade_group_batch_pnls,
     trade_group_realized_pnl,
@@ -1205,6 +1209,37 @@ class TradeGroupExecutionItem(BaseModel):
     # False for preemptively-tagged live fills not yet settled.
     settled: bool = True
     ib_exec_id: str | None = None
+    multiplier: float = 1.0
+    # Signed qty x price x multiplier + commission: positive = debit paid,
+    # negative = credit received (matches the open positions' Cost Basis).
+    # Null for combo_summary rows so their legs are not double-counted.
+    cost_basis: float | None = None
+
+
+def _execution_cost_basis(
+    *,
+    side: str | None,
+    quantity: float,
+    price: float,
+    multiplier: float,
+    commission: float | None,
+    exec_role: str,
+) -> float | None:
+    """Commission-inclusive cost basis of one fill (debit positive, credit negative).
+
+    Sign comes from ``side`` because FlexQuery stores quantity signed and
+    commission negative while TWS stores both unsigned; the commission is always
+    a cost, so it adds to a debit and shrinks a credit.
+    """
+    if exec_role == "combo_summary":
+        return None
+    if side is None:
+        signed_qty = quantity
+    elif side.upper() in {"SLD", "SELL"}:
+        signed_qty = -abs(quantity)
+    else:
+        signed_qty = abs(quantity)
+    return signed_qty * price * multiplier + abs(commission or 0.0)
 
 
 class TradeGroupOpenPositionItem(BaseModel):
@@ -1307,10 +1342,13 @@ def _build_open_positions_overlay(
     settled_exec_ids: set[str],
     total_pnl: float | None,
     realized_by_account: dict[int, float | None] | None = None,
+    holdings: GroupHoldings | None = None,
 ) -> _OpenPositionsOverlay:
     """Merge the live TWS overlay onto the settled snapshot for a group's pairs.
 
     Settled totals stay backward-compatible; intraday fields are additive.
+    ``holdings`` cuts each position down to the group's own share; ``None``
+    keeps whole account positions.
     """
     empty = _OpenPositionsOverlay(
         open_positions=[],
@@ -1330,6 +1368,9 @@ def _build_open_positions_overlay(
     flex_rows, live_rows, live_execs = context.flex_rows, context.live_rows, context.live_execs
     expiries = context.expiries
     views = merge_positions(flex_rows, live_rows, context.quotes, context.magnifiers, context.metrics, context.account_as_of)
+    flex_shares = None
+    if holdings is not None:
+        views, flex_shares = apportion_to_group(views, flex_rows, holdings)
 
     view_account_ids = {v.account_id for v in views}
     alias_by_id = {}
@@ -1350,7 +1391,7 @@ def _build_open_positions_overlay(
     ]
 
     # Single source for the group totals (shared with the trade_group_pnl tool).
-    totals = overlay_totals(flex_rows, views, live_execs, settled_exec_ids, total_pnl)
+    totals = overlay_totals(flex_rows, views, live_execs, settled_exec_ids, total_pnl, flex_shares)
 
     # Per-account breakdown using the same partitioning as the totals above, so
     # the per-account values reconcile to the group totals.
@@ -1485,6 +1526,7 @@ def trade_group_executions(trade_group_id: int, db: Session = DB_SESSION_DEPENDE
         execution, contract_ref, _trade, account = row
         rows_by_account.setdefault(execution.account_id, []).append(row)
         alias_by_account.setdefault(execution.account_id, account.alias if account else None)
+        multiplier = parse_multiplier(contract_ref.multiplier if contract_ref else None)
         items.append(
             TradeGroupExecutionItem(
                 id=execution.id,
@@ -1504,6 +1546,15 @@ def trade_group_executions(trade_group_id: int, db: Session = DB_SESSION_DEPENDE
                 ib_codes=_execution_ib_codes(execution.raw),
                 settled=True,
                 ib_exec_id=execution.ib_exec_id,
+                multiplier=multiplier,
+                cost_basis=_execution_cost_basis(
+                    side=execution.side,
+                    quantity=execution.quantity,
+                    price=execution.price,
+                    multiplier=multiplier,
+                    commission=execution.commission,
+                    exec_role=execution.exec_role,
+                ),
             )
         )
 
@@ -1521,6 +1572,7 @@ def trade_group_executions(trade_group_id: int, db: Session = DB_SESSION_DEPENDE
         .order_by(LiveExecution.exec_time.asc(), LiveExecution.id.asc())
     ).all()
     for live_exec, account in live_rows:
+        live_multiplier = parse_multiplier(live_exec.multiplier)
         items.append(
             TradeGroupExecutionItem(
                 id=-live_exec.id,
@@ -1549,6 +1601,15 @@ def trade_group_executions(trade_group_id: int, db: Session = DB_SESSION_DEPENDE
                 data_source="tws-live",
                 settled=False,
                 ib_exec_id=live_exec.ib_exec_id,
+                multiplier=live_multiplier,
+                cost_basis=_execution_cost_basis(
+                    side=live_exec.side,
+                    quantity=live_exec.quantity,
+                    price=live_exec.price,
+                    multiplier=live_multiplier,
+                    commission=None,
+                    exec_role=live_exec.exec_role,
+                ),
             )
         )
 
@@ -1559,16 +1620,18 @@ def trade_group_executions(trade_group_id: int, db: Session = DB_SESSION_DEPENDE
     realized_by_account = {acct_id: trade_group_realized_pnl([execution for execution, *_ in acct_rows]) for acct_id, acct_rows in rows_by_account.items()}
 
     # Open positions linked to this group: match on (account_id, con_id) pairs
-    # that appear in any of the group's executions. The settled snapshot
-    # (FlexQuery `positions`) is the base; the live TWS overlay (`live_positions`
-    # + `latest_quote` + `live_executions`) is merged on top at read time.
+    # that appear in any of the group's executions, cut down to the quantity the
+    # group's own fills hold (a contract split across groups counts once). The
+    # settled snapshot (FlexQuery `positions`) is the base; the live TWS overlay
+    # (`live_positions` + `latest_quote` + `live_executions`) is merged on top.
     account_con_pairs = {(execution.account_id, execution.con_id) for execution, _ref, _trade, _account in rows if execution.con_id is not None}
     # Also surface positions whose only link to this group is a tagged *unsettled*
     # live fill (a strike opened today, not yet in trade_executions). Without this,
     # a freshly-opened position stays hidden from Open Positions until it settles.
     account_con_pairs |= {(le.account_id, le.con_id) for le, _account in live_rows if le.con_id is not None}
     settled_exec_ids = {execution.ib_exec_id for execution, _ref, _trade, _account in rows if execution.ib_exec_id}
-    overlay = _build_open_positions_overlay(db, account_con_pairs, settled_exec_ids, total_pnl, realized_by_account)
+    holdings = group_holdings([execution for execution, *_ in rows], [live_exec for live_exec, _account in live_rows])
+    overlay = _build_open_positions_overlay(db, account_con_pairs, settled_exec_ids, total_pnl, realized_by_account, holdings)
 
     # Assemble the per-account breakdown over the union of accounts that have
     # realized PnL (from executions) and/or open positions (from the overlay).

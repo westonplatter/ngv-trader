@@ -1,8 +1,0 @@
-{
-  "database": "dolt",
-  "backend": "dolt",
-  "dolt_mode": "server",
-  "dolt_server_port": 3307,
-  "dolt_database": "ngv_fund",
-  "project_id": "0e398e29-1f99-4f2a-889e-37d3591e5d9e"
-}
