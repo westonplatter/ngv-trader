@@ -46,7 +46,10 @@ from src.services.trade_group_instruments import (
 )
 from src.services.trade_group_meta import TradeGroupMetaError, parse_meta_yaml
 from src.services.trade_group_pnl import (
+    GroupHoldings,
     TradeGroupBatchPnl,
+    apportion_to_group,
+    group_holdings,
     load_overlay_context,
     trade_group_batch_pnls,
     trade_group_realized_pnl,
@@ -1339,10 +1342,13 @@ def _build_open_positions_overlay(
     settled_exec_ids: set[str],
     total_pnl: float | None,
     realized_by_account: dict[int, float | None] | None = None,
+    holdings: GroupHoldings | None = None,
 ) -> _OpenPositionsOverlay:
     """Merge the live TWS overlay onto the settled snapshot for a group's pairs.
 
     Settled totals stay backward-compatible; intraday fields are additive.
+    ``holdings`` cuts each position down to the group's own share; ``None``
+    keeps whole account positions.
     """
     empty = _OpenPositionsOverlay(
         open_positions=[],
@@ -1362,6 +1368,9 @@ def _build_open_positions_overlay(
     flex_rows, live_rows, live_execs = context.flex_rows, context.live_rows, context.live_execs
     expiries = context.expiries
     views = merge_positions(flex_rows, live_rows, context.quotes, context.magnifiers, context.metrics, context.account_as_of)
+    flex_shares = None
+    if holdings is not None:
+        views, flex_shares = apportion_to_group(views, flex_rows, holdings)
 
     view_account_ids = {v.account_id for v in views}
     alias_by_id = {}
@@ -1382,7 +1391,7 @@ def _build_open_positions_overlay(
     ]
 
     # Single source for the group totals (shared with the trade_group_pnl tool).
-    totals = overlay_totals(flex_rows, views, live_execs, settled_exec_ids, total_pnl)
+    totals = overlay_totals(flex_rows, views, live_execs, settled_exec_ids, total_pnl, flex_shares)
 
     # Per-account breakdown using the same partitioning as the totals above, so
     # the per-account values reconcile to the group totals.
@@ -1611,16 +1620,18 @@ def trade_group_executions(trade_group_id: int, db: Session = DB_SESSION_DEPENDE
     realized_by_account = {acct_id: trade_group_realized_pnl([execution for execution, *_ in acct_rows]) for acct_id, acct_rows in rows_by_account.items()}
 
     # Open positions linked to this group: match on (account_id, con_id) pairs
-    # that appear in any of the group's executions. The settled snapshot
-    # (FlexQuery `positions`) is the base; the live TWS overlay (`live_positions`
-    # + `latest_quote` + `live_executions`) is merged on top at read time.
+    # that appear in any of the group's executions, cut down to the quantity the
+    # group's own fills hold (a contract split across groups counts once). The
+    # settled snapshot (FlexQuery `positions`) is the base; the live TWS overlay
+    # (`live_positions` + `latest_quote` + `live_executions`) is merged on top.
     account_con_pairs = {(execution.account_id, execution.con_id) for execution, _ref, _trade, _account in rows if execution.con_id is not None}
     # Also surface positions whose only link to this group is a tagged *unsettled*
     # live fill (a strike opened today, not yet in trade_executions). Without this,
     # a freshly-opened position stays hidden from Open Positions until it settles.
     account_con_pairs |= {(le.account_id, le.con_id) for le, _account in live_rows if le.con_id is not None}
     settled_exec_ids = {execution.ib_exec_id for execution, _ref, _trade, _account in rows if execution.ib_exec_id}
-    overlay = _build_open_positions_overlay(db, account_con_pairs, settled_exec_ids, total_pnl, realized_by_account)
+    holdings = group_holdings([execution for execution, *_ in rows], [live_exec for live_exec, _account in live_rows])
+    overlay = _build_open_positions_overlay(db, account_con_pairs, settled_exec_ids, total_pnl, realized_by_account, holdings)
 
     # Assemble the per-account breakdown over the union of accounts that have
     # realized PnL (from executions) and/or open positions (from the overlay).

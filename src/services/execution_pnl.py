@@ -33,3 +33,36 @@ def execution_realized_pnl(raw: dict | None) -> float | None:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+_LIFECYCLE_BY_INDICATOR = {
+    "O": "Open",
+    "OPEN": "Open",
+    "OPENING": "Open",
+    "TOOPEN": "Open",
+    "OPENPOSITION": "Open",
+    "C": "Close",
+    "CLOSE": "Close",
+    "CLOSING": "Close",
+    "TOCLOSE": "Close",
+    "CLOSEPOSITION": "Close",
+}
+
+
+def execution_lifecycle(raw: dict | None) -> str | None:
+    """``"Open"``/``"Close"`` for one fill from either raw shape, else ``None``.
+
+    Same fields the Trades table reads: FlexQuery carries the indicator at the
+    top level, TWS nests it under ``raw.execution``.
+    """
+    if not raw:
+        return None
+    candidates = [raw.get(field) for field in ("openCloseIndicator", "openClose", "positionEffect")]
+    execution = raw.get("execution")
+    if isinstance(execution, dict):
+        candidates += [execution.get(field) for field in ("openClose", "positionEffect")]
+    for value in candidates:
+        lifecycle = _LIFECYCLE_BY_INDICATOR.get(str(value or "").strip().upper())
+        if lifecycle is not None:
+            return lifecycle
+    return None
