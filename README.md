@@ -4,7 +4,7 @@
 
 ## Features
 
-- **Supported Instruments** —- Equities, Equity Options, Futures, and Future Options.
+- **Supported Instruments** — Equities, Equity Options, Futures, and Future Options.
 
 - **Trades** — Pull down trade history from IBKR via either FlexQuery reports and live from the Trader Workstation.
 
