@@ -5,7 +5,7 @@ Revises: 0a388cb95eb0
 Create Date: 2026-07-04 14:56:26.992705
 
 Adds `v_position_facts` — the open-position fact source for the semantic layer
-(see docs/core/semantic-queries.md and docs/core/semantic-data-model.md).
+(see docs/design/semantic-queries.md and docs/design/semantic-data-model.md).
 
 One row per *open* position (``positions.position <> 0``). Additive measures
 (net quantity, market value, unrealized PnL) and an ``open_position_count`` live

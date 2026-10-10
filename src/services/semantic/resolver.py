@@ -9,7 +9,7 @@ SQL path.
 
 One grain per query: a dimension that isn't reachable from the metric's fact is
 rejected (e.g. an option strike against a trade-grain metric). See
-docs/core/semantic-queries.md.
+docs/design/semantic-queries.md.
 """
 
 from __future__ import annotations

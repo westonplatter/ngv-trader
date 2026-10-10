@@ -1,3 +1,16 @@
+---
+topics: ["trades", "sync", "flexquery", "executions", "jobs"]
+code_dirs_or_files:
+  [
+    "src/services/trade_sync_flexquery.py",
+    "src/services/trade_sync_tws.py",
+    "src/services/sync_common.py",
+    "src/services/flex_client_factory.py",
+    "src/api/routers/trades.py",
+  ]
+description: IBKR trade ingestion with fill-level fidelity — FlexQuery vs dormant TWS paths, execution identity and corrections, deterministic combo handling, two-phase Flex jobs, and token pause and retry.
+---
+
 # Trades and Executions Sync
 
 Current-state documentation for ingesting IBKR trades with fill-level fidelity,
@@ -22,7 +35,7 @@ Shared helpers (id parsing, account upsert, canonical flags, aggregates) live in
 > Separately, the **intraday TWS overlay** writes today's fills to its own
 > `live_executions` table (not `trade_executions`) for live realized P&L. Settled
 > FlexQuery stays canonical: live fills are deduped/purged by `ib_exec_id` once
-> they settle. See [core/intraday-tws-overlay.md](core/intraday-tws-overlay.md).
+> they settle. See [core/intraday-tws-overlay.md](intraday-tws-overlay.md).
 
 ## Model overview
 
@@ -96,7 +109,7 @@ re-tags sibling legs in a post-insert pass to handle late-arriving combos.
 
 The unsettled intraday path applies the same `exec_role` vocabulary to
 `live_executions`, grouping by broker order key instead of `brokerageOrderID`;
-see [core/intraday-tws-overlay.md](core/intraday-tws-overlay.md).
+see [core/intraday-tws-overlay.md](intraday-tws-overlay.md).
 
 FlexQuery's `Open/CloseIndicator` is the authoritative Action (Open/Close) and
 the only source of the **Expired** action. Unsettled rows have neither — TWS
@@ -140,7 +153,7 @@ Worker/job (handled by `worker:jobs`, see [workers.md](workers.md)):
   ignores it and falls back to a 7-day default.)
   Credentials are **not** payload-supplied — by default every active row in
   `flexquery_tokens` is used, decrypted with `FLEX_TOKEN_ENCRYPTION_KEY`. See
-  [getting-started.md](getting-started.md#flexquery-tokens).
+  [getting-started.md](../getting-started.md#flexquery-tokens).
 - `token_id` narrows a run to one `flexquery_tokens.id` (the primary key, so a
   queued job survives a rename). Use it for backfills so a token that is
   erroring or rate-limited is not dragged through every job in the series.
@@ -183,7 +196,7 @@ Read API (`src/api/routers/trades.py`):
 - `GET /api/v1/trades/{trade_id}`
 - `GET /api/v1/trades/{trade_id}/executions`
 - `GET /api/v1/trade-executions` — flat, filterable execution list across trades
-  (also surfaces unsettled live TWS fills; see [core/intraday-tws-overlay.md](core/intraday-tws-overlay.md)).
+  (also surfaces unsettled live TWS fills; see [core/intraday-tws-overlay.md](intraday-tws-overlay.md)).
 - `POST /api/v1/trades/sync/flex-query` — accepts a fixed lookback (`days`),
   an explicit `start_date`/`end_date`, or `since_last_trade: true` (derives the
   window from the latest execution date across all accounts through the
@@ -193,7 +206,7 @@ Read API (`src/api/routers/trades.py`):
 
 Responses expose `data_source`, `flex_transaction_id`, `sec_type`, `exec_role`.
 Realized PnL is currently computed on read from `raw` (see
-[spec-first-class-realized-pnl-on-trades.md](spec-first-class-realized-pnl-on-trades.md)
+[the first-class realized P&L plan](../plans/2026-03-14-001-feat-first-class-realized-pnl-plan.md)
 for the proposal to persist it as first-class columns).
 
 ## Acceptance properties

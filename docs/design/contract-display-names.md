@@ -1,3 +1,14 @@
+---
+topics: ["contracts", "display-names", "futures", "options", "positions"]
+code_dirs_or_files:
+  [
+    "src/utils/contract_display.py",
+    "src/services/cl_contracts.py",
+    "src/api/routers/trades.py",
+  ]
+description: Human-readable contract labels — contract_display_name() formatting by sec_type, the DB fields that drive it, and where positions, orders, watch lists, and trades build labels.
+---
+
 # Contract Display Names
 
 ## Purpose
@@ -60,11 +71,11 @@ def contract_display_name(
 
 ### Internal helpers
 
-| Helper                            | Location                          | Purpose                           |
-| --------------------------------- | --------------------------------- | --------------------------------- |
-| `_format_expiry_month_year()`     | `src/utils/contract_display.py`   | `"20260915"` → `"Sep'26"`         |
-| `_format_expiry_day_month_year()` | `src/utils/contract_display.py`   | `"20260227"` → `"Feb27'26"`       |
-| `_format_right()`                 | `src/utils/contract_display.py`   | `"C"` → `"CALL"`, `"P"` → `"PUT"` |
+| Helper                            | Location                        | Purpose                           |
+| --------------------------------- | ------------------------------- | --------------------------------- |
+| `_format_expiry_month_year()`     | `src/utils/contract_display.py` | `"20260915"` → `"Sep'26"`         |
+| `_format_expiry_day_month_year()` | `src/utils/contract_display.py` | `"20260227"` → `"Feb27'26"`       |
+| `_format_right()`                 | `src/utils/contract_display.py` | `"C"` → `"CALL"`, `"P"` → `"PUT"` |
 
 ### Contract month inference
 
@@ -163,20 +174,20 @@ with `contracts` via `con_id` for richer fallback fields.
 
 ## DB Fields That Drive Display Names
 
-| Table                    | Column                                        | IBKR source field                       | Used for             |
-| ------------------------ | --------------------------------------------- | --------------------------------------- | -------------------- |
-| `positions`              | `symbol`                                      | `contract.symbol`                       | Base symbol          |
-| `positions`              | `sec_type`                                    | `contract.secType`                      | Format selection     |
-| `positions`              | `local_symbol`                                | `contract.localSymbol`                  | Month inference, BAG |
-| `positions`              | `last_trade_date`                             | `contract.lastTradeDateOrContractMonth` | Expiry formatting    |
-| `positions`              | `strike`                                      | `contract.strike`                       | Option strike        |
-| `positions`              | `right`                                       | `contract.right`                        | CALL/PUT             |
-| `positions`              | `trading_class`                               | `contract.tradingClass`                 | Option class prefix  |
-| `positions`              | `exchange`                                    | `contract.exchange`                     | Optional suffix      |
-| `orders`                 | Same columns as above, plus `contract_expiry` | Same IBKR sources                       | Same purposes        |
-| `contracts`              | All of the above                              | IBKR contract details response          | Enrichment via join  |
-| `watch_list_instruments` | `con_id` only; joins to `contracts` for display fields | Same IBKR sources               | Same purposes         |
-| `trade_executions`       | `raw` (jsonb)                                 | Full fill object serialized             | localSymbol extract  |
+| Table                    | Column                                                 | IBKR source field                       | Used for             |
+| ------------------------ | ------------------------------------------------------ | --------------------------------------- | -------------------- |
+| `positions`              | `symbol`                                               | `contract.symbol`                       | Base symbol          |
+| `positions`              | `sec_type`                                             | `contract.secType`                      | Format selection     |
+| `positions`              | `local_symbol`                                         | `contract.localSymbol`                  | Month inference, BAG |
+| `positions`              | `last_trade_date`                                      | `contract.lastTradeDateOrContractMonth` | Expiry formatting    |
+| `positions`              | `strike`                                               | `contract.strike`                       | Option strike        |
+| `positions`              | `right`                                                | `contract.right`                        | CALL/PUT             |
+| `positions`              | `trading_class`                                        | `contract.tradingClass`                 | Option class prefix  |
+| `positions`              | `exchange`                                             | `contract.exchange`                     | Optional suffix      |
+| `orders`                 | Same columns as above, plus `contract_expiry`          | Same IBKR sources                       | Same purposes        |
+| `contracts`              | All of the above                                       | IBKR contract details response          | Enrichment via join  |
+| `watch_list_instruments` | `con_id` only; joins to `contracts` for display fields | Same IBKR sources                       | Same purposes        |
+| `trade_executions`       | `raw` (jsonb)                                          | Full fill object serialized             | localSymbol extract  |
 
 ## Gap: Trade-Level Display Names
 

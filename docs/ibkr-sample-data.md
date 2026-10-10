@@ -123,3 +123,43 @@ This anonymization ensures:
 - **Clarity**: Generic patterns easy to understand
 - **Realism**: Data structure remains accurate
 - **Documentation**: LLM analysis remains effective without real personal data
+
+## Committed Content Rules
+
+This repo handles personal brokerage data. **Never commit real IBKR account IDs,
+conids, exec/transaction/order IDs, prices, or trading dates.** Any repo-bound
+example, fixture, or doc must use the anonymized patterns above. Keep real for
+shape: symbols, exchanges, sec types, realistic prices/quantities.
+
+- `scripts/data/` is gitignored for ad-hoc real CSVs — never commit them.
+- Before `git add`, scan staged additions for real-looking IDs (10-digit txn IDs,
+  `U`-prefixed accounts, hex exec IDs): `uv run python scripts/ibkr_sensitive_data_check.py`.
+  Flags, options, and the pre-commit hook are in
+  [contributing/validation.md](contributing/validation.md#ibkr-sensitive-data-scan).
+
+## Account References in Committed Content
+
+This applies to written content committed to the repo — plans, specs, docs, code
+comments, fixtures, commit messages.
+
+Accounts carry a short **alias** (`accounts.alias`) so the UI and semantic model never
+show the raw `U…` number. Naming the _column_ is fine; writing a _specific_ alias into
+committed content is not — not in prose, not in a filename or title, not even without
+data attached. Aliases are stable, few, and identifying in aggregate; keeping them out
+of the repo is simpler than judging each mention. In chat, scratchpad files, and
+gitignored paths, use whatever alias you need.
+
+Worse still is any account reference — an alias, or "the account that…" — tied to real
+**activity**. A plan must not pin an account to concrete holdings, quantities, average
+costs, P&L, execution counts, import windows, trade dates, or prod row ids — together
+those profile a real account even with every IBKR identifier redacted, and
+`scripts/ibkr_sensitive_data_check.py` does **not** catch it.
+
+Write plans against placeholders instead: `<ACCOUNT>`, `<CONID>`, `<QTY>`,
+`<AVG_COST>`, `<TRADE_ID>`, `<DAILY_START>`. Keep the _shape_ of the problem — the
+mechanics, the failure mode, the procedure — and keep symbols, sec types, and
+exchanges real. Concrete values, aliases included, belong in gitignored `scratchpad/`,
+referenced by path.
+
+See [plans/2026-07-14-001-fix-missing-opening-execution-plan.md](plans/2026-07-14-001-fix-missing-opening-execution-plan.md)
+for the pattern: a full recovery runbook that names no account and loses no usefulness.

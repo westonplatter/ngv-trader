@@ -1,3 +1,15 @@
+---
+topics: ["market-data", "futures", "options", "time-series", "contracts"]
+code_dirs_or_files:
+  [
+    "src/services/market_data.py",
+    "src/services/contract_sync.py",
+    "src/api/routers/futures.py",
+    "src/workers/jobs.py",
+  ]
+description: Futures and futures-options market data in Postgres — contract hierarchy, latest snapshot and time-series tables, worker write path, and DB-only futures API reads.
+---
+
 # Security Data
 
 Current-state documentation for how ngtrader stores and serves futures and futures-options market data.
@@ -16,7 +28,7 @@ The current implementation is futures-focused. The main paths in use are for `FU
 > `latest_quote` (keyed by `con_id`, covering FUT/FOP/STK/OPT). It is distinct
 > from the futures-only `latest_futures*` tables described here and is written
 > only by the manual intraday sync. See
-> [core/intraday-tws-overlay.md](core/intraday-tws-overlay.md).
+> [core/intraday-tws-overlay.md](intraday-tws-overlay.md).
 
 ## Main Components
 
@@ -202,7 +214,7 @@ Returned data includes:
 
 ### `GET /api/v1/futures/{symbol}/chain`
 
-Returns the option chain catalog from `option_chain_meta`, left joined to `contracts` and `latest_futures_options` for pricing on contracts that have been qualified. Full catalog/qualification/pricing flow documented in [core/ux-pricing.md](core/ux-pricing.md).
+Returns the option chain catalog from `option_chain_meta`, left joined to `contracts` and `latest_futures_options` for pricing on contracts that have been qualified. Full catalog/qualification/pricing flow documented in [core/ux-pricing.md](ux-pricing.md).
 
 ### `GET /api/v1/futures/{symbol}/options`
 

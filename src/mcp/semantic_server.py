@@ -9,7 +9,7 @@ runs it read-only with a statement timeout.
 Run it:
     uv run --extra mcp python -m src.mcp.semantic_server
 
-Database connection (use a read-only role — see docs/core/semantic-queries.md):
+Database connection (use a read-only role — see docs/design/semantic-queries.md):
     NGV_SEMANTIC_DATABASE_URL=postgresql://ngv_analyst:***@host:5432/ngtrader_prod
 If unset, falls back to the app's DB_* environment variables.
 """
@@ -41,7 +41,7 @@ mcp = MCPServer("ngv-semantic")
 def _get_engine() -> Engine:
     # Fail closed: require an explicit connection string so a misconfiguration
     # can't silently fall back to the app's read-write role. Point this at the
-    # read-only ngv_analyst role (see docs/core/semantic-queries.md).
+    # read-only ngv_analyst role (see docs/design/semantic-queries.md).
     url = os.environ.get("NGV_SEMANTIC_DATABASE_URL")
     if not url:
         raise RuntimeError("NGV_SEMANTIC_DATABASE_URL is required (use the read-only ngv_analyst role).")

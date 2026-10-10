@@ -142,7 +142,7 @@ all, so it can be wrong in a way its callers can neither see nor override.
 
 ## Related
 
-- [Intraday TWS overlay](../../core/intraday-tws-overlay.md) — the three
+- [Intraday TWS overlay](../../design/intraday-tws-overlay.md) — the three
   invalidation mechanisms, and which of them is per-row.
 - [A stale live overlay outranked a newer settled snapshot in three readers](./stale-overlay-preferred-over-newer-settled-snapshot.md)
   — the same watermark, applied to the row's own fields. This is its blind spot.

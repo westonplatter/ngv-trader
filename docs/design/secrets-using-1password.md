@@ -1,3 +1,9 @@
+---
+topics: ["secrets", "1password", "env-vars", "flexquery", "setup"]
+code_dirs_or_files: ["src/utils/env_vars.py", "scripts/manage_flex_tokens.py"]
+description: Secret handling with the 1Password CLI — op:// references in env files, when op run is needed versus self-resolving env_vars readers, and encrypted FlexQuery tokens.
+---
+
 # 1Password Integration
 
 This project uses [1Password CLI](https://developer.1password.com/docs/cli/) (`op`) to manage secrets in `.env` files.
@@ -75,3 +81,23 @@ load_dotenv(".env.dev")  # no override — respects existing env vars
 1. Add the variable to `.env.example` as a template
 2. Add the plain or `op://` value to `.env.dev` and `.env.prod`
 3. Access it in code with `os.environ.get("VAR_NAME")`
+
+## Which vars need `op run`
+
+`load_dotenv` yields the literal `op://` string; vars read through raw `os.environ`
+need `op run` to resolve them at exec time:
+
+```bash
+op run --env-file=.env.<env> -- uv run python scripts/<script>.py
+```
+
+Vars read through `src/utils/env_vars.py` — `FLEX_TOKEN_ENCRYPTION_KEY`,
+`BROKER_TWS_PORT`, `TRADEBOT_LLM_API_KEY` — self-resolve `op://` and need no wrapper.
+Migrations are exempt (plain `DB_*` vars; see
+[contributing/database-migrations.md](../contributing/database-migrations.md)).
+
+## FlexQuery tokens
+
+IBKR FlexQuery tokens are **not** environment variables. They live encrypted at rest
+in the `flexquery_tokens` table; `FLEX_TOKEN_ENCRYPTION_KEY` is what decrypts them,
+and a job payload cannot supply one. Manage them with `scripts/manage_flex_tokens.py`.

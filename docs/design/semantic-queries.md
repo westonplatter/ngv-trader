@@ -134,7 +134,7 @@ directly on `v_execution_facts` and `v_position_facts`.
 
 ## 4. The resolver algorithm (`build_metric_query`)
 
-```
+```text
 1. metric  -> validate; fact = metric.fact
 2. for each group_by / filter name:
      dim = resolve_dimension(fact, name)         # nearest dataset reachable from fact, fact-first
@@ -227,7 +227,8 @@ GRANT SELECT ON v_execution_facts, v_trade_facts, v_position_facts,
                 trade_group_executions, trade_groups TO ngv_analyst;
 -- plus the tables trade_group_pnl reads (the live overlay) — see §9:
 GRANT SELECT ON trades, trade_executions, positions, live_positions,
-                latest_quote, live_executions TO ngv_analyst;
+                latest_quote, live_executions, latest_option_metrics,
+                trade_group_live_executions TO ngv_analyst;
 ALTER ROLE ngv_analyst SET default_transaction_read_only = on;
 ALTER ROLE ngv_analyst SET statement_timeout = '10s';
 ```
@@ -273,10 +274,12 @@ different homes:
   analytics ("realized PnL by strategy this quarter").
 - **Settled unrealized** _is_ now a SQL metric: `settled_unrealized_pnl` on the
   `position_facts` grain (SUM of `positions.fifo_pnl_unrealized`), sliceable by
-  `tag` via the `v_position_trade_group` bridge. Filtered to one group it equals
-  the detail view's settled Unrealized PnL. **Not additive across groups** — the
-  bridge is many-to-many, so a shared position counts in each group; query one
-  `tag` at a time (same attribution rule as the tool below).
+  `tag` via the `v_position_trade_group` bridge. Filtered to one group it is the
+  settled unrealized of every position the group touched, in full. **Not
+  additive across groups** — the bridge is many-to-many, so a shared position
+  counts in full in each group; query one `tag` at a time. This is **not** the
+  tool's rule: `trade_group_pnl` apportions a shared position (see _Attribution_
+  below), so for a group that shares a position the two settled figures differ.
 - **Intraday/live unrealized and intraday total** remain **tool-only**. They're a
   read-time merge of live TWS state (`live_positions` + `latest_quote` +
   `live_executions`) over the settled snapshot, with a multiplier-inclusive
@@ -286,32 +289,30 @@ different homes:
 **`trade_group_pnl(group)`** (tradebot + MCP) takes a group name or id and returns
 `realized_pnl`, `settled_unrealized_pnl`, `intraday_unrealized_pnl`,
 `intraday_realized_pnl`, `intraday_total_pnl`, and `marks_as_of` — the detail-view
-figures, subject to the input-side gaps below.
+figures.
 
 Shared formulas: the API endpoint (`GET /trade-groups/{id}/executions`) and
 `compute_trade_group_pnl()` both go through `intraday_overlay.overlay_totals()` +
-`trade_group_realized_pnl()`, so each formula has exactly one implementation. The
-math cannot diverge, but the **inputs** can, in two ways:
+`trade_group_realized_pnl()`, so each formula has exactly one implementation.
 
-- the API loads `price_magnifier` and `latest_option_metrics` and passes them into
-  `merge_positions()`; the tool calls it without either, and both default to
-  `None` — so cents-quoted marks (e.g. grain futures) are left un-normalized in
-  the tool;
-- the API widens position attribution with pairs reached only via tagged
-  **unsettled** live fills (`trade_group_live_executions`); the tool derives its
-  pairs from settled executions alone.
-
-Both are input-assembly differences at the call sites, not competing formulas.
+Shared inputs: both call paths widen the group's `(account_id, con_id)` pairs with
+those reached only via tagged **unsettled** live fills (`_tagged_live_pairs`),
+then load the overlay inputs — including `price_magnifier` and
+`latest_option_metrics` — through the one loader, `load_overlay_context()`, and
+pass them into `merge_positions()`. The tool and the detail view scope and merge
+the overlay identically.
 
 **Two properties to keep in mind:**
 
 - **Freshness:** intraday figures are "as of the last manual _Refresh Live (TWS)_"
   (`marks_as_of`), not tick-live. The live data is in DB tables refreshed by the
   `intraday.sync.tws` worker job — see [intraday-tws-overlay.md](intraday-tws-overlay.md).
-- **Attribution (matches the UI):** a position is attributed to a group when any of
-  the group's executions touched its `(account_id, con_id)`. So unrealized-by-group
-  is a **per-group** figure and is **not additive across groups** — a position
-  shared by two strategies counts in both. Query one group at a time.
+- **Attribution (matches the UI):** the group holds the part of each
+  `(account_id, con_id)` position its own tagged fills opened
+  (`apportion_to_group`). Quantity, unrealized, and position value scale pro rata;
+  per-unit figures (avg cost, marks, greeks) do not. A contract split across two
+  groups is counted once, not in both. The SQL `settled_unrealized_pnl` metric
+  does not apportion — see above.
 
 ## 10. Deliberate v1 limitations (not bugs)
 
@@ -320,8 +321,11 @@ Both are input-assembly differences at the call sites, not competing formulas.
   scope. Run two queries.
 - **Equality + date-range filters only.** No `IN`, ranges (besides date),
   negation, or metric-level `HAVING` yet.
-- **No many-to-many fan-out handling.** Safe today only because the tag bridge is
-  1:1 (see §5).
+- **No many-to-many fan-out handling.** On the execution grain this is safe
+  because the `trade_group_executions` bridge is 1:1 (see §5). On the position
+  grain the `v_position_trade_group` bridge is many-to-many across groups
+  (DISTINCT within one group), so `tag`-sliced position metrics are right for a
+  single `tag` but double-count shared positions when summed across tags (see §9).
 - **Ordering** is fixed to `metric DESC`.
 
 These are documented, not hidden. Lift them deliberately, preserving §5.

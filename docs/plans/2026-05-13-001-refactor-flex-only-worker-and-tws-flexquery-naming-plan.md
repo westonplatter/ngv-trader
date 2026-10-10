@@ -9,7 +9,7 @@ created: 2026-05-13
 
 > **Status: SHIPPED.** This document is retained as the original design and
 > rationale. For how the system works today, see the current-state doc:
-> [docs/trades-and-executions-sync.md](../trades-and-executions-sync.md).
+> [docs/trades-and-executions-sync.md](../design/trades-and-executions-sync.md).
 
 ## Summary
 
@@ -31,6 +31,7 @@ The standalone `scripts/fetch_flex_trades.py` script is the inspiration for the 
 ## Scope
 
 In scope:
+
 - Rename Python `JOB_TYPE_*` constants for the four sync job types to carry `_TWS` or `_FLEXQUERY` suffix.
 - Rename the four `/trades/...` and `/positions/...` sync API routes to carry `/sync/tws` and `/sync/flex-query` path segments.
 - **Move the worker's handler module out of `scripts/` and into `src/workers/`**, so the dispatcher and all `handle_*` functions live with the rest of the application code; `scripts/work_jobs.py` becomes a thin CLI entrypoint that imports from `src/workers/jobs.py`.
@@ -42,6 +43,7 @@ In scope:
 - **Rename the persisted `Job.job_type` string values** to match the new explicit constant names. Add an Alembic migration that backfills existing `jobs` rows: `"positions.sync"` → `"positions.sync.tws"`, `"positions.flex_sync"` → `"positions.sync.flexquery"`, `"trades.sync"` → `"trades.sync.tws"`, `"trades.flex_sync"` → `"trades.sync.flexquery"`. The migration runs in a single transaction; the worker is briefly stopped during deploy so no claim races a string-value flip.
 
 Out of scope (deferred):
+
 - Adding a new toggle or per-account selection mechanism in the UI for Flex Query (the existing button just enqueues a flex job).
 - Migrating `flex_sync_log` schema or any historical reconciliation.
 - Changes to `scripts/fetch_flex_trades.py` — that is a one-off manual diagnostic / report-printing CLI, not core application logic, and stays in `scripts/`.
@@ -76,18 +78,20 @@ Out of scope (deferred):
 **Goal:** Introduce the explicit TWS / FLEXQUERY naming at the source of truth.
 
 **Files:**
+
 - `src/services/jobs.py`
 
 **Approach:**
+
 - Replace `JOB_TYPE_POSITIONS_SYNC = "positions.sync"` with `JOB_TYPE_POSITIONS_SYNC_TWS = "positions.sync.tws"`.
 - Replace `JOB_TYPE_FLEX_POSITIONS_SYNC = "positions.flex_sync"` with `JOB_TYPE_POSITIONS_SYNC_FLEXQUERY = "positions.sync.flexquery"`.
 - Replace `JOB_TYPE_TRADES_SYNC = "trades.sync"` with `JOB_TYPE_TRADES_SYNC_TWS = "trades.sync.tws"`.
 - Replace `JOB_TYPE_FLEX_TRADES_SYNC = "trades.flex_sync"` with `JOB_TYPE_TRADES_SYNC_FLEXQUERY = "trades.sync.flexquery"`.
-- Both the symbol *and* the string value change. The corresponding `jobs.job_type` rows are backfilled by U8's Alembic migration so existing data still resolves.
+- Both the symbol _and_ the string value change. The corresponding `jobs.job_type` rows are backfilled by U8's Alembic migration so existing data still resolves.
 
 **Patterns to follow:** Existing constant block at top of `src/services/jobs.py`.
 
-**Test scenarios:** *Test expectation: none — pure constant rename with values preserved; coverage comes from U2/U3/U4 importers compiling and the dispatcher integration test in U3.*
+**Test scenarios:** _Test expectation: none — pure constant rename with values preserved; coverage comes from U2/U3/U4 importers compiling and the dispatcher integration test in U3._
 
 **Verification:** `uv run python -c "from src.services.jobs import JOB_TYPE_POSITIONS_SYNC_TWS, JOB_TYPE_POSITIONS_SYNC_FLEXQUERY, JOB_TYPE_TRADES_SYNC_TWS, JOB_TYPE_TRADES_SYNC_FLEXQUERY"` succeeds; ripgrep finds no remaining references to the old four constant names anywhere under `src/` or `scripts/`.
 
@@ -100,10 +104,12 @@ Out of scope (deferred):
 **Dependencies:** U1.
 
 **Files:**
+
 - `src/api/routers/positions.py`
 - `src/api/routers/trades.py`
 
 **Approach:**
+
 - `positions.py`:
   - Change route `@router.post("/positions/sync", ...)` to `@router.post("/positions/sync/tws", ...)`, and the constant reference from `JOB_TYPE_POSITIONS_SYNC` to `JOB_TYPE_POSITIONS_SYNC_TWS`.
   - Change route `@router.post("/positions/flex-sync", ...)` to `@router.post("/positions/sync/flex-query", ...)`, and the constant reference from `JOB_TYPE_FLEX_POSITIONS_SYNC` to `JOB_TYPE_POSITIONS_SYNC_FLEXQUERY`.
@@ -114,6 +120,7 @@ Out of scope (deferred):
 **Patterns to follow:** Existing endpoint handlers in the same files — `src/api/routers/trades.py:792` & `src/api/routers/trades.py:814`, `src/api/routers/positions.py:150` & `src/api/routers/positions.py:172`.
 
 **Test scenarios:**
+
 - POST `/positions/sync/tws` with a valid `PositionSyncRequest` body returns 202 and a `job_id`; the persisted `Job.job_type` equals `"positions.sync.tws"`.
 - POST `/positions/sync/flex-query` with a valid `FlexPositionSyncRequest` body returns 202 and a `job_id`; the persisted `Job.job_type` equals `"positions.sync.flexquery"`.
 - POST `/trades/sync/tws` and POST `/trades/sync/flex-query` likewise return 202 and persist `Job.job_type` of `"trades.sync.tws"` and `"trades.sync.flexquery"` respectively.
@@ -130,13 +137,16 @@ Out of scope (deferred):
 **Dependencies:** U1 (constant rename should be done first so the moved file picks up the new names in one pass). Best landed before U3 so U3 edits the new home.
 
 **Files (new):**
+
 - `src/workers/__init__.py` (empty package marker)
 - `src/workers/jobs.py` (new home for handlers, dispatcher, and worker-local helpers)
 
 **Files (modified):**
+
 - `scripts/work_jobs.py` — slimmed down to a CLI shim
 
 **Approach:**
+
 - Create `src/workers/` as a new package next to `src/services/`, `src/api/`, etc.
 - Move from `scripts/work_jobs.py` into `src/workers/jobs.py`:
   - All `handle_*` functions. **Rename the four sync handlers at move time** so the new file is the only place the new names ever existed:
@@ -157,10 +167,12 @@ Out of scope (deferred):
 - Update any other module that imports a handler directly from `scripts.work_jobs` to instead import from `src.workers.jobs`. Identify with `rg "from scripts\\.work_jobs import|import scripts\\.work_jobs"`; today there are no production importers besides the shim itself, so this should be a small or zero-line change.
 
 **Patterns to follow:**
+
 - `src/services/` package layout (single-purpose modules, `__init__.py` empty).
 - The split between "library code in `src/`" and "CLI entrypoint in `scripts/`" already used by `scripts/download_positions.py` calling into `src/services/position_sync.py`.
 
 **Test scenarios:**
+
 - `uv run python -c "from src.workers.jobs import get_handler"` succeeds.
 - `uv run python -c "from src.workers.jobs import handle_trades_sync_tws, handle_trades_sync_flexquery, handle_positions_sync_tws, handle_positions_sync_flexquery"` succeeds.
 - `uv run python -c "import scripts.work_jobs"` succeeds and `scripts.work_jobs.main` is still callable.
@@ -180,9 +192,11 @@ Out of scope (deferred):
 **Dependencies:** U1, U6.
 
 **Files:**
+
 - `src/workers/jobs.py` (after U6's move)
 
 **Approach:**
+
 - Confirm imports at the top of `src/workers/jobs.py` use the renamed constants (`JOB_TYPE_POSITIONS_SYNC_TWS`, `JOB_TYPE_POSITIONS_SYNC_FLEXQUERY`, `JOB_TYPE_TRADES_SYNC_TWS`, `JOB_TYPE_TRADES_SYNC_FLEXQUERY`).
 - In `get_handler`, **remove** the two TWS entries (`JOB_TYPE_POSITIONS_SYNC_TWS: handle_positions_sync_tws` and `JOB_TYPE_TRADES_SYNC_TWS: handle_trades_sync_tws`) from the `handlers` dict.
 - **Keep** `handle_positions_sync_tws` and `handle_trades_sync_tws` function definitions, their imports, and any helpers they call. They become unreferenced from `get_handler` but remain in the file for easy reactivation.
@@ -191,6 +205,7 @@ Out of scope (deferred):
 **Patterns to follow:** Existing `get_handler` dict shape (post-move) in `src/workers/jobs.py`.
 
 **Test scenarios:**
+
 - `get_handler("positions.sync.flexquery")` returns `handle_positions_sync_flexquery` (not `None`).
 - `get_handler("trades.sync.flexquery")` returns `handle_trades_sync_flexquery` (not `None`).
 - `get_handler("positions.sync.tws")` returns `None` (TWS deactivated).
@@ -209,6 +224,7 @@ Out of scope (deferred):
 **Dependencies:** Independent of U1–U4; safest to land after U3 so the worker is already routing only Flex jobs.
 
 **Files (renames):**
+
 - `src/services/trade_sync.py` → `src/services/trade_sync_tws.py`
 - `src/services/position_sync.py` → `src/services/position_sync_tws.py`
 - `src/services/order_sync.py` → `src/services/order_sync_tws.py`
@@ -216,6 +232,7 @@ Out of scope (deferred):
 - `src/services/flex_position_sync.py` → `src/services/position_sync_flexquery.py`
 
 **Files (importer updates):**
+
 - `scripts/work_jobs.py` — `from src.services.position_sync import (...)` (top of file), `from src.services.order_sync import sync_orders_with_ib` (~line 362), `from src.services.trade_sync import sync_trades_with_ib` (~line 382), `from src.services.flex_trade_sync import (...)` (~line 448), `from src.services.flex_position_sync import sync_flex_positions` and `from src.services.flex_trade_sync import previous_business_day` (~lines 485–486).
 - `scripts/download_positions.py` — `from src.services.position_sync import check_positions_tables_ready, sync_positions_once` (~line 14).
 - `src/services/trade_sync_flexquery.py` (formerly `flex_trade_sync.py`) — its internal import block at line 28 (currently `from src.services.trade_sync import (...)`) gets split: anything that's a shared helper now lives in `sync_common` (U7) and is imported from there; anything genuinely TWS-specific (if any remains) becomes a `from src.services.trade_sync_tws import (...)`. In practice, after U7 there should be **zero** imports from `trade_sync_tws` here.
@@ -226,6 +243,7 @@ Out of scope (deferred):
 - Any test file under `tests/` that imports the five modules — repeat the same swap. Identify with a single grep before editing.
 
 **Approach:**
+
 - Use `git mv` (or the editor's rename) so git tracks the moves cleanly.
 - Do all five renames + all importer updates in one commit so the tree never has a half-renamed import graph.
 - No function or class bodies change. No public function renames. The Flex modules import shared utilities from `sync_common` (U7), not from the TWS modules.
@@ -233,6 +251,7 @@ Out of scope (deferred):
 **Patterns to follow:** Existing module layout under `src/services/`. The renamed modules keep their original public surface; downstream callers only update the import path.
 
 **Test scenarios:**
+
 - `uv run python -c "from src.services.position_sync_tws import check_positions_tables_ready, sync_positions_once, get_or_create_accounts"` succeeds.
 - `uv run python -c "from src.services.trade_sync_tws import sync_trades_with_ib, _safe_float, _safe_int, _safe_str"` succeeds.
 - `uv run python -c "from src.services.order_sync_tws import sync_orders_with_ib"` succeeds.
@@ -253,15 +272,18 @@ Out of scope (deferred):
 **Dependencies:** U5 (or land together with U5 in the same commit, since they touch the same files). Conceptually U7 only makes sense once the renamed module names exist.
 
 **Files (new):**
+
 - `src/services/sync_common.py`
 
 **Files (modified):**
+
 - `src/services/trade_sync_tws.py` (formerly `trade_sync.py`) — remove the bodies of `_safe_float`, `_safe_int`, `_safe_str` (move to `sync_common`). If `trade_sync_tws.py`'s own code uses them, re-import from `sync_common`.
 - `src/services/position_sync_tws.py` (formerly `position_sync.py`) — remove the body of `get_or_create_accounts` (move to `sync_common`). If `position_sync_tws.py`'s own code uses it, re-import from `sync_common`.
 - `src/services/trade_sync_flexquery.py` — switch its `_safe_float` / `_safe_int` / `_safe_str` import (and anything else moved) to `from src.services.sync_common import ...`.
 - `src/services/position_sync_flexquery.py` — switch the helper imports to `from src.services.sync_common import ...`.
 
 **Approach:**
+
 - Create `src/services/sync_common.py`. Move the four helper functions verbatim (no signature changes, no behavior changes): `_safe_float`, `_safe_int`, `_safe_str`, `get_or_create_accounts`.
 - For each helper, check whether other callers exist beyond the two sync families (`rg "_safe_float|_safe_int|_safe_str|get_or_create_accounts" src scripts tests`). Update every importer to the new module.
 - Helpers stay private-flavored (`_safe_*` keeps its underscore prefix; this is a relocation, not an API change).
@@ -270,6 +292,7 @@ Out of scope (deferred):
 **Patterns to follow:** Same package layout as other neutral helper modules under `src/utils/` and `src/services/`.
 
 **Test scenarios:**
+
 - `uv run python -c "from src.services.sync_common import _safe_float, _safe_int, _safe_str, get_or_create_accounts"` succeeds.
 - `uv run python -c "from src.services.trade_sync_flexquery import sync_flex_trades, fetch_flex_report"` succeeds (no ImportError chain via `trade_sync_tws`).
 - `uv run python -c "from src.services.position_sync_flexquery import sync_flex_positions"` succeeds.
@@ -284,12 +307,14 @@ Out of scope (deferred):
 
 **Goal:** Bring the persisted job_type strings in line with the new explicit constants so `get_handler()` can resolve historical rows.
 
-**Dependencies:** None at the code level (the migration is data-only), but it must deploy *atomically* with the U1 / U2 / U3 / U6 code changes. See "Deploy sequence" below.
+**Dependencies:** None at the code level (the migration is data-only), but it must deploy _atomically_ with the U1 / U2 / U3 / U6 code changes. See "Deploy sequence" below.
 
 **Files (new):**
+
 - `alembic/versions/<timestamp>_rename_job_type_tws_flexquery.py` (use the existing repo convention; today's prefix would be `20260513...`).
 
 **Approach:**
+
 - Single `upgrade()` function that runs four `UPDATE jobs SET job_type = :new WHERE job_type = :old` statements inside one transaction:
   - `"positions.sync"` → `"positions.sync.tws"`
   - `"positions.flex_sync"` → `"positions.sync.flexquery"`
@@ -302,6 +327,7 @@ Out of scope (deferred):
 **Patterns to follow:** Recent migrations under `alembic/versions/` (e.g., `20260507204422_normalize_side_bot_sld_to_buy_sell.py` is the closest precedent — a value-normalization backfill).
 
 **Test scenarios:**
+
 - After `alembic upgrade head`, every row in `jobs` has `job_type` in the new four-value set; no row retains a legacy string.
 - After `alembic downgrade -1`, every row is back to the old four-value set; no row retains a new string.
 - A round-trip (`upgrade head` then `downgrade -1` then `upgrade head`) leaves the table identical to its post-first-upgrade state.
@@ -319,17 +345,20 @@ Out of scope (deferred):
 **Dependencies:** U2.
 
 **Files:**
+
 - `frontend/src/components/PositionsTable.tsx`
 - `frontend/src/components/TradesTable.tsx`
 
 **Approach:**
-- `PositionsTable.tsx:228`: change `fetch(\`${API_BASE_URL}/positions/sync\`, ...)` to `fetch(\`${API_BASE_URL}/positions/sync/flex-query\`, ...)`. Body remains `{ source, request_text, max_attempts }` — `FlexPositionSyncRequest` accepts the same fields plus optional `account_code` / `start_date` / `end_date` which the UI does not need yet. Update `request_text` to mention "flex query" for log clarity.
-- `TradesTable.tsx:591`: change `fetch(\`${API_BASE_URL}/trades/sync\`, ...)` to `fetch(\`${API_BASE_URL}/trades/sync/flex-query\`, ...)`. Drop `lookback_days` from the body (Flex variant uses `days`, defaulting in the handler is fine — or pass `days: lookbackDays`). Adjust `kickOffTradesSync`'s body to send `{ source, request_text, max_attempts, days: lookbackDays }` to match `FlexTradeSyncRequest`.
+
+- `PositionsTable.tsx:228`: change `fetch(\`${API_BASE_URL}/positions/sync\`, ...)` to `fetch(\`${API_BASE_URL}/positions/sync/flex-query\`, ...)`. Body remains `{ source, request_text, max_attempts }`—`FlexPositionSyncRequest`accepts the same fields plus optional`account_code`/`start_date`/`end_date`which the UI does not need yet. Update`request_text` to mention "flex query" for log clarity.
+- `TradesTable.tsx:591`: change `fetch(\`${API_BASE_URL}/trades/sync\`, ...)` to `fetch(\`${API_BASE_URL}/trades/sync/flex-query\`, ...)`. Drop `lookback_days`from the body (Flex variant uses`days`, defaulting in the handler is fine — or pass `days: lookbackDays`). Adjust `kickOffTradesSync`'s body to send `{ source, request_text, max_attempts, days: lookbackDays }`to match`FlexTradeSyncRequest`.
 - No new buttons, no label rewrites beyond updating the `request_text` strings.
 
 **Patterns to follow:** Existing `kickOffPositionSync` / `kickOffTradesSync` functions in the same files.
 
 **Test scenarios:**
+
 - Clicking the positions sync button on `/positions` POSTs to `/positions/sync/flex-query`, gets a 202, and the toast shows `Queued positions sync job #N`.
 - Clicking each lookback option on the trades page POSTs to `/trades/sync/flex-query` with the corresponding `days` value, gets a 202, and the toast shows the queued job ID.
 - Manual smoke: after kickoff, within ~10s, the worker logs show `handle_flex_*_sync` running and the table refreshes with new data.

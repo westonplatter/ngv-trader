@@ -10,7 +10,7 @@ shipped: 2026-06-21
 
 > **Status: SHIPPED (2026-06-21).** This document is retained as the original
 > design and rationale. For how the feature works today, see the current-state
-> doc: [docs/core/intraday-tws-overlay.md](../core/intraday-tws-overlay.md).
+> doc: [docs/design/intraday-tws-overlay.md](../design/intraday-tws-overlay.md).
 > Differences from this plan as built: the read-time merge and frontend pieces
 > (U4/U6) had no concurrent-agent collision; automated tests were omitted in
 > favor of the repo's `ruff` + `scripts/check.py` validation; held contracts are
@@ -20,13 +20,13 @@ shipped: 2026-06-21
 
 FlexQuery is the canonical settled record but lands T-1 (one business day old): the `positions` table holds yesterday's EOD quantities, marks, and `fifo_pnl_unrealized`, and the TradeGroup view sums those stale values. This feature adds a **live current-state overlay sourced from TWS**, surfaced on demand, **without touching the FlexQuery data**.
 
-The core insight from scoping: a read-time overlay of live *marks* onto the stale snapshot is insufficient, because the snapshot's quantities are wrong intraday (positions opened today are missing, added/reduced positions show yesterday's size). The authoritative current state is `ib.positions()` from TWS — it already returns current quantity and TWS-blended average cost for every held contract, including ones opened today. So the overlay sources **current positions** (not just marks) from TWS into a **separate `live_positions` table**, fetches **live marks** into a unified `con_id`-keyed `latest_quote` table, and pulls **today's fills** into `live_executions` for intraday realized P&L. A read-time merge prefers live state, falling back to the FlexQuery snapshot where no live data exists.
+The core insight from scoping: a read-time overlay of live _marks_ onto the stale snapshot is insufficient, because the snapshot's quantities are wrong intraday (positions opened today are missing, added/reduced positions show yesterday's size). The authoritative current state is `ib.positions()` from TWS — it already returns current quantity and TWS-blended average cost for every held contract, including ones opened today. So the overlay sources **current positions** (not just marks) from TWS into a **separate `live_positions` table**, fetches **live marks** into a unified `con_id`-keyed `latest_quote` table, and pulls **today's fills** into `live_executions` for intraday realized P&L. A read-time merge prefers live state, falling back to the FlexQuery snapshot where no live data exists.
 
 A single manual-triggered TWS job does all three fetches in one session. The FlexQuery `positions` / `trade_executions` tables are never written by this feature.
 
 **Target repo:** ngv-trader (this repo). All paths repo-relative.
 
-**Coordination note:** Another agent is concurrently editing this codebase on a separate change set. This plan adds mostly *new* files (models additions, a new service, a new worker handler, a new router/route, new frontend display). The two read-time edits that touch shared code — `src/api/routers/trade_groups.py` (the executions endpoint) and the TradeGroup frontend component — are the only collision surfaces; sequence those units last and rebase on the other agent's work before editing.
+**Coordination note:** Another agent is concurrently editing this codebase on a separate change set. This plan adds mostly _new_ files (models additions, a new service, a new worker handler, a new router/route, new frontend display). The two read-time edits that touch shared code — `src/api/routers/trade_groups.py` (the executions endpoint) and the TradeGroup frontend component — are the only collision surfaces; sequence those units last and rebase on the other agent's work before editing.
 
 ---
 
@@ -45,6 +45,7 @@ A single manual-triggered TWS job does all three fetches in one session. The Fle
 ## Scope
 
 In scope:
+
 - New `live_positions` table: current TWS position state (qty, blended avg cost) per `(account_id, con_id)`, separate from FlexQuery `positions`.
 - New unified `latest_quote` table: live marks (bid/ask/last/close + chosen mark) keyed by `con_id`, covering all sec types (FUT/FOP/STK/OPT).
 - New `live_executions` table: today's TWS fills (with `ib_exec_id` for dedup against settled FlexQuery executions).
@@ -56,6 +57,7 @@ In scope:
 Out of scope:
 
 ### Deferred to Follow-Up Work
+
 - Background/interval auto-refresh of live quotes (v1 is manual-button only).
 - Portfolio-wide intraday overlay on the main Positions page (this plan targets the TradeGroup view; a thin follow-up reuses the same merge helper — see U5, marked optional).
 - Auto-association of brand-new (opened-today) instruments to a TradeGroup before they are tagged post-settle.
@@ -63,6 +65,7 @@ Out of scope:
 - Historical intraday P&L time-series (only "latest live" is stored; no `ts_*` archive for the overlay).
 
 ### Outside this change's identity
+
 - Replacing FlexQuery with TWS as the primary sync path. FlexQuery remains canonical; TWS is an additive live layer.
 - Order submission or any trading action.
 
@@ -70,7 +73,7 @@ Out of scope:
 
 ## Key Technical Decisions
 
-- **Current state comes from `ib.positions()`, not snapshot+delta reconstruction.** TWS returns authoritative current quantity and blended average cost per contract. This makes all four mutation cases (open / add / reduce / net-close) fall out for free — no manual lot arithmetic. Snapshot+fills only drive *realized* attribution, never current quantity.
+- **Current state comes from `ib.positions()`, not snapshot+delta reconstruction.** TWS returns authoritative current quantity and blended average cost per contract. This makes all four mutation cases (open / add / reduce / net-close) fall out for free — no manual lot arithmetic. Snapshot+fills only drive _realized_ attribution, never current quantity.
 - **Live state lives in separate tables; FlexQuery tables are untouched.** New `live_positions`, `latest_quote`, `live_executions`. The FlexQuery `positions` / `trade_executions` / their unique `(account_id, con_id)` constraint are never modified. This directly honors "enhance, don't delete" and avoids the constraint collision a shared table would create.
 - **Read-time merge with FlexQuery fallback.** The endpoint composes the view at read time: prefer `live_positions` ⟕ `latest_quote`; fall back to FlexQuery `positions` row when no live row exists. No precomputed/denormalized P&L. Freshness is explicit per row (`live` vs `settled`, plus a timestamp).
 - **Unified `latest_quote` keyed by `con_id` for all sec types.** Rather than extend the futures-only `latest_futures` / `latest_futures_options`, the overlay uses one `con_id`-keyed table covering FUT/FOP/STK/OPT. The existing futures tables remain for the term-structure feature; the overlay does not depend on them.
@@ -83,7 +86,7 @@ Out of scope:
 
 ## High-Level Technical Design
 
-*This illustrates the intended approach and is directional guidance for review, not implementation specification. The implementing agent should treat it as context, not code to reproduce.*
+_This illustrates the intended approach and is directional guidance for review, not implementation specification. The implementing agent should treat it as context, not code to reproduce._
 
 ```
                       ┌──────────────────────────── manual "refresh live" button
@@ -113,12 +116,12 @@ Out of scope:
 
 Reconciliation truth table (per `(account, con_id)`):
 
-| Snapshot row | Live `ib.positions()` row | Result shown |
-|---|---|---|
-| present | present | live qty/cost/mark; unrealized on live qty |
-| absent | present (opened today) | live qty/cost/mark; flex contributes nothing |
-| present | absent (net closed) | dropped from open positions; realized via today's fills |
-| present | present, opposite sign (flipped) | live signed qty/cost/mark |
+| Snapshot row | Live `ib.positions()` row        | Result shown                                            |
+| ------------ | -------------------------------- | ------------------------------------------------------- |
+| present      | present                          | live qty/cost/mark; unrealized on live qty              |
+| absent       | present (opened today)           | live qty/cost/mark; flex contributes nothing            |
+| present      | absent (net closed)              | dropped from open positions; realized via today's fills |
+| present      | present, opposite sign (flipped) | live signed qty/cost/mark                               |
 
 ---
 
@@ -166,10 +169,12 @@ frontend/src/components/
 **Requirements:** Supports cases open/add/reduce/net-close (current qty source), live marks (all sec types), intraday realized (fills with dedup key).
 
 **Files:**
+
 - `src/models.py`
 - `alembic/versions/<ts>_add_intraday_overlay_tables.py` (generated, then edited)
 
 **Approach:**
+
 - `LivePosition`: `account_id` (FK), `con_id`, contract metadata (`symbol`, `sec_type`, `local_symbol`, `multiplier`, `right`, `strike`), `position` (Float, signed qty), `avg_cost` (Float, TWS-blended), `fetched_at` (DateTime). Unique `(account_id, con_id)`. No mark stored here — marks live in `latest_quote` and join at read time (keeps positions vs quotes separated).
 - `LatestQuote`: `con_id` (PK), `bid`, `ask`, `last`, `close` (Float nullable), `mark` (Float nullable, the selected price), `market_ts` (DateTime, tick time), `ingested_at` (DateTime). Sec-type-agnostic.
 - `LiveExecution`: `id` PK, `ib_exec_id` (Text, unique — dedup key matching `TradeExecution.ib_exec_id`), `account_id`, `con_id`, contract metadata, `side`, `quantity`, `price`, `realized_pnl` (Float nullable), `exec_time` (DateTime), `fetched_at`. Index `(account_id, con_id)`.
@@ -178,6 +183,7 @@ frontend/src/components/
 **Patterns to follow:** Existing `Position` (`src/models.py:126`) and `LatestFutures` (`src/models.py:562`) table definitions.
 
 **Test scenarios:**
+
 - After `alembic upgrade head`, the three tables exist with expected columns/constraints; `alembic downgrade -1` removes them cleanly (round-trip leaves schema identical).
 - Inserting two `LivePosition` rows with the same `(account_id, con_id)` violates the unique constraint; differing con_ids succeed.
 - Inserting two `LiveExecution` rows with the same `ib_exec_id` violates uniqueness.
@@ -196,10 +202,12 @@ frontend/src/components/
 **Dependencies:** U1.
 
 **Files:**
+
 - `src/services/intraday_sync_tws.py`
 - `tests/services/test_intraday_sync_tws.py`
 
 **Approach:**
+
 - `run_intraday_sync(engine, ib) -> dict` (session provided by the worker pool, matching `market_data.fetch_snapshot`):
   1. `ib.positions()` → upsert `live_positions` per `(account_id, con_id)`; **delete** live rows no longer returned (net-closed positions disappear). Account upsert via `src/services/sync_common.get_or_create_accounts`.
   2. Collect held `con_id`s; `ib.reqTickers(*contracts)` in batches (reuse `market_data` batching); apply the mark-selection rule (`last` → midpoint → `close`); upsert `latest_quote`.
@@ -213,6 +221,7 @@ frontend/src/components/
 **Patterns to follow:** `src/services/market_data.py` `fetch_snapshot` (session + reqTickers + upsert); `src/services/position_sync_tws.py` `sync_positions_with_ib` (positions parse); `src/services/sync_common.py` helpers.
 
 **Test scenarios:**
+
 - Happy path: stub returns 3 positions + tickers + 2 fills → `live_positions` has 3 rows, `latest_quote` 3 rows, `live_executions` 2 rows.
 - Net-close: a `con_id` present in a prior `live_positions` row is absent from `ib.positions()` → its live row is deleted.
 - Mark selection: ticker with `last=None, bid=1.0, ask=1.2` → stored `mark == 1.1`; with only `close` → `mark == close`; with no prices → `mark is None`.
@@ -231,12 +240,14 @@ frontend/src/components/
 **Dependencies:** U2.
 
 **Files:**
+
 - `src/services/jobs.py`
 - `src/workers/jobs.py`
 - `src/api/routers/positions.py`
 - `tests/api/test_positions_intraday_route.py`
 
 **Approach:**
+
 - Add `JOB_TYPE_INTRADAY_SYNC_TWS = "intraday.sync.tws"` to the constants block.
 - Add `handle_intraday_sync_tws(job, engine, ib_pool) -> dict` to `src/workers/jobs.py`: lazy-import `run_intraday_sync`, acquire an IB session from the pool, call it, return counts. Register it in the `handlers` dict.
 - Add `POST /positions/sync/intraday-tws`: enqueue the job + `db.commit()`, return 202 + `job_id`. Request body optional (`account_code?`). Mirror existing flex-sync route handlers.
@@ -244,6 +255,7 @@ frontend/src/components/
 **Patterns to follow:** `handle_market_data_snapshot` (`src/workers/jobs.py:524`) + its dispatcher entry (`:637`); existing `/positions/sync/...` routes.
 
 **Test scenarios:**
+
 - POST `/positions/sync/intraday-tws` returns 202 + `job_id`; persisted `Job.job_type == "intraday.sync.tws"`.
 - `get_handler("intraday.sync.tws")` returns `handle_intraday_sync_tws`.
 - Handler invokes `run_intraday_sync` once and returns its counts dict (service stubbed).
@@ -261,11 +273,13 @@ frontend/src/components/
 **Dependencies:** U1, U2. **Sequence last** (shared-file collision with the concurrent agent — rebase first).
 
 **Files:**
+
 - `src/services/intraday_overlay.py` (new, pure merge/PnL helper — unit-testable without HTTP)
 - `src/api/routers/trade_groups.py` (call the helper inside the executions endpoint)
 - `tests/services/test_intraday_overlay.py`
 
 **Approach:**
+
 - `intraday_overlay.py` exposes pure functions over already-loaded rows (no DB/HTTP):
   - `merge_positions(flex_rows, live_rows, quotes)` → list of unified position views: for each `(account, con_id)`, prefer live qty/`avg_cost`; mark from `latest_quote` (fallback flex `mark_price`); `source` flag (`live`/`settled`); `mark_ts`/`as_of`; `unrealized = mark·qty·mult − cost_basis(qty, avg_cost)` using the U2-resolved multiplier convention.
   - `merge_realized(settled_execs, live_execs)` → settled ∪ live, dropping live whose `ib_exec_id` ∈ settled.
@@ -277,13 +291,14 @@ frontend/src/components/
 **Patterns to follow:** Existing executions endpoint aggregation (`src/api/routers/trade_groups.py` ~line 667+); `_execution_realized_pnl` (`src/api/routers/trades.py:240`).
 
 **Test scenarios:**
-- *Add* (Covers the GLD example): flex row qty 110 @ cost A; live row qty 130 @ blended cost B; quote mark M → unified shows qty 130, cost B, `unrealized == M·130·mult − B·130·mult`, `source == "live"`.
-- *Open-today*: no flex row, live row qty 20 → appears with live qty/cost/mark.
-- *Reduce*: flex qty 100, live qty 80, one closing fill → open position shows qty 80; realized includes the fill's `realized_pnl`.
-- *Net-close*: flex qty 50, no live row, a closing fill → not in open positions; realized includes the fill.
-- *Fallback*: live tables empty (no sync yet) → totals equal today's settled-only behavior; `source == "settled"`, `marks_as_of is None`.
-- *Realized dedup*: a live fill with `ib_exec_id` also in settled execs is excluded from `merge_realized` (no double count).
-- *Stale mark*: `latest_quote` row missing for a live position → mark falls back to flex `mark_price`; `source` still reflects live qty.
+
+- _Add_ (Covers the GLD example): flex row qty 110 @ cost A; live row qty 130 @ blended cost B; quote mark M → unified shows qty 130, cost B, `unrealized == M·130·mult − B·130·mult`, `source == "live"`.
+- _Open-today_: no flex row, live row qty 20 → appears with live qty/cost/mark.
+- _Reduce_: flex qty 100, live qty 80, one closing fill → open position shows qty 80; realized includes the fill's `realized_pnl`.
+- _Net-close_: flex qty 50, no live row, a closing fill → not in open positions; realized includes the fill.
+- _Fallback_: live tables empty (no sync yet) → totals equal today's settled-only behavior; `source == "settled"`, `marks_as_of is None`.
+- _Realized dedup_: a live fill with `ib_exec_id` also in settled execs is excluded from `merge_realized` (no double count).
+- _Stale mark_: `latest_quote` row missing for a live position → mark falls back to flex `mark_price`; `source` still reflects live qty.
 
 **Verification:** Against the prod DB + a live sync, the "Rolling Diagonals" group shows qty 130 GLD with live unrealized; settled totals match the pre-change endpoint when no live data is present.
 
@@ -296,16 +311,19 @@ frontend/src/components/
 **Dependencies:** U4 (reuses `intraday_overlay.merge_positions`).
 
 **Files:**
+
 - `src/api/routers/positions.py`
 - `frontend/src/components/PositionsTable.tsx`
 
 **Approach:**
+
 - Add overlay fields to the positions list endpoint by reusing `merge_positions` over all `live_positions` + `latest_quote` (not group-scoped). Additive response fields; existing behavior unchanged when no live data.
 - Frontend shows live qty/mark/unrealized with the same freshness indicator.
 
 **Patterns to follow:** U4; existing positions list endpoint + `PositionsTable.tsx`.
 
 **Test scenarios:**
+
 - A position opened today (no flex row) appears in the positions list when live data is present.
 - With no live data, the list matches current FlexQuery-only behavior.
 
@@ -320,16 +338,18 @@ frontend/src/components/
 **Dependencies:** U3 (route), U4 (response fields).
 
 **Files:**
+
 - `frontend/src/components/TradeTaggingPage.tsx`
 
 **Approach:**
+
 - Add a "Refresh live (TWS)" button that POSTs `/positions/sync/intraday-tws`, toasts the queued job id, and refreshes the view after the job completes (reuse existing kickoff + poll/refresh pattern).
 - In the P&L summary and OPEN POSITIONS table, display the intraday fields (`intraday_unrealized_pnl`, `intraday_realized_pnl`, `intraday_total_pnl`, per-row live `mark`/`unrealized`) next to the settled values, with a freshness indicator: `live as of HH:MM` when `marks_as_of` is present, else `settled <as_of_date>`.
 - No change to the settled columns; intraday is additive.
 
 **Patterns to follow:** `kickOffPositionSync` / `kickOffTradesSync` and the existing P&L summary + OPEN POSITIONS rendering in `TradeTaggingPage.tsx`.
 
-**Test scenarios:** *Test expectation: none beyond manual smoke — presentational React change.* Manual: click refresh → 202 toast → after worker run, OPEN POSITIONS shows live qty 130 GLD and a `live as of` timestamp; with no live data, view shows settled values and `settled <date>`.
+**Test scenarios:** _Test expectation: none beyond manual smoke — presentational React change._ Manual: click refresh → 202 toast → after worker run, OPEN POSITIONS shows live qty 130 GLD and a `live as of` timestamp; with no live data, view shows settled values and `settled <date>`.
 
 **Verification:** Browser network tab shows the POST; after the worker runs, intraday P&L and freshness render; settled values unchanged when no sync has run.
 
@@ -354,6 +374,6 @@ frontend/src/components/
 ## Alternative Approaches Considered
 
 - **Marks-only overlay on the stale snapshot (rejected).** Layering live marks onto FlexQuery quantities cannot represent positions opened today, nor added/reduced sizes — fails the four-case requirement. Sourcing current state from `ib.positions()` is what makes the overlay correct.
-- **Snapshot + reconstruct-from-fills for current quantity (rejected as primary).** Hand-summing today's fills onto the snapshot duplicates TWS's own position accounting and owns every lot/dedup edge case. `ib.positions()` returns the reconciled current state directly. Fills are still needed — but only for *realized* attribution, not quantity.
+- **Snapshot + reconstruct-from-fills for current quantity (rejected as primary).** Hand-summing today's fills onto the snapshot duplicates TWS's own position accounting and owns every lot/dedup edge case. `ib.positions()` returns the reconciled current state directly. Fills are still needed — but only for _realized_ attribution, not quantity.
 - **Live columns on the `positions` table (rejected).** Would collide with the FlexQuery `(account_id, con_id)` unique constraint and mix live + settled in one row, violating "enhance, don't delete." Separate tables keep FlexQuery pure.
 - **Reuse futures-only `latest_futures*` for marks (rejected).** Would force sec-type-specific routing and leave equities/equity-options unstorable. A unified `con_id`-keyed `latest_quote` covers all instruments per the chosen scope.

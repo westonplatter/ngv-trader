@@ -12,14 +12,14 @@ and the IBKR data rules are all there. Read it before shipping.
 Neither the frontend build/lint nor `ruff` is gated in CI —
 `.github/workflows/tests.yml` runs pytest only. Measured on `origin/main`:
 
-| adapter | metric | baseline (2026-08-29) |
-| --- | --- | --- |
-| bun | build (`tsc -b`) | 0 errors |
-| bun | lint (eslint) | 1 error |
-| bun | audit | 2 vulnerabilities |
-| uv | imports (`scripts/check.py`) | 0 failed of 73 modules |
-| uv | lint (`ruff check .`) | 76 errors |
-| uv | tests (`pytest`) | 245 passed |
+| adapter | metric                       | baseline (2026-08-29)  |
+| ------- | ---------------------------- | ---------------------- |
+| bun     | build (`tsc -b`)             | 0 errors               |
+| bun     | lint (eslint)                | 1 error                |
+| bun     | audit                        | 2 vulnerabilities      |
+| uv      | imports (`scripts/check.py`) | 0 failed of 73 modules |
+| uv      | lint (`ruff check .`)        | 76 errors              |
+| uv      | tests (`pytest`)             | 245 passed             |
 
 These drift — re-measure rather than quoting this table in a PR. The frontend
 build was 17 errors a few days earlier (demo fixtures in
@@ -52,7 +52,7 @@ created and migrated by `tests/conftest.py`. Running it there is what exposed
 the `-qq` bug: `pyproject.toml` sets `addopts = "-q"`, so the adapter's own
 `-q` made it `-qq`, which suppresses the `N failed ... in Xs` summary line the
 metric parses. A green suite still scored 0 (correct by luck, via exit 0), but
-a *failing* suite scored UNMEASURABLE instead of a count. The adapter now runs
+a _failing_ suite scored UNMEASURABLE instead of a count. The adapter now runs
 `pytest` with no `-q` of its own.
 
 ## No `gh` in web or mobile sessions
@@ -64,10 +64,10 @@ superseded PRs.
 
 ## Tracking
 
-Batches are tracked in kata: `--project ngv-tradrer` (the registered name
-carries a typo; see AGENTS.md). One issue per batch, listing the grouped PR
-numbers and the ones deliberately left out. Close it only after the grouped PR
-merges and the superseded PRs are closed.
+If you track batches in beads (`bd`, optional — see
+docs/contributing/issue-tracking.md), file one issue per batch, listing the
+grouped PR numbers and the ones deliberately left out. Close it only after the
+grouped PR merges and the superseded PRs are closed.
 
 ## Pre-commit
 

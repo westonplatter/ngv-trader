@@ -106,4 +106,4 @@ The one-sync lag is inherent: TWS sends `commissionReport` after `execDetailsEnd
 - Two adjacent fixes from the same investigation, both in `src/services/intraday_sync_tws.py`:
   - **Trade-date boundary.** The overlay's "today" window started at ET midnight, but CME's trade date opens at 18:00 ET, so evening fills were filed under the wrong date and dropped ~6 hours later — while FlexQuery would not report them for another day.
   - **Combo settle handoff.** TWS reports a combo's BAG summary under an `execId` from a different id family than its legs, while the FlexQuery path synthesizes the settled summary _from_ the legs. The two rows can never share an `ib_exec_id`, so an id-equality purge cannot retire the live one and combos showed twice.
-- `docs/core/intraday-tws-overlay.md` — the overlay's sync rules and live/settled two-tier model.
+- `docs/design/intraday-tws-overlay.md` — the overlay's sync rules and live/settled two-tier model.

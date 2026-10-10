@@ -1,3 +1,14 @@
+---
+topics: ["tradebot", "agent-tools", "llm", "langgraph", "frontend"]
+code_dirs_or_files:
+  [
+    "src/api/routers/tradebot.py",
+    "src/services/tradebot_agent.py",
+    "frontend/src/components/TradebotChat.tsx",
+  ]
+description: Operator chat agent — LangGraph model/tool loop, read and action tools, no order submission, LLM env vars, and chat UI panels.
+---
+
 # Tradebot Chatbot
 
 ## Purpose
@@ -35,14 +46,14 @@ Read tools:
   `contract_expiry` (YYYY-MM-DD) for specific weekly option expiries
 - `list_watch_lists`, `get_watch_list`
 - `check_watchlist_job` — poll status of a queued watch-list job
-- `list_activated_products` — list products maintained in the security master with discovered exchange/status. See [spec-activated-products-security-master.md](spec-activated-products-security-master.md).
+- `list_activated_products` — list products maintained in the security master with discovered exchange/status. See [activated products plan](../plans/2026-06-20-001-feat-activated-products-security-master-plan.md).
 - `query_metric` — run business-analyst metrics (realized PnL, win rate, trade
   count) from the OSI semantic model as read-only SQL, by metric/dimension name.
-  See [core/semantic-queries.md](core/semantic-queries.md). The agent picks names only;
+  See [core/semantic-queries.md](semantic-queries.md). The agent picks names only;
   it does not write SQL.
 - `trade_group_pnl` — realized + settled/intraday unrealized PnL for one trade
   group (the detail-view figures), reusing the live overlay. See
-  [core/semantic-queries.md](core/semantic-queries.md) §9.
+  [core/semantic-queries.md](semantic-queries.md) §9.
 
 Action tools:
 
