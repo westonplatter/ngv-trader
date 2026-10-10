@@ -65,5 +65,5 @@ What each check covers: [validation.md](docs/contributing/validation.md).
 | Workers and the job queue                                                | [workers.md](docs/design/workers.md)                                       |
 | Trade and execution sync                                                 | [trades-and-executions-sync.md](docs/design/trades-and-executions-sync.md) |
 | How each feature works: sync, overlays, tagging, semantic layer, UX, SSE | [docs/design/](docs/design/README.md)                                      |
-| Past problems and their fixes                                            | [docs/solutions/](docs/solutions/README.md)                                |
+| Past problems and their fixes                                            | [docs/solutions/](docs/solutions/)                                         |
 | Doc review process                                                       | [doc-review.md](docs/doc-review.md)                                        |

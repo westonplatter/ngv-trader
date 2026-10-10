@@ -20,8 +20,9 @@ uv run python scripts/docs_index.py
 ```
 
 This writes a `README.md` into `docs/` and every docs subdirectory that contains
-`.md` files (GitHub auto-renders these), `docs/design/` included. Index files are
-generated artifacts — never edit them by hand.
+`.md` files (GitHub auto-renders these), `docs/design/` included. `docs/plans/` and
+`docs/solutions/` are skipped: the compound-engineering plugin owns their layout.
+Index files are generated artifacts — never edit them by hand.
 
 ## Front matter
 

@@ -8,8 +8,8 @@
 | --------------- | ----------------------------------- |
 | `contributing/` | [README.md](contributing/README.md) |
 | `design/`       | [README.md](design/README.md)       |
-| `plans/`        | [README.md](plans/README.md)        |
-| `solutions/`    | [README.md](solutions/README.md)    |
+| `plans/`        | [plans/](plans/)                    |
+| `solutions/`    | [solutions/](solutions/)            |
 
 ## Files
 
