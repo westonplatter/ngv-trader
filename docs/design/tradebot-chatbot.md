@@ -1,3 +1,14 @@
+---
+topics: ["tradebot", "agent-tools", "llm", "langgraph", "frontend"]
+code_dirs_or_files:
+  [
+    "src/api/routers/tradebot.py",
+    "src/services/tradebot_agent.py",
+    "frontend/src/components/TradebotChat.tsx",
+  ]
+description: Operator chat agent — LangGraph model/tool loop, read and action tools, no order submission, LLM env vars, and chat UI panels.
+---
+
 # Tradebot Chatbot
 
 ## Purpose

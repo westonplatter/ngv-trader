@@ -1,3 +1,16 @@
+---
+topics: ["workers", "jobs", "job-queue", "orders", "heartbeats"]
+code_dirs_or_files:
+  [
+    "scripts/work_jobs.py",
+    "src/workers/jobs.py",
+    "src/services/jobs.py",
+    "scripts/work_order_queue.py",
+    "src/services/worker_heartbeat.py",
+  ]
+description: Background workers and the job queue — jobs worker handler registry, dormant TWS handlers, disabled order submission, and heartbeat health.
+---
+
 # Workers
 
 Background processes that run separately from the API and consume DB-backed

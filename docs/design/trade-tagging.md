@@ -1,3 +1,16 @@
+---
+topics: ["trade-groups", "tags", "strategies", "executions", "frontend"]
+code_dirs_or_files:
+  [
+    "src/api/routers/trade_groups.py",
+    "src/api/routers/tags.py",
+    "src/services/trade_group_instruments.py",
+    "frontend/src/components/TradeTaggingPage.tsx",
+    "frontend/src/components/StrategyPnlTable.tsx",
+  ]
+description: Strategy tags and trade groups — data model, execution assignment and history, trade-group and tag APIs, position chips, the Strategy P&L table, and the Strategies workspace.
+---
+
 # Trade Tagging
 
 Current-state documentation for strategy tags, trade groups, execution assignment, and the tagging UI.

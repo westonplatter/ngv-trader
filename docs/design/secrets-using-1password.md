@@ -1,3 +1,9 @@
+---
+topics: ["secrets", "1password", "env-vars", "flexquery", "setup"]
+code_dirs_or_files: ["src/utils/env_vars.py", "scripts/manage_flex_tokens.py"]
+description: Secret handling with the 1Password CLI — op:// references in env files, when op run is needed versus self-resolving env_vars readers, and encrypted FlexQuery tokens.
+---
+
 # 1Password Integration
 
 This project uses [1Password CLI](https://developer.1password.com/docs/cli/) (`op`) to manage secrets in `.env` files.

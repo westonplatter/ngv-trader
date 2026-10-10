@@ -1,3 +1,14 @@
+---
+topics: ["contracts", "display-names", "futures", "options", "positions"]
+code_dirs_or_files:
+  [
+    "src/utils/contract_display.py",
+    "src/services/cl_contracts.py",
+    "src/api/routers/trades.py",
+  ]
+description: Human-readable contract labels — contract_display_name() formatting by sec_type, the DB fields that drive it, and where positions, orders, watch lists, and trades build labels.
+---
+
 # Contract Display Names
 
 ## Purpose

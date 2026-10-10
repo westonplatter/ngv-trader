@@ -1,3 +1,16 @@
+---
+topics: ["trades", "sync", "flexquery", "executions", "jobs"]
+code_dirs_or_files:
+  [
+    "src/services/trade_sync_flexquery.py",
+    "src/services/trade_sync_tws.py",
+    "src/services/sync_common.py",
+    "src/services/flex_client_factory.py",
+    "src/api/routers/trades.py",
+  ]
+description: IBKR trade ingestion with fill-level fidelity — FlexQuery vs dormant TWS paths, execution identity and corrections, deterministic combo handling, two-phase Flex jobs, and token pause and retry.
+---
+
 # Trades and Executions Sync
 
 Current-state documentation for ingesting IBKR trades with fill-level fidelity,

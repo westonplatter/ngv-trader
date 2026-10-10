@@ -1,3 +1,15 @@
+---
+topics: ["contracts", "security-master", "contract-sync", "agent-tools", "jobs"]
+code_dirs_or_files:
+  [
+    "src/models.py",
+    "src/services/contract_sync.py",
+    "src/services/contract_lookup.py",
+    "src/services/tradebot_agent.py",
+  ]
+description: Local cache of IBKR contract details — contracts table schema, the contracts.sync job, and DB-first agent lookup with its synchronous IBKR fallback.
+---
+
 # Contract Reference (SecRef) Setup
 
 ## Purpose

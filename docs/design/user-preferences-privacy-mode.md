@@ -1,3 +1,14 @@
+---
+topics: ["user-preferences", "privacy-mode", "frontend", "api"]
+code_dirs_or_files:
+  [
+    "src/api/routers/user_preferences.py",
+    "frontend/src/contexts/PrivacyContext.tsx",
+    "frontend/src/utils/privacy.ts",
+  ]
+description: Key-value user preferences and privacy mode — preferences table and CRUD API, plus frontend masking of dollar amounts and quantities with P&L shown as relative returns.
+---
+
 # User Preferences & Privacy Mode
 
 ## Overview

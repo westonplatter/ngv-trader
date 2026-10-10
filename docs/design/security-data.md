@@ -1,3 +1,15 @@
+---
+topics: ["market-data", "futures", "options", "time-series", "contracts"]
+code_dirs_or_files:
+  [
+    "src/services/market_data.py",
+    "src/services/contract_sync.py",
+    "src/api/routers/futures.py",
+    "src/workers/jobs.py",
+  ]
+description: Futures and futures-options market data in Postgres — contract hierarchy, latest snapshot and time-series tables, worker write path, and DB-only futures API reads.
+---
+
 # Security Data
 
 Current-state documentation for how ngtrader stores and serves futures and futures-options market data.
