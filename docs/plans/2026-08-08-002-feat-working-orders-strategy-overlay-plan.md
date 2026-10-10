@@ -63,7 +63,7 @@ Three concrete gaps block closing that loop:
 
 ### Non-Goals
 
-- Order submission or modification from the app. `scripts/work_order_queue.py` keeps its `RuntimeError` guard; see [spec-worker-order-recovery.md](../spec-worker-order-recovery.md).
+- Order submission or modification from the app. `scripts/work_order_queue.py` keeps its `RuntimeError` guard; see [the worker order recovery plan](2026-02-24-001-feat-worker-order-recovery-plan.md).
 - Cancel-from-UI against the broker. The existing `POST /orders/{id}/cancel` keeps its current local-only behavior.
 - Automated strategy inference for orders. Assignment is explicit or heuristic-suggested, never silently applied.
 

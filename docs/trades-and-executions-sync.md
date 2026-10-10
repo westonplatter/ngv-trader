@@ -193,7 +193,7 @@ Read API (`src/api/routers/trades.py`):
 
 Responses expose `data_source`, `flex_transaction_id`, `sec_type`, `exec_role`.
 Realized PnL is currently computed on read from `raw` (see
-[spec-first-class-realized-pnl-on-trades.md](spec-first-class-realized-pnl-on-trades.md)
+[the first-class realized P&L plan](plans/2026-03-14-001-feat-first-class-realized-pnl-plan.md)
 for the proposal to persist it as first-class columns).
 
 ## Acceptance properties
