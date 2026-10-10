@@ -187,23 +187,24 @@ function parseMultiplier(value: string | null | undefined): number {
   return Number.isFinite(num) && num > 0 ? num : 1;
 }
 
-// Futures carry no option metrics, but their delta is definitionally 1.0 per
-// contract (gamma 0), so they are folded in rather than dropped from the total.
-const FUTURES_SEC_TYPES = new Set(["FUT", "CONTFUT", "FUTURE"]);
+// Futures and stock carry no option metrics, but their delta is definitionally
+// 1.0 per unit (gamma 0), so they are folded in rather than dropped from the total.
+const DELTA_ONE_SEC_TYPES = new Set(["FUT", "CONTFUT", "FUTURE", "STK"]);
 
 /**
- * Position greeks in underlying units: per-contract greek × signed qty × the
- * contract multiplier off the positions snapshot. Weighting matters because a
- * group can mix multipliers — a CL option (1000) and an MW option (100) must
- * not add as equals. Option greeks are live-sourced, so they blank out when the
- * live overlay is stale; the futures delta is a constant and always counts.
+ * Position greeks in underlying units (barrels, shares, …): per-unit greek ×
+ * signed qty × the contract multiplier off the positions snapshot. Weighting
+ * matters because a group can mix contract sizes — a short MCL (100) is −100
+ * bbl and a short CL (1000) is −1000 bbl, so they must not add as equals.
+ * Option greeks are live-sourced, so they blank out when the live overlay is
+ * stale; the futures/stock delta is a constant and always counts.
  */
 function positionGreeks(pos: GroupOpenPosition): {
   delta: number | null;
   gamma: number | null;
 } {
   const multiplier = parseMultiplier(pos.multiplier);
-  if (FUTURES_SEC_TYPES.has((pos.sec_type ?? "").toUpperCase())) {
+  if (DELTA_ONE_SEC_TYPES.has((pos.sec_type ?? "").toUpperCase())) {
     return { delta: pos.position * multiplier, gamma: 0 };
   }
   if (pos.live_is_stale) return { delta: null, gamma: null };
@@ -1915,9 +1916,6 @@ export default function TradeTaggingPage() {
                             <tr>
                               <th className="px-2 py-1 font-medium">Account</th>
                               <th className="px-2 py-1 font-medium">
-                                Contract
-                              </th>
-                              <th className="px-2 py-1 font-medium">
                                 Call/Put
                               </th>
                               <th className="px-2 py-1 text-right font-medium">
@@ -1931,7 +1929,7 @@ export default function TradeTaggingPage() {
                               </th>
                               <th
                                 className="px-2 py-1 text-right font-medium"
-                                title="Delta × quantity × contract multiplier (underlying units). Futures count as 1.0 delta per contract."
+                                title="Delta × quantity × contract multiplier (underlying units, e.g. barrels or shares). Futures and stock count as 1.0 delta per unit."
                               >
                                 Delta
                               </th>
@@ -1968,14 +1966,13 @@ export default function TradeTaggingPage() {
                               <th className="px-2 py-1 text-right font-medium">
                                 Live Unrealized
                               </th>
-                              <th className="px-2 py-1 font-medium">As of</th>
+                              <th className="px-4 py-1 font-medium">As of</th>
                               <th className="px-2 py-1 font-medium">Source</th>
                             </tr>
                           </thead>
                           <tbody>
                             <tr className="border-t border-b-2 border-gray-300 bg-gray-50 font-medium">
-                              <td className="px-2 py-1 text-gray-700"></td>
-                              <td className="px-2 py-1 text-gray-800">Total</td>
+                              <td className="px-2 py-1 text-gray-700">Total</td>
                               <td className="px-2 py-1"></td>
                               <td className="px-2 py-1 text-right"></td>
                               <td className="px-2 py-1 text-right"></td>
@@ -2097,9 +2094,6 @@ export default function TradeTaggingPage() {
                                 >
                                   <td className="px-2 py-1 text-gray-700">
                                     {positionAccountLabel(pos)}
-                                  </td>
-                                  <td className="px-2 py-1 text-gray-800">
-                                    {positionContractLabel(pos)}
                                   </td>
                                   <td className="px-2 py-1 text-gray-700">
                                     {pos.right ?? "—"}

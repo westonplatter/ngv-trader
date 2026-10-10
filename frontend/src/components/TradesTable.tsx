@@ -401,22 +401,47 @@ export default function TradesTable() {
   const [syncError, setSyncError] = useState<string | null>(null);
   const [rangeStart, setRangeStart] = useState("");
   const [rangeEnd, setRangeEnd] = useState("");
+  // Filters live in the URL (?account=&range=&tags=&cols=&symbol=) so a refresh
+  // or shared link restores the view. Defaults are omitted to keep URLs short.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const setFilterParam = useCallback(
+    (key: string, value: string, defaultValue: string) => {
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          if (value === defaultValue) next.delete(key);
+          else next.set(key, value);
+          return next;
+        },
+        { replace: true },
+      );
+    },
+    [setSearchParams],
+  );
   // The id/reference columns (Parent Exec ID, Order Ref, Exec ID, Con ID) are
   // hidden unless "More details" is toggled on, keeping the default view compact.
-  const [showDetails, setShowDetails] = useState(false);
-  const [searchParams] = useSearchParams();
-  const [symbolFilter, setSymbolFilter] = useState(
-    () => searchParams.get("symbol") ?? "",
-  );
-  const [accountFilter, setAccountFilter] = useState<string>("all");
+  const showDetails = searchParams.get("cols") === "all";
+  const setShowDetails = (value: boolean) =>
+    setFilterParam("cols", value ? "all" : "simple", "simple");
+  const symbolFilter = searchParams.get("symbol") ?? "";
+  const setSymbolFilter = (value: string) =>
+    setFilterParam("symbol", value, "");
+  const accountFilter = searchParams.get("account") ?? "all";
+  const setAccountFilter = (value: string) =>
+    setFilterParam("account", value, "all");
   // Default to the last 30 days for performance (fewer rows rendered). The
   // con_id deep-link case wants every execution for a contract, so it opts out.
-  const [timeRange, setTimeRange] = useState<string>(() =>
-    searchParams.get("con_id") ? "all" : "30d",
-  );
-  const [tagStatus, setTagStatus] = useState<"all" | "tagged" | "untagged">(
-    "all",
-  );
+  const defaultTimeRange = searchParams.get("con_id") ? "all" : "30d";
+  const timeRange = searchParams.get("range") ?? defaultTimeRange;
+  const setTimeRange = (value: string) =>
+    setFilterParam("range", value, defaultTimeRange);
+  const rawTagStatus = searchParams.get("tags");
+  const tagStatus: "all" | "tagged" | "untagged" =
+    rawTagStatus === "tagged" || rawTagStatus === "untagged"
+      ? rawTagStatus
+      : "all";
+  const setTagStatus = (value: "all" | "tagged" | "untagged") =>
+    setFilterParam("tags", value, "all");
   const [highlightedGroupKey, setHighlightedGroupKey] = useState<string | null>(
     null,
   );
@@ -1002,9 +1027,22 @@ export default function TradesTable() {
           Showing all executions for Contract ID{" "}
           <span className="font-mono font-medium">{conIdFilter}</span> across
           all time and accounts.{" "}
-          <Link to="/trades" className="text-blue-600 hover:underline">
+          <button
+            type="button"
+            onClick={() =>
+              setSearchParams(
+                (prev) => {
+                  const next = new URLSearchParams(prev);
+                  next.delete("con_id");
+                  return next;
+                },
+                { replace: true },
+              )
+            }
+            className="text-blue-600 hover:underline"
+          >
             Clear
-          </Link>
+          </button>
         </p>
       )}
       {loading && <p className="text-gray-500">Loading executions...</p>}
@@ -1261,10 +1299,8 @@ export default function TradesTable() {
                       <td className="whitespace-nowrap px-3 py-2 font-mono text-xs text-gray-600">
                         {row.con_id ? (
                           <Link
-                            to={`/trades?con_id=${row.con_id}`}
-                            // Same-page navigation doesn't remount, so widen
-                            // the time range here (initial state covers mount).
-                            onClick={() => setTimeRange("all")}
+                            // Range defaults to "all" when con_id is set.
+                            to={`/trades?con_id=${row.con_id}&cols=all`}
                             className="text-blue-600 hover:underline"
                             title="Search all trades for this Contract ID (all time, all accounts)"
                           >
