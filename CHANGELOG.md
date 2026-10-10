@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.1.17](https://github.com/westonplatter/ngv-trader/compare/v0.1.16...v0.1.17) (2026-10-10)
+
+
+### Miscellaneous Chores
+
+* **deps-dev:** bump @vitejs/plugin-react from 6.0.5 to 6.1.1 in /frontend ([#262](https://github.com/westonplatter/ngv-trader/issues/262)) ([4629483](https://github.com/westonplatter/ngv-trader/commit/46294830461fa5c421df1d69fab9a7a9d31da36a))
+* **deps-dev:** bump vite from 8.2.2 to 8.3.1 in /frontend ([#289](https://github.com/westonplatter/ngv-trader/issues/289)) ([388917c](https://github.com/westonplatter/ngv-trader/commit/388917c9316d1d9bc484004681d80e2e3c535e5a))
+* **deps:** bump alembic, pyjwt, urllib3, mako ([#293](https://github.com/westonplatter/ngv-trader/issues/293)) ([04e485f](https://github.com/westonplatter/ngv-trader/commit/04e485f36410b817ad840849ce0e1d8c9823ec1c))
+* **deps:** bump frontend linters, vite plugin, and plotly.js v4 ([#255](https://github.com/westonplatter/ngv-trader/issues/255)) ([b009295](https://github.com/westonplatter/ngv-trader/commit/b009295dcdc89e37d48e7317302261280075aa34))
+* **deps:** bump frontend low-tier dev deps ([#290](https://github.com/westonplatter/ngv-trader/issues/290)) ([8ab193d](https://github.com/westonplatter/ngv-trader/commit/8ab193dcd96ff14126d145a08db7153e32762a59))
+* **deps:** bump langgraph-sdk 0.4.2 -&gt; 0.4.4 ([#292](https://github.com/westonplatter/ngv-trader/issues/292)) ([a7e9bfb](https://github.com/westonplatter/ngv-trader/commit/a7e9bfb87f493cc1de4a15f3292569deb98ef6ef))
+* **deps:** bump react 19.3, eslint, typescript-eslint ([#291](https://github.com/westonplatter/ngv-trader/issues/291)) ([7c9eaac](https://github.com/westonplatter/ngv-trader/commit/7c9eaace96fd93592005ebde677b058f5624ff7a))
+* **deps:** bump sqlalchemy from 2.0.52 to 2.1.1 ([#288](https://github.com/westonplatter/ngv-trader/issues/288)) ([591b71b](https://github.com/westonplatter/ngv-trader/commit/591b71b4722fdbf93464cdc2a6db46256fb4bc0a))
+* **deps:** bump vite 8.3.1 and @vitejs/plugin-react 6.1.1 ([#294](https://github.com/westonplatter/ngv-trader/issues/294)) ([1a469a1](https://github.com/westonplatter/ngv-trader/commit/1a469a10aa255b74670e906a22306d9a13ff262f))
+
+
+### Continuous Integration
+
+* **deps:** bump astral-sh/setup-uv from 10.0.1 to 10.2.0 ([#275](https://github.com/westonplatter/ngv-trader/issues/275)) ([e45db56](https://github.com/westonplatter/ngv-trader/commit/e45db56a94573e44693b493243c946ea21900829))
+* **deps:** skip dependabot patch bumps except security updates ([#284](https://github.com/westonplatter/ngv-trader/issues/284)) ([c629f59](https://github.com/westonplatter/ngv-trader/commit/c629f597071f3f421dc598962badfc0f102ad0c0))
+
 ## [0.1.16](https://github.com/westonplatter/ngv-trader/compare/v0.1.15...v0.1.16) (2026-10-10)
 
 
