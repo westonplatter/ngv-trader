@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.19](https://github.com/westonplatter/ngv-trader/compare/v0.1.18...v0.1.19) (2026-10-10)
+
+
+### Documentation
+
+* **readme:** add trades page screenshot ([#297](https://github.com/westonplatter/ngv-trader/issues/297)) ([bb75eaf](https://github.com/westonplatter/ngv-trader/commit/bb75eafd968b78eb6c9259872628ac956eb81c63))
+
 ## [0.1.18](https://github.com/westonplatter/ngv-trader/compare/v0.1.17...v0.1.18) (2026-10-10)
 
 
