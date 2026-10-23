@@ -3,6 +3,7 @@ topics: ["git", "commits", "pull-requests", "release"]
 code_dirs_or_files:
   [
     "release-please-config.json",
+    ".github/settings/repo.json",
     "frontend/scripts/screenshot.mjs",
     "frontend/src/lib/demoApi.ts",
     "frontend/src/lib/demoData.ts",
@@ -33,7 +34,11 @@ Examples: `feat(trades): add sync-since-last-trade button`,
 ## Pull request title
 
 The PR title becomes the squash-merge commit subject, so it must be a Conventional
-Commit. release-please parses it to version and changelog the release.
+Commit. release-please parses it to version and changelog the release. The squash
+body lists the branch's commit messages, and release-please reads conventional lines
+there as extra changelog entries. Both settings are recorded in
+`.github/settings/repo.json`; apply a change with
+`gh api -X PATCH repos/westonplatter/ngv-trader --input .github/settings/repo.json`.
 
 - Valid type (`feat`, `fix`, `docs`, `refactor`, `chore`, `perf`, `test`, `ci`, `build`, `style`); optional scope.
 - Lowercase type/scope, imperative mood, no capital after the colon, subject under ~70 chars.
