@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.1.19](https://github.com/westonplatter/ngv-trader/compare/v0.1.18...v0.1.19) (2026-10-23)
+
+
+### Documentation
+
+* **readme:** add trades page screenshot ([#297](https://github.com/westonplatter/ngv-trader/issues/297)) ([bb75eaf](https://github.com/westonplatter/ngv-trader/commit/bb75eafd968b78eb6c9259872628ac956eb81c63))
+
+
+### Miscellaneous Chores
+
+* **deps-dev:** bump eslint from 10.11.0 to 10.12.0 in /frontend ([#304](https://github.com/westonplatter/ngv-trader/issues/304)) ([3e73a8f](https://github.com/westonplatter/ngv-trader/commit/3e73a8fea4ef8f06fcb074127568d0112305b33b))
+* **deps-dev:** bump globals from 17.12.0 to 17.13.0 in /frontend ([#305](https://github.com/westonplatter/ngv-trader/issues/305)) ([f0bfee1](https://github.com/westonplatter/ngv-trader/commit/f0bfee1559506663650e6ccf5629ae593ab667bf))
+* **deps-dev:** bump typescript-eslint from 8.70.1 to 8.71.1 in /frontend ([#302](https://github.com/westonplatter/ngv-trader/issues/302)) ([b4a2a0d](https://github.com/westonplatter/ngv-trader/commit/b4a2a0dc2f51d364038cbbf381f667df6a14226d))
+* **deps-dev:** bump typescript-eslint in /frontend ([b4a2a0d](https://github.com/westonplatter/ngv-trader/commit/b4a2a0dc2f51d364038cbbf381f667df6a14226d))
+* **deps:** bump fastapi from 0.141.1 to 0.142.2 ([#300](https://github.com/westonplatter/ngv-trader/issues/300)) ([f037846](https://github.com/westonplatter/ngv-trader/commit/f0378460dfcca4265c3ef3e1b13bd83b56cf3069))
+* **deps:** bump mcp from 2.2.0 to 2.3.0 ([#303](https://github.com/westonplatter/ngv-trader/issues/303)) ([34c8c13](https://github.com/westonplatter/ngv-trader/commit/34c8c13f3a5cc05deb23b047220ed21f0849d512))
+
+
+### Continuous Integration
+
+* record GitHub repo settings in .github/settings ([#301](https://github.com/westonplatter/ngv-trader/issues/301)) ([68bb6d4](https://github.com/westonplatter/ngv-trader/commit/68bb6d41bce6e9a40f3bd710788cc03b367087ab))
+
 ## [0.1.18](https://github.com/westonplatter/ngv-trader/compare/v0.1.17...v0.1.18) (2026-10-10)
 
 
