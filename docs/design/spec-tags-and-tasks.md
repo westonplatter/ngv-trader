@@ -49,6 +49,9 @@ description: Spec for free-form tags on trades, positions, and tasks, plus a sim
 "Tag" means only the free-form label. Strategies and trade groups never use the
 word in UI, API, or code.
 
+Strategies and trade groups are the verified, systematic structure that reporting
+is built on. Tags are free-floating decoration and never feed reporting structure.
+
 ## Background
 
 The March 2026 tagging core built `tags` / `tag_links` as a generic catalog with
