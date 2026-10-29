@@ -2,9 +2,10 @@
 
 from collections.abc import Iterable
 from datetime import date, datetime, timezone
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import and_, func, literal, or_, select
 from sqlalchemy.orm import Session
 
@@ -145,6 +146,15 @@ class TradeGroupCreateRequest(BaseModel):
     strategy_id: int | None = None
     created_by: str = "api"
     opened_at: datetime | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_renamed_fields(cls, data: Any) -> Any:
+        # Renamed when strategies left the tag tables; silently dropping it would
+        # create a group with no strategy.
+        if isinstance(data, dict) and "strategy_tag_id" in data:
+            raise ValueError("strategy_tag_id was renamed to strategy_id")
+        return data
 
 
 class TradeGroupPatchRequest(BaseModel):
@@ -374,6 +384,8 @@ def list_trade_groups(  # noqa: PLR0913
     account_id: int | None = Query(default=None),
     status_filter: str | None = Query(default=None, alias="status"),
     strategy: str | None = Query(default=None),
+    strategy_tag: str | None = Query(default=None, include_in_schema=False),
+    theme_tag: str | None = Query(default=None, include_in_schema=False),
     q: str | None = Query(default=None),
     instrument: str | None = Query(default=None),
     include_intraday: bool = Query(default=False),
@@ -399,6 +411,11 @@ def list_trade_groups(  # noqa: PLR0913
     its figures report that account's slice — which is what the detail
     endpoint's per-account breakdown shows.
     """
+    # Removed filters: ignoring them would return every group unfiltered.
+    if strategy_tag is not None:
+        raise HTTPException(status_code=400, detail="strategy_tag was renamed to strategy")
+    if theme_tag is not None:
+        raise HTTPException(status_code=400, detail="theme_tag was removed")
     try:
         stmt = _filtered_group_query(
             account_id=account_id,
