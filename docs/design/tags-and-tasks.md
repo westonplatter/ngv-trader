@@ -147,13 +147,13 @@ counts to positions, trades, and trade groups. The story: `long-beta` cuts acros
 NQ, MES, and ES rows in three different trade groups (one of them an unsettled
 live fill); `offset-risk` was applied by an agent.
 
-| Screenshot                                              | Route (`?demo=1`)                                             |
-| ------------------------------------------------------- | ------------------------------------------------------------- |
-| [tags-search.png](../screenshots/tags-search.png)       | `/tags?all=long-beta` — one tag across three groups           |
-| [tags-exclude.png](../screenshots/tags-exclude.png)     | `/tags?any=long-beta,risk-off&none=offset-risk&tab=positions` |
-| [positions-tags.png](../screenshots/positions-tags.png) | `/positions` — chips, task badges, the `AI` marker            |
-| [tasks.png](../screenshots/tasks.png)                   | `/tasks`                                                      |
-| [tags-flow.gif](../screenshots/tags-flow.gif)           | The above in sequence (22 s); demo writes do not persist      |
+| Screenshot                                              | Route (`?demo=1`)                                                 |
+| ------------------------------------------------------- | ----------------------------------------------------------------- |
+| [tags-search.png](../screenshots/tags-search.png)       | `/tags?all=long-beta` — one tag across three groups               |
+| [tags-exclude.png](../screenshots/tags-exclude.png)     | `/tags?any=long-beta,risk-off&none=offset-risk&tab=positions`     |
+| [positions-tags.png](../screenshots/positions-tags.png) | `/positions` — chips, task badges, the `AI` marker                |
+| [tasks.png](../screenshots/tasks.png)                   | `/tasks`                                                          |
+| [tags-flow.gif](../screenshots/tags-flow.gif)           | Positions → Tags search → Tasks (8 s); demo writes do not persist |
 
 ## Follow-up work
 
