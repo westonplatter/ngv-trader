@@ -159,11 +159,6 @@ live fill); `offset-risk` was applied by an agent.
 
 Not done yet; noted while building and testing this feature.
 
-- **`scripts/screenshot.mjs` in cloud sessions** looks for `playwright-core` and
-  `/opt/pw-browsers/chromium`; the current container ships the full `playwright`
-  package globally and Chromium under `/opt/pw-browsers/chromium-<rev>/`. It ran
-  only with `PW_CHROMIUM` set and a `NODE_PATH` shim. Teach it both layouts.
-
 ### Found while building
 
 - **Semantic-layer naming clash.** The semantic model's `tag` dimension
