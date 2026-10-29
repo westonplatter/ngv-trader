@@ -78,7 +78,7 @@ grain**; dimensions come from joins, so adding one is free.
 Attributes are not denormalized into the fact. They live in dimension datasets
 (`accounts`, `contracts`, `trade_groups`) reached through the relationship graph.
 That's why `account` is the human **alias**, and why `contract_month` / `strike` /
-`tag` slicing is possible. The resolver joins in only the datasets a query
+`trade_group` slicing is possible. The resolver joins in only the datasets a query
 references.
 
 ### 2.3 Grain enforcement
@@ -120,7 +120,7 @@ not baked-in columns. Created/altered **only via Alembic migrations** (§6).
 | `v_execution_facts`      | canonical fill (`is_canonical`)               | Base additive measures off `trade_executions`: `realized_pnl` + `proceeds` (both combo-safe: NULL on `combo_summary`), `commission`, `quantity`, `price`, and `sec_type` (off the fill, always populated).                           | `*_semantic_fact_views.py`, then `*_add_proceeds_to_execution_facts_view.py` |
 | `v_trade_facts`          | trade                                         | Rolls `realized_pnl` up from `v_execution_facts` to `trades` grain; carries trade-grain attributes (`status`, `side`, `symbol`, `sec_type`) for `trade_count` / `win_rate`.                                                          | `*_semantic_fact_views.py`                                                   |
 | `v_position_facts`       | **open** position (`positions.position <> 0`) | Point-in-time snapshot of open positions: signed `quantity`, `position_value`, `unrealized_pnl`, plus `sec_type`/`symbol`/`right`/`strike` and `expiration` (cast from `last_trade_date` to a real `date` so it can be a time axis). | `*_semantic_position_facts_view.py`                                          |
-| `v_position_trade_group` | (group, account, con_id)                      | DISTINCT bridge attributing each open position to every trade group whose executions touched its `(account_id, con_id)` — makes `settled_unrealized_pnl` sliceable by `tag`. Many-to-many across groups (see §9).                    | `*_position_trade_group_bridge_view.py`                                      |
+| `v_position_trade_group` | (group, account, con_id)                      | DISTINCT bridge attributing each open position to every trade group whose executions touched its `(account_id, con_id)` — makes `settled_unrealized_pnl` sliceable by `trade_group`. Many-to-many across groups (see §9).            | `*_position_trade_group_bridge_view.py`                                      |
 
 The **conformed dimension** datasets (`accounts`, `contracts`, `trade_groups`)
 and the execution→group bridge (`trade_group_executions`) are plain base tables,
@@ -128,7 +128,7 @@ joined in on demand — not views.
 
 ⚠️ **`contracts` is incomplete** for many traded option `con_id`s. Metrics sliced
 by `strike` / `right` / `contract_month` (which live on `contracts`) can silently
-drop fills whose contract isn't in the master. Totals by `tag` / `sec_type` are
+drop fills whose contract isn't in the master. Totals by `trade_group` / `sec_type` are
 complete because they never touch `contracts`; that's why `sec_type` is exposed
 directly on `v_execution_facts` and `v_position_facts`.
 
@@ -160,8 +160,8 @@ is a bound parameter — there is no string interpolation of values.
   (legs carry the PnL); money metrics over executions must exclude
   `exec_role = 'combo_summary'` (see `total_commissions`, `fill_count`). The
   `trade_group_executions` bridge is **1:1** (`UNIQUE(trade_execution_id)`), so
-  joining `tag` does not fan out additive measures — **if that uniqueness ever
-  relaxes, additive metrics sliced by `tag` start double-counting.** Guard it.
+  joining `trade_group` does not fan out additive measures — **if that uniqueness ever
+  relaxes, additive metrics sliced by `trade_group` start double-counting.** Guard it.
 - **Null/cast safety.** JSON extraction uses `NULLIF(raw ->> 'fifoPnlRealized','')::numeric`
   so one bad row can't fail the whole query.
 - **Read-only.** Execution always runs in a `READ ONLY` transaction with a
@@ -190,7 +190,7 @@ higher-grain fact when a metric genuinely can't be expressed below it (like
 `win_rate`).
 
 **Add a relationship:** `from: {dataset, columns}` → `to: {dataset, columns}`,
-directed fact → dimension. Multi-hop is fine (the `tag` path is
+directed fact → dimension. Multi-hop is fine (the `trade_group` path is
 execution → bridge → group); BFS handles it.
 
 After any change, run the resolver against the model (see §7) to confirm the SQL
@@ -270,14 +270,14 @@ The trade group detail view shows **realized** and **unrealized** PnL. These hav
 different homes:
 
 - **Realized by group** _is_ a pure SQL semantic metric: `realized_pnl` grouped or
-  filtered by `tag` (= trade group name). Use `query_metric` for cross-group
+  filtered by `trade_group` (= trade group name). Use `query_metric` for cross-group
   analytics ("realized PnL by strategy this quarter").
 - **Settled unrealized** _is_ now a SQL metric: `settled_unrealized_pnl` on the
   `position_facts` grain (SUM of `positions.fifo_pnl_unrealized`), sliceable by
-  `tag` via the `v_position_trade_group` bridge. Filtered to one group it is the
+  `trade_group` via the `v_position_trade_group` bridge. Filtered to one group it is the
   settled unrealized of every position the group touched, in full. **Not
   additive across groups** — the bridge is many-to-many, so a shared position
-  counts in full in each group; query one `tag` at a time. This is **not** the
+  counts in full in each group; query one `trade_group` at a time. This is **not** the
   tool's rule: `trade_group_pnl` apportions a shared position (see _Attribution_
   below), so for a group that shares a position the two settled figures differ.
 - **Intraday/live unrealized and intraday total** remain **tool-only**. They're a
@@ -324,8 +324,8 @@ the overlay identically.
 - **No many-to-many fan-out handling.** On the execution grain this is safe
   because the `trade_group_executions` bridge is 1:1 (see §5). On the position
   grain the `v_position_trade_group` bridge is many-to-many across groups
-  (DISTINCT within one group), so `tag`-sliced position metrics are right for a
-  single `tag` but double-count shared positions when summed across tags (see §9).
+  (DISTINCT within one group), so `trade_group`-sliced position metrics are right for a
+  single `trade_group` but double-count shared positions when summed across groups (see §9).
 - **Ordering** is fixed to `metric DESC`.
 
 These are documented, not hidden. Lift them deliberately, preserving §5.

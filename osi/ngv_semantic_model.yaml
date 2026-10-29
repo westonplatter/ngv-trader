@@ -173,9 +173,9 @@ semantic_model:
           Bridge — maps each open position (account_id, con_id) to every trade
           group whose executions touched it. DISTINCT per (group, account, con_id)
           so it does not fan out a position within one group. Many-to-many across
-          groups: settled-unrealized summed with NO tag filter double-counts
+          groups: settled-unrealized summed with NO trade_group filter double-counts
           positions shared by multiple groups (same attribution as the
-          trade_group_pnl tool) — slice/filter by one `tag` at a time.
+          trade_group_pnl tool) — slice/filter by one `trade_group` at a time.
 
       # ---- Conformed dimensions -------------------------------------------
       - name: accounts
@@ -243,12 +243,14 @@ semantic_model:
       - name: trade_groups
         source: trade_groups
         primary_key: [id]
-        description: Trade groups / tags / strategies.
+        description: Trade groups.
         fields:
-          - name: tag
-            description: Trade group name (strategy / tag).
+          - name: trade_group
+            description: >
+              Trade group name. Not the free-form tags (long-beta, risk-off) —
+              those are not in the semantic model; use the find_by_tags tool.
             dimension: { is_time: false }
-            ai_context: { synonyms: ["strategy", "trade group", "group"] }
+            ai_context: { synonyms: ["trade group", "group", "campaign"] }
             expression:
               dialects: [{ dialect: ANSI_SQL, expression: trade_groups.name }]
 
@@ -321,7 +323,7 @@ semantic_model:
       # ---- Cash flow / premium (execution grain) --------------------------
       # `proceeds` is IBKR's signed gross cash: SELL positive (cash in / premium
       # collected), BUY negative (cash out / premium paid). Combo-safe (NULL on
-      # combo_summary). These live on the fact so they're correct sliced by `tag`
+      # combo_summary). These live on the fact so they're correct sliced by `trade_group`
       # WITHOUT the contracts join (contracts is incomplete for many option
       # con_ids); split stock vs options with the execution-grain `sec_type`.
       - name: gross_premium
@@ -416,7 +418,7 @@ semantic_model:
         fact: position_facts
         description: >
           Settled (end-of-day snapshot) unrealized PnL across open positions
-          (USD). Sliced/filtered by `tag` it is the per-trade-group figure from
+          (USD). Sliced/filtered by `trade_group` it is the per-trade-group figure from
           the detail view — NOT additive across groups (a shared position counts
           in each), so query one group at a time. This is the settled figure; the
           intraday/live unrealized is only in the `trade_group_pnl` tool.
