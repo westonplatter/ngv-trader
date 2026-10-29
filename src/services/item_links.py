@@ -38,6 +38,7 @@ from src.models import (
     TradeExecution,
     TradeGroup,
 )
+from src.services.intraday_overlay import ct_date
 
 # Typed key columns per entity type. A live fill also carries account_id/con_id.
 ENTITY_KEYS: dict[str, tuple[str, ...]] = {
@@ -309,7 +310,8 @@ def end_flat_position_tags(session: Session, now: datetime | None = None) -> int
         if link.account_id is None or (link.account_id, link.con_id) in held:
             continue
         snapshot = snapshot_dates.get(link.account_id) or latest_any
-        if snapshot is None or snapshot < link.assigned_at.date():
+        # as_of_date is a CT trading date; compare like with like.
+        if snapshot is None or snapshot < ct_date(link.assigned_at):
             continue
         link.ended_at = now
         ended += 1

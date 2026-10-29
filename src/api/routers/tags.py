@@ -171,7 +171,7 @@ def get_or_create_tag(db: Session, value: str, created_by: str, color: str | Non
     return tag
 
 
-def _resolve_tags(db: Session, handles: list[int | str], created_by: str, create: bool) -> list[Tag]:
+def resolve_tags(db: Session, handles: list[int | str], created_by: str, create: bool) -> list[Tag]:
     tags: dict[int, Tag] = {}
     for handle in handles:
         if isinstance(handle, int):
@@ -209,10 +209,12 @@ def list_tags(
     if q:
         escaped = normalize_tag_value(q).replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
         stmt = stmt.where(Tag.normalized_value.like(f"%{escaped}%", escape="\\"))
-    tags = list(db.execute(stmt.order_by(Tag.normalized_value).limit(limit)).scalars())
-    responses = _responses(db, tags)
-    # Most-used first, so type-ahead suggests the tags actually in use.
-    return sorted(responses, key=lambda tag: -sum(tag.usage.values()))
+    # Most-used first, so type-ahead suggests the tags actually in use. Ordered in
+    # SQL so the limit keeps the most-used tags, not the first ones by name.
+    open_links = select(TagLink.tag_id, func.count().label("uses")).where(TagLink.ended_at.is_(None)).group_by(TagLink.tag_id).subquery()
+    stmt = stmt.outerjoin(open_links, open_links.c.tag_id == Tag.id).order_by(func.coalesce(open_links.c.uses, 0).desc(), Tag.normalized_value)
+    tags = list(db.execute(stmt.limit(limit)).scalars())
+    return _responses(db, tags)
 
 
 @router.post("/tags", response_model=TagResponse, status_code=201)
@@ -290,7 +292,7 @@ def attach_tags(body: TagLinksRequest, db: Session = DB_SESSION_DEPENDENCY):
     """Attach tags to items. A live fill fans out to every live fill of its order."""
     created_by = validate_created_by(body.created_by)
     items = resolve_items(db, body.items, TAG_ENTITY_TYPES)
-    tags = _resolve_tags(db, body.tags, created_by, create=True)
+    tags = resolve_tags(db, body.tags, created_by, create=True)
     changed = 0
     for tag in tags:
         for item in items:
@@ -304,7 +306,7 @@ def attach_tags(body: TagLinksRequest, db: Session = DB_SESSION_DEPENDENCY):
 def detach_tags(body: TagLinksRequest, db: Session = DB_SESSION_DEPENDENCY):
     """Remove tags from items by hand. A live fill fans out like attaching does."""
     items = resolve_items(db, body.items, TAG_ENTITY_TYPES)
-    tags = _resolve_tags(db, body.tags, body.created_by, create=False)
+    tags = resolve_tags(db, body.tags, body.created_by, create=False)
     changed = sum(detach_tag(db, tag.id, item) for tag in tags for item in items)
     db.commit()
     return TagLinksResponse(changed=changed, tags=_responses(db, tags))

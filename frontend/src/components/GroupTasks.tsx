@@ -11,7 +11,14 @@ import {
   tasksApi,
 } from "../lib/tags";
 
-export default function GroupTasks({ tradeGroupId }: { tradeGroupId: number }) {
+export default function GroupTasks({
+  tradeGroupId,
+  onChanged,
+}: {
+  tradeGroupId: number;
+  // Lets the page refresh what shows open-task counts (the group list).
+  onChanged?: () => void;
+}) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [title, setTitle] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -30,6 +37,7 @@ export default function GroupTasks({ tradeGroupId }: { tradeGroupId: number }) {
       setError(null);
       await action();
       load();
+      onChanged?.();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }

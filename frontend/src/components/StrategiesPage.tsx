@@ -1564,12 +1564,23 @@ export default function StrategiesPage() {
                           id: groupDetail.id,
                         }}
                         tags={groupDetail.tags ?? []}
-                        onChanged={() => void loadGroupDetail(groupDetail.id)}
+                        onChanged={() => {
+                          void loadGroupDetail(groupDetail.id);
+                          void loadGroups(selectedStrategy?.name ?? null);
+                        }}
                       />
                     </div>
                   </div>
 
-                  <GroupTasks tradeGroupId={groupDetail.id} />
+                  <GroupTasks
+                    // Remount per group so an in-flight load or a half-typed
+                    // task never lands on the next group selected.
+                    key={groupDetail.id}
+                    tradeGroupId={groupDetail.id}
+                    onChanged={() =>
+                      void loadGroups(selectedStrategy?.name ?? null)
+                    }
+                  />
 
                   {groupDetail.notes && (
                     <div>

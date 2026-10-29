@@ -14,7 +14,7 @@ from sqlalchemy import func, or_, select, tuple_
 from sqlalchemy.orm import Session
 
 from src.api.deps import get_db
-from src.api.routers.tags import ItemRefBody, TagChip, get_or_create_tag, resolve_items, validate_created_by
+from src.api.routers.tags import ItemRefBody, TagChip, resolve_items, resolve_tags, validate_created_by
 from src.models import LiveExecution, LivePosition, Position, Tag, TagLink, Task, TaskLink, Trade
 from src.services.item_links import (
     TASK_ENTITY_TYPES,
@@ -205,6 +205,8 @@ def create_task(body: TaskCreateRequest, db: Session = DB_SESSION_DEPENDENCY):
     if not title:
         raise HTTPException(status_code=400, detail="title cannot be empty")
     items = resolve_items(db, body.links, TASK_ENTITY_TYPES) if body.links else []
+    # Resolve tags before writing anything: an unknown id is a 404, not an FK error at commit.
+    tags = resolve_tags(db, body.tags, created_by, create=True) if body.tags else []
     now = now_utc()
     task = Task(title=title, notes=body.notes or None, status="todo", created_by=created_by, created_at=now, updated_at=now)
     _set_status(task, body.status)
@@ -212,9 +214,8 @@ def create_task(body: TaskCreateRequest, db: Session = DB_SESSION_DEPENDENCY):
     db.flush()
     for item in items:
         attach_task(db, task.id, item, created_by)
-    for handle in body.tags:
-        tag_id = handle if isinstance(handle, int) else get_or_create_tag(db, handle, created_by).id
-        attach_tag(db, tag_id, ItemRef("task", id=task.id), created_by)
+    for tag in tags:
+        attach_tag(db, tag.id, ItemRef("task", id=task.id), created_by)
     db.commit()
     return _responses(db, [task])[0]
 

@@ -103,6 +103,8 @@ function TagRow({
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState(tag.value);
   const [color, setColor] = useState(tag.color ?? "#9ca3af");
+  // An uncolored tag stays uncolored unless the picker was actually used.
+  const [colorTouched, setColorTouched] = useState(false);
   const [mergeInto, setMergeInto] = useState<number | "">("");
   const [error, setError] = useState<string | null>(null);
   const total = Object.values(tag.usage).reduce((a, b) => a + b, 0);
@@ -166,13 +168,23 @@ function TagRow({
             <input
               type="color"
               value={color}
-              onChange={(event) => setColor(event.target.value)}
+              onChange={(event) => {
+                setColor(event.target.value);
+                setColorTouched(true);
+              }}
               className="h-6 w-8"
               aria-label="Tag color"
             />
             <button
               type="button"
-              onClick={() => run(() => tagsApi.patch(tag.id, { value, color }))}
+              onClick={() =>
+                run(() =>
+                  tagsApi.patch(
+                    tag.id,
+                    colorTouched ? { value, color } : { value },
+                  ),
+                )
+              }
               className="rounded bg-gray-900 px-2 py-0.5 text-white"
             >
               Save
