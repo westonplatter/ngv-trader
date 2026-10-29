@@ -66,6 +66,8 @@ function routeGet(path: string, params: URLSearchParams): Json | undefined {
     });
   }
   if (path === "/trade-executions") return DEMO_TRADE_EXECUTIONS;
+  // Tags and tasks have no demo fixtures; /tags and /tasks fall through to [].
+  if (path === "/tags/search") return { items: [] };
 
   const execMatch = path.match(/^\/trade-groups\/(\d+)\/executions$/);
   if (execMatch) return demoGroupExecutions(Number(execMatch[1])) ?? undefined;

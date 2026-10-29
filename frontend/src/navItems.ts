@@ -21,6 +21,8 @@ export const NAV_ITEMS: readonly NavItem[] = [
   { label: "Trades", path: "/trades" },
   { label: "Strategies", path: "/strategies", end: true },
   { label: "Strategy P&L", path: "/strategies/table" },
+  { label: "Tags", path: "/tags" },
+  { label: "Tasks", path: "/tasks" },
   { label: "Watch Lists", path: "/watchlists" },
   { label: "Market Data", path: "/market-data" },
   { label: "Structures", path: "/structures" },

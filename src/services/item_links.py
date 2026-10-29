@@ -1,7 +1,7 @@
 """Free-form tags and task links: item references, live-order fan-out, and sync hooks.
 
 Tags (``tag_links``) and tasks (``task_links``) attach to items by typed keys, not
-by row id where row ids are unstable (docs/design/spec-tags-and-tasks.md):
+by row id where row ids are unstable (docs/design/tags-and-tasks.md):
 
 - ``trade`` / ``trade_group`` / ``task`` / ``strategy``: the row id.
 - ``position``: ``(account_id, con_id)``. Sync replaces ``positions`` rows.

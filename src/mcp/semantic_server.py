@@ -13,7 +13,7 @@ Database connection (use a read-only role — see docs/design/semantic-queries.m
     NGV_SEMANTIC_DATABASE_URL=postgresql://ngv_analyst:***@host:5432/ngtrader_prod
 If unset, falls back to the app's DB_* environment variables.
 
-The tag and task tools (docs/design/spec-tags-and-tasks.md) write, so they do not
+The tag and task tools (docs/design/tags-and-tasks.md) write, so they do not
 use that read-only connection: they call the app's local REST API, the same one
 the UI uses. Every write is recorded as ``agent:<NGV_AGENT_NAME>``.
     NGV_API_URL=http://localhost:8000/api/v1   (default)

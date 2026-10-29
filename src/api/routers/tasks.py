@@ -1,6 +1,6 @@
 """Tasks API router: simple to-dos linked to strategies, groups, positions, and trades.
 
-See docs/design/spec-tags-and-tasks.md. A task's links survive the item closing
+See docs/design/tags-and-tasks.md. A task's links survive the item closing
 (a flat position stays linked) and are dropped only when the item is deleted.
 """
 

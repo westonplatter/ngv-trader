@@ -1,6 +1,6 @@
 """add free-form tags and tasks
 
-Repurposes `tags` / `tag_links` for free-form tags (docs/design/spec-tags-and-tasks.md)
+Repurposes `tags` / `tag_links` for free-form tags (docs/design/tags-and-tasks.md)
 and adds `tasks` / `task_links`. The previous migration emptied both tag tables,
 so `tag_links` is dropped and recreated in its new shape rather than altered.
 

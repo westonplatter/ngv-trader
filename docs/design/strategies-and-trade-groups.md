@@ -20,7 +20,7 @@ The UI surface for all of this is the **Strategies** page at `/strategies`
 table at `/strategies/table`. Strategies live in their own `strategies` table and
 a group points at one through `trade_groups.strategy_id`. Strategies and trade
 groups never use the word "tag": that is reserved for the free-form tags in
-[spec-tags-and-tasks.md](spec-tags-and-tasks.md).
+[tags-and-tasks.md](tags-and-tasks.md).
 
 ## Purpose
 

@@ -3,7 +3,7 @@
 Strategies were stored as `tags` rows with `tag_type = 'strategy'`, and a trade
 group's strategy as its primary `tag_links` row. They become a first-class
 `strategies` table and a `trade_groups.strategy_id` FK, freeing `tags` /
-`tag_links` for free-form tags (docs/design/spec-tags-and-tasks.md).
+`tag_links` for free-form tags (docs/design/tags-and-tasks.md).
 
 Strategy ids are preserved, so existing deep links still resolve. Only the
 primary strategy link of each group is carried over — the UI never wrote any

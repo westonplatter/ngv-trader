@@ -1,6 +1,6 @@
 """Free-form tags API router: the tag catalog, attaching tags to items, and search by tag.
 
-See docs/design/spec-tags-and-tasks.md. Tags never group items and never feed
+See docs/design/tags-and-tasks.md. Tags never group items and never feed
 reporting; strategies and trade groups have their own routers.
 """
 
