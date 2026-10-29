@@ -85,6 +85,10 @@ All in `src/services/item_links.py`.
   from the T-1 report, including positions opened today, so a row's absence
   alone proves nothing. Ended tags are hidden in the UI and returned by search
   with `include_ended`. Re-tagging a reopened position opens a new link.
+  An account that goes fully flat is handled by the Flex position sync: when the
+  report has the account's statement with an empty `OpenPositions` section, it
+  clears the account's rows and ends its tags, dated by the statement's
+  `toDate`. A missing statement or section changes nothing.
 - **Task links never end.** A task linked to a closed position keeps the link;
   the UI shows the position as closed.
 
@@ -173,11 +177,6 @@ Not done yet; noted while building and testing this feature.
   them up. Candidate fix: rename the dimension to `trade_group` (touches the
   YAML, tool docstrings, the tradebot prompt, and the semantic docs). Left as is
   here on purpose.
-- **Flat accounts keep stale rows.** The Flex position sync returns early when
-  an account's report has no positions, so it never deletes that account's
-  `positions` rows; the intraday sync only replaces `live_positions` for
-  accounts that still hold something. Either way a fully flat account keeps its
-  position tags open. Pre-existing sync behavior; fix there, not in the tag code.
 - **Changing a group's strategy** is supported by `PATCH /trade-groups/{id}`
   (`strategy_id`) but the Strategies page has no control for it.
 - **Non-primary strategy links** were not migrated when strategies moved out of
