@@ -24,8 +24,7 @@ description: Spec for free-form tags on trades, positions, trade groups, and tas
 
 # Spec: Tags and Tasks
 
-> **Status: NOT IMPLEMENTED.** Product decisions are settled. One data question
-> remains; see the end.
+> **Status: NOT IMPLEMENTED.** Planning is closed; all decisions are settled.
 
 ## Goal
 
@@ -109,8 +108,9 @@ no UI, and the other three types were never surfaced. See
   `tag_type = 'strategy'`.
 - New `trade_groups.strategy_id` FK, backfilled from primary strategy
   `tag_links`. It replaces the `uq_tag_links_primary_strategy_trade_group` index.
-- Themes and the other three types become plain tags, or are dropped if they hold
-  no data (open question 1).
+- The `theme`, `risk_intent`, `hedge_type`, and `holding_horizon` types are
+  dropped, not migrated. They were never used; strategies and trade groups are
+  the only live data in these tables.
 - All of this is one reversible Alembic migration.
 
 ### Tags (repurposed `tags` / `tag_links`)
@@ -215,9 +215,3 @@ Thin wrappers over the endpoints, in the existing MCP server:
 Auto-tagging rules, reporting by tag (P&L, Greeks, aggregates), due dates,
 assignees, reminders, manual task ordering, and tag inheritance between orders or
 positions.
-
-## Open questions
-
-1. What data is in the old catalog? This decides which non-strategy kinds are
-   migrated into tags (any with data) and which are dropped (empty). Answered by
-   a read-only inventory of `tags` and `tag_links`.
