@@ -178,8 +178,6 @@ Not done yet; noted while building and testing this feature.
   `positions` rows; the intraday sync only replaces `live_positions` for
   accounts that still hold something. Either way a fully flat account keeps its
   position tags open. Pre-existing sync behavior; fix there, not in the tag code.
-- **Changing a group's strategy** is supported by `PATCH /trade-groups/{id}`
-  (`strategy_id`) but the Strategies page has no control for it.
 - **Non-primary strategy links** were not migrated when strategies moved out of
   the tag tables; the UI never wrote any.
 - **Tag search scales in Python.** `GET /tags/search` loads every open link and
