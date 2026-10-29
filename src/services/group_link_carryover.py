@@ -8,7 +8,9 @@ canonical ``TradeGroupExecution`` (keyed by the settled row's id) so grouping
 survives the live→settled handoff with no gap and no double-count.
 
 This module holds the single, source-agnostic implementation so both sync paths
-share identical behavior.
+share identical behavior. Each entry point also carries a live fill's free-form
+tags and task links onto its settled trade (``src/services/item_links.py``), so
+every settle path moves them without a second set of call sites.
 """
 
 from __future__ import annotations
@@ -17,6 +19,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from src.models import TradeExecution, TradeGroupExecution, TradeGroupLiveExecution
+from src.services.item_links import carry_over_item_links, carry_over_settled_item_links
 
 
 def carry_over_settled_group_links(session: Session, settled_ids: set[str] | None = None) -> int:
@@ -28,6 +31,7 @@ def carry_over_settled_group_links(session: Session, settled_ids: set[str] | Non
     robust default for the FlexQuery path, which doesn't otherwise track which
     fills settled this run. Returns the count of links carried over.
     """
+    carry_over_settled_item_links(session, settled_ids)
     stmt = select(TradeGroupLiveExecution)
     if settled_ids is not None:
         if not settled_ids:
@@ -62,6 +66,7 @@ def carry_over_link_to_execution(session: Session, live_ib_exec_id: str, trade_e
     Returns 1 if a new ``TradeGroupExecution`` was created, else 0. A no-op (0)
     when the live fill was never tagged.
     """
+    carry_over_item_links(session, live_ib_exec_id, [trade_execution_id])
     link = session.execute(select(TradeGroupLiveExecution).where(TradeGroupLiveExecution.ib_exec_id == live_ib_exec_id)).scalar_one_or_none()
     if link is None:
         return 0
@@ -79,6 +84,7 @@ def carry_over_link_to_executions(session: Session, live_ib_exec_id: str, trade_
     ``TradeGroupExecution`` rows inserted; a no-op (0) when the live fill was
     never tagged or no targets are supplied.
     """
+    carry_over_item_links(session, live_ib_exec_id, trade_execution_ids)
     link = session.execute(select(TradeGroupLiveExecution).where(TradeGroupLiveExecution.ib_exec_id == live_ib_exec_id)).scalar_one_or_none()
     if link is None:
         return 0

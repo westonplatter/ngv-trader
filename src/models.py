@@ -5,6 +5,7 @@ from datetime import date, datetime, timezone
 from sqlalchemy import (
     JSON,
     BigInteger,
+    CheckConstraint,
     Boolean,
     Date,
     DateTime,
@@ -12,7 +13,6 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
-    Numeric,
     String,
     Text,
     UniqueConstraint,
@@ -634,17 +634,35 @@ class Strategy(Base):
     archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
-class Tag(Base):
-    __tablename__ = "tags"
-    __table_args__ = (
-        UniqueConstraint("tag_type", "normalized_value", name="uq_tags_type_normalized_value"),
-        Index("ix_tags_type_normalized_value", "tag_type", "normalized_value"),
+# Typed-key shape shared by ``tag_links`` and ``task_links``: each entity type
+# fills exactly its own key columns. A position is (account_id, con_id), never a
+# ``positions.id`` (sync replaces those rows); a live fill is its ``ib_exec_id``.
+TAG_ENTITY_TYPES = ("trade", "live_execution", "position", "trade_group", "task")
+TASK_ENTITY_TYPES = ("strategy", "trade_group", "position", "trade", "live_execution")
+TASK_STATUSES = ("todo", "in_progress", "done")
+
+
+def _active_unique(table: str, entity_type: str, owner: str, *keys: str, where_extra: str = "") -> Index:
+    """Unique (owner, entity) among one entity type's rows, optionally only open ones."""
+    return Index(
+        f"uq_{table}_{entity_type}",
+        owner,
+        *keys,
+        unique=True,
+        postgresql_where=text(f"entity_type = '{entity_type}'{where_extra}"),
     )
 
+
+class Tag(Base):
+    """A free-form, reusable label applied to trades, positions, groups, and tasks."""
+
+    __tablename__ = "tags"
+    __table_args__ = (UniqueConstraint("normalized_value", name="uq_tags_normalized_value"),)
+
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    tag_type: Mapped[str] = mapped_column(Text, nullable=False)
     value: Mapped[str] = mapped_column(Text, nullable=False)
     normalized_value: Mapped[str] = mapped_column(Text, nullable=False)
+    color: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_by: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -655,27 +673,117 @@ class Tag(Base):
 
 
 class TagLink(Base):
+    """One tag on one item. ``ended_at`` soft-ends a position tag once it is flat."""
+
     __tablename__ = "tag_links"
     __table_args__ = (
-        UniqueConstraint("entity_type", "entity_id", "tag_id", name="uq_tag_links_entity_tag"),
-        Index("ix_tag_links_entity", "entity_type", "entity_id"),
-        Index("ix_tag_links_tag_entity", "tag_id", "entity_type"),
+        CheckConstraint(
+            "(entity_type = 'trade' AND trade_id IS NOT NULL AND trade_group_id IS NULL AND task_id IS NULL"
+            " AND ib_exec_id IS NULL AND account_id IS NULL AND con_id IS NULL)"
+            " OR (entity_type = 'trade_group' AND trade_group_id IS NOT NULL AND trade_id IS NULL AND task_id IS NULL"
+            " AND ib_exec_id IS NULL AND account_id IS NULL AND con_id IS NULL)"
+            " OR (entity_type = 'task' AND task_id IS NOT NULL AND trade_id IS NULL AND trade_group_id IS NULL"
+            " AND ib_exec_id IS NULL AND account_id IS NULL AND con_id IS NULL)"
+            " OR (entity_type = 'position' AND account_id IS NOT NULL AND con_id IS NOT NULL AND trade_id IS NULL"
+            " AND trade_group_id IS NULL AND task_id IS NULL AND ib_exec_id IS NULL)"
+            " OR (entity_type = 'live_execution' AND ib_exec_id IS NOT NULL AND account_id IS NOT NULL"
+            " AND trade_id IS NULL AND trade_group_id IS NULL AND task_id IS NULL)",
+            name="ck_tag_links_entity_key",
+        ),
+        _active_unique("tag_links", "trade", "tag_id", "trade_id", where_extra=" AND ended_at IS NULL"),
+        _active_unique("tag_links", "trade_group", "tag_id", "trade_group_id", where_extra=" AND ended_at IS NULL"),
+        _active_unique("tag_links", "task", "tag_id", "task_id", where_extra=" AND ended_at IS NULL"),
+        _active_unique("tag_links", "position", "tag_id", "account_id", "con_id", where_extra=" AND ended_at IS NULL"),
+        _active_unique("tag_links", "live_execution", "tag_id", "ib_exec_id", where_extra=" AND ended_at IS NULL"),
+        Index("ix_tag_links_tag_id", "tag_id"),
+        Index("ix_tag_links_account_con", "account_id", "con_id"),
+        Index("ix_tag_links_ib_exec_id", "ib_exec_id"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    entity_type: Mapped[str] = mapped_column(Text, nullable=False)
-    entity_id: Mapped[int] = mapped_column(Integer, nullable=False)
     tag_id: Mapped[int] = mapped_column(Integer, ForeignKey("tags.id", ondelete="CASCADE"), nullable=False)
-    tag_type: Mapped[str] = mapped_column(Text, nullable=False)
-    is_primary: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    source: Mapped[str] = mapped_column(Text, nullable=False)
+    entity_type: Mapped[str] = mapped_column(Text, nullable=False)
+    trade_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("trades.id", ondelete="CASCADE"), nullable=True, index=True)
+    trade_group_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("trade_groups.id", ondelete="CASCADE"), nullable=True, index=True)
+    task_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("tasks.id", ondelete="CASCADE"), nullable=True, index=True)
+    ib_exec_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Denormalized from live_executions for a live fill, like trade_group_live_executions.
+    account_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    con_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_by: Mapped[str] = mapped_column(Text, nullable=False)
-    confidence: Mapped[float | None] = mapped_column(Numeric(4, 3), nullable=True)
     assigned_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
         default=lambda: datetime.now(timezone.utc),
     )
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class Task(Base):
+    """A simple to-do: title, notes, and status."""
+
+    __tablename__ = "tasks"
+    __table_args__ = (
+        CheckConstraint("status IN ('todo', 'in_progress', 'done')", name="ck_tasks_status"),
+        Index("ix_tasks_status_created_at", "status", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(Text, nullable=False, default="todo")
+    created_by: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class TaskLink(Base):
+    """One item a task is about. Survives the item closing; dropped if it is deleted."""
+
+    __tablename__ = "task_links"
+    __table_args__ = (
+        CheckConstraint(
+            "(entity_type = 'strategy' AND strategy_id IS NOT NULL AND trade_group_id IS NULL AND trade_id IS NULL"
+            " AND ib_exec_id IS NULL AND account_id IS NULL AND con_id IS NULL)"
+            " OR (entity_type = 'trade_group' AND trade_group_id IS NOT NULL AND strategy_id IS NULL AND trade_id IS NULL"
+            " AND ib_exec_id IS NULL AND account_id IS NULL AND con_id IS NULL)"
+            " OR (entity_type = 'trade' AND trade_id IS NOT NULL AND strategy_id IS NULL AND trade_group_id IS NULL"
+            " AND ib_exec_id IS NULL AND account_id IS NULL AND con_id IS NULL)"
+            " OR (entity_type = 'position' AND account_id IS NOT NULL AND con_id IS NOT NULL AND strategy_id IS NULL"
+            " AND trade_group_id IS NULL AND trade_id IS NULL AND ib_exec_id IS NULL)"
+            " OR (entity_type = 'live_execution' AND ib_exec_id IS NOT NULL AND account_id IS NOT NULL"
+            " AND strategy_id IS NULL AND trade_group_id IS NULL AND trade_id IS NULL)",
+            name="ck_task_links_entity_key",
+        ),
+        _active_unique("task_links", "strategy", "task_id", "strategy_id"),
+        _active_unique("task_links", "trade_group", "task_id", "trade_group_id"),
+        _active_unique("task_links", "trade", "task_id", "trade_id"),
+        _active_unique("task_links", "position", "task_id", "account_id", "con_id"),
+        _active_unique("task_links", "live_execution", "task_id", "ib_exec_id"),
+        Index("ix_task_links_task_id", "task_id"),
+        Index("ix_task_links_account_con", "account_id", "con_id"),
+        Index("ix_task_links_ib_exec_id", "ib_exec_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    task_id: Mapped[int] = mapped_column(Integer, ForeignKey("tasks.id", ondelete="CASCADE"), nullable=False)
+    entity_type: Mapped[str] = mapped_column(Text, nullable=False)
+    strategy_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("strategies.id", ondelete="CASCADE"), nullable=True, index=True)
+    trade_group_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("trade_groups.id", ondelete="CASCADE"), nullable=True, index=True)
+    trade_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("trades.id", ondelete="CASCADE"), nullable=True, index=True)
+    ib_exec_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+    account_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    con_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_by: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

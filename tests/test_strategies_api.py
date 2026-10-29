@@ -85,7 +85,8 @@ def test_group_strategy_assignment_and_filters(client: TestClient) -> None:
 
     detail = client.get(f"{API}/trade-groups/{group['id']}").json()
     assert detail["primary_strategy_value"] == "Wheel"
-    assert "tags" not in detail
+    # Free-form tags are separate from the strategy.
+    assert detail["tags"] == []
 
     listed = client.get(f"{API}/trade-groups", params={"strategy": "wheel"}).json()
     assert [row["id"] for row in listed] == [group["id"]]
@@ -125,6 +126,5 @@ def test_report_groups_by_strategy(client: TestClient, db_session: Session) -> N
     assert client.get(f"{API}/reports/pnl/trade-groups", params={"group_by": "theme"}).status_code == 400
 
 
-def test_old_tag_routes_are_gone(client: TestClient) -> None:
+def test_theme_routes_are_gone(client: TestClient) -> None:
     assert client.get(f"{API}/themes").status_code == 404
-    assert client.post(f"{API}/tag-links", json={}).status_code in {404, 405}

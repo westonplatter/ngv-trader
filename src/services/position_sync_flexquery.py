@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session
 
 from src.models import LivePosition, Position, TradeExecution
 from src.services.intraday_overlay import superseded_cutoff
+from src.services.item_links import end_flat_position_tags
 from src.services.sync_common import (
     _safe_float,
     _safe_int,
@@ -269,16 +270,19 @@ def sync_flex_positions(
         # overlay goes too -- same transaction, so a reader never sees a
         # superseded overlay row alongside the snapshot that retired it.
         live_purged = _purge_superseded_live_positions(session, account_id, as_of)
+        # Tags on positions that are now flat in both settled and live data end here.
+        tags_ended = end_flat_position_tags(session)
 
         session.commit()
 
     logger.info(
-        "[flex_position_sync] account=%s as_of=%s rows=%d deleted=%d live_purged=%d",
+        "[flex_position_sync] account=%s as_of=%s rows=%d deleted=%d live_purged=%d tags_ended=%d",
         account_code,
         as_of.isoformat() if as_of else "unknown",
         len(aggregated),
         deleted,
         live_purged,
+        tags_ended,
     )
     return {
         "upserted_count": len(aggregated),

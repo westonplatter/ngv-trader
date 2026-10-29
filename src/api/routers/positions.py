@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from src.api.deps import get_db
+from src.api.routers.tags import TagChip
 from src.models import (
     Account,
     ContractRef,
@@ -22,6 +23,7 @@ from src.models import (
     TradeGroupLiveExecution,
 )
 from src.services.cl_contracts import infer_contract_month_from_local_symbol
+from src.services.item_links import open_task_counts, tags_by_item
 from src.services.intraday_overlay import (
     compute_unrealized,
     is_live_stale,
@@ -107,6 +109,9 @@ class PositionResponse(BaseModel):
     und_price: float | None = None
     intrinsic_value: float | None = None
     extrinsic_value: float | None = None
+    # Free-form tags on (account_id, con_id), and not-done tasks linked to it.
+    tags: list[TagChip] = Field(default_factory=list)
+    open_task_count: int = 0
 
 
 class PositionSyncRequest(BaseModel):
@@ -412,7 +417,7 @@ def list_positions(db: Session = DB_SESSION_DEPENDENCY):
                 avg_cost = live.avg_cost
                 source = "live"
         # Option metrics: split off the best available mark (live, else settled).
-        opt_fields = option_metric_fields(
+        opt_fields: dict[str, Any] = option_metric_fields(
             pos.sec_type,
             pos.right,
             pos.strike,
@@ -484,7 +489,7 @@ def list_positions(db: Session = DB_SESSION_DEPENDENCY):
             exchange=None,
             trading_class=None,
         )
-        opt_fields = option_metric_fields(live.sec_type, live.right, live.strike, mark, metrics.get(con_id))
+        opt_fields: dict[str, Any] = option_metric_fields(live.sec_type, live.right, live.strike, mark, metrics.get(con_id))
         results.append(
             PositionResponse(
                 id=-con_id,  # synthetic id for a live-only row (no Position PK yet)
@@ -533,6 +538,11 @@ def list_positions(db: Session = DB_SESSION_DEPENDENCY):
             )
         )
 
+    keys = [(row.account_id, row.con_id) for row in results]
+    tags, task_counts = tags_by_item(db, "position", keys), open_task_counts(db, "position", keys)
+    for row in results:
+        row.tags = [TagChip(**chip) for chip in tags.get((row.account_id, row.con_id), [])]
+        row.open_task_count = task_counts.get((row.account_id, row.con_id), 0)
     return results
 
 

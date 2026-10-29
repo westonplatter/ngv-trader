@@ -35,6 +35,7 @@ from src.services.group_link_carryover import (
     carry_over_link_to_execution,
     carry_over_settled_group_links,
 )
+from src.services.item_links import end_flat_position_tags, inherit_order_links
 from src.services.live_reconcile import reconcile_orphaned_live_executions
 from src.services.sync_common import get_or_create_accounts
 
@@ -581,7 +582,8 @@ def run_intraday_sync(engine: Engine, ib: IB) -> dict:
 
     The IB session is provided by the caller (worker pool), matching
     ``market_data.fetch_snapshot``. Returns counts
-    ``{contracts, positions, quotes, fills, purged, reconciled}``.
+    ``{contracts, positions, quotes, fills, purged, reconciled, links_inherited,
+    position_tags_ended}``.
     """
     now = _now_utc()
     window_start = fills_window_start(now)
@@ -627,6 +629,10 @@ def run_intraday_sync(engine: Engine, ib: IB) -> dict:
         # "unsettled" rows on each intraday sync. Idempotent and cheap.
         reconciled = reconcile_orphaned_live_executions(session)
         counts["reconciled"] = reconciled["leg_strip"] + reconciled["book_event"] + reconciled["bag_summary"]
+        # A partial fill that arrived after its order was tagged picks up the
+        # order's tags and tasks; then tags on now-flat positions end.
+        counts["links_inherited"] = inherit_order_links(session)
+        counts["position_tags_ended"] = end_flat_position_tags(session)
         session.commit()
 
     logger.info("Intraday sync complete: %s", counts)

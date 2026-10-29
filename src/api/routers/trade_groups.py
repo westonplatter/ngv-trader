@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from src.api.deps import get_db
 from src.api.routers.positions import _option_expiry_and_dte
 from src.api.routers.strategies import ensure_strategy, escape_like, normalize_strategy_name
+from src.api.routers.tags import TagChip
 from src.api.routers.trades import (
     _contract_display_from_raw,
     _execution_ib_codes,
@@ -21,7 +22,6 @@ from src.models import (
     ContractRef,
     LiveExecution,
     Strategy,
-    TagLink,
     Trade,
     TradeExecution,
     TradeGroup,
@@ -31,6 +31,7 @@ from src.models import (
     TradeGroupLiveExecution,
 )
 from src.services.cl_contracts import infer_contract_month_from_local_symbol
+from src.services.item_links import open_task_counts, tags_by_item
 from src.services.intraday_overlay import (
     dedupe_live_realized,
     intraday_unrealized_total,
@@ -124,6 +125,10 @@ class TradeGroupResponse(BaseModel):
     # Underlying roots the group's executions touched (e.g. ``["CL"]``). None when
     # not requested; ``[]`` for a group with no resolvable instruments.
     instruments: list[str] | None = None
+    # Free-form tags on the group (sticky notes, separate from its strategy) and
+    # its not-done task count. Filled by the list and detail endpoints.
+    tags: list[TagChip] = Field(default_factory=list)
+    open_task_count: int = 0
 
 
 class TradeGroupDetailResponse(TradeGroupResponse):
@@ -417,9 +422,19 @@ def list_trade_groups(  # noqa: PLR0913
     pnls = trade_group_batch_pnls(db, group_ids, include_intraday=include_intraday, account_id=account_id)
     instruments: dict[int, list[str]] = trade_group_instruments(db, group_ids, account_id) if (include_intraday or instrument) else {}
 
-    return [
+    rows_out = [
         _list_row(trade_group, strategy_val, pnls.get(trade_group.id), instruments.get(trade_group.id), include_intraday) for trade_group, strategy_val in rows
     ]
+    _annotate_groups(db, rows_out)
+    return rows_out
+
+
+def _annotate_groups(db: Session, rows: list[TradeGroupResponse]) -> None:
+    ids = [row.id for row in rows]
+    tags, task_counts = tags_by_item(db, "trade_group", ids), open_task_counts(db, "trade_group", ids)
+    for row in rows:
+        row.tags = [TagChip(**chip) for chip in tags.get(row.id, [])]
+        row.open_task_count = task_counts.get(row.id, 0)
 
 
 @router.post("/trade-groups", response_model=TradeGroupResponse, status_code=201)
@@ -467,11 +482,13 @@ def get_trade_group(trade_group_id: int, db: Session = DB_SESSION_DEPENDENCY):
 
     base = TradeGroupResponse.model_validate(trade_group).model_dump()
     base["primary_strategy_value"] = primary_strategy_value
-    return TradeGroupDetailResponse(
+    detail = TradeGroupDetailResponse(
         **base,
         execution_count=execution_count,
         meta=_parse_meta_or_400(trade_group.meta_yaml),
     )
+    _annotate_groups(db, [detail])
+    return detail
 
 
 def _apply_strategy_patch(db: Session, trade_group: TradeGroup, body: TradeGroupPatchRequest) -> None:
@@ -546,7 +563,6 @@ def delete_trade_group(
         )
         db.delete(assignment)
 
-    db.query(TagLink).filter(TagLink.entity_type == "trade_groups", TagLink.entity_id == trade_group_id).delete()
     db.query(TradeGroupLink).filter(
         or_(
             TradeGroupLink.parent_trade_group_id == trade_group_id,
