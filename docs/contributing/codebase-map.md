@@ -33,10 +33,10 @@ For domain vocabulary, see [CONCEPTS.md](../../CONCEPTS.md).
 
 ## Components
 
-- `src/models.py`: SQLAlchemy `Base` plus all entities (single source for table structure). Beyond `Position`: `ContractRef`, `ActivatedProduct`, `Account`, `Order`/`OrderEvent`, `Job`, `Trade`/`TradeExecution`, `FlexSyncLog`, `TradeGroup*`/`Strategy`, `Tag*` (free-form tags; empty until the tags feature ships), `WatchList*`, market-data `LatestFutures*`/`TsFutures*`, `OptionChainMeta`, `SavedStructure`, `UserPreference`, `WorkerHeartbeat`, intraday overlay `LivePosition`/`LatestQuote`/`LiveExecution`/`LatestOptionMetrics`.
+- `src/models.py`: SQLAlchemy `Base` plus all entities (single source for table structure). Beyond `Position`: `ContractRef`, `ActivatedProduct`, `Account`, `Order`/`OrderEvent`, `Job`, `Trade`/`TradeExecution`, `FlexSyncLog`, `TradeGroup*`/`Strategy`, `Tag*`/`Task*` (free-form tags and tasks), `WatchList*`, market-data `LatestFutures*`/`TsFutures*`, `OptionChainMeta`, `SavedStructure`, `UserPreference`, `WorkerHeartbeat`, intraday overlay `LivePosition`/`LatestQuote`/`LiveExecution`/`LatestOptionMetrics`.
 - `src/schemas.py`: Pandera DataFrame schema for positions validation shape.
 - `src/api/deps.py`: FastAPI DB session dependency (`get_db`).
-- `src/api/routers/*.py`: REST surface — `positions`, `orders`, `trades`, `futures` (market data), `activated_products`, `jobs`, `workers`, `events` (SSE), `tradebot` (chat), `watch_lists`, `strategies`, `trade_groups`, `accounts`, `structures`, `reports`, `admin`, `user_preferences`, `flexquery_tokens`.
+- `src/api/routers/*.py`: REST surface — `positions`, `orders`, `trades`, `futures` (market data), `activated_products`, `jobs`, `workers`, `events` (SSE), `tradebot` (chat), `watch_lists`, `strategies`, `tags`, `tasks`, `trade_groups`, `accounts`, `structures`, `reports`, `admin`, `user_preferences`, `flexquery_tokens`.
 - `frontend/src/components/*.tsx`: React UI (positions, orders, trades, strategies, pricing, tradebot chat) consuming `/api/v1/*`.
 
 ## Services

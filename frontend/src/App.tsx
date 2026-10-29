@@ -15,6 +15,8 @@ import PositionsTable from "./components/PositionsTable";
 import StrategyPnlTable from "./components/StrategyPnlTable";
 import TradebotChat from "./components/TradebotChat";
 import StrategiesPage from "./components/StrategiesPage";
+import TagsPage from "./components/TagsPage";
+import TasksPage from "./components/TasksPage";
 import TradesTable from "./components/TradesTable";
 import WatchListsPage from "./components/WatchListsPage";
 import WorkerStatusLights from "./components/WorkerStatusLights";
@@ -115,6 +117,8 @@ function App() {
           <Route path="/trades" element={<TradesTable />} />
           <Route path="/strategies" element={<StrategiesPage />} />
           <Route path="/strategies/table" element={<StrategyPnlTable />} />
+          <Route path="/tags" element={<TagsPage />} />
+          <Route path="/tasks" element={<TasksPage />} />
           <Route path="/watchlists" element={<WatchListsPage />} />
           <Route path="/market-data" element={<MarketDataPage />} />
           <Route path="/structures" element={<PricingPage />} />

@@ -8,6 +8,9 @@ import { useResizableColumn } from "../hooks/useResizableColumn";
 import { ibCodesTitle, parseIbCodes } from "../lib/ibCodes";
 import { formatMarkTime } from "../lib/markTime";
 import { linkify } from "../utils/linkify";
+import GroupTasks from "./GroupTasks";
+import TagChips, { TagChipView } from "./TagChips";
+import type { TagChip } from "../lib/tags";
 import { formatGreek, formatMoney, formatPercent } from "../utils/number";
 import { PRIVACY_MASK, formatRelativeReturn } from "../utils/privacy";
 
@@ -16,6 +19,8 @@ import { PRIVACY_MASK, formatRelativeReturn } from "../utils/privacy";
 // needs. One source for the P&L shape, so this page and the Strategy P&L table
 // cannot describe the same payload differently.
 export type TradeGroup = TradeGroupPnlRow & {
+  tags?: TagChip[];
+  open_task_count?: number;
   notes: string | null;
   meta_yaml: string | null;
   status: "open" | "closed" | "archived";
@@ -1381,6 +1386,14 @@ export default function StrategiesPage() {
                               <div className="flex items-center justify-between gap-3">
                                 <p className="text-sm font-medium text-gray-900">
                                   {group.name}
+                                  {(group.open_task_count ?? 0) > 0 && (
+                                    <span
+                                      className="ml-1.5 rounded bg-sky-100 px-1 text-[10px] font-medium text-sky-800"
+                                      title="Open tasks"
+                                    >
+                                      ☐ {group.open_task_count}
+                                    </span>
+                                  )}
                                 </p>
                                 <span
                                   className={`rounded px-2 py-0.5 text-[11px] font-semibold uppercase ${statusClassName(group.status)}`}
@@ -1388,6 +1401,13 @@ export default function StrategiesPage() {
                                   {group.status}
                                 </span>
                               </div>
+                              {(group.tags ?? []).length > 0 && (
+                                <div className="mt-1 flex flex-wrap gap-1">
+                                  {(group.tags ?? []).map((chip) => (
+                                    <TagChipView key={chip.id} chip={chip} />
+                                  ))}
+                                </div>
+                              )}
                               <div className="mt-1 flex items-baseline justify-between gap-3">
                                 <p className="text-xs text-gray-500">
                                   #{group.id} · Opened{" "}
@@ -1534,6 +1554,33 @@ export default function StrategiesPage() {
                       </p>
                     </div>
                   </div>
+
+                  <div>
+                    <span className="text-xs text-gray-500">Tags</span>
+                    <div className="mt-0.5">
+                      <TagChips
+                        item={{
+                          entity_type: "trade_group",
+                          id: groupDetail.id,
+                        }}
+                        tags={groupDetail.tags ?? []}
+                        onChanged={() => {
+                          void loadGroupDetail(groupDetail.id);
+                          void loadGroups(selectedStrategy?.name ?? null);
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  <GroupTasks
+                    // Remount per group so an in-flight load or a half-typed
+                    // task never lands on the next group selected.
+                    key={groupDetail.id}
+                    tradeGroupId={groupDetail.id}
+                    onChanged={() =>
+                      void loadGroups(selectedStrategy?.name ?? null)
+                    }
+                  />
 
                   {groupDetail.notes && (
                     <div>

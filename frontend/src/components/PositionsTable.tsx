@@ -15,6 +15,9 @@ import {
   formatStrike,
 } from "../utils/number";
 import TradeGroupSearchSelect from "./TradeGroupSearchSelect";
+import TagChips from "./TagChips";
+import TaskQuickAdd from "./TaskQuickAdd";
+import { type ItemRef, type TagChip } from "../lib/tags";
 
 export interface TradeGroupRef {
   id: number;
@@ -67,6 +70,9 @@ export interface Position {
   und_price: number | null;
   intrinsic_value: number | null;
   extrinsic_value: number | null;
+  // Free-form tags on (account, contract) and its not-done task count.
+  tags?: TagChip[];
+  open_task_count?: number;
 }
 
 type SortDirection = "none" | "desc" | "asc";
@@ -102,10 +108,20 @@ function positionCostBasis(pos: Position): number | null {
   return pos.position_value - pos.fifo_pnl_unrealized;
 }
 
+function positionItem(pos: Position): ItemRef {
+  return {
+    entity_type: "position",
+    account_id: pos.account_id,
+    con_id: pos.con_id,
+  };
+}
+
 const COLUMNS: { key: keyof Position; label: string }[] = [
   { key: "con_id", label: "Con ID" },
   { key: "account_alias", label: "Account" },
   { key: "trade_groups", label: "Trade Group" },
+  { key: "tags", label: "Tags" },
+  { key: "open_task_count", label: "Tasks" },
   { key: "symbol", label: "Symbol" },
   { key: "sec_type", label: "Sec Type" },
   { key: "contract_display_name", label: "Contract" },
@@ -978,6 +994,23 @@ export default function PositionsTable() {
                           )}
                         />
                       </span>
+                    );
+                  } else if (col.key === "tags") {
+                    content = (
+                      <TagChips
+                        item={positionItem(pos)}
+                        tags={pos.tags ?? []}
+                        onChanged={loadPositions}
+                      />
+                    );
+                  } else if (col.key === "open_task_count") {
+                    content = (
+                      <TaskQuickAdd
+                        item={positionItem(pos)}
+                        openCount={pos.open_task_count ?? 0}
+                        onCreated={loadPositions}
+                        tasksHref={`/tasks?symbol=${encodeURIComponent(pos.symbol ?? "")}`}
+                      />
                     );
                   } else if (col.key === "position" && privacyMode) {
                     content = PRIVACY_MASK;

@@ -8,6 +8,9 @@ import { useSSE } from "../lib/events";
 import { formatMoney } from "../utils/number";
 import TradeGroupSearchSelect from "./TradeGroupSearchSelect";
 import { type TradeGroupResult, tradeGroupLabel } from "../lib/tradeGroups";
+import TagChips, { TagInput } from "./TagChips";
+import TaskQuickAdd from "./TaskQuickAdd";
+import { type ItemRef, type TagChip, tagsApi, tradeRowItem } from "../lib/tags";
 
 export interface TradeExecutionRow {
   id: number;
@@ -44,6 +47,10 @@ export interface TradeExecutionRow {
   // Unsettled TWS overlay: false for live fills not yet settled.
   settled?: boolean;
   live_trade_group_id?: number | null;
+  // Free-form tags on the order (the trade once settled, else this live fill)
+  // and its not-done task count.
+  tags?: TagChip[];
+  open_task_count?: number;
 }
 
 const JOB_POLL_INTERVAL_MS = 2000;
@@ -771,6 +778,54 @@ export default function TradesTable() {
     }
   };
 
+  // Bulk tagging: one checkbox per order (the row that owns its group cell).
+  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
+  const [bulkMessage, setBulkMessage] = useState<string | null>(null);
+  const itemByGroupKey = useMemo(() => {
+    const map = new Map<string, ItemRef>();
+    for (const row of filteredRows) {
+      const key = rowGroupKey(row);
+      if (tradeGroupRowIdByGroupKey.get(key) !== row.id) continue;
+      const item = tradeRowItem(row);
+      if (item) map.set(key, item);
+    }
+    return map;
+  }, [filteredRows, tradeGroupRowIdByGroupKey]);
+  const selectableKeys = useMemo(
+    () => Array.from(itemByGroupKey.keys()),
+    [itemByGroupKey],
+  );
+  const toggleSelected = (key: string) =>
+    setSelectedKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  const refreshQuietly = useCallback(() => {
+    loadExecutions().catch((err: unknown) =>
+      setError(err instanceof Error ? err.message : String(err)),
+    );
+  }, [loadExecutions]);
+  const bulkTag = async (mode: "add" | "remove", value: string) => {
+    const items = Array.from(selectedKeys)
+      .map((key) => itemByGroupKey.get(key))
+      .filter((item): item is ItemRef => item !== undefined);
+    if (items.length === 0) return;
+    try {
+      const result =
+        mode === "add"
+          ? await tagsApi.attach([value], items)
+          : await tagsApi.detach([value], items);
+      setBulkMessage(
+        `${mode === "add" ? "Tagged" : "Untagged"} ${result.changed} item${result.changed === 1 ? "" : "s"}.`,
+      );
+      refreshQuietly();
+    } catch (err) {
+      setBulkMessage(err instanceof Error ? err.message : String(err));
+    }
+  };
+
   const handleTradeAssigned = useCallback(() => {
     void loadExecutions().catch(() => {});
     void loadTradeGroups().catch(() => {});
@@ -1052,6 +1107,39 @@ export default function TradesTable() {
           </button>
         </p>
       )}
+      {selectedKeys.size > 0 && (
+        <div className="flex flex-wrap items-center gap-3 rounded border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-900">
+          <span className="font-semibold">
+            {selectedKeys.size} order{selectedKeys.size === 1 ? "" : "s"}{" "}
+            selected
+          </span>
+          <span className="inline-flex items-center gap-1">
+            Add tag
+            <TagInput
+              autoFocus={false}
+              placeholder="Add tag…"
+              onPick={(value) => void bulkTag("add", value)}
+            />
+          </span>
+          <span className="inline-flex items-center gap-1">
+            Remove tag
+            <TagInput
+              autoFocus={false}
+              placeholder="Remove tag…"
+              onPick={(value) => void bulkTag("remove", value)}
+            />
+          </span>
+          <button
+            type="button"
+            onClick={() => setSelectedKeys(new Set())}
+            className="text-blue-700 underline"
+          >
+            Clear
+          </button>
+          {bulkMessage && <span>{bulkMessage}</span>}
+        </div>
+      )}
+
       {loading && <p className="text-gray-500">Loading executions...</p>}
       {error && <p className="text-red-600">Error: {error}</p>}
 
@@ -1059,6 +1147,23 @@ export default function TradesTable() {
         <table className="min-w-full border-collapse text-sm">
           <thead>
             <tr className="bg-gray-100 text-left">
+              <th className="w-6 px-2 py-2">
+                <input
+                  type="checkbox"
+                  aria-label="Select all visible orders"
+                  checked={
+                    selectableKeys.length > 0 &&
+                    selectableKeys.every((key) => selectedKeys.has(key))
+                  }
+                  onChange={(event) =>
+                    setSelectedKeys(
+                      event.target.checked
+                        ? new Set(selectableKeys)
+                        : new Set(),
+                    )
+                  }
+                />
+              </th>
               <th className="whitespace-nowrap px-3 py-2 font-semibold text-gray-700">
                 Account
               </th>
@@ -1106,6 +1211,12 @@ export default function TradesTable() {
               <th className="w-48 min-w-[12rem] whitespace-nowrap px-3 py-2 font-semibold text-gray-700">
                 Trade Group
               </th>
+              <th className="min-w-[10rem] whitespace-nowrap px-3 py-2 font-semibold text-gray-700">
+                Tags
+              </th>
+              <th className="whitespace-nowrap px-3 py-2 font-semibold text-gray-700">
+                Tasks
+              </th>
               <th className="whitespace-nowrap px-3 py-2 font-semibold text-gray-700">
                 Parent Exec ID
               </th>
@@ -1128,7 +1239,7 @@ export default function TradesTable() {
             {!loading && filteredRows.length === 0 && (
               <tr>
                 <td
-                  colSpan={16}
+                  colSpan={19}
                   className="px-3 py-6 text-center text-gray-500"
                 >
                   No executions found.
@@ -1152,6 +1263,16 @@ export default function TradesTable() {
                     isHighlighted ? "bg-yellow-50" : "hover:bg-gray-50"
                   }`}
                 >
+                  <td className="px-2 py-2">
+                    {ownsGroupCell && tradeRowItem(row) && (
+                      <input
+                        type="checkbox"
+                        aria-label="Select order"
+                        checked={selectedKeys.has(groupKey)}
+                        onChange={() => toggleSelected(groupKey)}
+                      />
+                    )}
+                  </td>
                   <td className="whitespace-nowrap px-3 py-2 text-gray-800">
                     {row.account_alias ?? `Account ${row.account_id}`}
                   </td>
@@ -1259,6 +1380,24 @@ export default function TradesTable() {
                         onAssigned={handleTradeAssigned}
                         unsettled={row.settled === false}
                         ibExecId={row.ib_exec_id}
+                      />
+                    ) : null}
+                  </td>
+                  <td className="px-3 py-2">
+                    {ownsGroupCell ? (
+                      <TagChips
+                        item={tradeRowItem(row)}
+                        tags={row.tags ?? []}
+                        onChanged={refreshQuietly}
+                      />
+                    ) : null}
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-2">
+                    {ownsGroupCell ? (
+                      <TaskQuickAdd
+                        item={tradeRowItem(row)}
+                        openCount={row.open_task_count ?? 0}
+                        onCreated={refreshQuietly}
                       />
                     ) : null}
                   </td>

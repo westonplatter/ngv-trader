@@ -72,6 +72,16 @@ Membership is defined at the Execution level, not the instrument level, so a sin
 
 Because membership is per-Execution, an instrument closed out under one Trade Group and later re-entered under another accumulates Executions across several groups over its life. The Trade Groups that belong to a Position are therefore those of its Open Lots, not every group its Executions have ever belonged to.
 
+### Tag
+
+A free-form label — a sticky note — on a Trade, a Position, a Trade Group, or a Task. Unlike a Trade Group, a Tag groups nothing and carries no economics: an item can carry many Tags, a Tag spans many items, and no reporting is built on them.
+
+A Tag on an Unsettled Fill rides the Settle Handoff onto its Trade, like a Trade Group assignment. A Tag on a Position ends when the instrument is no longer held on either tier, so it describes the current holding rather than the instrument forever.
+
+### Task
+
+A to-do linked to the things it is about — Strategies, Trade Groups, Positions, Trades. Its links outlive the holding: a Task about a Position that has since closed still points at it.
+
 ### Position
 
 A current holding in one instrument for one account — the net of its Executions. Distinct from a Trade Group in that it is derived from the instrument, not from intent.
