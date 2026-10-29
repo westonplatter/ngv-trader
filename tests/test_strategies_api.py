@@ -128,3 +128,14 @@ def test_report_groups_by_strategy(client: TestClient, db_session: Session) -> N
 
 def test_theme_routes_are_gone(client: TestClient) -> None:
     assert client.get(f"{API}/themes").status_code == 404
+
+
+def test_renamed_fields_are_rejected_not_ignored(client: TestClient) -> None:
+    """An old client must get an error, not an unassigned group or an unfiltered list."""
+    response = client.post(f"{API}/trade-groups", json={"name": "x", "strategy_tag_id": 1})
+    assert response.status_code == 422
+    assert "strategy_id" in response.text
+    assert client.get(f"{API}/trade-groups", params={"strategy_tag": "wheel"}).status_code == 400
+    assert client.get(f"{API}/trade-groups", params={"theme_tag": "oil"}).status_code == 400
+    # Fields that were dropped without a rename stay harmless.
+    assert client.post(f"{API}/trade-groups", json={"name": "y", "source": "manual"}).status_code == 201
