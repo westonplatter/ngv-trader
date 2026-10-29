@@ -24,8 +24,8 @@ description: Spec for free-form tags on trades, positions, trade groups, and tas
 
 # Spec: Tags and Tasks
 
-> **Status: NOT IMPLEMENTED.** Product decisions are settled. One data question and
-> one verification remain; see the end.
+> **Status: NOT IMPLEMENTED.** Product decisions are settled. One data question
+> remains; see the end.
 
 ## Goal
 
@@ -64,8 +64,14 @@ no UI, and the other three types were never surfaced. See
 
 1. **A trade is the order** (`trades`), not the execution. Tagging an order
    covers all its fills.
-2. **Live orders can be tagged** before settlement. The tag carries over when
-   FlexQuery imports the order, using the same pattern as trade-group links.
+2. **Live orders can be tagged** before settlement. Order ids do not match
+   across sources: TWS keys orders by `permId`, which FlexQuery lacks, and
+   FlexQuery groups combos by `brokerageOrderID` with a synthesized summary id.
+   See [trades-and-executions-sync.md](trades-and-executions-sync.md) and
+   [intraday-tws-overlay.md](intraday-tws-overlay.md). So a live order's tags
+   are stored **per fill**, keyed by `ib_exec_id`, the same way trade-group
+   assignment of unsettled fills works. Tagging a live order fans out to all of
+   its live fills, and a combo is tagged as one unit.
 3. **A position is account + contract** (`account_id`, `con_id`), never a
    `positions.id`, because sync replaces rows.
 4. **Position tags end when the contract is flat** in both settled
@@ -87,7 +93,8 @@ no UI, and the other three types were never surfaced. See
     Ended position tags are hidden in the UI and readable through the API.
 13. **Task defaults.** Fields are title, notes, and status only. Tasks are
     ordered by created date. Done tasks are hidden behind a toggle and never
-    auto-deleted. Tasks can link to live orders, carried over at settlement.
+    auto-deleted. Tasks can link to live orders (per fill), carried over at
+    settlement.
 14. **Agent access** uses the same trusted local API as the UI, with no separate
     credentials. Agent-applied tags and tasks show a marker in the UI.
 15. **Hard break on renamed API routes.** No redirects for the old strategy
@@ -114,11 +121,13 @@ no UI, and the other three types were never surfaced. See
 - `tag_links`: `tag_id`, `entity_type`, `entity_key`, `created_by`,
   `assigned_at`, `ended_at`. The `is_primary`, `tag_type`, and `confidence`
   columns go away.
-- `entity_type` values: `trade`, `live_order`, `position`, `trade_group`, `task`.
+- `entity_type` values: `trade`, `live_execution`, `position`, `trade_group`,
+  `task`.
 - `entity_key` identifies the item:
   - `trade`, `trade_group`, and `task`: the row id
   - `position`: `account_id` + `con_id`
-  - `live_order`: `account_id` + broker order id
+  - `live_execution`: `ib_exec_id`, with `account_id` and `con_id`
+    denormalized, like `trade_group_live_executions`
   - Typed nullable columns with a per-type check constraint, not a string key.
 - Unique on (`tag_id`, entity) among rows where `ended_at` is null.
 
@@ -127,15 +136,26 @@ no UI, and the other three types were never surfaced. See
 - `tasks`: `id`, `title`, `notes`, `status` (`todo` | `in_progress` | `done`),
   `created_by`, `created_at`, `updated_at`, `completed_at`.
 - `task_links`: `task_id`, `entity_type` (`strategy`, `trade_group`, `position`,
-  `trade`, `live_order`), typed key columns as above, `created_by`, `created_at`.
+  `trade`, `live_execution`), typed key columns as above, `created_by`, `created_at`.
 - Deleting a trade group or strategy drops its links, never the task.
 - Deleting a trade group or task drops its tag links.
 
 ## Sync hooks
 
-- **Live order → settled trade.** After the FlexQuery trade sync, move
-  `live_order` tag and task links onto the matching `trades` row and drop the
-  live link. This mirrors `src/services/group_link_carryover.py`.
+- **Live fill → settled trade.** Resolve each tagged live fill to its settled
+  `trade_executions` row, then put the link on that row's parent `trades` row
+  and drop the live link. One trade collects the tags of all its fills, deduped
+  by the unique index.
+  - Resolution reuses the trade-group paths in
+    `src/services/group_link_carryover.py`: exact `ib_exec_id` match, plus the
+    divergent cases resolved by `src/services/live_reconcile.py` (`leg_strip`,
+    `book_event`, and `bag_summary` fanning out onto the settled legs).
+  - The carry-over runs wherever the group carry-over runs: the intraday purge,
+    the end of the FlexQuery trade sync, and orphan reconciliation.
+- **Late partial fills.** A partial fill that arrives after the order was
+  tagged inherits the tags of live fills sharing its order key (`ib_perm_id`,
+  else `ib_order_id`). This applies within a single TWS order only; it is not
+  tag inheritance between orders.
 - **Position flat → end tags.** After the FlexQuery position sync and the
   intraday sync, set `ended_at` on `position` tag links whose contract is absent
   from both `positions` and `live_positions`. Never key this off a row delete:
@@ -201,6 +221,3 @@ positions.
 1. What data is in the old catalog? This decides which non-strategy kinds are
    migrated into tags (any with data) and which are dropped (empty). Answered by
    a read-only inventory of `tags` and `tag_links`.
-2. Does a live fill's order id match FlexQuery's `ibOrderID` for the same order,
-   including combos? This decides the live-order key. Verify before building the
-   carry-over.
