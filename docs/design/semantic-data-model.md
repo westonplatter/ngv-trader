@@ -70,7 +70,7 @@ per metric; an invalid pick errors with the valid options).
 | Dimension                    | On grain(s)                                    | Notes                                                                                                                                                           |
 | ---------------------------- | ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `account`                    | all                                            | Human alias from `accounts.alias` — never the raw account number.                                                                                               |
-| `trade_group`                | execution, position                            | **Trade group / strategy name.** The key slice for a strategy review.                                                                                           |
+| `tag`                        | execution, position                            | **Trade group / strategy name.** The key slice for a strategy review.                                                                                           |
 | `sec_type`                   | execution, position, trade                     | STK / FUT / OPT / FOP. On execution & position grains it comes straight off the fill/position, so it's **always populated** — use it to split stock vs options. |
 | `symbol`                     | all                                            | Underlying ticker. Native (complete) on `trade_facts`/`position_facts`; on `execution_facts` it comes via the `contracts` join — see the caveat below.          |
 | `expiration`                 | **position** (time axis)                       | Contract last-trade date. **Range-filter** it (`start_date`/`end_date`) for "expiring in the next N days". NULL for stock.                                      |
@@ -85,7 +85,7 @@ come from a join to the `contracts` security master, which is incomplete for
 many traded option `con_id`s.** Slicing an execution-grain metric by these can
 silently **drop** fills whose contract isn't in the master. On `position_facts`,
 `strike`/`right`/`symbol` are native columns and always complete — only
-`contract_month` isn't available on that grain. Totals by `trade_group` / `sec_type`
+`contract_month` isn't available on that grain. Totals by `tag` / `sec_type`
 (which don't touch `contracts`) are complete; execution-grain strike-level
 breakdowns are best-effort until contract coverage is backfilled.
 
@@ -94,7 +94,7 @@ breakdowns are best-effort until contract coverage is backfilled.
 Two different figures; don't confuse them:
 
 - **Settled unrealized** = `settled_unrealized_pnl` (a real metric). End-of-day
-  snapshot. Filter by `trade_group` to get one group's number.
+  snapshot. Filter by `tag` to get one group's number.
 - **Intraday / live unrealized** = **`trade_group_pnl(group)` only.** It's a
   read-time merge of live TWS marks over the settled snapshot — not expressible in
   SQL — and returns `settled_unrealized_pnl`, `intraday_unrealized_pnl`,
@@ -104,7 +104,7 @@ Two different figures; don't confuse them:
 
 - **`settled_unrealized_pnl` (via `query_metric`)** counts a position in full in
   every group whose executions touched it — a position shared by two groups
-  counts in **both**. So summed with **no `trade_group` filter it double-counts** shared
+  counts in **both**. So summed with **no `tag` filter it double-counts** shared
   positions. **Query one group at a time.**
 - **`trade_group_pnl`** gives the group only the part of a shared position its
   own tagged fills opened, so the position is counted once across groups. For a
@@ -117,14 +117,14 @@ _"For `<GROUP>`: how much option premium have we collected vs. paid for the long
 LEAP, and where do realized/unrealized stand?"_ — all via MCP. The figures are
 illustrative, not from a real group:
 
-| Question                              | Call                                                                                              |
-| ------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| Premium collected (options only)      | `query_metric("premium_collected", filters={trade_group:"<GROUP>", sec_type:"OPT"})` → **$1,000** |
-| Premium paid on options (incl. LEAP)  | `query_metric("premium_paid", filters={trade_group:"<GROUP>", sec_type:"OPT"})` → **$2,500**      |
-| Net cash flow, all legs (incl. stock) | `query_metric("gross_premium", filters={trade_group:"<GROUP>"})` → **−$8,000**                    |
-| Realized PnL                          | `query_metric("realized_pnl", filters={trade_group:"<GROUP>"})` → **$500**                        |
-| Settled unrealized PnL                | `query_metric("settled_unrealized_pnl", filters={trade_group:"<GROUP>"})` → **−$1,000**           |
-| Live/intraday unrealized              | `trade_group_pnl("<GROUP>")` → intraday unrealized **−$900**                                      |
+| Question                              | Call                                                                                      |
+| ------------------------------------- | ----------------------------------------------------------------------------------------- |
+| Premium collected (options only)      | `query_metric("premium_collected", filters={tag:"<GROUP>", sec_type:"OPT"})` → **$1,000** |
+| Premium paid on options (incl. LEAP)  | `query_metric("premium_paid", filters={tag:"<GROUP>", sec_type:"OPT"})` → **$2,500**      |
+| Net cash flow, all legs (incl. stock) | `query_metric("gross_premium", filters={tag:"<GROUP>"})` → **−$8,000**                    |
+| Realized PnL                          | `query_metric("realized_pnl", filters={tag:"<GROUP>"})` → **$500**                        |
+| Settled unrealized PnL                | `query_metric("settled_unrealized_pnl", filters={tag:"<GROUP>"})` → **−$1,000**           |
+| Live/intraday unrealized              | `trade_group_pnl("<GROUP>")` → intraday unrealized **−$900**                              |
 
 Financing so far ≈ collected $1,000 / LEAP cost $2,000 ≈ **50%**. (Isolating the
 _exact_ LEAP leg by `strike`/`right` is limited by the contracts caveat in §4.)
@@ -134,7 +134,7 @@ _exact_ LEAP leg by `strike`/`right` is limited by the contracts caveat in §4.)
 - **Open positions by account & type:** `open_position_count` grouped by `["account","sec_type"]`.
 - **What's expiring in 30 days:** `open_position_count` grouped by `["sec_type","days_to_expiration"]`, `start_date`=today, `end_date`=today+30.
 - **Unrealized exposure by account & type:** `settled_unrealized_pnl` grouped by `["account","sec_type"]`.
-- **Realized PnL by strategy this quarter:** `realized_pnl` grouped by `["trade_group"]`, date range on `executed_at`.
+- **Realized PnL by strategy this quarter:** `realized_pnl` grouped by `["tag"]`, date range on `executed_at`.
 
 ## 8. Finding a trade group by phrase (`phrase → find → PnL`)
 
@@ -152,7 +152,7 @@ flow:
    an NQ, and a ZC group) — pick one, don't guess.
 2. **Look up** — pass the chosen `id` (or exact `name`) to:
    - `trade_group_pnl(<GROUP_ID>)` → realized + settled + intraday unrealized in one call, or
-   - `query_metric(..., filters={trade_group: name})` for a specific metric.
+   - `query_metric(..., filters={tag: name})` for a specific metric.
 
 `trade_group_pnl` also accepts a fuzzy phrase directly and auto-resolves it **when
 unambiguous**; an ambiguous phrase raises an error listing the candidate groups

@@ -166,7 +166,7 @@ def find_trade_groups(query: str, limit: int = 5) -> dict[str, Any]:
     Returns ranked ``matches`` [{id, name, score}]. If more than one is returned
     the phrase is ambiguous — pick one and pass its ``id`` (or exact ``name``) to
     ``trade_group_pnl`` for realized + unrealized PnL, or to ``query_metric``
-    (``filters={"trade_group": name}``). Matches names only: a strategy whose name omits
+    (``filters={"tag": name}``). Matches names only: a strategy whose name omits
     its symbol won't be found by that symbol.
     """
     text = (query or "").strip()
@@ -197,7 +197,7 @@ def trade_group_pnl(group: str) -> dict[str, Any]:
     figures intraday_unrealized_pnl / intraday_realized_pnl / intraday_total_pnl
     with marks_as_of. Intraday figures are 'as of the last live TWS refresh' (not
     tick-live) and are a per-group attribution (not additive across groups). For
-    analytics across many groups, use query_metric (e.g. realized_pnl by trade_group).
+    analytics across many groups, use query_metric (e.g. realized_pnl by tag).
     """
     text = group.strip()
     handle: int | str = int(text) if text.lstrip("-").isdigit() else text

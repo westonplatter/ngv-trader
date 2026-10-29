@@ -138,6 +138,72 @@ is human-only, so there are no tools for it.
 - **Linked surfaces:** a Tasks section in trade-group detail; a task badge and
   "+ task" shortcut on Trades and Positions rows.
 
+## Follow-up work
+
+Not done yet; noted while building and testing this feature.
+
+### Demo data and a screenshot that shows the value
+
+Today demo mode has no tag or task fixtures (`/tags` and `/tasks` answer `[]`,
+`/tags/search` answers `{items: []}`), so tagging is invisible in a demo.
+
+1. **Fixtures** in `frontend/src/lib/demoData.ts`, typed with `TagChip` / `Tag` /
+   `Task` from `frontend/src/lib/tags.ts`. Tell one cross-cutting story that
+   strategies and trade groups cannot: tags that cut across groups.
+   - `long-beta` on the NQ future, the MES scalp, and the ES call diagonal.
+   - `risk-off` on the SPY 540 put and the GLD stock.
+   - `oil` on the CL roll group and the CL future position.
+   - `offset-risk` on the SPY puts group, applied by `agent:local-llm`, so the
+     `AI` badge shows.
+   - Tasks: "Roll CL before expiry" (linked to the CL position, in progress),
+     "Cover the GLD 324 call" (linked to the GLD covered-call group), and one
+     done task to exercise the toggle.
+   - Put `tags` / `open_task_count` on the matching `DEMO_POSITIONS`,
+     `DEMO_TRADE_EXECUTIONS`, and trade-group rows.
+2. **Routes** in `frontend/src/lib/demoApi.ts`: `GET /tags`, `/tags/search`
+   (filter the fixtures by `all` / `any` / `none` in the handler so the Tags page
+   is live), and `GET /tasks` (honor `include_done`, `trade_group_id`). Writes
+   stay the benign no-op.
+3. **Screenshots** with `node scripts/screenshot.mjs` (see
+   [commits-and-prs.md](../contributing/commits-and-prs.md#ui-change-screenshots-optional)),
+   committed under `docs/screenshots/`:
+   - `tags-search.png` — `/tags?all=long-beta&demo=1`: one tag pulling NQ, MES,
+     and ES rows from three different trade groups. This is the money shot: a
+     view no strategy or group gives you.
+   - `tags-exclude.png` — `/tags?any=long-beta,risk-off&none=offset-risk&tab=positions&demo=1`.
+   - `positions-tags.png` — `/positions?demo=1` with chips, task badges, and the
+     `AI` marker.
+   - `tasks.png` — `/tasks?demo=1`.
+4. **Optional GIF** (inline tag on a Trades row → bulk tag → Tags page search).
+   `screenshot.mjs` only takes stills; record with Playwright's `recordVideo`
+   against the demo server and convert to GIF, or stitch stills. Decide whether a
+   GIF in `docs/screenshots/` is worth its size before committing one.
+
+### Found while building
+
+- **Semantic-layer naming clash.** The semantic model's `tag` dimension
+  (`osi/ngv_semantic_model.yaml`) is the _trade group name_, and the MCP
+  `find_trade_groups` / `trade_group_pnl` docs tell agents to filter
+  `query_metric` by `tag`. Next to the new `find_by_tags` tool an agent can mix
+  them up. Candidate fix: rename the dimension to `trade_group` (touches the
+  YAML, tool docstrings, the tradebot prompt, and the semantic docs). Left as is
+  here on purpose.
+- **Flat accounts keep stale rows.** The Flex position sync returns early when
+  an account's report has no positions, so it never deletes that account's
+  `positions` rows; the intraday sync only replaces `live_positions` for
+  accounts that still hold something. Either way a fully flat account keeps its
+  position tags open. Pre-existing sync behavior; fix there, not in the tag code.
+- **Changing a group's strategy** is supported by `PATCH /trade-groups/{id}`
+  (`strategy_id`) but the Strategies page has no control for it.
+- **Non-primary strategy links** were not migrated when strategies moved out of
+  the tag tables; the UI never wrote any.
+- **Tag search scales in Python.** `GET /tags/search` loads every open link and
+  filters in memory — fine for one desk, revisit if links reach the tens of
+  thousands.
+- **Prettier drift** in `frontend/src/contexts/PrivacyContext.tsx`,
+  `frontend/src/hooks/useResizableColumn.ts`, and `frontend/README.md` predates
+  this work.
+
 ## Out of scope
 
 Auto-tagging rules, reporting by tag, due dates, assignees, reminders, manual

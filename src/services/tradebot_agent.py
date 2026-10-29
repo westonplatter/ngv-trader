@@ -557,7 +557,7 @@ _TOOL_SPECS.append(
                 "intraday_unrealized_pnl / intraday_realized_pnl / intraday_total_pnl plus marks_as_of. "
                 "Intraday figures are 'as of the last live TWS refresh', not tick-live, and are a per-group "
                 "attribution (not additive across groups). For analytics across many groups use query_metric "
-                "(e.g. realized_pnl grouped by trade_group)."
+                "(e.g. realized_pnl grouped by tag)."
             ),
             "parameters": {
                 "type": "object",
