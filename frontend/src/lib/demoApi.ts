@@ -21,6 +21,14 @@ import {
   demoTradeGroupDetail,
   demoTradeGroupRows,
 } from "./demoData";
+import {
+  demoTagList,
+  demoTagSearch,
+  demoTaskList,
+  withGroupTags,
+  withPositionTags,
+  withTradeTags,
+} from "./demoTags";
 
 type Json = unknown;
 
@@ -52,7 +60,7 @@ function demoWorkerStatuses(): Json {
 // Resolve a GET request path (stripped of the API base) plus its query params
 // to a fixture payload. Returns undefined when no fixture matches.
 function routeGet(path: string, params: URLSearchParams): Json | undefined {
-  if (path === "/positions") return DEMO_POSITIONS;
+  if (path === "/positions") return withPositionTags(DEMO_POSITIONS);
   if (path === "/accounts") return DEMO_ACCOUNTS;
   if (path === "/flexquery-tokens") return DEMO_FLEXQUERY_TOKENS;
   if (path === "/workers/status") return demoWorkerStatuses();
@@ -63,18 +71,24 @@ function routeGet(path: string, params: URLSearchParams): Json | undefined {
       accountId: params.get("account_id"),
       instrument: params.get("instrument"),
       includeIntraday: params.get("include_intraday") === "true",
-    });
+    }).map(withGroupTags);
   }
-  if (path === "/trade-executions") return DEMO_TRADE_EXECUTIONS;
-  // Tags and tasks have no demo fixtures; /tags and /tasks fall through to [].
-  if (path === "/tags/search") return { items: [] };
+  if (path === "/trade-executions") return withTradeTags(DEMO_TRADE_EXECUTIONS);
+  if (path === "/tags") {
+    const q = (params.get("q") ?? "").trim().toLowerCase();
+    return demoTagList().filter((tag) => tag.normalized_value.includes(q));
+  }
+  if (path === "/tags/search") return demoTagSearch(params);
+  if (path === "/tasks") return demoTaskList(params);
 
   const execMatch = path.match(/^\/trade-groups\/(\d+)\/executions$/);
   if (execMatch) return demoGroupExecutions(Number(execMatch[1])) ?? undefined;
 
   const detailMatch = path.match(/^\/trade-groups\/(\d+)$/);
-  if (detailMatch)
-    return demoTradeGroupDetail(Number(detailMatch[1])) ?? undefined;
+  if (detailMatch) {
+    const detail = demoTradeGroupDetail(Number(detailMatch[1]));
+    return detail ? withGroupTags(detail) : undefined;
+  }
 
   return undefined;
 }
