@@ -7,7 +7,8 @@ group's strategy as its primary `tag_links` row. They become a first-class
 
 Strategy ids are preserved, so existing deep links still resolve. Only the
 primary strategy link of each group is carried over — the UI never wrote any
-other kind. Every row in `tags` / `tag_links` is then deleted: besides
+other kind — and the upgrade refuses to run if any other link exists, rather
+than dropping it. Every row in `tags` / `tag_links` is then deleted: besides
 strategies, the catalog only ever held the never-used `theme`, `risk_intent`,
 `hedge_type`, and `holding_horizon` types, which are dropped rather than migrated.
 
@@ -37,6 +38,26 @@ PRIMARY_STRATEGY_WHERE = "entity_type = 'trade_groups' AND tag_type = 'strategy'
 
 def upgrade() -> None:
     """Upgrade schema."""
+    # Only primary trade-group strategy links are carried over. The old
+    # /tag-links API accepted others; refuse to drop them silently.
+    dropped = (
+        op.get_bind()
+        .execute(
+            sa.text(
+                """
+                SELECT count(*) FROM tag_links
+                WHERE NOT (entity_type = 'trade_groups' AND tag_type = 'strategy' AND is_primary = true)
+                """
+            )
+        )
+        .scalar_one()
+    )
+    if dropped:
+        raise RuntimeError(
+            f"{dropped} tag_links rows are not primary trade-group strategy links and would be lost. "
+            "Inspect them (SELECT * FROM tag_links WHERE NOT (entity_type = 'trade_groups' "
+            "AND tag_type = 'strategy' AND is_primary)) and decide before migrating."
+        )
     op.create_table(
         "strategies",
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
