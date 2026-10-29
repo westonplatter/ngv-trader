@@ -14,7 +14,7 @@ import OrdersTable from "./components/OrdersTable";
 import PositionsTable from "./components/PositionsTable";
 import StrategyPnlTable from "./components/StrategyPnlTable";
 import TradebotChat from "./components/TradebotChat";
-import TradeTaggingPage from "./components/TradeTaggingPage";
+import StrategiesPage from "./components/StrategiesPage";
 import TradesTable from "./components/TradesTable";
 import WatchListsPage from "./components/WatchListsPage";
 import WorkerStatusLights from "./components/WorkerStatusLights";
@@ -113,7 +113,7 @@ function App() {
           />
           <Route path="/orders" element={<OrdersTable />} />
           <Route path="/trades" element={<TradesTable />} />
-          <Route path="/strategies" element={<TradeTaggingPage />} />
+          <Route path="/strategies" element={<StrategiesPage />} />
           <Route path="/strategies/table" element={<StrategyPnlTable />} />
           <Route path="/watchlists" element={<WatchListsPage />} />
           <Route path="/market-data" element={<MarketDataPage />} />

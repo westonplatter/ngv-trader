@@ -47,12 +47,12 @@ describe("formatMarkTime", () => {
 
 describe("single source of truth", () => {
   // This helper existed in three private copies (PositionsTable,
-  // TradeTaggingPage, strategyPnl). Two were merged and the third was missed,
+  // StrategiesPage, strategyPnl). Two were merged and the third was missed,
   // so the Strategy P&L table kept printing a bare time on a days-old capture.
   // Grepping for the next copy is not a plan; this is.
   const FRESHNESS_CONSUMERS = [
     "src/components/PositionsTable.tsx",
-    "src/components/TradeTaggingPage.tsx",
+    "src/components/StrategiesPage.tsx",
     "src/lib/strategyPnl.ts",
   ];
 

@@ -29,10 +29,10 @@ import type {
   GroupExecution,
   GroupExecutionsResponse,
   GroupOpenPosition,
-  Tag,
+  Strategy,
   TradeGroup,
   TradeGroupDetail,
-} from "../components/TradeTaggingPage";
+} from "../components/StrategiesPage";
 import type { TradeExecutionRow } from "../components/TradesTable";
 
 const ACCOUNT_ALIAS = "DU1234567";
@@ -596,12 +596,11 @@ export const DEMO_ACCOUNTS: DemoAccount[] = [
 
 // A single umbrella strategy keeps the demo coherent and ensures Trade Group
 // links from the Positions page always resolve to a populated group.
-export const DEMO_STRATEGIES: Tag[] = [
+export const DEMO_STRATEGIES: Strategy[] = [
   {
     id: 1,
-    tag_type: "strategy",
-    value: "core-book",
-    normalized_value: "core-book",
+    name: "core-book",
+    normalized_name: "core-book",
     created_by: "demo",
     created_at: "2026-05-01T00:00:00Z",
     archived_at: null,
@@ -627,7 +626,7 @@ export const DEMO_TRADE_GROUPS: TradeGroup[] = [
     meta_yaml: null,
     total_pnl: 9615.0,
     status: "open",
-    primary_strategy_value: DEMO_STRATEGIES[0].value,
+    primary_strategy_value: DEMO_STRATEGIES[0].name,
     opened_at: "2026-06-05T15:02:00Z",
     closed_at: null,
     opened_by: "demo",
@@ -651,7 +650,7 @@ export const DEMO_TRADE_GROUPS: TradeGroup[] = [
     meta_yaml: null,
     total_pnl: 2175.0,
     status: "open",
-    primary_strategy_value: DEMO_STRATEGIES[0].value,
+    primary_strategy_value: DEMO_STRATEGIES[0].name,
     opened_at: "2026-06-10T18:20:00Z",
     closed_at: null,
     opened_by: "demo",
@@ -694,7 +693,7 @@ thesis: gold consolidating; collect theta while range-bound
 `,
     total_pnl: 2572.0,
     status: "open",
-    primary_strategy_value: DEMO_STRATEGIES[0].value,
+    primary_strategy_value: DEMO_STRATEGIES[0].name,
     opened_at: "2026-06-12T14:31:00Z",
     closed_at: null,
     opened_by: "demo",
@@ -718,7 +717,7 @@ thesis: gold consolidating; collect theta while range-bound
     meta_yaml: null,
     total_pnl: null,
     status: "open",
-    primary_strategy_value: DEMO_STRATEGIES[0].value,
+    primary_strategy_value: DEMO_STRATEGIES[0].name,
     opened_at: "2026-06-21T14:22:10Z",
     closed_at: null,
     opened_by: "demo",
@@ -742,7 +741,7 @@ thesis: gold consolidating; collect theta while range-bound
     meta_yaml: null,
     total_pnl: null,
     status: "open",
-    primary_strategy_value: DEMO_STRATEGIES[0].value,
+    primary_strategy_value: DEMO_STRATEGIES[0].name,
     opened_at: "2026-06-21T14:27:15Z",
     closed_at: null,
     opened_by: "demo",
@@ -790,7 +789,7 @@ thesis: gold consolidating; collect theta while range-bound
     meta_yaml: null,
     total_pnl: -1875.0,
     status: "open",
-    primary_strategy_value: DEMO_STRATEGIES[0].value,
+    primary_strategy_value: DEMO_STRATEGIES[0].name,
     opened_at: "2026-06-18T15:11:00Z",
     closed_at: null,
     opened_by: "demo",
@@ -1007,18 +1006,6 @@ export function demoTradeGroupDetail(groupId: number): TradeGroupDetail | null {
   return {
     ...group,
     execution_count: groupExecutions(groupId).length,
-    tags: [
-      {
-        id: groupId,
-        entity_type: "trade_group",
-        entity_id: groupId,
-        tag_id: DEMO_STRATEGIES[0].id,
-        tag_type: "strategy",
-        is_primary: true,
-        source: "demo",
-        created_by: "demo",
-      },
-    ],
   };
 }
 

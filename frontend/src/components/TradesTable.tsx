@@ -68,7 +68,7 @@ function rowGroupId(row: TradeExecutionRow): number | null {
     : row.trade_assigned_trade_group_id;
 }
 
-// The unit a row belongs to for display, tagging, and highlighting. Settled
+// The unit a row belongs to for display, grouping, and highlighting. Settled
 // rows group by their parent trade; unsettled live fills have no trade, so a
 // live combo groups by its BAG summary's ib_exec_id (legs carry it as
 // parent_ib_exec_id). Standalone live fills are their own group.
@@ -114,7 +114,7 @@ function execRoleBadge(role: string): { label: string; className: string } {
   return { label: "—", className: "bg-gray-100 text-gray-700" };
 }
 
-function TagGroupCell({
+function TradeGroupCell({
   tradeId,
   accountId,
   contractDisplayName,
@@ -130,7 +130,7 @@ function TagGroupCell({
   assignedTradeGroupId: number | null;
   groupLabel: string | null;
   onAssigned: () => void;
-  // Unsettled live fills tag per-fill by ib_exec_id, not via the trade fan-out.
+  // Unsettled live fills are grouped per-fill by ib_exec_id, not via the trade fan-out.
   unsettled?: boolean;
   ibExecId?: string | null;
 }) {
@@ -401,7 +401,7 @@ export default function TradesTable() {
   const [syncError, setSyncError] = useState<string | null>(null);
   const [rangeStart, setRangeStart] = useState("");
   const [rangeEnd, setRangeEnd] = useState("");
-  // Filters live in the URL (?account=&range=&tags=&cols=&symbol=) so a refresh
+  // Filters live in the URL (?account=&range=&group=&cols=&symbol=) so a refresh
   // or shared link restores the view. Defaults are omitted to keep URLs short.
   const [searchParams, setSearchParams] = useSearchParams();
   const setFilterParam = useCallback(
@@ -435,13 +435,13 @@ export default function TradesTable() {
   const timeRange = searchParams.get("range") ?? defaultTimeRange;
   const setTimeRange = (value: string) =>
     setFilterParam("range", value, defaultTimeRange);
-  const rawTagStatus = searchParams.get("tags");
-  const tagStatus: "all" | "tagged" | "untagged" =
-    rawTagStatus === "tagged" || rawTagStatus === "untagged"
-      ? rawTagStatus
+  const rawGroupStatus = searchParams.get("group");
+  const groupStatus: "all" | "grouped" | "ungrouped" =
+    rawGroupStatus === "grouped" || rawGroupStatus === "ungrouped"
+      ? rawGroupStatus
       : "all";
-  const setTagStatus = (value: "all" | "tagged" | "untagged") =>
-    setFilterParam("tags", value, "all");
+  const setGroupStatus = (value: "all" | "grouped" | "ungrouped") =>
+    setFilterParam("group", value, "all");
   const [highlightedGroupKey, setHighlightedGroupKey] = useState<string | null>(
     null,
   );
@@ -567,9 +567,9 @@ export default function TradesTable() {
         next = next.filter((row) => Date.parse(row.executed_at) >= cutoff);
       }
     }
-    if (tagStatus !== "all") {
+    if (groupStatus !== "all") {
       next = next.filter((row) =>
-        tagStatus === "tagged"
+        groupStatus === "grouped"
           ? rowGroupId(row) !== null
           : rowGroupId(row) === null,
       );
@@ -582,13 +582,20 @@ export default function TradesTable() {
       return Number.isNaN(t) ? Number.NEGATIVE_INFINITY : t;
     };
     return [...next].sort((a, b) => execMs(b) - execMs(a));
-  }, [executions, accountFilter, symbolRegex, timeRange, tagStatus, filterNow]);
+  }, [
+    executions,
+    accountFilter,
+    symbolRegex,
+    timeRange,
+    groupStatus,
+    filterNow,
+  ]);
 
-  // For each group (settled trade or live combo), the row that owns the Tag
+  // For each group (settled trade or live combo), the row that owns the Trade
   // Group cell. Prefer combo_summary; otherwise the earliest row in the
-  // filtered view. One cell per group, so a spread is tagged as one trade
+  // filtered view. One cell per group, so a spread is grouped as one trade
   // rather than once per leg.
-  const tagGroupRowIdByGroupKey = useMemo(() => {
+  const tradeGroupRowIdByGroupKey = useMemo(() => {
     const map = new Map<string, number>();
     for (const row of filteredRows) {
       if (row.exec_role === "combo_summary") {
@@ -967,21 +974,21 @@ export default function TradesTable() {
 
         <div className="flex items-center gap-2">
           <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">
-            Tags
+            Group
           </span>
           <div className="inline-flex items-center gap-0.5 rounded-md bg-gray-100 p-0.5">
             {[
               { id: "all", label: "All" },
-              { id: "tagged", label: "Tagged" },
-              { id: "untagged", label: "Untagged" },
+              { id: "grouped", label: "Grouped" },
+              { id: "ungrouped", label: "Ungrouped" },
             ].map((opt) => (
               <button
                 key={opt.id}
                 onClick={() =>
-                  setTagStatus(opt.id as "all" | "tagged" | "untagged")
+                  setGroupStatus(opt.id as "all" | "grouped" | "ungrouped")
                 }
                 className={`rounded px-2.5 py-1 text-xs font-medium uppercase tracking-wide ${
-                  tagStatus === opt.id
+                  groupStatus === opt.id
                     ? "bg-white text-gray-900 shadow-sm"
                     : "text-gray-600 hover:text-gray-900"
                 }`}
@@ -1097,7 +1104,7 @@ export default function TradesTable() {
                 Codes
               </th>
               <th className="w-48 min-w-[12rem] whitespace-nowrap px-3 py-2 font-semibold text-gray-700">
-                Tag Group
+                Trade Group
               </th>
               <th className="whitespace-nowrap px-3 py-2 font-semibold text-gray-700">
                 Parent Exec ID
@@ -1130,8 +1137,8 @@ export default function TradesTable() {
             )}
             {filteredRows.map((row) => {
               const groupKey = rowGroupKey(row);
-              const ownsTagCell =
-                tagGroupRowIdByGroupKey.get(groupKey) === row.id;
+              const ownsGroupCell =
+                tradeGroupRowIdByGroupKey.get(groupKey) === row.id;
               const isHighlighted = highlightedGroupKey === groupKey;
               const symbol =
                 row.contract_display ?? row.trade_contract_display_name ?? "-";
@@ -1235,8 +1242,8 @@ export default function TradesTable() {
                     )}
                   </td>
                   <td className="px-3 py-2">
-                    {ownsTagCell ? (
-                      <TagGroupCell
+                    {ownsGroupCell ? (
+                      <TradeGroupCell
                         tradeId={row.trade_id}
                         accountId={row.account_id}
                         contractDisplayName={

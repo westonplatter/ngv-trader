@@ -1,14 +1,14 @@
 ---
-topics: ["trade-groups", "tags", "strategies", "executions", "frontend"]
+topics: ["trade-groups", "strategies", "executions", "frontend"]
 code_dirs_or_files:
   [
     "src/api/routers/trade_groups.py",
-    "src/api/routers/tags.py",
+    "src/api/routers/strategies.py",
     "src/services/trade_group_instruments.py",
-    "frontend/src/components/TradeTaggingPage.tsx",
+    "frontend/src/components/StrategiesPage.tsx",
     "frontend/src/components/StrategyPnlTable.tsx",
   ]
-description: Strategies and trade groups — data model, execution assignment and history, trade-group and tag APIs, position chips, the Strategy P&L table, and the Strategies workspace.
+description: Strategies and trade groups — data model, execution assignment and history, trade-group and strategy APIs, position chips, the Strategy P&L table, and the Strategies workspace.
 ---
 
 # Strategies and Trade Groups
@@ -16,10 +16,11 @@ description: Strategies and trade groups — data model, execution assignment an
 Current-state documentation for strategies, trade groups, execution assignment, and the Strategies UI.
 
 The UI surface for all of this is the **Strategies** page at `/strategies`
-(`frontend/src/components/TradeTaggingPage.tsx`), with a book-wide **Strategy P&L**
-table at `/strategies/table`. Strategies are currently stored as rows in the
-`tags` / `tag_links` tables. [spec-tags-and-tasks.md](spec-tags-and-tasks.md)
-moves them out so "tag" means only free-form tags.
+(`frontend/src/components/StrategiesPage.tsx`), with a book-wide **Strategy P&L**
+table at `/strategies/table`. Strategies live in their own `strategies` table and
+a group points at one through `trade_groups.strategy_id`. Strategies and trade
+groups never use the word "tag": that is reserved for the free-form tags in
+[spec-tags-and-tasks.md](spec-tags-and-tasks.md).
 
 ## Purpose
 
@@ -28,11 +29,10 @@ The strategies and trade-groups system lets the desk organize executions into li
 Today the live system supports:
 
 1. strategy catalog CRUD
-2. theme catalog CRUD at the API layer
-3. trade-group CRUD
-4. execution-to-trade-group assignment, unassignment, and reassignment
-5. assignment history and a timeline view
-6. trades-page assignment into groups
+2. trade-group CRUD
+3. execution-to-trade-group assignment, unassignment, and reassignment
+4. assignment history and a timeline view
+5. trades-page assignment into groups
 
 > The TradeGroup executions view also supports an optional **intraday TWS
 > overlay**: a "Refresh Live (TWS)" button surfaces live current-state P&L
@@ -54,13 +54,14 @@ Main fields:
 3. `name`
 4. `notes`
 5. `meta_yaml`
-6. `status` with values `open`, `closed`, `archived`
-7. `opened_at`
-8. `closed_at`
-9. `opened_by`
-10. `closed_by`
-11. `created_at`
-12. `updated_at`
+6. `strategy_id` (nullable FK to `strategies`)
+7. `status` with values `open`, `closed`, `archived`
+8. `opened_at`
+9. `closed_at`
+10. `opened_by`
+11. `closed_by`
+12. `created_at`
+13. `updated_at`
 
 Notes:
 
@@ -83,7 +84,7 @@ Properties:
 
 Provisional membership for **unsettled TWS fills**, keyed by `ib_exec_id` (the
 stable id shared with the eventual settled `trade_executions` row). Lets the desk
-preemptively tag a live fill to a group before it settles. On settlement the
+preemptively assign a live fill to a group before it settles. On settlement the
 carry-over (`src/services/group_link_carryover.py`) folds the link into
 `trade_group_executions` and drops the live row; it runs in both the intraday
 purge and the FlexQuery trade sync. See
@@ -101,32 +102,16 @@ Tracks:
 
 Each row stores provenance and optional reason text.
 
-### `tags`
+### `strategies`
 
-Shared tag catalog table for:
+The strategy catalog: `id`, `name`, `normalized_name`, `created_by`,
+`created_at`, `archived_at`. `name` is normalized (trimmed, lowercased, runs of
+whitespace collapsed) into `normalized_name`, which is unique.
 
-1. `strategy`
-2. `theme`
-3. `risk_intent`
-4. `hedge_type`
-5. `holding_horizon`
-
-`value` is normalized into `normalized_value`, and `(tag_type, normalized_value)` is unique.
-
-### `tag_links`
-
-Generic tag attachment table across entities.
-
-Supported `entity_type` values:
-
-1. `orders`
-2. `trades`
-3. `trade_executions`
-4. `trade_groups`
-
-Important current rule:
-
-1. a trade group can have only one primary strategy tag
+A trade group has at most one strategy, held in `trade_groups.strategy_id`
+(`ON DELETE RESTRICT`). Strategies were once `tags` rows with
+`tag_type = 'strategy'` linked through `tag_links`; migration `e68def4337bb`
+moved them out, keeping their ids.
 
 ### `trade_group_links`
 
@@ -167,18 +152,18 @@ Supported filters:
 
 1. `account_id`
 2. `status`
-3. `strategy_tag`
-4. `theme_tag`
-5. `q`
-6. `instrument` — case-insensitive regex (`CL.*`, `CL|NG`) over the group's
+3. `strategy` — the strategy name, matched after normalization
+4. `q` — free text over the group name and its strategy name
+5. `instrument` — case-insensitive regex (`CL.*`, `CL|NG`) over the group's
    derived instruments, falling back to its name
-7. `opened_from`
-8. `opened_to`
-9. `limit`
+6. `opened_from`
+7. `opened_to`
+8. `limit`
 
 Plus one opt-in flag, `include_intraday` (default `false`).
 
-The response always includes a derived `primary_strategy_value` and the settled
+The response always includes `strategy_id`, the strategy's name as
+`primary_strategy_value`, and the settled
 `total_pnl`. With `include_intraday=true` it also carries the split behind that
 total — `realized_pnl`, `unrealized_pnl`, `intraday_unrealized_pnl`,
 `intraday_realized_pnl`, `intraday_total_pnl`, `marks_as_of`, `live_is_stale` —
@@ -206,13 +191,10 @@ Creates a group with:
 1. required `name`
 2. optional `notes`
 3. optional `meta_yaml`
-4. optional `strategy_tag_id`
-5. provenance fields such as `source`, `created_by`, and `confidence`
+4. optional `strategy_id` (`404` if unknown)
+5. `created_by`
 
-Behavior:
-
-1. groups are created with `status="open"`
-2. a primary strategy tag link is created immediately when `strategy_tag_id` is supplied
+Groups are created with `status="open"`.
 
 #### `PATCH /trade-groups/{id}`
 
@@ -224,6 +206,8 @@ Supports edits to:
 4. `status`
 5. `closed_at`
 6. `closed_by`
+7. `strategy_id` — sets the strategy; an explicit `null` clears it, and
+   omitting the field leaves it unchanged
 
 #### Assignment endpoints
 
@@ -245,33 +229,27 @@ The timeline is assembled from:
 
 Displayed event types are derived from execution side and role, plus assignment history and group-link rows.
 
-## Tag and Catalog API
+## Strategy API
 
-Routes in `src/api/routers/tags.py`.
+Routes in `src/api/routers/strategies.py`.
 
-Implemented endpoints:
+1. `GET /api/v1/strategies` (`q`, `limit`, `include_archived`)
+2. `POST /api/v1/strategies` (`name`, `created_by`)
+3. `PATCH /api/v1/strategies/{strategy_id}` (`name`)
+4. `POST /api/v1/strategies/{strategy_id}/archive`
+5. `POST /api/v1/strategies/{strategy_id}/unarchive`
+6. `DELETE /api/v1/strategies/{strategy_id}`
 
-1. `GET /api/v1/tags`
-2. `POST /api/v1/tags`
-3. `POST /api/v1/tag-links`
-4. `DELETE /api/v1/tag-links/{tag_link_id}`
-5. `GET /api/v1/strategies`
-6. `POST /api/v1/strategies`
-7. `PATCH /api/v1/strategies/{strategy_id}`
-8. `POST /api/v1/strategies/{strategy_id}/archive`
-9. `POST /api/v1/strategies/{strategy_id}/unarchive`
-10. `DELETE /api/v1/strategies/{strategy_id}`
-11. `GET /api/v1/themes`
-12. `POST /api/v1/themes`
-13. `PATCH /api/v1/themes/{theme_id}`
-14. `DELETE /api/v1/themes/{theme_id}`
+Behavior:
 
-Current behavior:
+1. creating a strategy whose normalized name exists returns the existing one
+2. renaming onto another strategy's normalized name is a `409`
+3. deleting a strategy that any trade group still uses is a `409`
 
-1. strategies and themes are catalog tags backed by `tags`
-2. duplicate normalized values are prevented
-3. deleting a strategy or theme fails if it is still linked
-4. generic tag-link creation works for multiple entity types, not only trade groups
+A group's strategy is set through `POST /trade-groups` and
+`PATCH /trade-groups/{id}`, not a separate link endpoint.
+`GET /reports/pnl/trade-groups?group_by=strategy` rolls groups up by
+`trade_groups.strategy_id`.
 
 ## Live UI
 
@@ -285,7 +263,7 @@ Current behavior:
 2. assignment writes execution-level membership, not just trade-level labeling
 3. unassignment removes those execution memberships
 
-This makes the trades page the main operational entry point for tagging fills into groups. It also supports assigning/unassigning live (intraday TWS) executions via the `live-executions:assign`/`live-executions:unassign` endpoints.
+This makes the trades page the main operational entry point for assigning fills to groups. Its **Group** filter (`?group=all|grouped|ungrouped`) narrows rows by whether they belong to a group, and the **Trade Group** column holds the picker. It also supports assigning/unassigning live (intraday TWS) executions via the `live-executions:assign`/`live-executions:unassign` endpoints.
 
 ### Positions page assignment
 
@@ -351,7 +329,7 @@ group can list both `CL` and `CLZ6`.
 
 ### Strategies workspace
 
-The main Strategies UI is `frontend/src/components/TradeTaggingPage.tsx`.
+The main Strategies UI is `frontend/src/components/StrategiesPage.tsx`.
 
 It currently supports:
 
@@ -366,10 +344,9 @@ It currently supports:
 
 The current page does not provide:
 
-1. direct execution assignment from inside the tagging page
-2. theme management UI
-3. generic tag-link editing UI
-4. UI for trade-group linking such as manual roll-link creation
+1. direct execution assignment from inside the Strategies page
+2. changing a group's strategy after creation (the API supports it)
+3. UI for trade-group linking such as manual roll-link creation
 
 ## Timeline Semantics
 
@@ -397,7 +374,7 @@ Typical live workflow:
 ## Important Constraints
 
 1. execution attribution is the live membership model; trade groups do not directly own trades or orders
-2. a trade group can have one primary strategy tag, not multiple primary strategies
+2. a trade group has at most one strategy
 3. cross-account assignment is allowed in the current implementation
 4. delete-group behavior unassigns executions and records unassignment events before deleting the group
 5. some modeled capabilities, such as `trade_group_links`, exist in storage but are not yet fully surfaced in UI flows
@@ -406,9 +383,9 @@ Typical live workflow:
 
 1. `src/models.py`
 2. `src/api/routers/trade_groups.py`
-3. `src/api/routers/tags.py`
+3. `src/api/routers/strategies.py`, `src/api/routers/reports.py`
 4. `frontend/src/components/TradesTable.tsx`
 5. `frontend/src/components/PositionsTable.tsx`
-6. `frontend/src/components/TradeTaggingPage.tsx`, `frontend/src/components/StrategyPnlTable.tsx`, `frontend/src/lib/strategyPnl.ts`
+6. `frontend/src/components/StrategiesPage.tsx`, `frontend/src/components/StrategyPnlTable.tsx`, `frontend/src/lib/strategyPnl.ts`
 7. `src/services/trade_group_pnl.py` (batched per-group P&L), `src/services/trade_group_instruments.py` (instrument derivation and the pattern filter)
 8. `frontend/src/contexts/PrivacyContext.tsx`, `frontend/src/utils/privacy.ts` (privacy-mode masking used throughout the trade-group detail view)

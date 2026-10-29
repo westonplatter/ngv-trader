@@ -19,7 +19,7 @@ React + TypeScript + Vite UI for ngv-trader.
 | `/positions` | `PositionsTable` | Current portfolio positions |
 | `/orders` | `OrdersTable` | Order tracking |
 | `/trades` | `TradesTable` | Trade history and executions |
-| `/tagging` | `TradeTaggingPage` | Trade group and strategy tagging |
+| `/strategies` | `StrategiesPage` | Strategies and trade groups |
 | `/watchlists` | `WatchListsPage` | Instrument watch lists with live quotes |
 | `/market-data` | `MarketDataPage` | Futures and options market data |
 | `/structures` | `PricingPage` | Options structure builder and PnL calculator |

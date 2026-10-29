@@ -9,7 +9,7 @@ from sqlalchemy import and_, func, select
 from sqlalchemy.orm import Session
 
 from src.api.deps import get_db
-from src.models import Tag, TagLink, TradeExecution, TradeGroup, TradeGroupExecution
+from src.models import Strategy, TradeExecution, TradeGroup, TradeGroupExecution
 
 router = APIRouter()
 DB_SESSION_DEPENDENCY = Depends(get_db)
@@ -35,7 +35,7 @@ def pnl_by_trade_groups(  # noqa: C901, PLR0912
     include_hedge_adjusted: bool = Query(default=False),
     db: Session = DB_SESSION_DEPENDENCY,
 ):
-    if group_by not in {"theme", "strategy", "trade_group"}:
+    if group_by not in {"strategy", "trade_group"}:
         raise HTTPException(status_code=400, detail="Invalid group_by")
 
     conditions = []
@@ -79,17 +79,12 @@ def pnl_by_trade_groups(  # noqa: C901, PLR0912
                 )
             )
     else:
-        tag_type = "theme" if group_by == "theme" else "strategy"
-        tag_rows = db.execute(
-            select(TagLink.entity_id, Tag.value)
-            .join(Tag, Tag.id == TagLink.tag_id)
-            .where(and_(TagLink.entity_type == "trade_groups", TagLink.tag_type == tag_type))
-        ).all()
+        strategy_rows = db.execute(select(TradeGroup.id, Strategy.name).join(Strategy, Strategy.id == TradeGroup.strategy_id)).all()
         totals: dict[str, dict[str, float]] = {}
-        for group_id, tag_value in tag_rows:
+        for group_id, strategy_name in strategy_rows:
             if group_id not in metrics:
                 continue
-            bucket = totals.setdefault(tag_value, {"notional": 0.0, "commission": 0.0})
+            bucket = totals.setdefault(strategy_name, {"notional": 0.0, "commission": 0.0})
             bucket["notional"] += metrics[group_id]["notional"]
             bucket["commission"] += metrics[group_id]["commission"]
 

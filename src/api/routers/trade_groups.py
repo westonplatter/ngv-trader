@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from src.api.deps import get_db
 from src.api.routers.positions import _option_expiry_and_dte
-from src.api.routers.tags import TagLinkResponse, _normalize_tag_value
+from src.api.routers.strategies import ensure_strategy, escape_like, normalize_strategy_name
 from src.api.routers.trades import (
     _contract_display_from_raw,
     _execution_ib_codes,
@@ -20,7 +20,7 @@ from src.models import (
     Account,
     ContractRef,
     LiveExecution,
-    Tag,
+    Strategy,
     TagLink,
     Trade,
     TradeExecution,
@@ -97,6 +97,7 @@ class TradeGroupResponse(BaseModel):
     notes: str | None
     meta_yaml: str | None = None
     status: str
+    strategy_id: int | None = None
     primary_strategy_value: str | None = None
     opened_at: datetime
     closed_at: datetime | None
@@ -126,7 +127,6 @@ class TradeGroupResponse(BaseModel):
 
 
 class TradeGroupDetailResponse(TradeGroupResponse):
-    tags: list[TagLinkResponse]
     execution_count: int
     # Parsed, JSON-serializable form of ``meta_yaml`` (recognized blocks validated,
     # arbitrary keys passed through). ``None`` when no meta is set.
@@ -137,10 +137,8 @@ class TradeGroupCreateRequest(BaseModel):
     name: str
     notes: str | None = None
     meta_yaml: str | None = None
-    strategy_tag_id: int | None = None
-    source: str = "manual"
+    strategy_id: int | None = None
     created_by: str = "api"
-    confidence: float | None = None
     opened_at: datetime | None = None
 
 
@@ -151,6 +149,8 @@ class TradeGroupPatchRequest(BaseModel):
     status: str | None = None
     closed_at: datetime | None = None
     closed_by: str | None = None
+    # Sent as null, clears the group's strategy; omitted, leaves it unchanged.
+    strategy_id: int | None = None
 
 
 class ExecutionAssignRequest(BaseModel):
@@ -229,22 +229,8 @@ class TimelineResponse(BaseModel):
 
 
 def _primary_strategy_subquery():
-    """Correlated subquery to get the primary strategy value for a trade group."""
-    return (
-        select(Tag.value)
-        .join(TagLink, TagLink.tag_id == Tag.id)
-        .where(
-            and_(
-                TagLink.entity_type == "trade_groups",
-                TagLink.entity_id == TradeGroup.id,
-                TagLink.tag_type == "strategy",
-                TagLink.is_primary.is_(True),
-            )
-        )
-        .correlate(TradeGroup)
-        .scalar_subquery()
-        .label("primary_strategy_value")
-    )
+    """Correlated subquery to get the strategy name for a trade group."""
+    return select(Strategy.name).where(Strategy.id == TradeGroup.strategy_id).correlate(TradeGroup).scalar_subquery().label("primary_strategy_value")
 
 
 def _group_account_exposure(account_id: int):
@@ -284,38 +270,30 @@ def _group_account_exposure(account_id: int):
     return or_(TradeGroup.account_id == account_id, settled_leg, live_leg)
 
 
-def _group_tag_exists(tag_type: str, value: str):
-    """Correlated EXISTS: the group carries a ``tag_type`` tag with this value."""
+def _group_strategy_is(name: str):
+    """Correlated EXISTS: the group's strategy has this name."""
     return (
-        select(TagLink.id)
-        .join(Tag, Tag.id == TagLink.tag_id)
+        select(Strategy.id)
         .where(
             and_(
-                TagLink.entity_type == "trade_groups",
-                TagLink.entity_id == TradeGroup.id,
-                TagLink.tag_type == tag_type,
-                Tag.normalized_value == _normalize_tag_value(value),
+                Strategy.id == TradeGroup.strategy_id,
+                Strategy.normalized_name == normalize_strategy_name(name),
             )
         )
+        .correlate(TradeGroup)
         .exists()
     )
 
 
 def _group_text_search(q: str):
-    """Free-text match across the group name and its primary strategy value."""
-    normalized_q = _normalize_tag_value(q)
-    # Escape LIKE metacharacters so %, _, and \ are treated literally
-    escaped_q = normalized_q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    """Free-text match across the group name and its strategy name."""
+    escaped_q = escape_like(normalize_strategy_name(q))
     strategy_name_exists = (
-        select(Tag.id)
-        .join(TagLink, TagLink.tag_id == Tag.id)
+        select(Strategy.id)
         .where(
             and_(
-                TagLink.entity_type == "trade_groups",
-                TagLink.entity_id == TradeGroup.id,
-                TagLink.tag_type == "strategy",
-                TagLink.is_primary.is_(True),
-                Tag.normalized_value.like(f"%{escaped_q}%", escape="\\"),
+                Strategy.id == TradeGroup.strategy_id,
+                Strategy.normalized_name.like(f"%{escaped_q}%", escape="\\"),
             )
         )
         .correlate(TradeGroup)
@@ -328,8 +306,7 @@ def _filtered_group_query(  # noqa: PLR0913
     *,
     account_id: int | None,
     status_filter: str | None,
-    strategy_tag: str | None,
-    theme_tag: str | None,
+    strategy: str | None,
     q: str | None,
     instrument: str | None,
     opened_from: datetime | None,
@@ -353,10 +330,8 @@ def _filtered_group_query(  # noqa: PLR0913
         stmt = stmt.where(TradeGroup.opened_at >= opened_from)
     if opened_to is not None:
         stmt = stmt.where(TradeGroup.opened_at <= opened_to)
-    if strategy_tag:
-        stmt = stmt.where(_group_tag_exists("strategy", strategy_tag))
-    if theme_tag:
-        stmt = stmt.where(_group_tag_exists("theme", theme_tag))
+    if strategy:
+        stmt = stmt.where(_group_strategy_is(strategy))
     if q:
         stmt = stmt.where(_group_text_search(q))
     if instrument:
@@ -393,8 +368,7 @@ def _list_row(
 def list_trade_groups(  # noqa: PLR0913
     account_id: int | None = Query(default=None),
     status_filter: str | None = Query(default=None, alias="status"),
-    strategy_tag: str | None = Query(default=None),
-    theme_tag: str | None = Query(default=None),
+    strategy: str | None = Query(default=None),
     q: str | None = Query(default=None),
     instrument: str | None = Query(default=None),
     include_intraday: bool = Query(default=False),
@@ -424,8 +398,7 @@ def list_trade_groups(  # noqa: PLR0913
         stmt = _filtered_group_query(
             account_id=account_id,
             status_filter=status_filter,
-            strategy_tag=strategy_tag,
-            theme_tag=theme_tag,
+            strategy=strategy,
             q=q,
             instrument=instrument,
             opened_from=opened_from,
@@ -451,9 +424,8 @@ def list_trade_groups(  # noqa: PLR0913
 
 @router.post("/trade-groups", response_model=TradeGroupResponse, status_code=201)
 def create_trade_group(body: TradeGroupCreateRequest, db: Session = DB_SESSION_DEPENDENCY):
-    if body.source not in ASSIGNMENT_SOURCES:
-        raise HTTPException(status_code=400, detail="Invalid source")
-
+    if body.strategy_id is not None:
+        ensure_strategy(db, body.strategy_id)
     _parse_meta_or_400(body.meta_yaml)  # validate; raises 400 on malformed YAML
 
     opened_at = body.opened_at or _now_utc()
@@ -462,6 +434,7 @@ def create_trade_group(body: TradeGroupCreateRequest, db: Session = DB_SESSION_D
         name=body.name,
         notes=body.notes,
         meta_yaml=body.meta_yaml or None,
+        strategy_id=body.strategy_id,
         status="open",
         opened_at=opened_at,
         opened_by=body.created_by,
@@ -469,29 +442,6 @@ def create_trade_group(body: TradeGroupCreateRequest, db: Session = DB_SESSION_D
         updated_at=_now_utc(),
     )
     db.add(trade_group)
-    db.flush()
-
-    if body.strategy_tag_id is not None:
-        strategy_tag = db.get(Tag, body.strategy_tag_id)
-        if strategy_tag is None:
-            raise HTTPException(status_code=404, detail="Strategy tag not found")
-        if strategy_tag.tag_type != "strategy":
-            raise HTTPException(status_code=400, detail="strategy_tag_id must reference a strategy tag")
-        db.add(
-            TagLink(
-                entity_type="trade_groups",
-                entity_id=trade_group.id,
-                tag_id=strategy_tag.id,
-                tag_type="strategy",
-                is_primary=True,
-                source=body.source,
-                created_by=body.created_by,
-                confidence=body.confidence,
-                assigned_at=_now_utc(),
-                created_at=_now_utc(),
-            )
-        )
-
     db.commit()
     db.refresh(trade_group)
     return TradeGroupResponse.model_validate(trade_group)
@@ -500,18 +450,6 @@ def create_trade_group(body: TradeGroupCreateRequest, db: Session = DB_SESSION_D
 @router.get("/trade-groups/{trade_group_id}", response_model=TradeGroupDetailResponse)
 def get_trade_group(trade_group_id: int, db: Session = DB_SESSION_DEPENDENCY):
     trade_group = _ensure_group(db, trade_group_id)
-    tag_links = (
-        db.execute(
-            select(TagLink).where(
-                and_(
-                    TagLink.entity_type == "trade_groups",
-                    TagLink.entity_id == trade_group_id,
-                )
-            )
-        )
-        .scalars()
-        .all()
-    )
     # Counts both ledgers so the header matches the executions table, which lists
     # live/unsettled rows alongside settled ones. A group opened today has all of
     # its fills in trade_group_live_executions and would otherwise read zero.
@@ -531,10 +469,18 @@ def get_trade_group(trade_group_id: int, db: Session = DB_SESSION_DEPENDENCY):
     base["primary_strategy_value"] = primary_strategy_value
     return TradeGroupDetailResponse(
         **base,
-        tags=[TagLinkResponse.model_validate(row) for row in tag_links],
         execution_count=execution_count,
         meta=_parse_meta_or_400(trade_group.meta_yaml),
     )
+
+
+def _apply_strategy_patch(db: Session, trade_group: TradeGroup, body: TradeGroupPatchRequest) -> None:
+    """Set or clear the group's strategy, only when the request named the field."""
+    if "strategy_id" not in body.model_fields_set:
+        return
+    if body.strategy_id is not None:
+        ensure_strategy(db, body.strategy_id)
+    trade_group.strategy_id = body.strategy_id
 
 
 @router.patch("/trade-groups/{trade_group_id}", response_model=TradeGroupResponse)
@@ -561,6 +507,7 @@ def patch_trade_group(
         trade_group.closed_by = body.closed_by
     if body.closed_at is not None:
         trade_group.closed_at = body.closed_at
+    _apply_strategy_patch(db, trade_group, body)
 
     trade_group.updated_at = _now_utc()
     db.add(trade_group)
