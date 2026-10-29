@@ -2,7 +2,7 @@
 // trade groups, positions, and trades. Newest first; done tasks sit behind a
 // toggle and are never deleted automatically.
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import TagChips from "./TagChips";
 import {
@@ -152,7 +152,12 @@ function TaskRow({ task, onChanged }: { task: Task; onChanged: () => void }) {
           )}
           <button
             type="button"
-            onClick={() => setEditing(true)}
+            onClick={() => {
+              // Start from the task as it is now (an agent may have edited it).
+              setTitle(task.title);
+              setNotes(task.notes ?? "");
+              setEditing(true);
+            }}
             className="text-gray-500 hover:underline"
           >
             Edit
@@ -246,7 +251,10 @@ export default function TasksPage() {
     );
   const setParam = (key: string, value: string) => setParams({ [key]: value });
 
+  // Filters reload on every keystroke; only the latest request may land.
+  const requestSeq = useRef(0);
   const load = useCallback(() => {
+    const seq = ++requestSeq.current;
     tasksApi
       .list({
         status,
@@ -257,6 +265,7 @@ export default function TasksPage() {
         tradeGroupId,
       })
       .then((rows) => {
+        if (seq !== requestSeq.current) return;
         setTasks(rows);
         setError(null);
       })

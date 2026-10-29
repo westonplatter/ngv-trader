@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
-from datetime import date, timedelta
+from datetime import timedelta
 
 import pytest
 from fastapi.testclient import TestClient
@@ -14,6 +14,7 @@ from src.api.deps import get_db
 from src.api.main import app
 from src.models import LiveExecution, LivePosition, TagLink, TaskLink
 from src.services.group_link_carryover import carry_over_link_to_executions, carry_over_settled_group_links
+from src.services.intraday_overlay import ct_date
 from src.services.item_links import end_flat_position_tags, inherit_order_links, normalize_tag_value
 from tests.trade_group_factories import (
     CON_CL,
@@ -25,6 +26,7 @@ from tests.trade_group_factories import (
     make_live_execution,
     make_live_position,
     make_position,
+    now,
 )
 
 API = "/api/v1"
@@ -225,7 +227,7 @@ def test_late_partial_fill_inherits_its_orders_tags(client: TestClient, db_sessi
 
 def test_position_tags_end_only_when_flat_everywhere_and_snapshot_is_current(client: TestClient, db_session: Session) -> None:
     account = make_account(db_session)
-    position = make_position(db_session, account=account, con_id=CON_CL, as_of_date=date.today() - timedelta(days=1))
+    position = make_position(db_session, account=account, con_id=CON_CL, as_of_date=ct_date(now()) - timedelta(days=1))
     live = make_live_position(db_session, account=account, con_id=CON_CL)
     item = {"entity_type": "position", "account_id": account.id, "con_id": CON_CL}
     _tag(client, ["oil"], [item])
@@ -235,11 +237,11 @@ def test_position_tags_end_only_when_flat_everywhere_and_snapshot_is_current(cli
     # Flat in both, but the settled snapshot predates the tag (T-1): absence proves nothing.
     db_session.delete(position)
     db_session.delete(live)
-    other = make_position(db_session, account=account, con_id=CON_NG, as_of_date=date.today() - timedelta(days=1))
+    other = make_position(db_session, account=account, con_id=CON_NG, as_of_date=ct_date(now()) - timedelta(days=1))
     db_session.flush()
     assert end_flat_position_tags(db_session) == 0
     # Once a snapshot dated on/after the tag's day lands without it, the tag ends.
-    other.as_of_date = date.today()
+    other.as_of_date = ct_date(now())
     db_session.flush()
     assert end_flat_position_tags(db_session) == 1
     db_session.flush()
@@ -337,3 +339,17 @@ def test_unknown_items_are_rejected(client: TestClient) -> None:
     response = client.post(f"{API}/tag-links", json={"tags": ["oil"], "items": [{"entity_type": "strategy", "id": 1}]})
     assert response.status_code == 400
 
+
+
+def test_task_with_unknown_tag_id_is_404(client: TestClient) -> None:
+    response = client.post(f"{API}/tasks", json={"title": "x", "tags": [999_999]})
+    assert response.status_code == 404
+    assert client.get(f"{API}/tasks").json() == []
+
+
+def test_tag_list_limit_keeps_the_most_used(client: TestClient, db_session: Session) -> None:
+    account = make_account(db_session)
+    group = make_group(db_session, "Crude", account.id)
+    client.post(f"{API}/tags", json={"value": "aaa-unused"})
+    _tag(client, ["zzz-used"], [{"entity_type": "trade_group", "id": group.id}])
+    assert [t["value"] for t in client.get(f"{API}/tags", params={"limit": 1}).json()] == ["zzz-used"]
