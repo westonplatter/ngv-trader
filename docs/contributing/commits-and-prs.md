@@ -72,12 +72,29 @@ are unambiguous.
 
 ```bash
 cd frontend
-node scripts/screenshot.mjs "/positions?demo=1" ../docs/screenshots/<name>.png [width] [height]
+node scripts/screenshot.mjs "/positions?demo=1" /tmp/<name>.png [width] [height]
 ```
 
 The script uses a preinstalled Chromium (Playwright's browser CDN is blocked by the
-web egress policy — do **not** run `playwright install`). Commit the image under
-`docs/screenshots/` and embed it in the PR body via its raw URL on the PR branch.
+web egress policy — do **not** run `playwright install`).
+
+**Where images live.** Not on `main`: binaries stay out of the codebase. Commit
+them to the `media` branch, which shares no history with `main` and is never
+merged, under `screenshots/<feature>/`, and link them from the PR body or docs as
+`https://raw.githubusercontent.com/westonplatter/ngv-trader/media/screenshots/<feature>/<name>.png`.
+Plain git push, so it needs no extra tooling or network setup. To add one without
+switching branches:
+
+```bash
+git fetch origin media
+git worktree add /tmp/media media
+cp /tmp/<name>.png /tmp/media/screenshots/<feature>/
+git -C /tmp/media add -A && git -C /tmp/media commit -m "docs: add <feature> screenshots"
+git -C /tmp/media push origin media && git worktree remove /tmp/media
+```
+
+`git clone --single-branch` skips the branch. Older screenshots predating this
+rule still sit in `docs/screenshots/` on `main`.
 
 **Extending coverage.** If a changed view reads an endpoint the demo doesn't cover
 yet, add a fixture to `demoData.ts` and a route to `routeGet` (or a write handler) in
