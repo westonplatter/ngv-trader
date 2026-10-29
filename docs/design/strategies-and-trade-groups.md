@@ -8,21 +8,22 @@ code_dirs_or_files:
     "frontend/src/components/TradeTaggingPage.tsx",
     "frontend/src/components/StrategyPnlTable.tsx",
   ]
-description: Strategy tags and trade groups — data model, execution assignment and history, trade-group and tag APIs, position chips, the Strategy P&L table, and the Strategies workspace.
+description: Strategies and trade groups — data model, execution assignment and history, trade-group and tag APIs, position chips, the Strategy P&L table, and the Strategies workspace.
 ---
 
-# Trade Tagging
+# Strategies and Trade Groups
 
-Current-state documentation for strategy tags, trade groups, execution assignment, and the tagging UI.
+Current-state documentation for strategies, trade groups, execution assignment, and the Strategies UI.
 
 The UI surface for all of this is the **Strategies** page at `/strategies`
 (`frontend/src/components/TradeTaggingPage.tsx`), with a book-wide **Strategy P&L**
-table at `/strategies/table`. "Tagging" remains the name of the underlying
-mechanism — tags, tag links, and trade groups — and of this doc.
+table at `/strategies/table`. Strategies are currently stored as rows in the
+`tags` / `tag_links` tables. [spec-tags-and-tasks.md](spec-tags-and-tasks.md)
+moves them out so "tag" means only free-form tags.
 
 ## Purpose
 
-The trade-tagging system lets the desk organize executions into lifecycle groups and label those groups with strategy metadata.
+The strategies and trade-groups system lets the desk organize executions into lifecycle groups and label those groups with strategy metadata.
 
 Today the live system supports:
 
@@ -348,9 +349,9 @@ Both are the underlying root, not the OCC/local symbol (the sync writes that to
 symbol rather than a root, the derived list carries that too, which is why a
 group can list both `CL` and `CLZ6`.
 
-### Tagging workspace
+### Strategies workspace
 
-The main tagging UI is `frontend/src/components/TradeTaggingPage.tsx`.
+The main Strategies UI is `frontend/src/components/TradeTaggingPage.tsx`.
 
 It currently supports:
 
