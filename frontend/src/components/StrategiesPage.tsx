@@ -26,19 +26,7 @@ export type TradeGroup = TradeGroupPnlRow & {
 };
 
 export type TradeGroupDetail = TradeGroup & {
-  tags: TagLink[];
   execution_count: number;
-};
-
-export type TagLink = {
-  id: number;
-  entity_type: string;
-  entity_id: number;
-  tag_id: number;
-  tag_type: string;
-  is_primary: boolean;
-  source: string;
-  created_by: string;
 };
 
 export type GroupExecution = {
@@ -131,11 +119,10 @@ export type GroupExecutionsResponse = {
   by_account: GroupAccountPnl[];
 };
 
-export type Tag = {
+export type Strategy = {
   id: number;
-  tag_type: string;
-  value: string;
-  normalized_value: string;
+  name: string;
+  normalized_name: string;
   created_by: string;
   created_at: string;
   archived_at: string | null;
@@ -165,7 +152,7 @@ async function readErrorMessage(
 
 // Resolve which strategy owns a trade group, so a deep link that only carries
 // a trade_group_id can select the right parent strategy. Returns the strategy
-// tag value, or null if it can't be determined.
+// name, or null if it can't be determined.
 async function fetchGroupStrategyValue(
   groupId: number,
 ): Promise<string | null> {
@@ -291,11 +278,11 @@ function parseIdParam(value: string | null): number | null {
 // survives reload. Toggled with the header button, `F`, or `Escape`.
 const FOCUS_PREF_KEY = "trade_tagging_focus_mode";
 
-export default function TradeTaggingPage() {
+export default function StrategiesPage() {
   const { privacyMode } = usePrivacy();
   const [searchParams, setSearchParams] = useSearchParams();
 
-  const [strategies, setStrategies] = useState<Tag[]>([]);
+  const [strategies, setStrategies] = useState<Strategy[]>([]);
   const [selectedStrategyId, setSelectedStrategyId] = useState<number | null>(
     () => parseIdParam(searchParams.get("strategy_id")),
   );
@@ -444,9 +431,9 @@ export default function TradeTaggingPage() {
         await readErrorMessage(response, "Unable to load strategies"),
       );
     }
-    const raw: Tag[] = await response.json();
+    const raw: Strategy[] = await response.json();
     const data = [...raw].sort((a, b) =>
-      a.value.localeCompare(b.value, undefined, { sensitivity: "base" }),
+      a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
     );
     setStrategies(data);
     setSelectedStrategyId((current) => {
@@ -467,7 +454,7 @@ export default function TradeTaggingPage() {
 
     const params = new URLSearchParams({
       limit: "200",
-      strategy_tag: strategyValue,
+      strategy: strategyValue,
     });
     const response = await fetch(
       `${API_BASE_URL}/trade-groups?${params.toString()}`,
@@ -543,7 +530,7 @@ export default function TradeTaggingPage() {
             const ownerValue = await fetchGroupStrategyValue(groupId);
             if (!active) return;
             const owner = ownerValue
-              ? data.find((strategy) => strategy.value === ownerValue)
+              ? data.find((strategy) => strategy.name === ownerValue)
               : undefined;
             if (owner) {
               setSelectedStrategyId(owner.id);
@@ -612,7 +599,7 @@ export default function TradeTaggingPage() {
     }
 
     setLoadingGroups(true);
-    void loadGroups(selectedStrategy.value)
+    void loadGroups(selectedStrategy.name)
       .catch((groupError: unknown) => {
         if (!active) return;
         const nextMessage =
@@ -782,7 +769,7 @@ export default function TradeTaggingPage() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        value: newStrategyValue.trim(),
+        name: newStrategyValue.trim(),
         created_by: "ui-trader",
       }),
     });
@@ -793,7 +780,7 @@ export default function TradeTaggingPage() {
       );
     }
 
-    const createdStrategy: Tag = await response.json();
+    const createdStrategy: Strategy = await response.json();
     setNewStrategyValue("");
     setShowNewStrategy(false);
     setMessage("Created strategy.");
@@ -801,7 +788,7 @@ export default function TradeTaggingPage() {
     setSelectedStrategyId(createdStrategy.id);
   };
 
-  const setStrategyArchived = async (strategy: Tag, archived: boolean) => {
+  const setStrategyArchived = async (strategy: Strategy, archived: boolean) => {
     setError(null);
     setMessage(null);
 
@@ -840,8 +827,7 @@ export default function TradeTaggingPage() {
       body: JSON.stringify({
         name: newGroupName.trim(),
         notes: newGroupNotes.trim() || null,
-        strategy_tag_id: selectedStrategyId,
-        source: "manual",
+        strategy_id: selectedStrategyId,
         created_by: "ui-trader",
       }),
     });
@@ -857,7 +843,7 @@ export default function TradeTaggingPage() {
     setNewGroupNotes("");
     setShowNewGroup(false);
     setMessage(`Created trade group #${createdGroup.id}.`);
-    await loadGroups(selectedStrategy?.value ?? null);
+    await loadGroups(selectedStrategy?.name ?? null);
     setSelectedGroupId(createdGroup.id);
   };
 
@@ -909,7 +895,7 @@ export default function TradeTaggingPage() {
 
     setMessage("Trade group updated.");
     setEditingGroup(false);
-    await loadGroups(selectedStrategy?.value ?? null);
+    await loadGroups(selectedStrategy?.name ?? null);
     await loadGroupDetail(selectedGroupId);
   };
 
@@ -936,7 +922,7 @@ export default function TradeTaggingPage() {
     setMessage(null);
 
     const response = await fetch(
-      `${API_BASE_URL}/trade-groups/${selectedGroupId}?source=manual&created_by=ui-trader&reason=deleted+from+tagging+page`,
+      `${API_BASE_URL}/trade-groups/${selectedGroupId}?source=manual&created_by=ui-trader&reason=deleted+from+strategies+page`,
       { method: "DELETE" },
     );
 
@@ -948,7 +934,7 @@ export default function TradeTaggingPage() {
 
     setMessage(`Deleted trade group #${selectedGroupId}.`);
     setSelectedGroupId(null);
-    await loadGroups(selectedStrategy?.value ?? null);
+    await loadGroups(selectedStrategy?.name ?? null);
   };
 
   // Account-filtered views of the linked positions/trades (null = all accounts).
@@ -1175,7 +1161,7 @@ export default function TradeTaggingPage() {
                     onClick={() => setSelectedStrategyId(strategy.id)}
                   >
                     <p className="font-medium">
-                      {strategy.value}
+                      {strategy.name}
                       {isArchived && (
                         <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-normal text-amber-800">
                           Archived
@@ -1266,7 +1252,7 @@ export default function TradeTaggingPage() {
                   Trade Groups
                   {selectedStrategy && (
                     <span className="ml-1 font-normal text-gray-500">
-                      ({selectedStrategy.value})
+                      ({selectedStrategy.name})
                     </span>
                   )}
                 </h3>
@@ -1315,7 +1301,7 @@ export default function TradeTaggingPage() {
                 <div className="mb-3 space-y-2 rounded border border-dashed border-gray-300 p-2">
                   <div className="flex items-center gap-2">
                     <span className="shrink-0 rounded bg-gray-100 px-2 py-1 text-xs text-gray-600">
-                      {selectedStrategy.value}
+                      {selectedStrategy.name}
                     </span>
                     <input
                       value={newGroupName}
@@ -1484,7 +1470,7 @@ export default function TradeTaggingPage() {
                       {focusActive && (
                         <p className="mb-0.5 truncate text-xs text-gray-400">
                           {selectedStrategy && (
-                            <span>{selectedStrategy.value} › </span>
+                            <span>{selectedStrategy.name} › </span>
                           )}
                           <span className="text-gray-500">
                             {groupDetail.name}
@@ -1542,11 +1528,9 @@ export default function TradeTaggingPage() {
                       </p>
                     </div>
                     <div>
-                      <span className="text-xs text-gray-500">Tags</span>
+                      <span className="text-xs text-gray-500">Strategy</span>
                       <p className="text-gray-800">
-                        {groupDetail.tags.length === 0
-                          ? "None"
-                          : groupDetail.tags.map((t) => t.tag_type).join(", ")}
+                        {groupDetail.primary_strategy_value ?? "None"}
                       </p>
                     </div>
                   </div>

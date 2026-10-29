@@ -490,6 +490,13 @@ class TradeGroup(Base):
     # recognized blocks (targets/dates/profit_targets) let an agent read intent while
     # arbitrary keys pass through untouched.
     meta_yaml: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # The group's strategy. One per group; reporting rolls groups up by it.
+    strategy_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("strategies.id", ondelete="RESTRICT", name="fk_trade_groups_strategy_id_strategies"),
+        nullable=True,
+        index=True,
+    )
     status: Mapped[str] = mapped_column(Text, nullable=False, default="open")
     opened_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -609,6 +616,24 @@ class TradeGroupLiveExecution(Base):
     )
 
 
+class Strategy(Base):
+    """A named trading strategy. Each trade group belongs to at most one."""
+
+    __tablename__ = "strategies"
+    __table_args__ = (UniqueConstraint("normalized_name", name="uq_strategies_normalized_name"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    normalized_name: Mapped[str] = mapped_column(Text, nullable=False)
+    created_by: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class Tag(Base):
     __tablename__ = "tags"
     __table_args__ = (
@@ -635,12 +660,6 @@ class TagLink(Base):
         UniqueConstraint("entity_type", "entity_id", "tag_id", name="uq_tag_links_entity_tag"),
         Index("ix_tag_links_entity", "entity_type", "entity_id"),
         Index("ix_tag_links_tag_entity", "tag_id", "entity_type"),
-        Index(
-            "uq_tag_links_primary_strategy_trade_group",
-            "entity_id",
-            unique=True,
-            postgresql_where=text("entity_type = 'trade_groups' AND tag_type = 'strategy' AND is_primary = true"),
-        ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)

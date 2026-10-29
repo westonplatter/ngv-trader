@@ -25,6 +25,8 @@ description: Spec for free-form tags on trades, positions, trade groups, and tas
 # Spec: Tags and Tasks
 
 > **Status: NOT IMPLEMENTED.** Planning is closed; all decisions are settled.
+> Delivery 1 (strategies moved out of the tag tables) has shipped; tags and tasks
+> have not.
 
 ## Goal
 
@@ -206,8 +208,11 @@ Thin wrappers over the endpoints, in the existing MCP server:
 
 ## Delivery
 
-1. **Refactor PR.** Move strategies out of the tag tables, apply the API and UI
-   renames, and drop the unused tag types. No behaviour change.
+1. **Refactor PR (shipped).** Move strategies out of the tag tables, apply the
+   API and UI renames, and drop the unused tag types. No behaviour change. The
+   old `/tags`, `/themes`, and `/tag-links` routes were removed outright; the
+   feature PR brings `/tags` and `/tag-links` back for free-form tags. The
+   `tags` / `tag_links` tables are empty and keep their old columns until then.
 2. **Feature PR.** Tags, tasks, sync hooks, API, MCP tools, and UI.
 
 ## Out of scope

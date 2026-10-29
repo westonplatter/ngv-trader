@@ -74,7 +74,7 @@ export default function TradeGroupSearchSelect({
     setDropdownPos({
       top: flipUp ? rect.top : rect.bottom + 4,
       left: rect.left,
-      // Match the trigger cell's rendered width (the dynamically sized Tag Group
+      // Match the trigger cell's rendered width (the dynamically sized Trade Group
       // column), with a floor so the list is never uncomfortably narrow.
       width: Math.max(rect.width, 240),
       flipUp,
@@ -106,7 +106,7 @@ export default function TradeGroupSearchSelect({
 
   // What we recommend before they type: groups that already hold fills on this
   // underlying, which is the signal `q` cannot see — a group named "Nat Gas
-  // Winter Spread" is where NG was tagged last time, and no text match finds it.
+  // Winter Spread" is where NG was grouped last time, and no text match finds it.
   // `instrument` matches the derived underlying root of a group's assigned
   // executions, falling back to its name (so a group opened today with no fills
   // yet still surfaces). Anchoring at the start is what keeps that name fallback

@@ -20,8 +20,8 @@ from src.api.routers import (
     orders,
     positions,
     reports,
+    strategies,
     structures,
-    tags,
     trade_groups,
     tradebot,
     trades,
@@ -82,7 +82,7 @@ app.include_router(positions.router, prefix="/api/v1", tags=["Positions"])
 app.include_router(orders.router, prefix="/api/v1", tags=["Orders"])
 app.include_router(trades.router, prefix="/api/v1", tags=["Trades"])
 app.include_router(trade_groups.router, prefix="/api/v1", tags=["Trade Groups"])
-app.include_router(tags.router, prefix="/api/v1", tags=["Tags"])
+app.include_router(strategies.router, prefix="/api/v1", tags=["Strategies"])
 app.include_router(reports.router, prefix="/api/v1", tags=["Reports"])
 app.include_router(watch_lists.router, prefix="/api/v1", tags=["Watch Lists"])
 app.include_router(jobs.router, prefix="/api/v1", tags=["Jobs"])

@@ -1,6 +1,6 @@
 // Strategy P&L — one row per trade group, with its strategy and P&L split.
 //
-// Sibling to the three-column Strategies workspace (`TradeTaggingPage`), which
+// Sibling to the three-column Strategies workspace (`StrategiesPage`), which
 // answers "how is this group doing"; this answers "how is the book doing".
 // Read-only by design: assignment, renaming, and status changes stay on the
 // workspace page.
