@@ -19,19 +19,19 @@ code_dirs_or_files:
     "src/services/position_sync_flexquery.py",
     "src/mcp/semantic_server.py",
   ]
-description: Spec for free-form tags on trades, positions, and tasks, plus a simple task list — moving strategies out of the tag tables, data model, sync hooks, API, MCP tools, and UI.
+description: Spec for free-form tags on trades, positions, trade groups, and tasks, plus a simple task list — moving strategies out of the tag tables, data model, sync hooks, API, MCP tools, and UI.
 ---
 
 # Spec: Tags and Tasks
 
-> **Status: NOT IMPLEMENTED.** Product decisions are settled. Open questions are
-> listed at the end.
+> **Status: NOT IMPLEMENTED.** Product decisions are settled. One data question and
+> one verification remain; see the end.
 
 ## Goal
 
-- **Tags** are free-form, reusable labels a person applies to trades, positions,
-  and tasks, such as `long-beta`, `risk-off`, and `offset-risk`. They describe an
-  item; they do not group items.
+- **Tags** are free-form, reusable labels, like sticky notes, that a person
+  applies to trades, positions, trade groups, and tasks, such as `long-beta`,
+  `risk-off`, and `offset-risk`. They describe an item; they do not group items.
 - **Tasks** are simple to-dos (To do → In progress → Done) that link to
   strategies, trade groups, positions, and trades, and can carry tags.
 - A local LLM agent can do everything a person can through REST endpoints and MCP
@@ -76,6 +76,22 @@ no UI, and the other three types were never surfaced. See
 6. **No automatic tagging.** People or agents acting on request apply every tag.
    There are no rules.
 7. **Provenance on every write.** `created_by` is `user` or `agent:<name>`.
+8. **Trade groups can be tagged.** A tag on a group is a sticky note, separate
+   from its strategy.
+9. **No reporting on tags in this work.** No P&L, Greeks, or other aggregates
+   by tag. That is follow-up work.
+10. **Agents create, attach, detach, and search tags, and have full task CRUD.**
+    Merging, renaming, and archiving tags is human-only.
+11. **Tags are shared across accounts** and can carry an optional color.
+12. **Position tags can also be removed by hand** while the position is open.
+    Ended position tags are hidden in the UI and readable through the API.
+13. **Task defaults.** Fields are title, notes, and status only. Tasks are
+    ordered by created date. Done tasks are hidden behind a toggle and never
+    auto-deleted. Tasks can link to live orders, carried over at settlement.
+14. **Agent access** uses the same trusted local API as the UI, with no separate
+    credentials. Agent-applied tags and tasks show a marker in the UI.
+15. **Hard break on renamed API routes.** No redirects for the old strategy
+    endpoints under `/tags` and `/tag-links`.
 
 ## Data model
 
@@ -98,9 +114,9 @@ no UI, and the other three types were never surfaced. See
 - `tag_links`: `tag_id`, `entity_type`, `entity_key`, `created_by`,
   `assigned_at`, `ended_at`. The `is_primary`, `tag_type`, and `confidence`
   columns go away.
-- `entity_type` values: `trade`, `live_order`, `position`, `task`.
+- `entity_type` values: `trade`, `live_order`, `position`, `trade_group`, `task`.
 - `entity_key` identifies the item:
-  - `trade` and `task`: the row id
+  - `trade`, `trade_group`, and `task`: the row id
   - `position`: `account_id` + `con_id`
   - `live_order`: `account_id` + broker order id
   - Typed nullable columns with a per-type check constraint, not a string key.
@@ -113,6 +129,7 @@ no UI, and the other three types were never surfaced. See
 - `task_links`: `task_id`, `entity_type` (`strategy`, `trade_group`, `position`,
   `trade`, `live_order`), typed key columns as above, `created_by`, `created_at`.
 - Deleting a trade group or strategy drops its links, never the task.
+- Deleting a trade group or task drops its tag links.
 
 ## Sync hooks
 
@@ -133,7 +150,7 @@ New `tags` and `tasks` routers under `/api/v1`. Strategy endpoints move off
 - `GET /tags?q=` returns tags with per-type usage counts. `POST /tags` returns the
   existing tag on a normalized match. `PATCH` renames or recolors a tag;
   `POST /tags/{id}/archive` archives it; `POST /tags/{id}/merge` merges it into
-  another.
+  another. Rename, merge, and archive are not exposed to agents.
 - `POST /tag-links` / `DELETE /tag-links` attach or detach tags, singly or in
   bulk. Passing a tag name instead of an id creates the tag first.
 - `GET /tags/search?all=&any=&none=&entity_type=` finds items by tag.
@@ -146,19 +163,20 @@ New `tags` and `tasks` routers under `/api/v1`. Strategy endpoints move off
 ### MCP tools
 
 Thin wrappers over the endpoints, in the existing MCP server:
-`search_tags`, `tag_items`, `untag_items`, `find_by_tags`, `list_tasks`,
-`create_task`, `update_task`, `link_task`.
+`search_tags`, `create_tag`, `tag_items`, `untag_items`, `find_by_tags`,
+`list_tasks`, `create_task`, `update_task`, `delete_task`, `link_task`,
+`unlink_task`. No rename, merge, or archive tools.
 
 ## UI
 
-- **Inline tagging.** A chip area on trade, position, and task rows with
+- **Inline tagging.** A chip area on trade, position, trade group, and task rows with
   type-ahead: suggestions show usage counts, Enter creates a new tag, and × removes
   one. Agent-applied chips get a small marker.
 - **Bulk tagging.** Select rows, then "Add tag…" / "Remove tag…".
 - **Tags page.** Tag list with counts, rename, merge, color, and archive. Results
-  are tabbed (Trades | Positions | Tasks) with all/any/exclude filters, and the
-  Trades tab has a count / net premium / realized P&L summary row.
-- **Tasks page.** List filtered by status, tag, strategy, group, or symbol, with a
+  are tabbed (Trades | Positions | Trade groups | Tasks) with all/any/exclude
+  filters. No P&L or other aggregates.
+- **Tasks page.** Its own nav entry. List filtered by status, tag, strategy, group, or symbol, with a
   one-click status change. Done tasks are hidden behind a toggle.
 - **Linked surfaces.** Trade groups get a Tasks section. Position and trade rows
   get a task badge and a "+ task" shortcut.
@@ -174,19 +192,15 @@ Thin wrappers over the endpoints, in the existing MCP server:
 
 ## Out of scope
 
-Auto-tagging rules, due dates, assignees, reminders, and tag inheritance between
-orders or positions.
+Auto-tagging rules, reporting by tag (P&L, Greeks, aggregates), due dates,
+assignees, reminders, manual task ordering, and tag inheritance between orders or
+positions.
 
 ## Open questions
 
-1. What data is in the old catalog? This decides whether themes and the other
-   types are migrated into tags or dropped:
-   `SELECT tag_type, count(*) FROM tags GROUP BY 1;`
-   `SELECT entity_type, tag_type, count(*) FROM tag_links GROUP BY 1, 2;`
+1. What data is in the old catalog? This decides which non-strategy kinds are
+   migrated into tags (any with data) and which are dropped (empty). Answered by
+   a read-only inventory of `tags` and `tag_links`.
 2. Does a live fill's order id match FlexQuery's `ibOrderID` for the same order,
    including combos? This decides the live-order key. Verify before building the
    carry-over.
-3. Can agents merge, rename, and archive tags, or only create, attach, and
-   detach? Default: create, attach, and detach only.
-4. Does the Tasks list get its own nav page or a Portfolio panel? Default: its
-   own page.
