@@ -153,15 +153,12 @@ live fill); `offset-risk` was applied by an agent.
 | [tags-exclude.png](../screenshots/tags-exclude.png)     | `/tags?any=long-beta,risk-off&none=offset-risk&tab=positions` |
 | [positions-tags.png](../screenshots/positions-tags.png) | `/positions` — chips, task badges, the `AI` marker            |
 | [tasks.png](../screenshots/tasks.png)                   | `/tasks`                                                      |
+| [tags-flow.gif](../screenshots/tags-flow.gif)           | The above in sequence (22 s); demo writes do not persist      |
 
 ## Follow-up work
 
 Not done yet; noted while building and testing this feature.
 
-- **GIF of the flow** (inline tag on a Trades row → bulk tag → Tags-page
-  search). `scripts/screenshot.mjs` only takes stills; record with Playwright's
-  `recordVideo` against the demo server and convert, or stitch stills. Decide
-  whether a GIF in `docs/screenshots/` is worth its size first.
 - **`scripts/screenshot.mjs` in cloud sessions** looks for `playwright-core` and
   `/opt/pw-browsers/chromium`; the current container ships the full `playwright`
   package globally and Chromium under `/opt/pw-browsers/chromium-<rev>/`. It ran
