@@ -138,46 +138,34 @@ is human-only, so there are no tools for it.
 - **Linked surfaces:** a Tasks section in trade-group detail; a task badge and
   "+ task" shortcut on Trades and Positions rows.
 
+## Demo mode
+
+`frontend/src/lib/demoTags.ts` holds tag and task fixtures built on the existing
+demo positions, trades, and groups, and `demoApi.ts` serves `/tags`,
+`/tags/search` (same all / any / none rules), and `/tasks`, and adds tags and task
+counts to positions, trades, and trade groups. The story: `long-beta` cuts across
+NQ, MES, and ES rows in three different trade groups (one of them an unsettled
+live fill); `offset-risk` was applied by an agent.
+
+| Screenshot                                              | Route (`?demo=1`)                                             |
+| ------------------------------------------------------- | ------------------------------------------------------------- |
+| [tags-search.png](../screenshots/tags-search.png)       | `/tags?all=long-beta` — one tag across three groups           |
+| [tags-exclude.png](../screenshots/tags-exclude.png)     | `/tags?any=long-beta,risk-off&none=offset-risk&tab=positions` |
+| [positions-tags.png](../screenshots/positions-tags.png) | `/positions` — chips, task badges, the `AI` marker            |
+| [tasks.png](../screenshots/tasks.png)                   | `/tasks`                                                      |
+
 ## Follow-up work
 
 Not done yet; noted while building and testing this feature.
 
-### Demo data and a screenshot that shows the value
-
-Today demo mode has no tag or task fixtures (`/tags` and `/tasks` answer `[]`,
-`/tags/search` answers `{items: []}`), so tagging is invisible in a demo.
-
-1. **Fixtures** in `frontend/src/lib/demoData.ts`, typed with `TagChip` / `Tag` /
-   `Task` from `frontend/src/lib/tags.ts`. Tell one cross-cutting story that
-   strategies and trade groups cannot: tags that cut across groups.
-   - `long-beta` on the NQ future, the MES scalp, and the ES call diagonal.
-   - `risk-off` on the SPY 540 put and the GLD stock.
-   - `oil` on the CL roll group and the CL future position.
-   - `offset-risk` on the SPY puts group, applied by `agent:local-llm`, so the
-     `AI` badge shows.
-   - Tasks: "Roll CL before expiry" (linked to the CL position, in progress),
-     "Cover the GLD 324 call" (linked to the GLD covered-call group), and one
-     done task to exercise the toggle.
-   - Put `tags` / `open_task_count` on the matching `DEMO_POSITIONS`,
-     `DEMO_TRADE_EXECUTIONS`, and trade-group rows.
-2. **Routes** in `frontend/src/lib/demoApi.ts`: `GET /tags`, `/tags/search`
-   (filter the fixtures by `all` / `any` / `none` in the handler so the Tags page
-   is live), and `GET /tasks` (honor `include_done`, `trade_group_id`). Writes
-   stay the benign no-op.
-3. **Screenshots** with `node scripts/screenshot.mjs` (see
-   [commits-and-prs.md](../contributing/commits-and-prs.md#ui-change-screenshots-optional)),
-   committed under `docs/screenshots/`:
-   - `tags-search.png` — `/tags?all=long-beta&demo=1`: one tag pulling NQ, MES,
-     and ES rows from three different trade groups. This is the money shot: a
-     view no strategy or group gives you.
-   - `tags-exclude.png` — `/tags?any=long-beta,risk-off&none=offset-risk&tab=positions&demo=1`.
-   - `positions-tags.png` — `/positions?demo=1` with chips, task badges, and the
-     `AI` marker.
-   - `tasks.png` — `/tasks?demo=1`.
-4. **Optional GIF** (inline tag on a Trades row → bulk tag → Tags page search).
-   `screenshot.mjs` only takes stills; record with Playwright's `recordVideo`
-   against the demo server and convert to GIF, or stitch stills. Decide whether a
-   GIF in `docs/screenshots/` is worth its size before committing one.
+- **GIF of the flow** (inline tag on a Trades row → bulk tag → Tags-page
+  search). `scripts/screenshot.mjs` only takes stills; record with Playwright's
+  `recordVideo` against the demo server and convert, or stitch stills. Decide
+  whether a GIF in `docs/screenshots/` is worth its size first.
+- **`scripts/screenshot.mjs` in cloud sessions** looks for `playwright-core` and
+  `/opt/pw-browsers/chromium`; the current container ships the full `playwright`
+  package globally and Chromium under `/opt/pw-browsers/chromium-<rev>/`. It ran
+  only with `PW_CHROMIUM` set and a `NODE_PATH` shim. Teach it both layouts.
 
 ### Found while building
 
