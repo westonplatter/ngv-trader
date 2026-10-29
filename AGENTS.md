@@ -38,6 +38,12 @@ working in its area.
   After any doc change, run `uv run python scripts/docs_check.py`. Specs carry a status
   banner and get rewritten or folded when they ship. See
   [docs-conventions.md](docs/contributing/docs-conventions.md).
+- **Media.** Never commit images, GIFs, or other binaries to `main` or a PR branch.
+  Push them to the `media` branch under `screenshots/<feature>/` and link them by
+  their raw URL on that branch. The branch shares no history with `main`; never
+  merge it. Add files through a worktree so your checkout is untouched. Plain git
+  push, no LFS. Steps:
+  [commits-and-prs.md](docs/contributing/commits-and-prs.md#ui-change-screenshots-optional).
 - **Issues.** Beads (`bd`) is available but optional. If you use it, closing asserts
   the work is complete; otherwise leave the issue open and note what remains. See
   [issue-tracking.md](docs/contributing/issue-tracking.md).
