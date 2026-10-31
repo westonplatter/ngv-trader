@@ -1,6 +1,5 @@
 """Strategies API router."""
 
-import re
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
@@ -10,29 +9,15 @@ from sqlalchemy.orm import Session
 
 from src.api.deps import get_db
 from src.models import Strategy, TradeGroup
+from src.services.strategies import normalize_strategy_name, require_strategy
+from src.utils.sql import escape_like
 
 router = APIRouter()
 DB_SESSION_DEPENDENCY = Depends(get_db)
 
 
-def normalize_strategy_name(value: str) -> str:
-    return re.sub(r"\s+", " ", value.strip().lower())
-
-
-def escape_like(value: str) -> str:
-    """Escape LIKE metacharacters so %, _, and \\ are treated literally."""
-    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-
-
 def _now_utc() -> datetime:
     return datetime.now(timezone.utc)
-
-
-def ensure_strategy(db: Session, strategy_id: int) -> Strategy:
-    strategy = db.get(Strategy, strategy_id)
-    if strategy is None:
-        raise HTTPException(status_code=404, detail="Strategy not found")
-    return strategy
 
 
 class StrategyResponse(BaseModel):
@@ -95,7 +80,7 @@ def create_strategy(body: StrategyCreateRequest, db: Session = DB_SESSION_DEPEND
 
 @router.patch("/strategies/{strategy_id}", response_model=StrategyResponse)
 def patch_strategy(strategy_id: int, body: StrategyPatchRequest, db: Session = DB_SESSION_DEPENDENCY):
-    strategy = ensure_strategy(db, strategy_id)
+    strategy = require_strategy(db, strategy_id)
     normalized_name = normalize_strategy_name(body.name)
     if not normalized_name:
         raise HTTPException(status_code=400, detail="name cannot be empty")
@@ -114,7 +99,7 @@ def patch_strategy(strategy_id: int, body: StrategyPatchRequest, db: Session = D
 
 @router.post("/strategies/{strategy_id}/archive", response_model=StrategyResponse)
 def archive_strategy(strategy_id: int, db: Session = DB_SESSION_DEPENDENCY):
-    strategy = ensure_strategy(db, strategy_id)
+    strategy = require_strategy(db, strategy_id)
     if strategy.archived_at is None:
         strategy.archived_at = _now_utc()
         db.add(strategy)
@@ -125,7 +110,7 @@ def archive_strategy(strategy_id: int, db: Session = DB_SESSION_DEPENDENCY):
 
 @router.post("/strategies/{strategy_id}/unarchive", response_model=StrategyResponse)
 def unarchive_strategy(strategy_id: int, db: Session = DB_SESSION_DEPENDENCY):
-    strategy = ensure_strategy(db, strategy_id)
+    strategy = require_strategy(db, strategy_id)
     if strategy.archived_at is not None:
         strategy.archived_at = None
         db.add(strategy)
@@ -136,7 +121,7 @@ def unarchive_strategy(strategy_id: int, db: Session = DB_SESSION_DEPENDENCY):
 
 @router.delete("/strategies/{strategy_id}", status_code=204)
 def delete_strategy(strategy_id: int, response: Response, db: Session = DB_SESSION_DEPENDENCY):
-    strategy = ensure_strategy(db, strategy_id)
+    strategy = require_strategy(db, strategy_id)
     in_use = db.execute(select(func.count()).select_from(TradeGroup).where(TradeGroup.strategy_id == strategy_id)).scalar_one()
     if in_use:
         raise HTTPException(status_code=409, detail="Strategy is in use and cannot be deleted")
