@@ -6,7 +6,7 @@ from typing import Any, Protocol
 from sqlalchemy.orm import Session
 
 from src.api.schemas import TagChip
-from src.services.item_links import open_task_counts, tags_by_item
+from src.services.item_descriptions import open_task_counts, tags_by_item
 
 
 class Annotatable(Protocol):

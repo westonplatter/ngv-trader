@@ -2,7 +2,9 @@
 topics: ["tags", "tasks", "positions", "trades", "agent-tools", "frontend"]
 code_dirs_or_files:
   [
+    "src/services/item_refs.py",
     "src/services/item_links.py",
+    "src/services/item_descriptions.py",
     "src/services/tags.py",
     "src/api/routers/tags.py",
     "src/api/routers/tasks.py",
@@ -67,7 +69,10 @@ use the word "tag".
 
 ## Sync behavior
 
-All in `src/services/item_links.py`.
+All in `src/services/item_links.py`. (Item keys and validation are
+`src/services/item_refs.py`; the read-side lookups — tags per item, open-task
+counts, display labels — are `src/services/item_descriptions.py`, with one
+describer per entity type.)
 
 - **Live fill → settled trade.** Each entry point in
   `src/services/group_link_carryover.py` also moves a live fill's tag and task
