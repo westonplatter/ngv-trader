@@ -45,27 +45,34 @@ def upgrade() -> None:
 
     # --- Backfill existing rows from raw JSON ---
     # Extract sec_type from raw->'contract'->>'secType'
-    op.execute(sa.text("""
+    op.execute(
+        sa.text("""
             UPDATE trade_executions
             SET sec_type = raw->'contract'->>'secType'
             WHERE raw->'contract'->>'secType' IS NOT NULL
               AND sec_type IS NULL
-        """))
+        """)
+    )
     # Extract con_id from raw->'contract'->>'conId'
-    op.execute(sa.text("""
+    op.execute(
+        sa.text("""
             UPDATE trade_executions
             SET con_id = (raw->'contract'->>'conId')::int
             WHERE raw->'contract'->>'conId' IS NOT NULL
               AND con_id IS NULL
-        """))
+        """)
+    )
     # Tag combo summary fills (secType = BAG)
-    op.execute(sa.text("""
+    op.execute(
+        sa.text("""
             UPDATE trade_executions
             SET exec_role = 'combo_summary'
             WHERE sec_type = 'BAG'
-        """))
+        """)
+    )
     # Tag leg fills: non-BAG executions whose parent trade also has a BAG execution
-    op.execute(sa.text("""
+    op.execute(
+        sa.text("""
             UPDATE trade_executions te
             SET exec_role = 'leg'
             WHERE te.sec_type IS NOT NULL
@@ -76,9 +83,11 @@ def upgrade() -> None:
                   WHERE sibling.trade_id = te.trade_id
                     AND sibling.sec_type = 'BAG'
               )
-        """))
+        """)
+    )
     # Backfill trades.sec_type = 'BAG' for parent trades that have combo fills
-    op.execute(sa.text("""
+    op.execute(
+        sa.text("""
             UPDATE trades t
             SET sec_type = 'BAG'
             WHERE EXISTS (
@@ -87,7 +96,8 @@ def upgrade() -> None:
                   AND te.sec_type = 'BAG'
             )
             AND (t.sec_type IS NULL OR t.sec_type != 'BAG')
-        """))
+        """)
+    )
 
 
 def downgrade() -> None:

@@ -210,6 +210,7 @@ def trade_group_pnl(group: str) -> dict[str, Any]:
 # Tags and tasks — thin wrappers over the local REST API
 # ---------------------------------------------------------------------------
 
+
 def _agent() -> str:
     return f"agent:{os.environ.get('NGV_AGENT_NAME', 'local-llm')}"
 

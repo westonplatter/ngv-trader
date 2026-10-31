@@ -97,14 +97,14 @@ def _dedupe_by_con_id(contracts: Iterable[Contract]) -> list[Contract]:
 def _qualify_contract(ib: IB, spec: Contract) -> Contract:
     qualified_contracts = ib.qualifyContracts(spec)
     if len(qualified_contracts) != 1:
-        raise RuntimeError("Expected exactly one qualified contract for " f"{_describe_contract(spec)}, got {len(qualified_contracts)}.")
+        raise RuntimeError(f"Expected exactly one qualified contract for {_describe_contract(spec)}, got {len(qualified_contracts)}.")
     return qualified_contracts[0]
 
 
 def _qualify_contracts(ib: IB, specs: list[Contract]) -> list[Contract]:
     qualified_contracts = ib.qualifyContracts(*specs)
     if len(qualified_contracts) != len(specs):
-        raise RuntimeError("Expected one qualified result per contract spec " f"(requested={len(specs)}, qualified={len(qualified_contracts)}).")
+        raise RuntimeError(f"Expected one qualified result per contract spec (requested={len(specs)}, qualified={len(qualified_contracts)}).")
     return qualified_contracts
 
 
@@ -199,9 +199,7 @@ def _build_lookup_context(request: ContractSelectionRequest) -> str:
 
 def _describe_contract(contract: Contract) -> str:
     raw_expiry = (contract.lastTradeDateOrContractMonth or "").strip() or "unknown"
-    return (
-        f"con_id={contract.conId}, local_symbol={contract.localSymbol or 'unknown'}, " f"expiry={raw_expiry}, strike={contract.strike}, right={contract.right}"
-    )
+    return f"con_id={contract.conId}, local_symbol={contract.localSymbol or 'unknown'}, expiry={raw_expiry}, strike={contract.strike}, right={contract.right}"
 
 
 class ContractSelector(ABC):
@@ -220,7 +218,7 @@ class ContractSelector(ABC):
     def validate_matches(self, contracts: list[Contract], request: ContractSelectionRequest) -> None:
         if not contracts:
             context = _build_lookup_context(request)
-            raise RuntimeError(f"No contracts found for {context}. " "Check that the contract specification is correct.")
+            raise RuntimeError(f"No contracts found for {context}. Check that the contract specification is correct.")
 
     def select(self, ib: IB, request: ContractSelectionRequest) -> tuple[Contract, int]:
         contracts = _request_contracts(ib, self.build_spec(request))
@@ -364,7 +362,7 @@ class FutureOptionContractSelector(ContractSelector):
 
         if not chains:
             context = _build_lookup_context(request)
-            raise RuntimeError(f"No FOP option chain metadata found for {context} " f"(underlying_con_id={index.conId}).")
+            raise RuntimeError(f"No FOP option chain metadata found for {context} (underlying_con_id={index.conId}).")
 
         candidate_chains = self._filter_chain_candidates(chains, request)
         selected_chain = self._select_chain(candidate_chains)
@@ -485,15 +483,13 @@ class FutureOptionContractSelector(ContractSelector):
             if not any(_expiry_matches_month(expiry, request.contract_month) for expiry in expirations):
                 sample = ", ".join(sorted(expirations)[:10]) or "none"
                 raise RuntimeError(
-                    f"No FOP expirations matching month={request.contract_month} "
-                    f"for {request.symbol} on {request.exchange}. "
-                    f"Available expirations: {sample}."
+                    f"No FOP expirations matching month={request.contract_month} for {request.symbol} on {request.exchange}. Available expirations: {sample}."
                 )
         if request.strike is not None:
             strike_found = any(abs(option_strike - request.strike) < 1e-9 for option_strike in strikes)
             if not strike_found:
                 sample = ", ".join(str(value) for value in sorted(set(strikes))[:20])
-                raise RuntimeError(f"No FOP strike={request.strike} for {request.symbol} on {request.exchange}. " f"Available strikes: {sample or 'none'}.")
+                raise RuntimeError(f"No FOP strike={request.strike} for {request.symbol} on {request.exchange}. Available strikes: {sample or 'none'}.")
 
 
 class ContractSelectorFactory:

@@ -51,7 +51,13 @@ dev = [
 testpaths = ["tests"]
 addopts = "-q"
 
-# -- Ruff: complexity guardrails ----------------------------------------------
+# -- Ruff -----------------------------------------------------------------------
+[tool.ruff]
+# The width the codebase is already formatted at. Pinned so `ruff format` gives
+# every contributor and agent the same result instead of the 88-column default.
+line-length = 160
+
+# Complexity guardrails
 [tool.ruff.lint]
 select = [
   "C901",    # McCabe cyclomatic complexity

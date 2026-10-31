@@ -37,9 +37,7 @@ class TradeGroupMetaError(ValueError):
 RECOGNIZED_TOP_LEVEL_KEYS = frozenset({"targets", "dates", "profit_targets"})
 
 # Numeric fields recognized inside ``targets.delta``. Others pass through.
-_DELTA_NUMERIC_FIELDS = frozenset(
-    {"target", "min", "max", "tolerance", "static", "options_transient"}
-)
+_DELTA_NUMERIC_FIELDS = frozenset({"target", "min", "max", "tolerance", "static", "options_transient"})
 _DATE_FIELDS = frozenset({"entry_estimate", "exit_estimate"})
 
 
@@ -121,9 +119,7 @@ def _coerce_date(value: Any, path: str) -> dt.date:
         try:
             return dt.date.fromisoformat(value.strip())
         except ValueError as exc:
-            raise TradeGroupMetaError(
-                f"`{path}` must be an ISO date (YYYY-MM-DD)"
-            ) from exc
+            raise TradeGroupMetaError(f"`{path}` must be an ISO date (YYYY-MM-DD)") from exc
     raise TradeGroupMetaError(f"`{path}` must be an ISO date (YYYY-MM-DD)")
 
 
