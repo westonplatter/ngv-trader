@@ -205,8 +205,7 @@ def _pick_month(
         if not allow_fallback:
             available_text = ", ".join(display_contract_month(m) for m in available_months)
             raise ValueError(
-                f"{display_contract_month(requested_contract_month)} {label} contract is not currently available. "
-                f"Available contract months: {available_text}."
+                f"{display_contract_month(requested_contract_month)} {label} contract is not currently available. Available contract months: {available_text}."
             )
         selected_month = available_months[0]
     else:
@@ -248,7 +247,7 @@ def _select_stock(session: Session, symbol: str) -> dict[str, Any]:
     )
     contract = session.execute(stmt).scalars().first()
     if contract is None:
-        raise ValueError(f"No active STK contract for {symbol} in the database. " "Run a contracts.sync job first (enqueue_contracts_sync_job).")
+        raise ValueError(f"No active STK contract for {symbol} in the database. Run a contracts.sync job first (enqueue_contracts_sync_job).")
     result = _contract_to_dict(contract, None)
     result["requested_contract_month"] = None
     result["requested_available"] = True
@@ -310,7 +309,7 @@ def _select_option(
         all_candidates = _load_candidates(session, symbol, sec_type, min_days_to_expiry, right=right)
         available_strikes = sorted({c.strike for c, _ in all_candidates if c.strike is not None})
         strikes_text = ", ".join(str(s) for s in available_strikes[:20])
-        raise ValueError(f"No active {symbol} {sec_type} contract with strike={strike}. " f"Available strikes: {strikes_text or 'none (run contracts.sync)'}.")
+        raise ValueError(f"No active {symbol} {sec_type} contract with strike={strike}. Available strikes: {strikes_text or 'none (run contracts.sync)'}.")
 
     if not candidates:
         raise ValueError(

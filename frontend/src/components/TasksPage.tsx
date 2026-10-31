@@ -4,27 +4,25 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
+import AgentBadge from "./AgentBadge";
 import TagChips from "./TagChips";
-import { TASK_STATUS_LABEL, TASK_STATUS_ORDER, agentName, isAgent, tasksApi } from "../lib/tags";
-import type { Task, TaskLink, TaskStatus } from "../types/tags";
+import { useAsyncAction } from "../hooks/useAsyncAction";
+import { errorMessage } from "../lib/api";
+import {
+  TASK_STATUS_LABEL,
+  TASK_STATUS_ORDER,
+  itemKey,
+  itemRoute,
+  nextTaskStatus,
+  tasksApi,
+} from "../lib/tags";
+import type { Task, TaskStatus } from "../types/tags";
 
 const STATUS_CLASS: Record<TaskStatus, string> = {
   todo: "bg-gray-100 text-gray-800",
   in_progress: "bg-blue-100 text-blue-800",
   done: "bg-emerald-100 text-emerald-800",
 };
-
-function linkHref(link: TaskLink): string | null {
-  if (link.entity_type === "trade_group")
-    return `/strategies?trade_group_id=${link.id}`;
-  if (link.entity_type === "strategy")
-    return `/strategies?strategy_id=${link.id}`;
-  if (link.entity_type === "position") return "/positions";
-  const symbol = link.details.symbol;
-  return typeof symbol === "string"
-    ? `/trades?symbol=${encodeURIComponent(symbol)}`
-    : "/trades";
-}
 
 const LINK_KIND: Record<string, string> = {
   strategy: "Strategy",
@@ -38,21 +36,8 @@ function TaskRow({ task, onChanged }: { task: Task; onChanged: () => void }) {
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState(task.title);
   const [notes, setNotes] = useState(task.notes ?? "");
-  const [error, setError] = useState<string | null>(null);
-
-  const run = async (action: () => Promise<unknown>) => {
-    try {
-      setError(null);
-      await action();
-      onChanged();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    }
-  };
-  const nextStatus =
-    TASK_STATUS_ORDER[
-      (TASK_STATUS_ORDER.indexOf(task.status) + 1) % TASK_STATUS_ORDER.length
-    ];
+  const { run, error, pending } = useAsyncAction(onChanged);
+  const nextStatus = nextTaskStatus(task.status);
 
   return (
     <li className="space-y-1.5 rounded border border-gray-200 bg-white p-3">
@@ -103,14 +88,10 @@ function TaskRow({ task, onChanged }: { task: Task; onChanged: () => void }) {
                 className={`text-sm font-medium ${task.status === "done" ? "text-gray-400 line-through" : "text-gray-900"}`}
               >
                 {task.title}
-                {isAgent(task.created_by) && (
-                  <span
-                    className="ml-1.5 rounded bg-violet-100 px-1 align-middle text-[9px] font-semibold uppercase text-violet-700"
-                    title={`Created by agent ${agentName(task.created_by)}`}
-                  >
-                    AI
-                  </span>
-                )}
+                <AgentBadge
+                  createdBy={task.created_by}
+                  className="ml-1.5 align-middle"
+                />
               </p>
               {task.notes && (
                 <p className="whitespace-pre-wrap text-xs text-gray-600">
@@ -126,7 +107,8 @@ function TaskRow({ task, onChanged }: { task: Task; onChanged: () => void }) {
             onClick={() =>
               run(() => tasksApi.patch(task.id, { status: nextStatus }))
             }
-            className={`rounded px-2 py-0.5 font-medium ${STATUS_CLASS[task.status]}`}
+            disabled={pending}
+            className={`rounded px-2 py-0.5 font-medium disabled:opacity-50 ${STATUS_CLASS[task.status]}`}
             title={`Move to ${TASK_STATUS_LABEL[nextStatus]}`}
           >
             {TASK_STATUS_LABEL[task.status]}
@@ -137,7 +119,8 @@ function TaskRow({ task, onChanged }: { task: Task; onChanged: () => void }) {
               onClick={() =>
                 run(() => tasksApi.patch(task.id, { status: "done" }))
               }
-              className="text-emerald-700 hover:underline"
+              disabled={pending}
+              className="text-emerald-700 hover:underline disabled:opacity-50"
             >
               Done
             </button>
@@ -168,24 +151,19 @@ function TaskRow({ task, onChanged }: { task: Task; onChanged: () => void }) {
       </div>
       <div className="flex flex-wrap items-center gap-1.5 text-xs">
         {task.links.map((link) => {
-          const href = linkHref(link);
           const closed =
             link.entity_type === "position" && link.details.open === false;
           return (
             <span
-              key={`${link.entity_type}:${link.id ?? link.ib_exec_id ?? `${link.account_id}-${link.con_id}`}`}
+              key={itemKey(link)}
               className="inline-flex items-center gap-1 rounded bg-slate-100 px-1.5 py-0.5 text-slate-700"
             >
               <span className="text-[10px] uppercase text-slate-500">
                 {LINK_KIND[link.entity_type]}
               </span>
-              {href ? (
-                <Link to={href} className="hover:underline">
-                  {link.label}
-                </Link>
-              ) : (
-                link.label
-              )}
+              <Link to={itemRoute(link)} className="hover:underline">
+                {link.label}
+              </Link>
               {closed && (
                 <span className="text-[10px] text-gray-500">(closed)</span>
               )}
@@ -285,7 +263,7 @@ export default function TasksPage() {
       setNewTitle("");
       load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errorMessage(err));
     }
   };
 

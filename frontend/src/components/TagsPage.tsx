@@ -4,8 +4,10 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
+import AgentBadge from "./AgentBadge";
 import { TagChipView, TagInput } from "./TagChips";
-import { isAgent, normalizeTagValue, tagsApi } from "../lib/tags";
+import { useAsyncAction } from "../hooks/useAsyncAction";
+import { itemKey, itemRoute, normalizeTagValue, tagsApi } from "../lib/tags";
 import type { Tag, TagEntityType, TaggedItem } from "../types/tags";
 
 type Tab = "trades" | "positions" | "trade_groups" | "tasks";
@@ -25,18 +27,6 @@ function formatWhen(value: unknown): string {
   if (typeof value !== "string") return "";
   const parsed = Date.parse(value);
   return Number.isNaN(parsed) ? "" : new Date(parsed).toLocaleString();
-}
-
-function itemHref(item: TaggedItem): string | null {
-  if (item.entity_type === "trade_group")
-    return `/strategies?trade_group_id=${item.id}`;
-  if (item.entity_type === "task") return `/tasks`;
-  const symbol = item.details.symbol;
-  if (item.entity_type === "position" && typeof symbol === "string")
-    return `/positions`;
-  if (typeof symbol === "string")
-    return `/trades?symbol=${encodeURIComponent(symbol)}`;
-  return null;
 }
 
 function FilterRow({
@@ -100,19 +90,11 @@ function TagRow({
   // An uncolored tag stays uncolored unless the picker was actually used.
   const [colorTouched, setColorTouched] = useState(false);
   const [mergeInto, setMergeInto] = useState<number | "">("");
-  const [error, setError] = useState<string | null>(null);
   const total = Object.values(tag.usage).reduce((a, b) => a + b, 0);
-
-  const run = async (action: () => Promise<unknown>) => {
-    try {
-      setError(null);
-      await action();
-      setEditing(false);
-      onChanged();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    }
-  };
+  const { run, error } = useAsyncAction(() => {
+    setEditing(false);
+    onChanged();
+  });
 
   return (
     <li
@@ -134,11 +116,7 @@ function TagRow({
           >
             {tag.value}
           </span>
-          {isAgent(tag.created_by) && (
-            <span className="rounded bg-violet-100 px-1 text-[9px] font-semibold uppercase text-violet-700">
-              AI
-            </span>
-          )}
+          <AgentBadge createdBy={tag.created_by} />
         </button>
         <span className="flex shrink-0 items-center gap-2 text-xs text-gray-500">
           <span title={JSON.stringify(tag.usage)}>{total}</span>
@@ -439,18 +417,12 @@ export default function TagsPage() {
           <table className="min-w-full border-collapse text-sm">
             <tbody>
               {visible.map((item) => {
-                const href = itemHref(item);
-                const key = `${item.entity_type}:${item.id ?? item.ib_exec_id ?? `${item.account_id}-${item.con_id}`}`;
                 return (
-                  <tr key={key} className="border-b border-gray-100">
+                  <tr key={itemKey(item)} className="border-b border-gray-100">
                     <td className="whitespace-nowrap px-2 py-1.5 font-medium text-gray-800">
-                      {href ? (
-                        <Link to={href} className="hover:underline">
-                          {item.label}
-                        </Link>
-                      ) : (
-                        item.label
-                      )}
+                      <Link to={itemRoute(item)} className="hover:underline">
+                        {item.label}
+                      </Link>
                       {item.entity_type === "live_execution" && (
                         <span className="ml-1 rounded bg-amber-100 px-1 text-[10px] text-amber-800">
                           unsettled

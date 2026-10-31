@@ -3,6 +3,7 @@
 
 import { useState } from "react";
 import { Link } from "react-router-dom";
+import { useAsyncAction } from "../hooks/useAsyncAction";
 import { tasksApi } from "../lib/tags";
 import type { ItemRef } from "../types/tags";
 
@@ -20,19 +21,15 @@ export default function TaskQuickAdd({
 }) {
   const [adding, setAdding] = useState(false);
   const [title, setTitle] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const { run, error } = useAsyncAction(() => {
+    setTitle("");
+    setAdding(false);
+    onCreated();
+  });
 
-  const submit = async () => {
+  const submit = () => {
     if (!item || !title.trim()) return;
-    try {
-      await tasksApi.create({ title: title.trim(), links: [item] });
-      setTitle("");
-      setAdding(false);
-      setError(null);
-      onCreated();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    }
+    void run(() => tasksApi.create({ title: title.trim(), links: [item] }));
   };
 
   return (
@@ -53,7 +50,7 @@ export default function TaskQuickAdd({
             value={title}
             onChange={(event) => setTitle(event.target.value)}
             onKeyDown={(event) => {
-              if (event.key === "Enter") void submit();
+              if (event.key === "Enter") submit();
               if (event.key === "Escape") setAdding(false);
             }}
             onBlur={() => !title.trim() && setAdding(false)}

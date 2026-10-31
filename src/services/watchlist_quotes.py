@@ -116,7 +116,7 @@ def refresh_watch_list_quotes(
                 )
             except Exception as exc:
                 raise RuntimeError(
-                    "Could not connect to TWS/Gateway while refreshing watch list quotes " f"(host={host}, port={port}, client_id={client_id}): {exc}"
+                    f"Could not connect to TWS/Gateway while refreshing watch list quotes (host={host}, port={port}, client_id={client_id}): {exc}"
                 ) from exc
             tickers = _refresh_quotes_with_ib(ib, contracts)
         finally:

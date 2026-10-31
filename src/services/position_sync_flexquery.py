@@ -200,6 +200,63 @@ def _purge_superseded_live_positions(session: Session, account_id: int, as_of: d
     return purged
 
 
+def _parse_flex_date(value: str | None) -> date | None:
+    if not value:
+        return None
+    for fmt in ("%Y%m%d", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(value, fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
+def _confirmed_flat_as_of(report: CustomFlexReport, account_code: str) -> date | None:
+    """The report date if the report affirmatively shows the account holding nothing.
+
+    Flat means this account's ``FlexStatement`` is present *and* carries an
+    ``OpenPositions`` section with no rows. A missing statement or section (a
+    misconfigured query, another token's account) proves nothing, and neither
+    does a section with rows the parser dropped, so those return ``None``.
+    """
+    root = getattr(report, "root", None)
+    if root is None:
+        return None
+    for statement in root.iter("FlexStatement"):
+        if statement.get("accountId") != account_code:
+            continue
+        section = statement.find("OpenPositions")
+        if section is None or len(section) > 0:
+            return None
+        return _parse_flex_date(statement.get("toDate"))
+    return None
+
+
+def _sync_flat_account(engine: Engine, account_code: str, as_of: date, flex_query_token_id: int | None) -> dict[str, Any]:
+    """Apply a snapshot in which the account holds nothing.
+
+    Without this, an account's last close never reached ``positions``: the
+    empty report returned early, so the rows (and any tags on them) lived on.
+    """
+    with Session(engine) as session:
+        account_id = get_or_create_accounts(session, {account_code}, flex_query_token_id)[account_code]
+        deleted = session.execute(delete(Position).where(Position.account_id == account_id)).rowcount or 0
+        live_purged = _purge_superseded_live_positions(session, account_id, as_of)
+        # No rows remain to date this account's snapshot, so pass the report's date.
+        tags_ended = end_flat_position_tags(session, snapshot_as_of={account_id: as_of})
+        session.commit()
+
+    logger.info(
+        "[flex_position_sync] account=%s as_of=%s flat deleted=%d live_purged=%d tags_ended=%d",
+        account_code,
+        as_of.isoformat(),
+        deleted,
+        live_purged,
+        tags_ended,
+    )
+    return {"upserted_count": 0, "deleted_count": deleted, "live_purged": live_purged, "as_of_date": as_of}
+
+
 def sync_flex_positions(
     engine: Engine,
     *,
@@ -227,8 +284,13 @@ def sync_flex_positions(
 
     df = report.open_positions_by_account_id(account_code)
     if df is None or len(df.index) == 0:
-        logger.info("flex_position_sync: account=%s no positions", account_code)
-        return {"upserted_count": 0, "as_of_date": None}
+        flat_as_of = _confirmed_flat_as_of(report, account_code)
+        if flat_as_of is None:
+            # No evidence the account is flat (statement or section missing, or
+            # rows the parser filtered out): leave stored positions alone.
+            logger.info("flex_position_sync: account=%s no positions", account_code)
+            return {"upserted_count": 0, "as_of_date": None}
+        return _sync_flat_account(engine, account_code, flat_as_of, flex_query_token_id)
 
     as_of = _resolve_as_of_date(df)
     aggregated = _aggregate_lots(df)

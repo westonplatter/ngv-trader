@@ -51,7 +51,7 @@ def sync_contracts(
         try:
             ib.connect(host, port, clientId=client_id, timeout=connect_timeout_seconds)
         except TimeoutError as exc:
-            raise RuntimeError(f"Timed out connecting to TWS/Gateway for contract sync " f"(host={host}, port={port}, client_id={client_id}).") from exc
+            raise RuntimeError(f"Timed out connecting to TWS/Gateway for contract sync (host={host}, port={port}, client_id={client_id}).") from exc
         return sync_contracts_with_ib(
             engine=engine,
             ib=ib,
@@ -786,9 +786,7 @@ def sync_activated_products(
         try:
             ib.connect(host, port, clientId=client_id, timeout=connect_timeout_seconds)
         except TimeoutError as exc:
-            raise RuntimeError(
-                f"Timed out connecting to TWS/Gateway for activated-products sync " f"(host={host}, port={port}, client_id={client_id})."
-            ) from exc
+            raise RuntimeError(f"Timed out connecting to TWS/Gateway for activated-products sync (host={host}, port={port}, client_id={client_id}).") from exc
         return sync_activated_products_with_ib(engine=engine, ib=ib, symbols=symbols)
     finally:
         if ib.isConnected():

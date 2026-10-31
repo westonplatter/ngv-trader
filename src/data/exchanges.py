@@ -36,7 +36,7 @@ def resolve_exchange(symbol: str, sec_type: str) -> str:
         exchange = FUTURES_EXCHANGE_MAP.get(normalized_symbol)
         if exchange is None:
             known = ", ".join(sorted(FUTURES_EXCHANGE_MAP.keys()))
-            raise ValueError(f"Unknown exchange for futures symbol '{symbol}'. " f"Known symbols: {known}. " "Please tell me which exchange this trades on.")
+            raise ValueError(f"Unknown exchange for futures symbol '{symbol}'. Known symbols: {known}. Please tell me which exchange this trades on.")
         return exchange
     if sec_type == "OPT":
         return "SMART"

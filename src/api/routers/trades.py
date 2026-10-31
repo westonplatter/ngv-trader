@@ -10,7 +10,8 @@ from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
 from src.api.deps import get_db
-from src.api.routers.tags import TagChip
+from src.api.annotations import annotate_items
+from src.api.schemas import TagChip
 from src.models import (
     Account,
     ContractRef,
@@ -22,7 +23,6 @@ from src.models import (
 )
 from src.services.cl_contracts import infer_contract_month_from_local_symbol
 from src.services.execution_pnl import execution_realized_pnl as _execution_realized_pnl
-from src.services.item_links import open_task_counts, tags_by_item
 from src.services.jobs import (
     JOB_TYPE_TRADES_SYNC_FLEXQUERY,
     JOB_TYPE_TRADES_SYNC_TWS,
@@ -864,17 +864,8 @@ def list_all_trade_executions(  # noqa: C901, PLR0912, PLR0915
 
 def _annotate_tags_and_tasks(db: Session, rows: list[TradeExecutionListItem]) -> None:
     """Fill ``tags`` / ``open_task_count``: by trade when settled, by fill when live."""
-    trade_ids = [row.trade_id for row in rows if row.settled and row.trade_id is not None]
-    exec_ids = [row.ib_exec_id for row in rows if not row.settled]
-    trade_tags, live_tags = tags_by_item(db, "trade", trade_ids), tags_by_item(db, "live_execution", exec_ids)
-    trade_tasks, live_tasks = open_task_counts(db, "trade", trade_ids), open_task_counts(db, "live_execution", exec_ids)
-    for row in rows:
-        if row.settled:
-            row.tags = [TagChip(**chip) for chip in trade_tags.get(row.trade_id, [])]
-            row.open_task_count = trade_tasks.get(row.trade_id, 0)
-        else:
-            row.tags = [TagChip(**chip) for chip in live_tags.get(row.ib_exec_id, [])]
-            row.open_task_count = live_tasks.get(row.ib_exec_id, 0)
+    annotate_items(db, "trade", [row for row in rows if row.settled and row.trade_id is not None], key=lambda row: row.trade_id)
+    annotate_items(db, "live_execution", [row for row in rows if not row.settled], key=lambda row: row.ib_exec_id)
 
 
 def _live_contract_display(le: LiveExecution) -> str | None:

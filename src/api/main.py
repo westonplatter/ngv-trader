@@ -5,7 +5,8 @@ import os
 from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
@@ -32,6 +33,7 @@ from src.api.routers import (
     workers,
 )
 from src.db import get_engine
+from src.services.errors import ServiceError
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +51,7 @@ async def lifespan(app: FastAPI):
         logger.info("Database connection verified.")
     except Exception as exc:
         logger.error(
-            "Cannot connect to PostgreSQL. Is the database running? " "Check DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD in your .env file. " "Error: %s",
+            "Cannot connect to PostgreSQL. Is the database running? Check DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD in your .env file. Error: %s",
             exc,
         )
         raise SystemExit(1) from exc
@@ -57,6 +59,13 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="ngtrader", lifespan=lifespan)
+
+
+@app.exception_handler(ServiceError)
+def service_error_handler(_request: Request, exc: ServiceError) -> JSONResponse:
+    """Bad input a service rejected: the same ``detail`` shape as ``HTTPException``."""
+    return JSONResponse(status_code=exc.status_code, content={"detail": str(exc)})
+
 
 app.add_middleware(
     CORSMiddleware,

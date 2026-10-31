@@ -23,6 +23,40 @@ export const TASK_STATUS_LABEL: Record<TaskStatus, string> = {
 
 export const TASK_STATUS_ORDER: TaskStatus[] = ["todo", "in_progress", "done"];
 
+// The status a one-click cycle moves to: todo → in progress → done → todo.
+export function nextTaskStatus(status: TaskStatus): TaskStatus {
+  return TASK_STATUS_ORDER[
+    (TASK_STATUS_ORDER.indexOf(status) + 1) % TASK_STATUS_ORDER.length
+  ];
+}
+
+// A string key for an item, for React keys and lookups: the typed key the API
+// uses, so two refs to the same item always match.
+export function itemKey(item: ItemRef): string {
+  if (item.entity_type === "position")
+    return `position:${item.account_id}:${item.con_id}`;
+  if (item.entity_type === "live_execution")
+    return `live_execution:${item.ib_exec_id}`;
+  return `${item.entity_type}:${item.id}`;
+}
+
+// Where a link or search result should take the person. Trades route by
+// symbol when the API supplied one.
+export function itemRoute(
+  item: ItemRef & { details?: Record<string, unknown> },
+): string {
+  if (item.entity_type === "trade_group")
+    return `/strategies?trade_group_id=${item.id}`;
+  if (item.entity_type === "strategy")
+    return `/strategies?strategy_id=${item.id}`;
+  if (item.entity_type === "task") return "/tasks";
+  if (item.entity_type === "position") return "/positions";
+  const symbol = item.details?.symbol;
+  return typeof symbol === "string"
+    ? `/trades?symbol=${encodeURIComponent(symbol)}`
+    : "/trades";
+}
+
 export function isAgent(createdBy: string | null | undefined): boolean {
   return Boolean(createdBy && createdBy.startsWith("agent:"));
 }

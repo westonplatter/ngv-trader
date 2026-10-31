@@ -43,7 +43,7 @@ def upgrade() -> None:
     op.drop_column("watch_list_instruments", "quote_as_of")
 
     # Remove orphaned rows whose con_id doesn't exist in contracts
-    op.execute("DELETE FROM watch_list_instruments " "WHERE con_id NOT IN (SELECT con_id FROM contracts)")
+    op.execute("DELETE FROM watch_list_instruments WHERE con_id NOT IN (SELECT con_id FROM contracts)")
 
     # Add foreign keys
     op.create_foreign_key(

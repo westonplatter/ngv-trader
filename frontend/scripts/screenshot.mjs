@@ -4,20 +4,25 @@
 //   node scripts/screenshot.mjs <path> <out.png> [width] [height]
 //
 // Examples (Vite dev server running on :5173, see `task frontend`):
-//   node scripts/screenshot.mjs "/positions?demo=1" ../docs/screenshots/positions-demo.png
+//   node scripts/screenshot.mjs "/positions?demo=1" /tmp/positions-demo.png
 //   node scripts/screenshot.mjs "/strategies?demo=1&trade_group_id=103" out.png 1600 900
 //
 // Always pass `?demo=1` so the page renders the static demo fixtures
 // (frontend/src/lib/demoData.ts) with no backend required.
 //
+// Images do not go in the repo: push them to the `media` branch (see
+// docs/contributing/commits-and-prs.md).
+//
 // Environment notes (Claude Code on the web):
 //   - Playwright's browser CDN is blocked by the egress policy, so DO NOT run
 //     `playwright install`. A compatible Chromium is preinstalled.
 //   - This script auto-detects it via $PW_CHROMIUM, then $PLAYWRIGHT_BROWSERS_PATH,
-//     then the default /opt/pw-browsers location.
-//   - playwright-core is resolved from the local node_modules; if missing, it is
-//     also resolved from the Bun global cache.
+//     then the default /opt/pw-browsers location (chromium-<rev>/chrome-linux64
+//     or chrome-linux, or an unversioned chromium/ link).
+//   - Playwright is resolved from the local node_modules (playwright-core or
+//     playwright), then the global npm install, then the Bun global cache.
 
+import { execSync } from "node:child_process";
 import { existsSync, readdirSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join } from "node:path";
@@ -42,30 +47,59 @@ function resolveChromium() {
   }
   const root = process.env.PLAYWRIGHT_BROWSERS_PATH ?? "/opt/pw-browsers";
   if (!existsSync(root)) return null;
-  for (const dir of readdirSync(root)) {
-    if (!dir.startsWith("chromium-")) continue;
-    const candidate = join(root, dir, "chrome-linux", "chrome");
-    if (existsSync(candidate)) return candidate;
+  // Newest revision first; Playwright has shipped both directory layouts.
+  const dirs = readdirSync(root)
+    .filter((d) => d === "chromium" || d.startsWith("chromium-"))
+    .sort()
+    .reverse();
+  for (const dir of dirs) {
+    for (const sub of ["chrome-linux64", "chrome-linux"]) {
+      const candidate = join(root, dir, sub, "chrome");
+      if (existsSync(candidate)) return candidate;
+    }
   }
   return null;
 }
 
-function resolvePlaywright() {
+function tryRequire(id) {
   try {
-    return require("playwright-core");
+    return require(id);
   } catch {
-    // Fall back to the Bun global install cache.
-    const cacheRoot = join(process.env.HOME ?? "/root", ".bun/install/cache");
-    if (existsSync(cacheRoot)) {
-      const entry = readdirSync(cacheRoot).find((d) =>
-        d.startsWith("playwright-core@"),
-      );
-      if (entry) return require(join(cacheRoot, entry, "index.js"));
-    }
-    throw new Error(
-      "playwright-core not found. Install it or set it up in the Bun cache.",
-    );
+    return null;
   }
+}
+
+function globalNpmRoot() {
+  try {
+    return execSync("npm root -g", { encoding: "utf8" }).trim();
+  } catch {
+    return null;
+  }
+}
+
+function resolvePlaywright() {
+  // Local node_modules: either package exposes `chromium`.
+  const local = tryRequire("playwright-core") ?? tryRequire("playwright");
+  if (local) return local;
+  // Global npm install (cloud sessions ship the full `playwright` package).
+  const npmRoot = globalNpmRoot();
+  if (npmRoot) {
+    for (const pkg of ["playwright-core", "playwright"]) {
+      const found = tryRequire(join(npmRoot, pkg));
+      if (found) return found;
+    }
+  }
+  // Bun global install cache.
+  const cacheRoot = join(process.env.HOME ?? "/root", ".bun/install/cache");
+  if (existsSync(cacheRoot)) {
+    const entry = readdirSync(cacheRoot).find((d) =>
+      d.startsWith("playwright-core@"),
+    );
+    if (entry) return require(join(cacheRoot, entry, "index.js"));
+  }
+  throw new Error(
+    "Playwright not found: install playwright-core locally or playwright globally.",
+  );
 }
 
 const executablePath = resolveChromium();

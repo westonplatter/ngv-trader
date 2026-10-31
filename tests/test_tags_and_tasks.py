@@ -15,7 +15,8 @@ from src.api.main import app
 from src.models import LiveExecution, LivePosition, TagLink, TaskLink
 from src.services.group_link_carryover import carry_over_link_to_executions, carry_over_settled_group_links
 from src.services.intraday_overlay import ct_date
-from src.services.item_links import end_flat_position_tags, inherit_order_links, normalize_tag_value
+from src.services.item_links import end_flat_position_tags, inherit_order_links
+from src.services.tags import normalize_tag_value
 from tests.trade_group_factories import (
     CON_CL,
     CON_NG,
@@ -338,7 +339,6 @@ def test_unknown_items_are_rejected(client: TestClient) -> None:
     assert response.status_code == 404
     response = client.post(f"{API}/tag-links", json={"tags": ["oil"], "items": [{"entity_type": "strategy", "id": 1}]})
     assert response.status_code == 400
-
 
 
 def test_task_with_unknown_tag_id_is_404(client: TestClient) -> None:

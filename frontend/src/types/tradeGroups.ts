@@ -38,6 +38,7 @@ export interface TradeGroupPnlRow extends TradeGroupResult {
 // needs. One source for the P&L shape, so the workspace and the Strategy P&L
 // table cannot describe the same payload differently.
 export type TradeGroup = TradeGroupPnlRow & {
+  strategy_id?: number | null;
   tags?: TagChip[];
   open_task_count?: number;
   notes: string | null;

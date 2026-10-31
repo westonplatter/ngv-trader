@@ -70,6 +70,10 @@ frontend/src/
   is none. Callers set page-level `error` state from `err.message`.
 - Build query strings with `query({...})` from `lib/api.ts`; it skips empty
   values and repeats keys for arrays.
+- A write triggered by a click goes through `useAsyncAction` in `hooks/`: it
+  serializes the call, clears and keeps the error, and exposes `pending` for
+  the button. Turn an unknown caught value into text with `errorMessage` from
+  `lib/api.ts`.
 - Response types are declared once and imported, not redeclared per page.
 - Live updates arrive over SSE through `useSSE(topic, onEvent)` in `lib/events.ts`.
   Load the REST snapshot first, then merge events into local state. See

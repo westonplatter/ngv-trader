@@ -12,7 +12,7 @@ multiplier-inclusive cost-basis convention that lives in `intraday_overlay.py`
 unvalidated formula; instead we reuse the one Python implementation.
 
 Realized PnL by group is *also* available as a pure SQL semantic metric
-(`realized_pnl` grouped/filtered by `tag`); this service is for the live overlay
+(`realized_pnl` grouped/filtered by `trade_group`); this service is for the live overlay
 figures the semantic resolver can't express.
 """
 

@@ -9,7 +9,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from src.api.deps import get_db
-from src.api.routers.tags import TagChip
+from src.api.annotations import annotate_items
+from src.api.schemas import TagChip
 from src.models import (
     Account,
     ContractRef,
@@ -23,7 +24,6 @@ from src.models import (
     TradeGroupLiveExecution,
 )
 from src.services.cl_contracts import infer_contract_month_from_local_symbol
-from src.services.item_links import open_task_counts, tags_by_item
 from src.services.intraday_overlay import (
     compute_unrealized,
     is_live_stale,
@@ -199,7 +199,9 @@ def _apply_fill_fifo(lots: list[list], quantity: float, group: TradeGroupRef | N
         lots.append([remaining, group])
 
 
-def _open_lot_trade_groups(db: Session) -> tuple[
+def _open_lot_trade_groups(
+    db: Session,
+) -> tuple[
     dict[tuple[int, int], list[TradeGroupRef]],
     dict[tuple[int, int], list[TradeGroupRef]],
 ]:
@@ -538,11 +540,7 @@ def list_positions(db: Session = DB_SESSION_DEPENDENCY):
             )
         )
 
-    keys = [(row.account_id, row.con_id) for row in results]
-    tags, task_counts = tags_by_item(db, "position", keys), open_task_counts(db, "position", keys)
-    for row in results:
-        row.tags = [TagChip(**chip) for chip in tags.get((row.account_id, row.con_id), [])]
-        row.open_task_count = task_counts.get((row.account_id, row.con_id), 0)
+    annotate_items(db, "position", results, key=lambda row: (row.account_id, row.con_id))
     return results
 
 

@@ -9,10 +9,11 @@ from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import and_, func, literal, or_, select
 from sqlalchemy.orm import Session
 
+from src.api.annotations import annotate_items
 from src.api.deps import get_db
 from src.api.routers.positions import _option_expiry_and_dte
 from src.api.routers.strategies import ensure_strategy, escape_like, normalize_strategy_name
-from src.api.routers.tags import TagChip
+from src.api.schemas import TagChip
 from src.api.routers.trades import (
     _contract_display_from_raw,
     _execution_ib_codes,
@@ -32,7 +33,6 @@ from src.models import (
     TradeGroupLiveExecution,
 )
 from src.services.cl_contracts import infer_contract_month_from_local_symbol
-from src.services.item_links import open_task_counts, tags_by_item
 from src.services.intraday_overlay import (
     dedupe_live_realized,
     intraday_unrealized_total,
@@ -442,16 +442,8 @@ def list_trade_groups(  # noqa: PLR0913
     rows_out = [
         _list_row(trade_group, strategy_val, pnls.get(trade_group.id), instruments.get(trade_group.id), include_intraday) for trade_group, strategy_val in rows
     ]
-    _annotate_groups(db, rows_out)
+    annotate_items(db, "trade_group", rows_out, key=lambda row: row.id)
     return rows_out
-
-
-def _annotate_groups(db: Session, rows: list[TradeGroupResponse]) -> None:
-    ids = [row.id for row in rows]
-    tags, task_counts = tags_by_item(db, "trade_group", ids), open_task_counts(db, "trade_group", ids)
-    for row in rows:
-        row.tags = [TagChip(**chip) for chip in tags.get(row.id, [])]
-        row.open_task_count = task_counts.get(row.id, 0)
 
 
 @router.post("/trade-groups", response_model=TradeGroupResponse, status_code=201)
@@ -504,7 +496,7 @@ def get_trade_group(trade_group_id: int, db: Session = DB_SESSION_DEPENDENCY):
         execution_count=execution_count,
         meta=_parse_meta_or_400(trade_group.meta_yaml),
     )
-    _annotate_groups(db, [detail])
+    annotate_items(db, "trade_group", [detail], key=lambda row: row.id)
     return detail
 
 

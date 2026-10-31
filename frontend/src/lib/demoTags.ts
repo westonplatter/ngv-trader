@@ -13,7 +13,15 @@ import {
   DEMO_TRADE_EXECUTIONS,
   DEMO_TRADE_GROUPS,
 } from "./demoData";
-import type { ItemRef, Tag, TagChip, TaggedItem, Task, TaskLink } from "../types/tags";
+import { itemKey } from "./tags";
+import type {
+  ItemRef,
+  Tag,
+  TagChip,
+  TaggedItem,
+  Task,
+  TaskLink,
+} from "../types/tags";
 
 const ACCOUNT_ID = 1;
 const AGENT = "agent:local-llm";
@@ -99,14 +107,6 @@ const ASSIGNMENTS: Assignment[] = [
   { tagId: 3, item: task(1) },
   { tagId: 1, item: task(3), createdBy: AGENT },
 ];
-
-function itemKey(item: ItemRef): string {
-  if (item.entity_type === "position")
-    return `position:${item.account_id}:${item.con_id}`;
-  if (item.entity_type === "live_execution")
-    return `live_execution:${item.ib_exec_id}`;
-  return `${item.entity_type}:${item.id}`;
-}
 
 const tagById = new Map(DEMO_TAGS.map((tag) => [tag.id, tag]));
 
