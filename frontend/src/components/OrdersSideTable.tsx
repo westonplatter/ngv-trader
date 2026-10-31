@@ -1,23 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { usePrivacy } from "../contexts/usePrivacy";
 import { PRIVACY_MASK } from "../utils/privacy";
-import { API_BASE_URL } from "../config";
-import { useSSE, type ConnectionStatus } from "../lib/events";
-
-interface OrderRow {
-  id: number;
-  symbol: string;
-  side: string;
-  quantity: number;
-  contract_month: string | null;
-  status: string;
-  filled_quantity: number;
-  avg_fill_price: number | null;
-  created_at: string;
-  submitted_at: string | null;
-  completed_at: string | null;
-  updated_at: string;
-}
+import { useSseList } from "../hooks/useSseList";
+import { api } from "../lib/api";
+import type { Order } from "../types/orders";
+import { formatDuration, parseTime } from "../utils/date";
 
 const STATUS_CLASS: Record<string, string> = {
   queued: "text-yellow-700 bg-yellow-100",
@@ -35,25 +22,7 @@ const TERMINAL_STATUSES = new Set([
   "failed",
 ]);
 
-function parseTime(value: string | null): number | null {
-  if (!value) return null;
-  const parsed = Date.parse(value);
-  return Number.isNaN(parsed) ? null : parsed;
-}
-
-function formatDuration(ms: number | null): string {
-  if (ms === null) return "—";
-  const seconds = Math.max(0, Math.floor(ms / 1000));
-  if (seconds < 60) return `${seconds}s`;
-  const minutes = Math.floor(seconds / 60);
-  const remSeconds = seconds % 60;
-  if (minutes < 60) return `${minutes}m ${remSeconds}s`;
-  const hours = Math.floor(minutes / 60);
-  const remMinutes = minutes % 60;
-  return `${hours}h ${remMinutes}m`;
-}
-
-function getEndMs(order: OrderRow, nowMs: number): number {
+function getEndMs(order: Order, nowMs: number): number {
   const completedMs = parseTime(order.completed_at);
   if (completedMs !== null) return completedMs;
   if (TERMINAL_STATUSES.has(order.status)) {
@@ -62,74 +31,36 @@ function getEndMs(order: OrderRow, nowMs: number): number {
   return nowMs;
 }
 
-function computeQueueMs(order: OrderRow, nowMs: number): number {
+function computeQueueMs(order: Order, nowMs: number): number {
   const createdMs = parseTime(order.created_at) ?? nowMs;
   const submittedMs = parseTime(order.submitted_at);
   return (submittedMs ?? getEndMs(order, nowMs)) - createdMs;
 }
 
-function computeRunMs(order: OrderRow, nowMs: number): number | null {
+function computeRunMs(order: Order, nowMs: number): number | null {
   const submittedMs = parseTime(order.submitted_at);
   if (submittedMs === null) return null;
   return getEndMs(order, nowMs) - submittedMs;
 }
 
-function computeTotalMs(order: OrderRow, nowMs: number): number {
+function computeTotalMs(order: Order, nowMs: number): number {
   const createdMs = parseTime(order.created_at) ?? nowMs;
   return getEndMs(order, nowMs) - createdMs;
 }
 
 export default function OrdersSideTable() {
   const { privacyMode } = usePrivacy();
-  const [orders, setOrders] = useState<OrderRow[]>([]);
-  const [error, setError] = useState<string | null>(null);
   const [nowMs, setNowMs] = useState<number>(() => Date.now());
 
-  // Track previous SSE status so we can detect reconnect transitions.
-  const prevStatusRef = useRef<ConnectionStatus | null>(null);
+  const loadOrders = useCallback(() => api.get<Order[]>("/orders"), []);
 
-  const loadOrders = useCallback(() => {
-    fetch(`${API_BASE_URL}/orders`)
-      .then((res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.json();
-      })
-      .then((rows: OrderRow[]) => {
-        setOrders(rows.slice(0, 20));
-        setError(null);
-      })
-      .catch((err: Error) => setError(err.message));
-  }, []);
-
-  // Initial fetch on mount.
-  useEffect(() => {
-    loadOrders();
-  }, [loadOrders]);
-
-  // Merge an incoming SSE order payload into the orders list.
-  const handleOrderEvent = useCallback((payload: OrderRow) => {
-    setOrders((prev) => {
-      const idx = prev.findIndex((o) => o.id === payload.id);
-      let next: OrderRow[];
-      if (idx >= 0) {
-        next = [...prev];
-        next[idx] = payload;
-      } else {
-        next = [payload, ...prev];
-      }
-      return next.slice(0, 20);
-    });
-  }, []);
-
-  const sseStatus = useSSE<OrderRow>("orders", handleOrderEvent);
-
-  // Re-fetch REST snapshot on reconnect.
-  useEffect(() => {
-    if (prevStatusRef.current === "disconnected" && sseStatus === "connected") {
-      loadOrders();
-    }
-    prevStatusRef.current = sseStatus;
-  }, [sseStatus, loadOrders]);
+  // Snapshot on mount, upsert from the orders stream, re-fetch on reconnect.
+  const { items: orders, error } = useSseList<Order>({
+    topic: "orders",
+    load: loadOrders,
+    key: (order) => order.id,
+    cap: 20,
+  });
 
   useEffect(() => {
     const timer = window.setInterval(() => setNowMs(Date.now()), 1000);

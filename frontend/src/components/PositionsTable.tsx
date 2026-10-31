@@ -3,7 +3,8 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { usePrivacy } from "../contexts/usePrivacy";
 import { PRIVACY_MASK, formatRelativeReturn } from "../utils/privacy";
-import { API_BASE_URL } from "../config";
+import { api, errorMessage } from "../lib/api";
+import { enqueueSyncJob, useJobWatcher } from "../hooks/useJobWatcher";
 import { useSSE } from "../lib/events";
 import { formatMarkTime } from "../lib/markTime";
 import {
@@ -17,75 +18,12 @@ import {
 import TradeGroupSearchSelect from "./TradeGroupSearchSelect";
 import TagChips from "./TagChips";
 import TaskQuickAdd from "./TaskQuickAdd";
-import { type ItemRef, type TagChip } from "../lib/tags";
-
-export interface TradeGroupRef {
-  id: number;
-  name: string;
-}
-
-export interface Position {
-  id: number;
-  account_id: number;
-  account_alias: string;
-  contract_display_name: string;
-  con_id: number;
-  trade_groups: TradeGroupRef[];
-  symbol: string | null;
-  sec_type: string | null;
-  exchange: string | null;
-  primary_exchange: string | null;
-  currency: string | null;
-  local_symbol: string | null;
-  trading_class: string | null;
-  last_trade_date: string | null;
-  option_expiry_date: string | null;
-  dte: number | null;
-  strike: number | null;
-  right: string | null;
-  multiplier: string | null;
-  position: number;
-  avg_cost: number;
-  mark_price: number | null;
-  position_value: number | null;
-  fifo_pnl_unrealized: number | null;
-  fetched_at: string;
-  // Intraday overlay (additive): live current-state fields.
-  source: string;
-  mark: number | null;
-  mark_ts: string | null;
-  live_unrealized: number | null;
-  // Staleness of the live TWS overlay: true when the settled FlexQuery snapshot
-  // was loaded more recently than the live snapshot. When stale, the overlay
-  // columns are blanked and the freshness badge reads "stale" (not green "live").
-  live_fetched_at: string | null;
-  live_is_stale: boolean;
-  // Live option metrics (additive; from the separate option-metrics sync job).
-  // null for non-options or when that job hasn't run.
-  iv: number | null;
-  delta: number | null;
-  gamma: number | null;
-  theta: number | null;
-  vega: number | null;
-  und_price: number | null;
-  intrinsic_value: number | null;
-  extrinsic_value: number | null;
-  // Free-form tags on (account, contract) and its not-done task count.
-  tags?: TagChip[];
-  open_task_count?: number;
-}
+import type { Position } from "../types/positions";
+import type { ItemRef } from "../types/tags";
+import { formatExpiry } from "../utils/date";
 
 type SortDirection = "none" | "desc" | "asc";
 type SortColumn = "symbol" | "local_symbol" | "option_expiry_date" | "dte";
-
-function formatExpiry(value: string | null | undefined): string {
-  if (!value) return "\u2014";
-  // YYYYMMDD → YYYY-MM-DD
-  if (value.length === 8 && !value.includes("-")) {
-    return `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}`;
-  }
-  return value;
-}
 
 function expiryForPosition(pos: Position): string {
   const secType = (pos.sec_type ?? "").toUpperCase();
@@ -236,6 +174,7 @@ function regexMatch(
 
 export default function PositionsTable() {
   const { privacyMode } = usePrivacy();
+  const { watch } = useJobWatcher();
   const [positions, setPositions] = useState<Position[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -416,13 +355,10 @@ export default function PositionsTable() {
   }, [sortedPositions]);
 
   const loadPositions = () => {
-    fetch(`${API_BASE_URL}/positions`)
-      .then((res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.json();
-      })
+    api
+      .get<Position[]>("/positions")
       .then(setPositions)
-      .catch((err) => setError(err.message))
+      .catch((err: unknown) => setError(errorMessage(err, "Load failed")))
       .finally(() => setLoading(false));
   };
 
@@ -437,19 +373,11 @@ export default function PositionsTable() {
   const assignToTradeGroup = async (pos: Position, groupId: number) => {
     setAssignError(null);
     try {
-      const res = await fetch(
-        `${API_BASE_URL}/trade-groups/${groupId}/positions:assign`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            positions: [{ account_id: pos.account_id, con_id: pos.con_id }],
-            source: "manual",
-            created_by: "positions-ui",
-          }),
-        },
-      );
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      await api.post(`/trade-groups/${groupId}/positions:assign`, {
+        positions: [{ account_id: pos.account_id, con_id: pos.con_id }],
+        source: "manual",
+        created_by: "positions-ui",
+      });
       loadPositions();
     } catch (err) {
       setAssignError(err instanceof Error ? err.message : "Assign failed");
@@ -459,19 +387,11 @@ export default function PositionsTable() {
   const unassignFromTradeGroup = async (pos: Position, groupId: number) => {
     setAssignError(null);
     try {
-      const res = await fetch(
-        `${API_BASE_URL}/trade-groups/${groupId}/positions:unassign`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            positions: [{ account_id: pos.account_id, con_id: pos.con_id }],
-            source: "manual",
-            created_by: "positions-ui",
-          }),
-        },
-      );
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      await api.post(`/trade-groups/${groupId}/positions:unassign`, {
+        positions: [{ account_id: pos.account_id, con_id: pos.con_id }],
+        source: "manual",
+        created_by: "positions-ui",
+      });
       loadPositions();
     } catch (err) {
       setAssignError(err instanceof Error ? err.message : "Unassign failed");
@@ -483,26 +403,16 @@ export default function PositionsTable() {
     setSyncError(null);
     setSyncMessage(null);
     try {
-      const res = await fetch(`${API_BASE_URL}/positions/sync/flex-query`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          source: "manual-ui",
-          request_text:
-            "Kick off flex query positions sync from Positions page.",
-          max_attempts: 3,
-        }),
-      });
-      if (!res.ok) {
-        throw new Error(`HTTP ${res.status}`);
-      }
-      const data: { job_id: number; status: string } = await res.json();
+      const data = await enqueueSyncJob(
+        "/positions/sync/flex-query",
+        "Kick off flex query positions sync from Positions page.",
+      );
       setSyncMessage(
         `Queued positions sync job #${data.job_id} (${data.status}).`,
       );
-      window.setTimeout(() => loadPositions(), 1000);
+      watch(data.job_id, () => loadPositions());
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Unknown sync error";
+      const message = errorMessage(err, "Unknown sync error");
       setSyncError(message);
     } finally {
       setSyncing(false);
@@ -514,27 +424,16 @@ export default function PositionsTable() {
     setSyncError(null);
     setSyncMessage(null);
     try {
-      const res = await fetch(`${API_BASE_URL}/positions/sync/intraday-tws`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          source: "manual-ui",
-          request_text: "Refresh live intraday overlay from Positions page.",
-          max_attempts: 3,
-        }),
-      });
-      if (!res.ok) {
-        throw new Error(`HTTP ${res.status}`);
-      }
-      const data: { job_id: number; status: string } = await res.json();
+      const data = await enqueueSyncJob(
+        "/positions/sync/intraday-tws",
+        "Refresh live intraday overlay from Positions page.",
+      );
       setSyncMessage(
         `Queued intraday TWS sync job #${data.job_id} (${data.status}). Refreshing shortly…`,
       );
-      // The TWS session + reqTickers take longer than a flex enqueue; poll a few times.
-      window.setTimeout(() => loadPositions(), 3000);
-      window.setTimeout(() => loadPositions(), 8000);
+      watch(data.job_id, () => loadPositions());
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Unknown sync error";
+      const message = errorMessage(err, "Unknown sync error");
       setSyncError(message);
     } finally {
       setLiveSyncing(false);
@@ -546,30 +445,16 @@ export default function PositionsTable() {
     setSyncError(null);
     setSyncMessage(null);
     try {
-      const res = await fetch(
-        `${API_BASE_URL}/positions/sync/option-metrics-tws`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            source: "manual-ui",
-            request_text: "Refresh live option metrics from Positions page.",
-            max_attempts: 3,
-          }),
-        },
+      const data = await enqueueSyncJob(
+        "/positions/sync/option-metrics-tws",
+        "Refresh live option metrics from Positions page.",
       );
-      if (!res.ok) {
-        throw new Error(`HTTP ${res.status}`);
-      }
-      const data: { job_id: number; status: string } = await res.json();
       setSyncMessage(
         `Queued option-metrics TWS sync job #${data.job_id} (${data.status}). Refreshing shortly…`,
       );
-      // The TWS session + reqTickers take longer than a flex enqueue; poll a few times.
-      window.setTimeout(() => loadPositions(), 3000);
-      window.setTimeout(() => loadPositions(), 8000);
+      watch(data.job_id, () => loadPositions());
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Unknown sync error";
+      const message = errorMessage(err, "Unknown sync error");
       setSyncError(message);
     } finally {
       setMetricsSyncing(false);

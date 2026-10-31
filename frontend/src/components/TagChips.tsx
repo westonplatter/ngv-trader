@@ -5,15 +5,8 @@
 import { useEffect, useRef, useState } from "react";
 import AgentBadge from "./AgentBadge";
 import { useAsyncAction } from "../hooks/useAsyncAction";
-import {
-  type ItemRef,
-  type Tag,
-  type TagChip,
-  agentName,
-  isAgent,
-  normalizeTagValue,
-  tagsApi,
-} from "../lib/tags";
+import { agentName, isAgent, normalizeTagValue, tagsApi } from "../lib/tags";
+import type { ItemRef, Tag, TagChip } from "../types/tags";
 
 export function TagChipView({
   chip,

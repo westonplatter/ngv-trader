@@ -5,12 +5,8 @@ import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import AgentBadge from "./AgentBadge";
 import { useAsyncAction } from "../hooks/useAsyncAction";
-import {
-  TASK_STATUS_LABEL,
-  type Task,
-  nextTaskStatus,
-  tasksApi,
-} from "../lib/tags";
+import { TASK_STATUS_LABEL, nextTaskStatus, tasksApi } from "../lib/tags";
+import type { Task } from "../types/tags";
 
 export default function GroupTasks({
   tradeGroupId,

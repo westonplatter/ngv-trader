@@ -17,11 +17,16 @@ from sqlalchemy.orm import Session
 
 from src.models import LiveExecution, LivePosition, Position, TagLink, TaskLink, TradeExecution
 from src.services.intraday_overlay import ct_date
-from src.services.item_refs import ItemRef, link_filter, live_order_key
+from src.services.item_refs import ItemRef, link_filter, link_item, live_order_key
 
 
 def now_utc() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def new_tag_link(tag_id: int, item: ItemRef, created_by: str, assigned_at: datetime | None = None, ended_at: datetime | None = None) -> TagLink:
+    """The one place a ``tag_links`` row is built from an item reference."""
+    return TagLink(tag_id=tag_id, entity_type=item.entity_type, created_by=created_by, assigned_at=assigned_at or now_utc(), ended_at=ended_at, **item.key())
 
 
 def attach_tag(session: Session, tag_id: int, item: ItemRef, created_by: str) -> bool:
@@ -29,8 +34,28 @@ def attach_tag(session: Session, tag_id: int, item: ItemRef, created_by: str) ->
     exists = session.execute(select(TagLink.id).where(TagLink.tag_id == tag_id, TagLink.ended_at.is_(None), *link_filter(TagLink, item))).first()
     if exists:
         return False
-    session.add(TagLink(tag_id=tag_id, entity_type=item.entity_type, created_by=created_by, assigned_at=now_utc(), **item.key()))
+    session.add(new_tag_link(tag_id, item, created_by))
     return True
+
+
+def move_tag_links(session: Session, source_tag_id: int, target_tag_id: int) -> int:
+    """Re-point every link of one tag at another (a merge). Returns the links moved.
+
+    An open link becomes an open link on the target unless the item already has
+    one; an ended link is copied with its dates, so history survives the merge.
+    The source's rows are deleted; deleting the source tag itself is the caller's.
+    """
+    moved = 0
+    for link in session.execute(select(TagLink).where(TagLink.tag_id == source_tag_id)).scalars().all():
+        item = link_item(link)
+        if link.ended_at is None:
+            moved += attach_tag(session, target_tag_id, item, link.created_by)
+        else:
+            session.add(new_tag_link(target_tag_id, item, link.created_by, assigned_at=link.assigned_at, ended_at=link.ended_at))
+            moved += 1
+        session.delete(link)
+        session.flush()
+    return moved
 
 
 def detach_tag(session: Session, tag_id: int, item: ItemRef) -> int:

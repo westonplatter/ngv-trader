@@ -1,37 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { usePrivacy } from "../contexts/usePrivacy";
 import { PRIVACY_MASK } from "../utils/privacy";
-import { API_BASE_URL } from "../config";
-import { useSSE, type ConnectionStatus } from "../lib/events";
-
-interface Order {
-  id: number;
-  account_id: number;
-  account_alias: string | null;
-  con_id: number | null;
-  symbol: string;
-  sec_type: string;
-  exchange: string;
-  currency: string;
-  side: string;
-  quantity: number;
-  order_type: string;
-  limit_price: number | null;
-  tif: string;
-  status: string;
-  contract_month: string | null;
-  contract_expiry: string | null;
-  option_right: string | null;
-  option_strike: string | null;
-  contract_display_name: string;
-  local_symbol: string | null;
-  ib_order_id: number | null;
-  ib_perm_id: number | null;
-  filled_quantity: number;
-  avg_fill_price: number | null;
-  created_at: string;
-  updated_at: string;
-}
+import { enqueueSyncJob, useJobWatcher } from "../hooks/useJobWatcher";
+import { useSseList } from "../hooks/useSseList";
+import { api } from "../lib/api";
+import type { Order } from "../types/orders";
+import { formatDate, formatExpiry } from "../utils/date";
 
 type OrderFilter = "all" | "working" | "closed";
 
@@ -60,29 +34,12 @@ const TERMINAL_STATUSES = new Set([
   "failed",
 ]);
 
-function formatExpiry(value: string | null | undefined): string {
-  if (!value) return "—";
-  if (value.length === 8 && !value.includes("-")) {
-    return `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}`;
-  }
-  return value;
-}
-
-function formatDate(value: string): string {
-  const parsed = Date.parse(value);
-  if (Number.isNaN(parsed)) return "—";
-  return new Date(parsed).toLocaleDateString();
-}
-
 function getDisplayedSymbol(order: Order): string {
   return (order.symbol || "").trim().toUpperCase();
 }
 
 export default function OrdersTable() {
   const { privacyMode } = usePrivacy();
-  const [orders, setOrders] = useState<Order[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
   const [syncError, setSyncError] = useState<string | null>(null);
@@ -94,26 +51,20 @@ export default function OrdersTable() {
   );
   const [symbolRegexFilter, setSymbolRegexFilter] = useState("");
 
-  // Track previous SSE status so we can detect reconnect transitions.
-  const prevStatusRef = useRef<ConnectionStatus | null>(null);
+  const loadOrders = useCallback(() => api.get<Order[]>("/orders"), []);
 
-  const loadOrders = useCallback(() => {
-    fetch(`${API_BASE_URL}/orders`)
-      .then((res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.json();
-      })
-      .then((data: Order[]) => {
-        setOrders(data);
-        setError(null);
-      })
-      .catch((err: Error) => {
-        setError(err.message);
-      })
-      .finally(() => {
-        setLoading(false);
-      });
-  }, []);
+  // Snapshot on mount, upsert from the orders stream, re-fetch on reconnect.
+  const {
+    items: orders,
+    loading,
+    error,
+    reload,
+  } = useSseList<Order>({
+    topic: "orders",
+    load: loadOrders,
+    key: (order) => order.id,
+  });
+  const { watch } = useJobWatcher();
 
   const symbolFilter = useMemo(() => {
     const raw = symbolRegexFilter.trim();
@@ -163,52 +114,17 @@ export default function OrdersTable() {
     });
   }, [filteredOrders]);
 
-  // Initial fetch on mount.
-  useEffect(() => {
-    loadOrders();
-  }, [loadOrders]);
-
-  // Merge an incoming SSE order payload into the orders list.
-  const handleOrderEvent = useCallback((payload: Order) => {
-    setOrders((prev) => {
-      const idx = prev.findIndex((o) => o.id === payload.id);
-      if (idx >= 0) {
-        const next = [...prev];
-        next[idx] = payload;
-        return next;
-      }
-      return [payload, ...prev];
-    });
-  }, []);
-
-  const sseStatus = useSSE<Order>("orders", handleOrderEvent);
-
-  // Re-fetch REST snapshot on reconnect.
-  useEffect(() => {
-    if (prevStatusRef.current === "disconnected" && sseStatus === "connected") {
-      loadOrders();
-    }
-    prevStatusRef.current = sseStatus;
-  }, [sseStatus, loadOrders]);
-
   const kickOffOrderSync = async () => {
     setSyncing(true);
     setSyncMessage(null);
     setSyncError(null);
     try {
-      const res = await fetch(`${API_BASE_URL}/orders/sync`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          source: "manual-ui",
-          request_text: "Manual order fetch/sync from Orders page.",
-          max_attempts: 3,
-        }),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data: { job_id: number; status: string } = await res.json();
+      const data = await enqueueSyncJob(
+        "/orders/sync",
+        "Manual order fetch/sync from Orders page.",
+      );
       setSyncMessage(`Queued order sync job #${data.job_id} (${data.status}).`);
-      window.setTimeout(() => loadOrders(), 1000);
+      watch(data.job_id, () => reload());
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unknown sync error";
       setSyncError(message);
@@ -227,21 +143,12 @@ export default function OrdersTable() {
       return next;
     });
     try {
-      const res = await fetch(`${API_BASE_URL}/orders/${orderId}/cancel`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          source: "manual-ui",
-          request_text: "Cancelled from Orders UI",
-        }),
+      const data = await api.post<Order>(`/orders/${orderId}/cancel`, {
+        source: "manual-ui",
+        request_text: "Cancelled from Orders UI",
       });
-      if (!res.ok) {
-        const body = await res.text();
-        throw new Error(body || `HTTP ${res.status}`);
-      }
-      const data: Order = await res.json();
       setCancelMessage(`Order #${data.id} is now '${data.status}'.`);
-      loadOrders();
+      reload();
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Unknown cancel error";

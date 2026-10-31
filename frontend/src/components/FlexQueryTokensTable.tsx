@@ -1,20 +1,9 @@
 import { useEffect, useState } from "react";
-import { API_BASE_URL } from "../config";
+import { api, errorMessage, request } from "../lib/api";
+import type { FlexQueryToken } from "../types/flexQueryTokens";
 
 // The token value is write-only: it is sent on create/update and never comes
 // back from the API, so there is nothing here to reveal or copy.
-export interface FlexQueryToken {
-  id: number;
-  name: string;
-  report_id: string;
-  is_active: boolean;
-  notes: string | null;
-  last_used_at: string | null;
-  account_count: number;
-  paused_until: string | null;
-  pause_reason: string | null;
-}
-
 // How long a manual pause lasts, matching the automatic cooldown applied when
 // IBKR answers 1025.
 const MANUAL_PAUSE_MINUTES = 20;
@@ -56,13 +45,10 @@ export default function FlexQueryTokensTable() {
   const [edit, setEdit] = useState<EditState>(EMPTY_EDIT);
 
   function fetchTokens() {
-    fetch(`${API_BASE_URL}/flexquery-tokens`)
-      .then((res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.json();
-      })
+    api
+      .get<FlexQueryToken[]>("/flexquery-tokens")
       .then(setTokens)
-      .catch((err) => setError(err.message))
+      .catch((err: unknown) => setError(errorMessage(err, "Load failed")))
       .finally(() => setLoading(false));
   }
 
@@ -71,32 +57,16 @@ export default function FlexQueryTokensTable() {
   }, []);
 
   // The API returns a readable `detail` for the cases a user can cause —
-  // duplicate name, unset encryption key — so surface it rather than the status.
-  async function readError(res: Response): Promise<string> {
-    try {
-      const body = await res.json();
-      return typeof body?.detail === "string"
-        ? body.detail
-        : `HTTP ${res.status}`;
-    } catch {
-      return `HTTP ${res.status}`;
-    }
-  }
-
+  // duplicate name, unset encryption key — and the client surfaces it.
   async function send(path: string, method: string, body: unknown) {
     setSaving(true);
     setError(null);
     try {
-      const res = await fetch(`${API_BASE_URL}${path}`, {
-        method,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) throw new Error(await readError(res));
+      await request(method, path, body);
       fetchTokens();
       return true;
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errorMessage(err, String(err)));
       return false;
     } finally {
       setSaving(false);

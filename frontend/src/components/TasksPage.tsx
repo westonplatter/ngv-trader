@@ -11,13 +11,12 @@ import { errorMessage } from "../lib/api";
 import {
   TASK_STATUS_LABEL,
   TASK_STATUS_ORDER,
-  type Task,
-  type TaskStatus,
   itemKey,
   itemRoute,
   nextTaskStatus,
   tasksApi,
 } from "../lib/tags";
+import type { Task, TaskStatus } from "../types/tags";
 
 const STATUS_CLASS: Record<TaskStatus, string> = {
   todo: "bg-gray-100 text-gray-800",

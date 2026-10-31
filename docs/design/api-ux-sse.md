@@ -196,6 +196,18 @@ a new job type writes trades or positions.
 4. On SSE reconnect (status transitions from `disconnected` to `connected`), re-fetch the REST snapshot
 5. Connection status badge shows in the component header
 
+Steps 1–4 are packaged as `useSseList` in `frontend/src/hooks/useSseList.ts`: a
+component passes the topic, a loader built on the API client
+(`frontend/src/lib/api.ts`), and a row key, and gets back the list, the load
+error, the connection status, and a `reload`. `useRefetchOnReconnect` is the
+step-4 piece on its own.
+
+Pages that queue a job (the sync buttons) use `useJobWatcher` from
+`frontend/src/hooks/useJobWatcher.ts`: `enqueueSyncJob` POSTs the sync endpoint
+and `watch(jobId, onDone)` fires once the `jobs` topic reports the job
+`completed` or `failed`. It polls `GET /jobs/:id` only while the stream is not
+connected, so there are no fixed refresh timers.
+
 ### Components using SSE
 
 | Component            | Topic                                       | Replaces     |

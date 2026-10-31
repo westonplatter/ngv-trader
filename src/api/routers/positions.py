@@ -34,6 +34,7 @@ from src.services.intraday_overlay import (
     option_metric_fields,
     parse_multiplier,
 )
+from src.services.option_expiry import option_expiry_and_dte
 from src.services.jobs import (
     JOB_TYPE_INTRADAY_SYNC_TWS,
     JOB_TYPE_OPTION_METRICS_SYNC_TWS,
@@ -143,37 +144,8 @@ class PositionSyncResponse(BaseModel):
     max_attempts: int
 
 
-def _parse_raw_expiry_date(raw_value: str | None) -> date | None:
-    value = (raw_value or "").strip()
-    if not value:
-        return None
-    digits = value.replace("-", "")
-    if len(digits) >= 8 and digits[:8].isdigit():
-        try:
-            return datetime.strptime(digits[:8], "%Y%m%d").date()
-        except ValueError:
-            return None
-    return None
-
-
-def _option_expiry_and_dte(sec_type: str | None, raw_expiry: str | None) -> tuple[str | None, int | None]:
-    """Expiry/DTE from raw values, for callers with no settled ``Position`` row.
-
-    A position opened intraday has no FlexQuery snapshot, so its expiry has to
-    come from elsewhere (the security master). Taking the two fields directly
-    lets those callers reuse this rule instead of reimplementing it.
-    """
-    stype = (sec_type or "").strip().upper()
-    expiry = _parse_raw_expiry_date(raw_expiry)
-    if expiry is None:
-        return None, None
-
-    option_expiry_date = expiry.isoformat() if stype in {"OPT", "FOP"} else None
-    return option_expiry_date, (expiry - date.today()).days
-
-
 def _derive_option_expiry_and_dte(position: Position) -> tuple[str | None, int | None]:
-    return _option_expiry_and_dte(position.sec_type, position.last_trade_date)
+    return option_expiry_and_dte(position.sec_type, position.last_trade_date)
 
 
 def _account_alias(acct: Account | None, account_id: int) -> str:

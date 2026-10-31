@@ -11,12 +11,8 @@ from sqlalchemy.orm import Session
 
 from src.api.annotations import annotate_items
 from src.api.deps import get_db
-from src.api.routers.positions import _option_expiry_and_dte
-from src.api.routers.strategies import ensure_strategy, escape_like, normalize_strategy_name
 from src.api.schemas import TagChip
 from src.api.routers.trades import (
-    _contract_display_from_raw,
-    _execution_ib_codes,
     _execution_realized_pnl,
 )
 from src.models import (
@@ -33,6 +29,10 @@ from src.models import (
     TradeGroupLiveExecution,
 )
 from src.services.cl_contracts import infer_contract_month_from_local_symbol
+from src.services.execution_display import contract_display_from_raw, execution_ib_codes
+from src.services.option_expiry import option_expiry_and_dte
+from src.services.strategies import normalize_strategy_name, require_strategy
+from src.utils.sql import escape_like
 from src.services.intraday_overlay import is_live_stale, parse_multiplier
 from src.services.trade_group_instruments import (
     InstrumentPatternError,
@@ -440,7 +440,7 @@ def list_trade_groups(  # noqa: PLR0913
 @router.post("/trade-groups", response_model=TradeGroupResponse, status_code=201)
 def create_trade_group(body: TradeGroupCreateRequest, db: Session = DB_SESSION_DEPENDENCY):
     if body.strategy_id is not None:
-        ensure_strategy(db, body.strategy_id)
+        require_strategy(db, body.strategy_id)
     _parse_meta_or_400(body.meta_yaml)  # validate; raises 400 on malformed YAML
 
     opened_at = body.opened_at or _now_utc()
@@ -496,7 +496,7 @@ def _apply_strategy_patch(db: Session, trade_group: TradeGroup, body: TradeGroup
     if "strategy_id" not in body.model_fields_set:
         return
     if body.strategy_id is not None:
-        ensure_strategy(db, body.strategy_id)
+        require_strategy(db, body.strategy_id)
     trade_group.strategy_id = body.strategy_id
 
 
@@ -1326,7 +1326,7 @@ def _view_to_open_position(view, flex, account, live_fetched_at, ref_expiry=None
         exchange=flex.exchange if flex else None,
         trading_class=flex.trading_class if flex else None,
     )
-    option_expiry_date, dte = _option_expiry_and_dte(display_sec_type, raw_expiry)
+    option_expiry_date, dte = option_expiry_and_dte(display_sec_type, raw_expiry)
     return TradeGroupOpenPositionItem(
         account_id=view.account_id,
         account_alias=(account.alias if account else None) or (account.account if account else None),
@@ -1405,9 +1405,9 @@ def trade_group_executions(trade_group_id: int, db: Session = DB_SESSION_DEPENDE
                 realized_pnl=_execution_realized_pnl(execution.raw),
                 exec_role=execution.exec_role,
                 sec_type=execution.sec_type,
-                contract_display=_contract_display_from_raw(execution.raw, contract_ref),
+                contract_display=contract_display_from_raw(execution.raw, contract_ref),
                 data_source=execution.data_source,
-                ib_codes=_execution_ib_codes(execution.raw),
+                ib_codes=execution_ib_codes(execution.raw),
                 settled=True,
                 ib_exec_id=execution.ib_exec_id,
                 multiplier=multiplier,

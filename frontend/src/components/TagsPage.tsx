@@ -7,15 +7,8 @@ import { Link, useSearchParams } from "react-router-dom";
 import AgentBadge from "./AgentBadge";
 import { TagChipView, TagInput } from "./TagChips";
 import { useAsyncAction } from "../hooks/useAsyncAction";
-import {
-  type Tag,
-  type TagEntityType,
-  type TaggedItem,
-  itemKey,
-  itemRoute,
-  normalizeTagValue,
-  tagsApi,
-} from "../lib/tags";
+import { itemKey, itemRoute, normalizeTagValue, tagsApi } from "../lib/tags";
+import type { Tag, TagEntityType, TaggedItem } from "../types/tags";
 
 type Tab = "trades" | "positions" | "trade_groups" | "tasks";
 
