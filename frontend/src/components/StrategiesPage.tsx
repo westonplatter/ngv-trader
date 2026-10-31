@@ -14,11 +14,11 @@ import type { Strategy } from "../types/strategies";
 import type {
   GroupAccountPnl,
   GroupExecution,
-  GroupExecutionsResponse,
   GroupOpenPosition,
   TradeGroup,
   TradeGroupDetail,
 } from "../types/tradeGroups";
+import { useTradeGroupDetail } from "./strategies/useTradeGroupDetail";
 import { formatDateTime } from "../utils/date";
 import { formatGreek, formatMoney, formatPercent } from "../utils/number";
 import { PRIVACY_MASK, formatRelativeReturn } from "../utils/privacy";
@@ -149,6 +149,12 @@ function parseIdParam(value: string | null): number | null {
 // survives reload. Toggled with the header button, `F`, or `Escape`.
 const FOCUS_PREF_KEY = "trade_tagging_focus_mode";
 
+// Stable empties for the derived detail fields, so a render with no group
+// selected does not hand the tables a fresh array each time.
+const NO_EXECUTIONS: GroupExecution[] = [];
+const NO_POSITIONS: GroupOpenPosition[] = [];
+const NO_ACCOUNT_PNL: GroupAccountPnl[] = [];
+
 export default function StrategiesPage() {
   const { privacyMode } = usePrivacy();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -174,24 +180,36 @@ export default function StrategiesPage() {
     parseIdParam(searchParams.get("strategy_id")),
   );
   const deepLinkResolvedRef = useRef(false);
-  const [groupDetail, setGroupDetail] = useState<TradeGroupDetail | null>(null);
-  const [executions, setExecutions] = useState<GroupExecution[]>([]);
-  const [totalRealizedPnl, setTotalRealizedPnl] = useState<number | null>(null);
-  const [openPositions, setOpenPositions] = useState<GroupOpenPosition[]>([]);
-  const [totalUnrealizedPnl, setTotalUnrealizedPnl] = useState<number | null>(
-    null,
-  );
-  const [intradayUnrealizedPnl, setIntradayUnrealizedPnl] = useState<
-    number | null
-  >(null);
-  const [intradayRealizedPnl, setIntradayRealizedPnl] = useState<number | null>(
-    null,
-  );
-  const [intradayTotalPnl, setIntradayTotalPnl] = useState<number | null>(null);
-  const [byAccount, setByAccount] = useState<GroupAccountPnl[]>([]);
-  // Account filter for the Open Positions / Trades tables (null = all accounts).
-  const [accountFilter, setAccountFilter] = useState<number | null>(null);
-  const [marksAsOf, setMarksAsOf] = useState<string | null>(null);
+
+  // Detail and executions for the selected group, keyed by its id inside the
+  // hook so a selection change derives the empty state instead of clearing a
+  // dozen pieces of state in an effect. The names below keep the JSX unchanged.
+  const groupData = useTradeGroupDetail(selectedGroupId);
+  const groupDetail = groupData.detail;
+  const groupExecutions = groupData.executions;
+  const executions = groupExecutions?.executions ?? NO_EXECUTIONS;
+  const openPositions = groupExecutions?.open_positions ?? NO_POSITIONS;
+  const byAccount = groupExecutions?.by_account ?? NO_ACCOUNT_PNL;
+  const totalRealizedPnl = groupExecutions?.total_realized_pnl ?? null;
+  const totalUnrealizedPnl = groupExecutions?.total_unrealized_pnl ?? null;
+  const intradayUnrealizedPnl =
+    groupExecutions?.intraday_unrealized_pnl ?? null;
+  const intradayRealizedPnl = groupExecutions?.intraday_realized_pnl ?? null;
+  const intradayTotalPnl = groupExecutions?.intraday_total_pnl ?? null;
+  const marksAsOf = groupExecutions?.marks_as_of ?? null;
+  // Account filter for the Open Positions / Trades tables (null = all
+  // accounts). Stored with the group it was chosen for, so another group
+  // starts unfiltered without a reset effect.
+  const [accountFilterFor, setAccountFilterFor] = useState<{
+    groupId: number | null;
+    accountId: number | null;
+  }>({ groupId: null, accountId: null });
+  const accountFilter =
+    accountFilterFor.groupId === selectedGroupId
+      ? accountFilterFor.accountId
+      : null;
+  const setAccountFilter = (accountId: number | null) =>
+    setAccountFilterFor({ groupId: selectedGroupId, accountId });
   const [liveSyncing, setLiveSyncing] = useState(false);
   const [liveSyncMessage, setLiveSyncMessage] = useState<string | null>(null);
 
@@ -204,7 +222,11 @@ export default function StrategiesPage() {
   const [groupFilter, setGroupFilter] = useState<GroupFilter>("active");
   const [groupSort, setGroupSort] = useState<GroupSort>("name_grouped");
 
-  const [editingGroup, setEditingGroup] = useState(false);
+  // Id of the group whose edit form is open. Keyed so deselecting, or picking
+  // another group, closes the form (and its stale field values) by derivation.
+  const [editingGroupId, setEditingGroupId] = useState<number | null>(null);
+  const editingGroup =
+    editingGroupId != null && editingGroupId === selectedGroupId;
   const [editName, setEditName] = useState("");
   const [editNotes, setEditNotes] = useState("");
   const [editMetaYaml, setEditMetaYaml] = useState("");
@@ -336,30 +358,6 @@ export default function StrategiesPage() {
     });
   }, []);
 
-  const loadGroupDetail = useCallback(async (groupId: number) => {
-    const data = await api.get<TradeGroupDetail>(`/trade-groups/${groupId}`, {
-      fallback: "Unable to load group detail",
-    });
-    setGroupDetail(data);
-  }, []);
-
-  const loadExecutions = useCallback(async (tradeGroupId: number) => {
-    const data = await api.get<GroupExecutionsResponse>(
-      `/trade-groups/${tradeGroupId}/executions`,
-      { fallback: "Unable to load group executions" },
-    );
-    setExecutions(data.executions);
-    setTotalRealizedPnl(data.total_realized_pnl);
-    setOpenPositions(data.open_positions ?? []);
-    setTotalUnrealizedPnl(data.total_unrealized_pnl);
-    setIntradayUnrealizedPnl(data.intraday_unrealized_pnl);
-    setIntradayRealizedPnl(data.intraday_realized_pnl);
-    setIntradayTotalPnl(data.intraday_total_pnl);
-    setByAccount(data.by_account ?? []);
-    setAccountFilter(null);
-    setMarksAsOf(data.marks_as_of);
-  }, []);
-
   useEffect(() => {
     let active = true;
 
@@ -471,43 +469,6 @@ export default function StrategiesPage() {
     };
   }, [loadGroups, selectedStrategy, loading]);
 
-  useEffect(() => {
-    if (selectedGroupId == null) {
-      // Same trade-off as the effect above: synchronous clearing of the
-      // previously selected group's detail, pending a derive-instead-of-store
-      // refactor of this component.
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setGroupDetail(null);
-      setExecutions([]);
-      setTotalRealizedPnl(null);
-      setOpenPositions([]);
-      setTotalUnrealizedPnl(null);
-      setIntradayUnrealizedPnl(null);
-      setIntradayRealizedPnl(null);
-      setIntradayTotalPnl(null);
-      setByAccount([]);
-      setAccountFilter(null);
-      setMarksAsOf(null);
-      setEditingGroup(false);
-      return;
-    }
-
-    void loadGroupDetail(selectedGroupId).catch((detailError: unknown) => {
-      const nextMessage =
-        detailError instanceof Error
-          ? detailError.message
-          : "Failed to load group detail.";
-      setError(nextMessage);
-    });
-    void loadExecutions(selectedGroupId).catch((execError: unknown) => {
-      const nextMessage =
-        execError instanceof Error
-          ? execError.message
-          : "Failed to load trade group executions.";
-      setError(nextMessage);
-    });
-  }, [loadGroupDetail, loadExecutions, selectedGroupId]);
-
   // Load the persisted focus-mode preference once at mount. If the user has
   // already toggled by the time this resolves, their action wins — don't let a
   // stale GET overwrite it.
@@ -586,7 +547,7 @@ export default function StrategiesPage() {
       );
       // Refresh once the worker reports the job finished.
       watch(data.job_id, () => {
-        if (selectedGroupId != null) void loadExecutions(selectedGroupId);
+        void groupData.reloadExecutions();
       });
     } catch (err) {
       setLiveSyncMessage(
@@ -697,7 +658,7 @@ export default function StrategiesPage() {
     }
 
     if (Object.keys(body).length === 0) {
-      setEditingGroup(false);
+      setEditingGroupId(null);
       return;
     }
 
@@ -706,7 +667,7 @@ export default function StrategiesPage() {
     });
 
     setMessage("Trade group updated.");
-    setEditingGroup(false);
+    setEditingGroupId(null);
     // A group moved to another strategy leaves the current list; follow it so
     // it stays selected (the strategy selection reloads the group list).
     if (strategyChanged && editStrategyId !== null) {
@@ -714,7 +675,7 @@ export default function StrategiesPage() {
     } else {
       await loadGroups(selectedStrategy?.name ?? null);
     }
-    await loadGroupDetail(selectedGroupId);
+    await groupData.reloadDetail();
   };
 
   const startEditing = () => {
@@ -725,7 +686,7 @@ export default function StrategiesPage() {
     setEditStatus(groupDetail.status);
     setEditStrategyId(groupDetail.strategy_id ?? null);
     setEditError(null);
-    setEditingGroup(true);
+    setEditingGroupId(selectedGroupId);
   };
 
   const deleteGroup = async () => {
@@ -851,6 +812,8 @@ export default function StrategiesPage() {
     },
   );
 
+  const pageError = error ?? groupData.error;
+
   return (
     <div className="flex min-h-0 flex-1 flex-col space-y-4">
       <div>
@@ -868,7 +831,7 @@ export default function StrategiesPage() {
       </div>
 
       {loading && <p className="text-sm text-gray-600">Loading workspace...</p>}
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {pageError && <p className="text-sm text-red-600">{pageError}</p>}
       {message && <p className="text-sm text-green-700">{message}</p>}
 
       <div
@@ -1374,7 +1337,7 @@ export default function StrategiesPage() {
                         }}
                         tags={groupDetail.tags ?? []}
                         onChanged={() => {
-                          void loadGroupDetail(groupDetail.id);
+                          void groupData.reloadDetail();
                           void loadGroups(selectedStrategy?.name ?? null);
                         }}
                       />
@@ -2372,7 +2335,7 @@ export default function StrategiesPage() {
                       Save
                     </button>
                     <button
-                      onClick={() => setEditingGroup(false)}
+                      onClick={() => setEditingGroupId(null)}
                       className="rounded border border-gray-300 px-4 py-1 text-sm text-gray-600 hover:bg-gray-50"
                     >
                       Cancel
