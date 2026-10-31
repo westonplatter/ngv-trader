@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { usePrivacy } from "../contexts/usePrivacy";
 import { PRIVACY_MASK } from "../utils/privacy";
-import { API_BASE_URL } from "../config";
+import { request } from "../lib/api";
 import { ibCodesTitle, parseIbCodes } from "../lib/ibCodes";
 import { useSSE } from "../lib/events";
 import { formatMoney } from "../utils/number";
@@ -84,6 +84,20 @@ function rowGroupKey(row: TradeExecutionRow): string {
   return `l:${row.parent_ib_exec_id ?? row.ib_exec_id}`;
 }
 
+// Execution ids behind a settled trade, for the group assign/unassign calls.
+async function loadTradeExecutionIds(
+  tradeId: number | null,
+): Promise<number[]> {
+  if (tradeId == null) throw new Error("Missing trade id.");
+  const executions = await request<{ id: number }[]>(
+    "GET",
+    `/trades/${tradeId}/executions`,
+    undefined,
+    { fallback: "Unable to load executions" },
+  );
+  return executions.map((ex) => ex.id);
+}
+
 function formatDateTime(value: string | null | undefined): string {
   if (!value) return "-";
   const parsed = Date.parse(value);
@@ -94,21 +108,6 @@ function formatDateTime(value: string | null | undefined): string {
     minute: "2-digit",
     second: "2-digit",
   })}`;
-}
-
-async function readErrorMessage(
-  response: Response,
-  fallback: string,
-): Promise<string> {
-  try {
-    const payload = (await response.json()) as { detail?: unknown };
-    if (typeof payload.detail === "string") {
-      return `${payload.detail} (${response.status})`;
-    }
-  } catch {
-    // no-op
-  }
-  return `${fallback} (${response.status})`;
 }
 
 function execRoleBadge(role: string): { label: string; className: string } {
@@ -176,61 +175,38 @@ function TradeGroupCell({
     try {
       if (unsettled) {
         if (!ibExecId) throw new Error("Missing live execution id.");
-        const assignResponse = await fetch(
-          `${API_BASE_URL}/trade-groups/${group.id}/live-executions:assign`,
+        await request(
+          "POST",
+          `/trade-groups/${group.id}/live-executions:assign`,
           {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              ib_exec_ids: [ibExecId],
-              source: "manual",
-              created_by: "ui-trader",
-              reason: `live fill ${ibExecId} assigned from trades page`,
-            }),
+            ib_exec_ids: [ibExecId],
+            source: "manual",
+            created_by: "ui-trader",
+            reason: `live fill ${ibExecId} assigned from trades page`,
           },
+          { fallback: "Unable to assign fill" },
         );
-        if (!assignResponse.ok) {
-          throw new Error(
-            await readErrorMessage(assignResponse, "Unable to assign fill"),
-          );
-        }
         onAssigned();
         return;
       }
 
-      const execResponse = await fetch(
-        `${API_BASE_URL}/trades/${tradeId}/executions`,
-      );
-      if (!execResponse.ok) {
-        throw new Error(
-          await readErrorMessage(execResponse, "Unable to load executions"),
-        );
-      }
-      const tradeExecutions = (await execResponse.json()) as { id: number }[];
-      const executionIds = tradeExecutions.map((ex) => ex.id);
+      const executionIds = await loadTradeExecutionIds(tradeId);
       if (executionIds.length === 0) {
         throw new Error("Trade has no executions to assign.");
       }
 
-      const assignResponse = await fetch(
-        `${API_BASE_URL}/trade-groups/${group.id}/executions:assign`,
+      await request(
+        "POST",
+        `/trade-groups/${group.id}/executions:assign`,
         {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            execution_ids: executionIds,
-            source: "manual",
-            created_by: "ui-trader",
-            reason: `trade ${tradeId} assigned from trades page`,
-            force_reassign: true,
-          }),
+          execution_ids: executionIds,
+          source: "manual",
+          created_by: "ui-trader",
+          reason: `trade ${tradeId} assigned from trades page`,
+          force_reassign: true,
         },
+        { fallback: "Unable to assign trade" },
       );
-      if (!assignResponse.ok) {
-        throw new Error(
-          await readErrorMessage(assignResponse, "Unable to assign trade"),
-        );
-      }
 
       // Confirmed — refresh parent data. The clear-override effect drops the
       // optimistic value once the prop reflects the assignment.
@@ -255,57 +231,34 @@ function TradeGroupCell({
     try {
       if (unsettled) {
         if (!ibExecId) throw new Error("Missing live execution id.");
-        const unassignResponse = await fetch(
-          `${API_BASE_URL}/trade-groups/${groupId}/live-executions:unassign`,
+        await request(
+          "POST",
+          `/trade-groups/${groupId}/live-executions:unassign`,
           {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              ib_exec_ids: [ibExecId],
-              source: "manual",
-              created_by: "ui-trader",
-              reason: `live fill ${ibExecId} unassigned from trades page`,
-            }),
+            ib_exec_ids: [ibExecId],
+            source: "manual",
+            created_by: "ui-trader",
+            reason: `live fill ${ibExecId} unassigned from trades page`,
           },
+          { fallback: "Unable to unassign fill" },
         );
-        if (!unassignResponse.ok) {
-          throw new Error(
-            await readErrorMessage(unassignResponse, "Unable to unassign fill"),
-          );
-        }
         onAssigned();
         return;
       }
 
-      const execResponse = await fetch(
-        `${API_BASE_URL}/trades/${tradeId}/executions`,
-      );
-      if (!execResponse.ok) {
-        throw new Error(
-          await readErrorMessage(execResponse, "Unable to load executions"),
-        );
-      }
-      const tradeExecutions = (await execResponse.json()) as { id: number }[];
-      const executionIds = tradeExecutions.map((ex) => ex.id);
+      const executionIds = await loadTradeExecutionIds(tradeId);
 
-      const unassignResponse = await fetch(
-        `${API_BASE_URL}/trade-groups/${groupId}/executions:unassign`,
+      await request(
+        "POST",
+        `/trade-groups/${groupId}/executions:unassign`,
         {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            execution_ids: executionIds,
-            source: "manual",
-            created_by: "ui-trader",
-            reason: `trade ${tradeId} unassigned from trades page`,
-          }),
+          execution_ids: executionIds,
+          source: "manual",
+          created_by: "ui-trader",
+          reason: `trade ${tradeId} unassigned from trades page`,
         },
+        { fallback: "Unable to unassign trade" },
       );
-      if (!unassignResponse.ok) {
-        throw new Error(
-          await readErrorMessage(unassignResponse, "Unable to unassign trade"),
-        );
-      }
 
       onAssigned();
     } catch (err) {
@@ -466,10 +419,15 @@ export default function TradesTable() {
   }, [allTradeGroups]);
 
   const loadTradeGroups = useCallback(async () => {
-    const res = await fetch(`${API_BASE_URL}/trade-groups?limit=500`);
-    if (!res.ok) return;
-    const data: TradeGroupResult[] = await res.json();
-    setAllTradeGroups(data);
+    // Label lookup only: a failure here leaves ids unlabeled rather than
+    // surfacing a page-level error.
+    try {
+      setAllTradeGroups(
+        await request<TradeGroupResult[]>("GET", "/trade-groups?limit=500"),
+      );
+    } catch {
+      // keep whatever labels we already had
+    }
   }, []);
 
   const serverSymbol = useMemo(() => {
@@ -490,13 +448,12 @@ export default function TradesTable() {
     const params = new URLSearchParams({ limit: "5000" });
     if (conIdFilter !== null) params.set("con_id", String(conIdFilter));
     else if (serverSymbol) params.set("symbol", serverSymbol);
-    const res = await fetch(
-      `${API_BASE_URL}/trade-executions?${params.toString()}`,
+    const data = await request<TradeExecutionRow[]>(
+      "GET",
+      `/trade-executions?${params.toString()}`,
+      undefined,
+      { fallback: "Unable to load executions" },
     );
-    if (!res.ok) {
-      throw new Error(await readErrorMessage(res, "Unable to load executions"));
-    }
-    const data: TradeExecutionRow[] = await res.json();
     setExecutions(data);
     setFilterNow(Date.now());
     setError(null);
@@ -648,30 +605,29 @@ export default function TradesTable() {
     const poll = async () => {
       if (Date.now() > deadline) return;
       try {
-        const res = await fetch(`${API_BASE_URL}/jobs/${jobId}`);
-        if (res.ok) {
-          const job: { status: string; last_error?: string | null } =
-            await res.json();
-          if (job.status === "completed" || job.status === "failed") {
-            const finished =
-              job.status === "completed"
-                ? `${label} job #${jobId} completed.`
-                : `${label} job #${jobId} failed${
-                    job.last_error ? `: ${job.last_error}` : "."
-                  }`;
-            if (job.status === "completed") {
-              setSyncMessage(finished);
-            } else {
-              setSyncError(finished);
-            }
-            notifyJobDone(finished);
-            void loadExecutions().catch(() => {});
-            void loadTradeGroups().catch(() => {});
-            return;
+        const job = await request<{
+          status: string;
+          last_error?: string | null;
+        }>("GET", `/jobs/${jobId}`);
+        if (job.status === "completed" || job.status === "failed") {
+          const finished =
+            job.status === "completed"
+              ? `${label} job #${jobId} completed.`
+              : `${label} job #${jobId} failed${
+                  job.last_error ? `: ${job.last_error}` : "."
+                }`;
+          if (job.status === "completed") {
+            setSyncMessage(finished);
+          } else {
+            setSyncError(finished);
           }
+          notifyJobDone(finished);
+          void loadExecutions().catch(() => {});
+          void loadTradeGroups().catch(() => {});
+          return;
         }
       } catch {
-        // transient network error; keep polling until the deadline
+        // transient network or non-2xx error; keep polling until the deadline
       }
       window.setTimeout(() => {
         void poll();
@@ -695,10 +651,15 @@ export default function TradesTable() {
     setSyncMessage(null);
     setSyncError(null);
     try {
-      const res = await fetch(`${API_BASE_URL}/trades/sync/flex-query`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      const data = await request<{
+        job_id: number;
+        status: string;
+        start_date?: string | null;
+        end_date?: string | null;
+      }>(
+        "POST",
+        "/trades/sync/flex-query",
+        {
           source: "manual-ui",
           request_text: `${label} (flex query) from Trades page.`,
           max_attempts: 3,
@@ -707,17 +668,9 @@ export default function TradesTable() {
           ...(options.startDate && options.endDate
             ? { start_date: options.startDate, end_date: options.endDate }
             : {}),
-        }),
-      });
-      if (!res.ok) {
-        throw new Error(await readErrorMessage(res, "Unable to queue sync"));
-      }
-      const data: {
-        job_id: number;
-        status: string;
-        start_date?: string | null;
-        end_date?: string | null;
-      } = await res.json();
+        },
+        { fallback: "Unable to queue sync" },
+      );
       const rangeNote =
         data.start_date && data.end_date
           ? ` Syncing ${data.start_date} → ${data.end_date}.`
@@ -744,21 +697,16 @@ export default function TradesTable() {
     setSyncMessage(null);
     setSyncError(null);
     try {
-      const res = await fetch(`${API_BASE_URL}/positions/sync/intraday-tws`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      const data = await request<{ job_id: number; status: string }>(
+        "POST",
+        "/positions/sync/intraday-tws",
+        {
           source: "manual-ui",
           request_text: "Intraday TWS sync from Trades page.",
           max_attempts: 3,
-        }),
-      });
-      if (!res.ok) {
-        throw new Error(
-          await readErrorMessage(res, "Unable to queue intraday sync"),
-        );
-      }
-      const data: { job_id: number; status: string } = await res.json();
+        },
+        { fallback: "Unable to queue intraday sync" },
+      );
       setSyncMessage(
         `Queued intraday TWS sync job #${data.job_id} (${data.status}).`,
       );

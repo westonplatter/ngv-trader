@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { API_BASE_URL } from "../config";
+import { request } from "../lib/api";
 
 // The token value is write-only: it is sent on create/update and never comes
 // back from the API, so there is nothing here to reveal or copy.
@@ -56,11 +56,7 @@ export default function FlexQueryTokensTable() {
   const [edit, setEdit] = useState<EditState>(EMPTY_EDIT);
 
   function fetchTokens() {
-    fetch(`${API_BASE_URL}/flexquery-tokens`)
-      .then((res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.json();
-      })
+    request<FlexQueryToken[]>("GET", "/flexquery-tokens")
       .then(setTokens)
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
@@ -71,28 +67,12 @@ export default function FlexQueryTokensTable() {
   }, []);
 
   // The API returns a readable `detail` for the cases a user can cause —
-  // duplicate name, unset encryption key — so surface it rather than the status.
-  async function readError(res: Response): Promise<string> {
-    try {
-      const body = await res.json();
-      return typeof body?.detail === "string"
-        ? body.detail
-        : `HTTP ${res.status}`;
-    } catch {
-      return `HTTP ${res.status}`;
-    }
-  }
-
+  // duplicate name, unset encryption key — and `request` surfaces it.
   async function send(path: string, method: string, body: unknown) {
     setSaving(true);
     setError(null);
     try {
-      const res = await fetch(`${API_BASE_URL}${path}`, {
-        method,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) throw new Error(await readError(res));
+      await request(method, path, body);
       fetchTokens();
       return true;
     } catch (err) {

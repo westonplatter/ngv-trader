@@ -1,6 +1,6 @@
 import type React from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { API_BASE_URL } from "../config";
+import { request } from "../lib/api";
 import { type TradeGroupResult, tradeGroupLabel } from "../lib/tradeGroups";
 
 // `fetch` has no default timeout: a request the server accepts but never answers
@@ -84,14 +84,15 @@ export default function TradeGroupSearchSelect({
   const fetchGroups = useCallback(async (params: URLSearchParams) => {
     params.set("limit", "20");
     params.set("status", "open");
-    const response = await fetch(
-      `${API_BASE_URL}/trade-groups?${params.toString()}`,
-      { signal: AbortSignal.timeout(SEARCH_TIMEOUT_MS) },
+    return request<TradeGroupResult[]>(
+      "GET",
+      `/trade-groups?${params.toString()}`,
+      undefined,
+      {
+        signal: AbortSignal.timeout(SEARCH_TIMEOUT_MS),
+        fallback: "Unable to search trade groups",
+      },
     );
-    if (!response.ok) {
-      throw new Error(`Unable to search trade groups (${response.status})`);
-    }
-    return (await response.json()) as TradeGroupResult[];
   }, []);
 
   // What the operator types: a free-text match on group name / strategy value.

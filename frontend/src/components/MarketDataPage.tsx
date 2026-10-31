@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { API_BASE_URL } from "../config";
+import { request } from "../lib/api";
 import { useSSE, type ConnectionStatus } from "../lib/events";
 
 interface Job {
@@ -104,6 +104,18 @@ interface PendingFilterJob {
   payload: Record<string, unknown>;
 }
 
+// GET /futures/{symbol}/option-filter: the strike/DTE window the backend
+// derives from the current futures price plus the configured filter.
+interface OptionFilterResponse {
+  fut_price: number | null;
+  filter_config: Record<string, unknown>;
+  computed: {
+    strike_gte: number | null;
+    strike_lte: number | null;
+    dte_lte: number | null;
+  };
+}
+
 function formatAge(isoStr: string): string {
   const ms = Date.now() - Date.parse(isoStr);
   if (ms < 0) return "just now";
@@ -181,12 +193,8 @@ export default function MarketDataPage() {
   const prevStatusRef = useRef<ConnectionStatus | null>(null);
 
   const loadJobs = useCallback(() => {
-    fetch(`${API_BASE_URL}/jobs?include_archived=false`)
-      .then((res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.json();
-      })
-      .then((rows: Job[]) => {
+    request<Job[]>("GET", "/jobs?include_archived=false")
+      .then((rows) => {
         setJobs(rows.filter((j) => MARKET_DATA_JOB_TYPES.includes(j.job_type)));
         setError(null);
       })
@@ -194,12 +202,8 @@ export default function MarketDataPage() {
   }, []);
 
   const loadProducts = useCallback(() => {
-    fetch(`${API_BASE_URL}/activated-products`)
-      .then((res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.json();
-      })
-      .then((rows: ActivatedProduct[]) => setProducts(rows))
+    request<ActivatedProduct[]>("GET", "/activated-products")
+      .then((rows) => setProducts(rows))
       .catch((err: Error) => setError(err.message));
   }, []);
 
@@ -254,16 +258,11 @@ export default function MarketDataPage() {
     setSubmitting(key);
     setMessage(null);
     try {
-      const res = await fetch(`${API_BASE_URL}/jobs`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ job_type: jobType, payload, source: "ui" }),
+      const job = await request<Job>("POST", "/jobs", {
+        job_type: jobType,
+        payload,
+        source: "ui",
       });
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error(text || `HTTP ${res.status}`);
-      }
-      const job = await res.json();
       setMessage(`Job #${job.id} enqueued (${jobType})`);
       loadJobs();
     } catch (err: unknown) {
@@ -277,14 +276,7 @@ export default function MarketDataPage() {
     setSubmitting(`rerun-${jobId}`);
     setMessage(null);
     try {
-      const res = await fetch(`${API_BASE_URL}/jobs/${jobId}/rerun`, {
-        method: "POST",
-      });
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error(text || `HTTP ${res.status}`);
-      }
-      const job = await res.json();
+      const job = await request<Job>("POST", `/jobs/${jobId}/rerun`);
       setMessage(`Job #${job.id} enqueued (rerun of #${jobId})`);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : String(err));
@@ -296,13 +288,7 @@ export default function MarketDataPage() {
   const archiveJob = async (jobId: number) => {
     setSubmitting(`archive-${jobId}`);
     try {
-      const res = await fetch(`${API_BASE_URL}/jobs/${jobId}/archive`, {
-        method: "POST",
-      });
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error(text || `HTTP ${res.status}`);
-      }
+      await request("POST", `/jobs/${jobId}/archive`);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -316,11 +302,12 @@ export default function MarketDataPage() {
       try {
         setSubmitting(preset.label);
         setError(null);
-        const res = await fetch(
-          `${API_BASE_URL}/futures/${symbol}/option-filter`,
+        const filter = await request<OptionFilterResponse>(
+          "GET",
+          `/futures/${symbol}/option-filter`,
+          undefined,
+          { fallback: "Filter fetch failed" },
         );
-        if (!res.ok) throw new Error(`Filter fetch failed: HTTP ${res.status}`);
-        const filter = await res.json();
         const payload: Record<string, unknown> = { ...preset.payload };
         if (filter.computed.strike_gte != null)
           payload.strike_gte = filter.computed.strike_gte;

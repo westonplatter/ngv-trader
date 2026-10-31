@@ -10,7 +10,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { API_BASE_URL } from "../config";
+import { request } from "../lib/api";
 import { usePrivacy } from "../contexts/usePrivacy";
 import {
   DEFAULT_SORT,
@@ -90,20 +90,12 @@ export default function StrategyPnlTable() {
     const id = ++requestId.current;
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE_URL}/trade-groups?${query}`);
-      if (!res.ok) {
-        // A malformed instrument pattern comes back as a 400 with a readable
-        // message; surface it rather than an opaque status code.
-        let detail = `HTTP ${res.status}`;
-        try {
-          const body = (await res.json()) as { detail?: string };
-          if (body.detail) detail = body.detail;
-        } catch {
-          /* non-JSON error body — keep the status line */
-        }
-        throw new Error(detail);
-      }
-      const data = (await res.json()) as TradeGroupPnlRow[];
+      // A malformed instrument pattern comes back as a 400 with a readable
+      // `detail`, which `request` puts in the thrown message.
+      const data = await request<TradeGroupPnlRow[]>(
+        "GET",
+        `/trade-groups?${query}`,
+      );
       if (id !== requestId.current) return; // a newer request already answered
       setRows(data);
       setError(null);
@@ -130,9 +122,7 @@ export default function StrategyPnlTable() {
   useEffect(() => {
     void (async () => {
       try {
-        const res = await fetch(`${API_BASE_URL}/accounts`);
-        if (!res.ok) return;
-        setAccounts((await res.json()) as AccountOption[]);
+        setAccounts(await request<AccountOption[]>("GET", "/accounts"));
       } catch {
         /* the account filter degrades to "All accounts" */
       }
@@ -143,18 +133,16 @@ export default function StrategyPnlTable() {
     setSyncing(true);
     setSyncMessage(null);
     try {
-      const res = await fetch(`${API_BASE_URL}/positions/sync/intraday-tws`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      const data = await request<{ job_id: number; status: string }>(
+        "POST",
+        "/positions/sync/intraday-tws",
+        {
           source: "manual-ui",
           request_text:
             "Refresh live intraday overlay from the Strategy P&L table.",
           max_attempts: 3,
-        }),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = (await res.json()) as { job_id: number; status: string };
+        },
+      );
       setSyncMessage(
         `Queued intraday TWS sync job #${data.job_id} (${data.status}). Refreshing shortly…`,
       );

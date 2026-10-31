@@ -53,10 +53,17 @@ frontend/src/
 
 ## Data access
 
-- The API base is `API_BASE_URL` from `config.ts`. Never hardcode a host.
+- Every API call goes through `request<T>(method, path, body?, options?)` in
+  `lib/api.ts`, or a resource module built on it (`tagsApi`, `tasksApi` in
+  `lib/tags.ts`). Components never call `fetch` or build URLs from
+  `API_BASE_URL` themselves. The one exception is the pricing proxy
+  (`/pricing-api`), which has a different base.
+- `request` throws `ApiError` on a non-2xx status with the backend `detail`
+  string when there is one; pass `fallback` for the message to show when there
+  is none. Callers set page-level `error` state from `err.message`.
+- Build query strings with `query({...})` from `lib/api.ts`; it skips empty
+  values and repeats keys for arrays.
 - Response types are declared once and imported, not redeclared per page.
-- Throw on a non-2xx response and surface the backend `detail` string when there
-  is one; callers set page-level `error` state from the thrown message.
 - Live updates arrive over SSE through `useSSE(topic, onEvent)` in `lib/events.ts`.
   Load the REST snapshot first, then merge events into local state. See
   [api-ux-sse.md](../design/api-ux-sse.md).
@@ -90,6 +97,8 @@ Pick the store by who needs to see the value:
 
 - Money, strikes, percents, greeks, multipliers: `utils/number.ts`. Identifiers
   never go through these helpers so they never gain thousands separators.
+- Expiries, dates, timestamps, durations: `utils/date.ts`. Missing values render
+  as an em dash everywhere.
 - Privacy mode: read `usePrivacy()` and render dollar amounts through
   `PRIVACY_MASK` or `formatRelativeReturn`. See
   [user-preferences-privacy-mode.md](../design/user-preferences-privacy-mode.md).

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { API_BASE_URL } from "../config";
+import { request } from "../lib/api";
 import { useSSE, type ConnectionStatus } from "../lib/events";
 
 type LightColor = "green" | "yellow" | "red";
@@ -43,12 +43,8 @@ export default function WorkerStatusLights() {
   const prevStatusRef = useRef<ConnectionStatus | null>(null);
 
   const loadStatuses = useCallback(() => {
-    fetch(`${API_BASE_URL}/workers/status`)
-      .then((res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.json();
-      })
-      .then((rows: WorkerStatus[]) => {
+    request<WorkerStatus[]>("GET", "/workers/status")
+      .then((rows) => {
         const next: Record<string, WorkerStatus> = {};
         rows.forEach((row) => {
           next[row.worker_type] = row;

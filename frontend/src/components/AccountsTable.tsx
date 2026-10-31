@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { API_BASE_URL } from "../config";
+import { request } from "../lib/api";
 
 function CopyIcon() {
   return (
@@ -109,11 +109,7 @@ export default function AccountsTable() {
   };
 
   function fetchAccounts() {
-    fetch(`${API_BASE_URL}/accounts`)
-      .then((res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.json();
-      })
+    request<Account[]>("GET", "/accounts")
       .then(setAccounts)
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
@@ -136,16 +132,8 @@ export default function AccountsTable() {
   function saveAlias(id: number) {
     setSaving(true);
     const alias = editValue.trim() || null;
-    fetch(`${API_BASE_URL}/accounts/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ alias }),
-    })
-      .then((res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.json();
-      })
-      .then((updated: Account) => {
+    request<Account>("PATCH", `/accounts/${id}`, { alias })
+      .then((updated) => {
         setAccounts((prev) =>
           prev.map((a) => (a.id === updated.id ? updated : a)),
         );

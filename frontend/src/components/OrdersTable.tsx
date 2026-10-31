@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePrivacy } from "../contexts/usePrivacy";
 import { PRIVACY_MASK } from "../utils/privacy";
-import { API_BASE_URL } from "../config";
+import { request } from "../lib/api";
+import { formatDate, formatExpiry } from "../utils/date";
 import { useSSE, type ConnectionStatus } from "../lib/events";
 
 interface Order {
@@ -60,20 +61,6 @@ const TERMINAL_STATUSES = new Set([
   "failed",
 ]);
 
-function formatExpiry(value: string | null | undefined): string {
-  if (!value) return "—";
-  if (value.length === 8 && !value.includes("-")) {
-    return `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}`;
-  }
-  return value;
-}
-
-function formatDate(value: string): string {
-  const parsed = Date.parse(value);
-  if (Number.isNaN(parsed)) return "—";
-  return new Date(parsed).toLocaleDateString();
-}
-
 function getDisplayedSymbol(order: Order): string {
   return (order.symbol || "").trim().toUpperCase();
 }
@@ -98,12 +85,8 @@ export default function OrdersTable() {
   const prevStatusRef = useRef<ConnectionStatus | null>(null);
 
   const loadOrders = useCallback(() => {
-    fetch(`${API_BASE_URL}/orders`)
-      .then((res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.json();
-      })
-      .then((data: Order[]) => {
+    request<Order[]>("GET", "/orders")
+      .then((data) => {
         setOrders(data);
         setError(null);
       })
@@ -196,17 +179,15 @@ export default function OrdersTable() {
     setSyncMessage(null);
     setSyncError(null);
     try {
-      const res = await fetch(`${API_BASE_URL}/orders/sync`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      const data = await request<{ job_id: number; status: string }>(
+        "POST",
+        "/orders/sync",
+        {
           source: "manual-ui",
           request_text: "Manual order fetch/sync from Orders page.",
           max_attempts: 3,
-        }),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data: { job_id: number; status: string } = await res.json();
+        },
+      );
       setSyncMessage(`Queued order sync job #${data.job_id} (${data.status}).`);
       window.setTimeout(() => loadOrders(), 1000);
     } catch (err) {
@@ -227,19 +208,10 @@ export default function OrdersTable() {
       return next;
     });
     try {
-      const res = await fetch(`${API_BASE_URL}/orders/${orderId}/cancel`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          source: "manual-ui",
-          request_text: "Cancelled from Orders UI",
-        }),
+      const data = await request<Order>("POST", `/orders/${orderId}/cancel`, {
+        source: "manual-ui",
+        request_text: "Cancelled from Orders UI",
       });
-      if (!res.ok) {
-        const body = await res.text();
-        throw new Error(body || `HTTP ${res.status}`);
-      }
-      const data: Order = await res.json();
       setCancelMessage(`Order #${data.id} is now '${data.status}'.`);
       loadOrders();
     } catch (err) {

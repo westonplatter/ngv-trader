@@ -4,7 +4,7 @@
 // Tags are sticky notes. They never group items (that is trade groups) and never
 // feed reporting (that is strategies).
 
-import { API_BASE_URL } from "../config";
+import { query, request } from "./api";
 
 export type TagChip = {
   id: number;
@@ -101,48 +101,6 @@ export function normalizeTagValue(value: string): string {
     .toLowerCase()
     .replace(/[\s_-]+/g, "-")
     .replace(/^-+|-+$/g, "");
-}
-
-async function request<T>(
-  method: string,
-  path: string,
-  body?: unknown,
-): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    method,
-    headers:
-      body === undefined ? undefined : { "Content-Type": "application/json" },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  if (!response.ok) {
-    let detail = `${method} ${path} failed (${response.status})`;
-    try {
-      const payload = (await response.json()) as { detail?: unknown };
-      if (typeof payload.detail === "string") detail = payload.detail;
-    } catch {
-      // keep the generic message
-    }
-    throw new Error(detail);
-  }
-  return response.status === 204
-    ? (undefined as T)
-    : ((await response.json()) as T);
-}
-
-function query(
-  params: Record<
-    string,
-    string | number | boolean | string[] | null | undefined
-  >,
-): string {
-  const search = new URLSearchParams();
-  for (const [key, value] of Object.entries(params)) {
-    if (value === null || value === undefined || value === "") continue;
-    if (Array.isArray(value)) value.forEach((v) => search.append(key, v));
-    else search.set(key, String(value));
-  }
-  const text = search.toString();
-  return text ? `?${text}` : "";
 }
 
 export const tagsApi = {

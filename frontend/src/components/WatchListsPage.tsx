@@ -16,9 +16,8 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { API_BASE_URL } from "../config";
-
-const API_BASE = API_BASE_URL;
+import { request } from "../lib/api";
+import { formatExpiry } from "../utils/date";
 
 interface WatchListSummary {
   id: number;
@@ -102,15 +101,6 @@ const INSTRUMENT_COLUMNS: {
   { key: "exchange", label: "Exchange", muted: true },
   { key: "multiplier", label: "Multiplier", muted: true },
 ];
-
-function formatExpiry(value: string | null | undefined): string {
-  if (!value) return "\u2014";
-  // YYYYMMDD → YYYY-MM-DD
-  if (value.length === 8 && !value.includes("-")) {
-    return `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}`;
-  }
-  return value;
-}
 
 function formatQuotePrice(value: number | null | undefined): string {
   if (value === null || value === undefined) {
@@ -211,12 +201,8 @@ export default function WatchListsPage() {
   );
 
   const fetchLists = useCallback(() => {
-    fetch(`${API_BASE}/watch-lists`)
-      .then((res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.json();
-      })
-      .then((data: WatchListSummary[]) => {
+    request<WatchListSummary[]>("GET", "/watch-lists")
+      .then((data) => {
         setLists(data);
         // Auto-select first watch list if none selected
         setSelectedId((prev) => {
@@ -236,11 +222,7 @@ export default function WatchListsPage() {
   };
 
   const fetchDetail = useCallback((id: number) => {
-    fetch(`${API_BASE}/watch-lists/${id}`)
-      .then((res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.json();
-      })
+    request<WatchListDetail>("GET", `/watch-lists/${id}`)
       .then(setDetail)
       .catch((err) => setError(err.message));
   }, []);
@@ -271,10 +253,8 @@ export default function WatchListsPage() {
     setLists(reordered);
 
     // Persist to backend
-    fetch(`${API_BASE}/watch-lists/reorder`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ids: reordered.map((wl) => wl.id) }),
+    request("PUT", "/watch-lists/reorder", {
+      ids: reordered.map((wl) => wl.id),
     }).catch((err) => {
       setError(err.message);
       // Revert on failure
@@ -285,18 +265,10 @@ export default function WatchListsPage() {
   const handleCreate = () => {
     if (!newName.trim()) return;
     setCreating(true);
-    fetch(`${API_BASE}/watch-lists`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        name: newName.trim(),
-        description: newDesc.trim() || null,
-      }),
+    request<WatchListSummary>("POST", "/watch-lists", {
+      name: newName.trim(),
+      description: newDesc.trim() || null,
     })
-      .then((res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.json();
-      })
       .then((created) => {
         setNewName("");
         setNewDesc("");
@@ -309,9 +281,8 @@ export default function WatchListsPage() {
 
   const handleDelete = (id: number) => {
     if (!confirm("Delete this watch list and all its instruments?")) return;
-    fetch(`${API_BASE}/watch-lists/${id}`, { method: "DELETE" })
-      .then((res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    request("DELETE", `/watch-lists/${id}`)
+      .then(() => {
         if (selectedId === id) {
           selectWatchList(null);
           setDetail(null);
@@ -333,16 +304,11 @@ export default function WatchListsPage() {
 
   const handleEditSave = (id: number) => {
     if (!editName.trim()) return;
-    fetch(`${API_BASE}/watch-lists/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        name: editName.trim(),
-        description: editDesc.trim() || null,
-      }),
+    request("PATCH", `/watch-lists/${id}`, {
+      name: editName.trim(),
+      description: editDesc.trim() || null,
     })
-      .then((res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      .then(() => {
         setEditingId(null);
         fetchLists();
         if (selectedId === id) fetchDetail(id);
@@ -359,11 +325,8 @@ export default function WatchListsPage() {
   const handleRemoveInstrumentConfirm = (instrumentId: number) => {
     if (selectedId === null) return;
     setRemovingInstrumentId(instrumentId);
-    fetch(`${API_BASE}/watch-lists/${selectedId}/instruments/${instrumentId}`, {
-      method: "DELETE",
-    })
-      .then((res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    request("DELETE", `/watch-lists/${selectedId}/instruments/${instrumentId}`)
+      .then(() => {
         setRemoveConfirmId(null);
         fetchDetail(selectedId);
         fetchLists();
@@ -376,14 +339,11 @@ export default function WatchListsPage() {
     if (selectedId === null) return;
     setRefreshingQuotes(true);
     setQuotesRefreshMessage(null);
-    fetch(`${API_BASE}/watch-lists/${selectedId}/quotes/refresh`, {
-      method: "POST",
-    })
-      .then((res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.json();
-      })
-      .then((data: WatchListQuotesRefreshResponse) => {
+    request<WatchListQuotesRefreshResponse>(
+      "POST",
+      `/watch-lists/${selectedId}/quotes/refresh`,
+    )
+      .then((data) => {
         setQuotesRefreshMessage(data.message);
         fetchDetail(selectedId);
       })

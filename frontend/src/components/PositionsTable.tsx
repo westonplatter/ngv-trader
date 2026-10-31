@@ -3,9 +3,10 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { usePrivacy } from "../contexts/usePrivacy";
 import { PRIVACY_MASK, formatRelativeReturn } from "../utils/privacy";
-import { API_BASE_URL } from "../config";
+import { request } from "../lib/api";
 import { useSSE } from "../lib/events";
 import { formatMarkTime } from "../lib/markTime";
+import { formatExpiry } from "../utils/date";
 import {
   formatDelta,
   formatGreek,
@@ -18,6 +19,12 @@ import TradeGroupSearchSelect from "./TradeGroupSearchSelect";
 import TagChips from "./TagChips";
 import TaskQuickAdd from "./TaskQuickAdd";
 import { type ItemRef, type TagChip } from "../lib/tags";
+
+// Shape of every POST /positions/sync/* and /orders/sync enqueue response.
+interface SyncJobResponse {
+  job_id: number;
+  status: string;
+}
 
 export interface TradeGroupRef {
   id: number;
@@ -77,15 +84,6 @@ export interface Position {
 
 type SortDirection = "none" | "desc" | "asc";
 type SortColumn = "symbol" | "local_symbol" | "option_expiry_date" | "dte";
-
-function formatExpiry(value: string | null | undefined): string {
-  if (!value) return "\u2014";
-  // YYYYMMDD → YYYY-MM-DD
-  if (value.length === 8 && !value.includes("-")) {
-    return `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}`;
-  }
-  return value;
-}
 
 function expiryForPosition(pos: Position): string {
   const secType = (pos.sec_type ?? "").toUpperCase();
@@ -416,11 +414,7 @@ export default function PositionsTable() {
   }, [sortedPositions]);
 
   const loadPositions = () => {
-    fetch(`${API_BASE_URL}/positions`)
-      .then((res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.json();
-      })
+    request<Position[]>("GET", "/positions")
       .then(setPositions)
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
@@ -437,19 +431,11 @@ export default function PositionsTable() {
   const assignToTradeGroup = async (pos: Position, groupId: number) => {
     setAssignError(null);
     try {
-      const res = await fetch(
-        `${API_BASE_URL}/trade-groups/${groupId}/positions:assign`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            positions: [{ account_id: pos.account_id, con_id: pos.con_id }],
-            source: "manual",
-            created_by: "positions-ui",
-          }),
-        },
-      );
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      await request("POST", `/trade-groups/${groupId}/positions:assign`, {
+        positions: [{ account_id: pos.account_id, con_id: pos.con_id }],
+        source: "manual",
+        created_by: "positions-ui",
+      });
       loadPositions();
     } catch (err) {
       setAssignError(err instanceof Error ? err.message : "Assign failed");
@@ -459,19 +445,11 @@ export default function PositionsTable() {
   const unassignFromTradeGroup = async (pos: Position, groupId: number) => {
     setAssignError(null);
     try {
-      const res = await fetch(
-        `${API_BASE_URL}/trade-groups/${groupId}/positions:unassign`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            positions: [{ account_id: pos.account_id, con_id: pos.con_id }],
-            source: "manual",
-            created_by: "positions-ui",
-          }),
-        },
-      );
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      await request("POST", `/trade-groups/${groupId}/positions:unassign`, {
+        positions: [{ account_id: pos.account_id, con_id: pos.con_id }],
+        source: "manual",
+        created_by: "positions-ui",
+      });
       loadPositions();
     } catch (err) {
       setAssignError(err instanceof Error ? err.message : "Unassign failed");
@@ -483,20 +461,16 @@ export default function PositionsTable() {
     setSyncError(null);
     setSyncMessage(null);
     try {
-      const res = await fetch(`${API_BASE_URL}/positions/sync/flex-query`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      const data = await request<SyncJobResponse>(
+        "POST",
+        "/positions/sync/flex-query",
+        {
           source: "manual-ui",
           request_text:
             "Kick off flex query positions sync from Positions page.",
           max_attempts: 3,
-        }),
-      });
-      if (!res.ok) {
-        throw new Error(`HTTP ${res.status}`);
-      }
-      const data: { job_id: number; status: string } = await res.json();
+        },
+      );
       setSyncMessage(
         `Queued positions sync job #${data.job_id} (${data.status}).`,
       );
@@ -514,19 +488,15 @@ export default function PositionsTable() {
     setSyncError(null);
     setSyncMessage(null);
     try {
-      const res = await fetch(`${API_BASE_URL}/positions/sync/intraday-tws`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      const data = await request<SyncJobResponse>(
+        "POST",
+        "/positions/sync/intraday-tws",
+        {
           source: "manual-ui",
           request_text: "Refresh live intraday overlay from Positions page.",
           max_attempts: 3,
-        }),
-      });
-      if (!res.ok) {
-        throw new Error(`HTTP ${res.status}`);
-      }
-      const data: { job_id: number; status: string } = await res.json();
+        },
+      );
       setSyncMessage(
         `Queued intraday TWS sync job #${data.job_id} (${data.status}). Refreshing shortly…`,
       );
@@ -546,22 +516,15 @@ export default function PositionsTable() {
     setSyncError(null);
     setSyncMessage(null);
     try {
-      const res = await fetch(
-        `${API_BASE_URL}/positions/sync/option-metrics-tws`,
+      const data = await request<SyncJobResponse>(
+        "POST",
+        "/positions/sync/option-metrics-tws",
         {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            source: "manual-ui",
-            request_text: "Refresh live option metrics from Positions page.",
-            max_attempts: 3,
-          }),
+          source: "manual-ui",
+          request_text: "Refresh live option metrics from Positions page.",
+          max_attempts: 3,
         },
       );
-      if (!res.ok) {
-        throw new Error(`HTTP ${res.status}`);
-      }
-      const data: { job_id: number; status: string } = await res.json();
       setSyncMessage(
         `Queued option-metrics TWS sync job #${data.job_id} (${data.status}). Refreshing shortly…`,
       );

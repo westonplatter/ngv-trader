@@ -1,16 +1,12 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { API_BASE_URL } from "../config";
+import { request } from "../lib/api";
 import { PrivacyContext } from "./privacyContextValue";
 
 export function PrivacyProvider({ children }: { children: ReactNode }) {
   const [privacyMode, setPrivacyMode] = useState(false);
 
   useEffect(() => {
-    fetch(`${API_BASE_URL}/user-preferences/privacy_mode`)
-      .then((res) => {
-        if (!res.ok) return;
-        return res.json();
-      })
+    request<{ value?: unknown }>("GET", "/user-preferences/privacy_mode")
       .then((data) => {
         if (data?.value === true) setPrivacyMode(true);
       })
@@ -20,11 +16,9 @@ export function PrivacyProvider({ children }: { children: ReactNode }) {
   const togglePrivacy = () => {
     const next = !privacyMode;
     setPrivacyMode(next);
-    fetch(`${API_BASE_URL}/user-preferences/privacy_mode`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ value: next }),
-    }).catch(() => {});
+    request("PUT", "/user-preferences/privacy_mode", { value: next }).catch(
+      () => {},
+    );
   };
 
   return (

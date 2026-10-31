@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { usePrivacy } from "../contexts/usePrivacy";
 import { PRIVACY_MASK } from "../utils/privacy";
-import { API_BASE_URL } from "../config";
+import { request } from "../lib/api";
+import { formatDuration, parseTime } from "../utils/date";
 import { useSSE, type ConnectionStatus } from "../lib/events";
 
 interface OrderRow {
@@ -34,24 +35,6 @@ const TERMINAL_STATUSES = new Set([
   "rejected",
   "failed",
 ]);
-
-function parseTime(value: string | null): number | null {
-  if (!value) return null;
-  const parsed = Date.parse(value);
-  return Number.isNaN(parsed) ? null : parsed;
-}
-
-function formatDuration(ms: number | null): string {
-  if (ms === null) return "—";
-  const seconds = Math.max(0, Math.floor(ms / 1000));
-  if (seconds < 60) return `${seconds}s`;
-  const minutes = Math.floor(seconds / 60);
-  const remSeconds = seconds % 60;
-  if (minutes < 60) return `${minutes}m ${remSeconds}s`;
-  const hours = Math.floor(minutes / 60);
-  const remMinutes = minutes % 60;
-  return `${hours}h ${remMinutes}m`;
-}
 
 function getEndMs(order: OrderRow, nowMs: number): number {
   const completedMs = parseTime(order.completed_at);
@@ -89,12 +72,8 @@ export default function OrdersSideTable() {
   const prevStatusRef = useRef<ConnectionStatus | null>(null);
 
   const loadOrders = useCallback(() => {
-    fetch(`${API_BASE_URL}/orders`)
-      .then((res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.json();
-      })
-      .then((rows: OrderRow[]) => {
+    request<OrderRow[]>("GET", "/orders")
+      .then((rows) => {
         setOrders(rows.slice(0, 20));
         setError(null);
       })

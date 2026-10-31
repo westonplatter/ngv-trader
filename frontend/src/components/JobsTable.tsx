@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { API_BASE_URL } from "../config";
+import { request } from "../lib/api";
+import { formatDuration, parseTime } from "../utils/date";
 import { useSSE, type ConnectionStatus } from "../lib/events";
 
 interface Job {
@@ -40,24 +41,6 @@ function retryInMs(job: Job, nowMs: number): number | null {
   const availableMs = parseTime(job.available_at);
   if (availableMs === null || availableMs <= nowMs) return null;
   return availableMs - nowMs;
-}
-
-function parseTime(value: string | null): number | null {
-  if (!value) return null;
-  const parsed = Date.parse(value);
-  return Number.isNaN(parsed) ? null : parsed;
-}
-
-function formatDuration(ms: number | null): string {
-  if (ms === null) return "—";
-  const seconds = Math.max(0, Math.floor(ms / 1000));
-  if (seconds < 60) return `${seconds}s`;
-  const minutes = Math.floor(seconds / 60);
-  const remSeconds = seconds % 60;
-  if (minutes < 60) return `${minutes}m ${remSeconds}s`;
-  const hours = Math.floor(minutes / 60);
-  const remMinutes = minutes % 60;
-  return `${hours}h ${remMinutes}m`;
 }
 
 function computeQueueMs(job: Job, nowMs: number): number {
@@ -124,12 +107,8 @@ export default function JobsTable() {
   const prevStatusRef = useRef<ConnectionStatus | null>(null);
 
   const loadJobs = useCallback(() => {
-    fetch(`${API_BASE_URL}/jobs`)
-      .then((res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.json();
-      })
-      .then((rows: Job[]) => {
+    request<Job[]>("GET", "/jobs")
+      .then((rows) => {
         setJobs(rows.slice(0, 20));
         setError(null);
       })
@@ -196,24 +175,10 @@ export default function JobsTable() {
   };
 
   const rerunJob = (jobId: number) =>
-    withAction(jobId, async () => {
-      const res = await fetch(`${API_BASE_URL}/jobs/${jobId}/rerun`, {
-        method: "POST",
-      });
-      if (!res.ok) {
-        throw new Error(await res.text());
-      }
-    });
+    withAction(jobId, () => request("POST", `/jobs/${jobId}/rerun`));
 
   const archiveJob = (jobId: number) =>
-    withAction(jobId, async () => {
-      const res = await fetch(`${API_BASE_URL}/jobs/${jobId}/archive`, {
-        method: "POST",
-      });
-      if (!res.ok) {
-        throw new Error(await res.text());
-      }
-    });
+    withAction(jobId, () => request("POST", `/jobs/${jobId}/archive`));
 
   return (
     <div className="min-w-0 h-full min-h-0 rounded border border-gray-300 bg-white p-3 flex flex-col">

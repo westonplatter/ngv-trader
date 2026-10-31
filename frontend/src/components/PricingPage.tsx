@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Plot from "react-plotly.js";
-import { API_BASE_URL } from "../config";
+import { request } from "../lib/api";
 import { useSSE, type ConnectionStatus } from "../lib/events";
 import ComboboxInput, { type ComboboxOption } from "./ComboboxInput";
 
@@ -242,12 +242,11 @@ export default function PricingPage() {
 
   // --- Fetch term structure on instrument change ---
   useEffect(() => {
-    fetch(`${API_BASE_URL}/futures/${instrument}/term-structure?front_n=12`)
-      .then((res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.json();
-      })
-      .then((data: FuturesContract[]) => {
+    request<FuturesContract[]>(
+      "GET",
+      `/futures/${instrument}/term-structure?front_n=12`,
+    )
+      .then((data) => {
         setFuturesContracts(data);
         if (data.length > 0) {
           const price = data[0].last ?? data[0].close ?? 0;
@@ -262,24 +261,16 @@ export default function PricingPage() {
 
   // --- Fetch option chain catalog ---
   useEffect(() => {
-    fetch(`${API_BASE_URL}/futures/${instrument}/chain`)
-      .then((res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.json();
-      })
-      .then((data: ChainEntry[]) => setAvailableOptions(data))
+    request<ChainEntry[]>("GET", `/futures/${instrument}/chain`)
+      .then((data) => setAvailableOptions(data))
       .catch((err) => setError(err.message))
       .finally(() => setOptionsLoading(false));
   }, [instrument]);
 
   // --- Fetch saved structures ---
   const fetchSavedStructures = useCallback(() => {
-    fetch(`${API_BASE_URL}/structures`)
-      .then((res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.json();
-      })
-      .then((data: SavedStructure[]) => setSavedStructures(data))
+    request<SavedStructure[]>("GET", "/structures")
+      .then((data) => setSavedStructures(data))
       .catch((err) => setError(err.message));
   }, []);
 
@@ -359,22 +350,13 @@ export default function PricingPage() {
     setSaveStatus("pending");
     setSaveFeedback(null);
     try {
-      const res = await fetch(
-        `${API_BASE_URL}/structures/${loadedStructureId}`,
-        {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            name:
-              savedStructures.find((s) => s.id === loadedStructureId)?.name ??
-              "",
-            instrument,
-            legs: legsToSaved(legs),
-            spot_price: isNaN(spot) ? null : spot,
-          }),
-        },
-      );
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      await request("PUT", `/structures/${loadedStructureId}`, {
+        name:
+          savedStructures.find((s) => s.id === loadedStructureId)?.name ?? "",
+        instrument,
+        legs: legsToSaved(legs),
+        spot_price: isNaN(spot) ? null : spot,
+      });
       fetchSavedStructures();
       setSaveStatus("success");
       setSaveFeedback(`Saved ${new Date().toLocaleTimeString()}`);
@@ -399,29 +381,35 @@ export default function PricingPage() {
     setSaveStatus("idle");
     setSaveFeedback(null);
     const spot = parseFloat(spotPrice);
-    const res = await fetch(`${API_BASE_URL}/structures`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
+    try {
+      const created = await request<SavedStructure>("POST", "/structures", {
         name,
         instrument,
         legs: legsToSaved(legs),
         spot_price: isNaN(spot) ? null : spot,
-      }),
-    });
-    if (res.ok) {
-      const created: SavedStructure = await res.json();
+      });
       setLoadedStructureId(created.id);
       fetchSavedStructures();
+    } catch (err) {
+      setSaveStatus("error");
+      setSaveFeedback(
+        `Save failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
   }, [instrument, legs, spotPrice, fetchSavedStructures]);
 
   const handleDeleteStructure = useCallback(async () => {
     if (loadedStructureId == null) return;
     if (!window.confirm("Delete this saved structure?")) return;
-    await fetch(`${API_BASE_URL}/structures/${loadedStructureId}`, {
-      method: "DELETE",
-    });
+    try {
+      await request("DELETE", `/structures/${loadedStructureId}`);
+    } catch (err) {
+      setSaveStatus("error");
+      setSaveFeedback(
+        `Delete failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return;
+    }
     setSaveStatus("idle");
     setSaveFeedback(null);
     setLoadedStructureId(null);
@@ -474,13 +462,7 @@ export default function PricingPage() {
                 },
                 source: "pricing-ui",
               };
-        const res = await fetch(`${API_BASE_URL}/jobs`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(jobPayload),
-        });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const job = await res.json();
+        const job = await request<{ id: number }>("POST", "/jobs", jobPayload);
         setLegs((prev) =>
           prev.map((l) => (l.id === legId ? { ...l, fetchJobId: job.id } : l)),
         );
