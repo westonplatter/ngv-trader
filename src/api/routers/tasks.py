@@ -16,20 +16,10 @@ from sqlalchemy.orm import Session
 from src.api.deps import get_db
 from src.api.schemas import ItemRefBody, TagChip
 from src.models import TASK_ENTITY_TYPES, TASK_STATUSES, LiveExecution, LivePosition, Position, Tag, TagLink, Task, TaskLink, Trade
-from src.services.item_links import (
-    ItemRef,
-    attach_tag,
-    attach_task,
-    describe_items,
-    detach_task,
-    expand_items,
-    item_key,
-    link_item,
-    normalize_tag_value,
-    now_utc,
-    tags_by_item,
-)
-from src.services.tags import resolve_tags, validate_created_by
+from src.services.item_descriptions import describe_items, tags_by_item
+from src.services.item_links import attach_tag, attach_task, detach_task, now_utc
+from src.services.item_refs import ItemRef, expand_items, item_key, link_item
+from src.services.tags import normalize_tag_value, resolve_tags, validate_created_by
 
 router = APIRouter()
 DB_SESSION_DEPENDENCY = Depends(get_db)

@@ -8,7 +8,7 @@ from datetime import datetime
 
 from pydantic import BaseModel
 
-from src.services.item_links import ItemRef
+from src.services.item_refs import ItemRef
 
 
 class TagChip(BaseModel):

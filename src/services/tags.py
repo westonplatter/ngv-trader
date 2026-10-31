@@ -13,10 +13,15 @@ from sqlalchemy.orm import Session
 
 from src.models import Tag
 from src.services.errors import NotFoundError, ServiceError
-from src.services.item_links import normalize_tag_value, now_utc
+from src.services.item_links import now_utc
 
 # `user`, or `agent:<name>` for writes made by an LLM agent.
 CREATED_BY_PATTERN = re.compile(r"^(user|agent:[A-Za-z0-9_.\-]+)$")
+
+
+def normalize_tag_value(value: str) -> str:
+    """Fold case, spaces, ``-`` and ``_``: "Long Beta", "long_beta", "long-beta" match."""
+    return re.sub(r"[\s_\-]+", "-", value.strip().lower()).strip("-")
 
 
 class TagError(ServiceError):
