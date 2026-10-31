@@ -19,7 +19,7 @@ import re
 from collections import defaultdict
 from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Any
 
 from sqlalchemy import func, select, tuple_
@@ -294,17 +294,21 @@ def open_position_keys(session: Session) -> set[tuple[int, int]]:
     return {(account_id, con_id) for account_id, con_id in [*settled, *live]}
 
 
-def end_flat_position_tags(session: Session, now: datetime | None = None) -> int:
+def end_flat_position_tags(session: Session, now: datetime | None = None, snapshot_as_of: dict[int, date] | None = None) -> int:
     """Soft-end open position tags whose contract is flat in both settled and live data.
 
     Never keyed off a row delete: the FlexQuery position sync drops contracts that
     are missing from yesterday's report, including positions opened today. So a
     tag only ends once the account's settled snapshot is dated on or after the day
     the tag was applied — otherwise its absence proves nothing.
+
+    ``snapshot_as_of`` supplies the snapshot date for accounts that have no
+    ``positions`` rows left to read it from (an account that went flat).
     """
     now = now or now_utc()
     held = open_position_keys(session)
     snapshot_dates = dict(session.execute(select(Position.account_id, func.max(Position.as_of_date)).group_by(Position.account_id)).all())
+    snapshot_dates.update(snapshot_as_of or {})
     latest_any = session.execute(select(func.max(Position.as_of_date))).scalar_one_or_none()
     ended = 0
     links = session.execute(select(TagLink).where(TagLink.entity_type == "position", TagLink.ended_at.is_(None))).scalars().all()
