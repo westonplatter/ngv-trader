@@ -3,21 +3,8 @@ import { usePrivacy } from "../contexts/usePrivacy";
 import { PRIVACY_MASK } from "../utils/privacy";
 import { useSseList } from "../hooks/useSseList";
 import { api } from "../lib/api";
-
-interface OrderRow {
-  id: number;
-  symbol: string;
-  side: string;
-  quantity: number;
-  contract_month: string | null;
-  status: string;
-  filled_quantity: number;
-  avg_fill_price: number | null;
-  created_at: string;
-  submitted_at: string | null;
-  completed_at: string | null;
-  updated_at: string;
-}
+import type { Order } from "../types/orders";
+import { formatDuration, parseTime } from "../utils/date";
 
 const STATUS_CLASS: Record<string, string> = {
   queued: "text-yellow-700 bg-yellow-100",
@@ -35,25 +22,7 @@ const TERMINAL_STATUSES = new Set([
   "failed",
 ]);
 
-function parseTime(value: string | null): number | null {
-  if (!value) return null;
-  const parsed = Date.parse(value);
-  return Number.isNaN(parsed) ? null : parsed;
-}
-
-function formatDuration(ms: number | null): string {
-  if (ms === null) return "—";
-  const seconds = Math.max(0, Math.floor(ms / 1000));
-  if (seconds < 60) return `${seconds}s`;
-  const minutes = Math.floor(seconds / 60);
-  const remSeconds = seconds % 60;
-  if (minutes < 60) return `${minutes}m ${remSeconds}s`;
-  const hours = Math.floor(minutes / 60);
-  const remMinutes = minutes % 60;
-  return `${hours}h ${remMinutes}m`;
-}
-
-function getEndMs(order: OrderRow, nowMs: number): number {
+function getEndMs(order: Order, nowMs: number): number {
   const completedMs = parseTime(order.completed_at);
   if (completedMs !== null) return completedMs;
   if (TERMINAL_STATUSES.has(order.status)) {
@@ -62,19 +31,19 @@ function getEndMs(order: OrderRow, nowMs: number): number {
   return nowMs;
 }
 
-function computeQueueMs(order: OrderRow, nowMs: number): number {
+function computeQueueMs(order: Order, nowMs: number): number {
   const createdMs = parseTime(order.created_at) ?? nowMs;
   const submittedMs = parseTime(order.submitted_at);
   return (submittedMs ?? getEndMs(order, nowMs)) - createdMs;
 }
 
-function computeRunMs(order: OrderRow, nowMs: number): number | null {
+function computeRunMs(order: Order, nowMs: number): number | null {
   const submittedMs = parseTime(order.submitted_at);
   if (submittedMs === null) return null;
   return getEndMs(order, nowMs) - submittedMs;
 }
 
-function computeTotalMs(order: OrderRow, nowMs: number): number {
+function computeTotalMs(order: Order, nowMs: number): number {
   const createdMs = parseTime(order.created_at) ?? nowMs;
   return getEndMs(order, nowMs) - createdMs;
 }
@@ -83,10 +52,10 @@ export default function OrdersSideTable() {
   const { privacyMode } = usePrivacy();
   const [nowMs, setNowMs] = useState<number>(() => Date.now());
 
-  const loadOrders = useCallback(() => api.get<OrderRow[]>("/orders"), []);
+  const loadOrders = useCallback(() => api.get<Order[]>("/orders"), []);
 
   // Snapshot on mount, upsert from the orders stream, re-fetch on reconnect.
-  const { items: orders, error } = useSseList<OrderRow>({
+  const { items: orders, error } = useSseList<Order>({
     topic: "orders",
     load: loadOrders,
     key: (order) => order.id,

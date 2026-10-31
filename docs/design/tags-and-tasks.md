@@ -151,9 +151,9 @@ is human-only, so there are no tools for it.
   group; one-click status change; done behind a toggle.
 - **Linked surfaces:** a Tasks section in trade-group detail; a task badge and
   "+ task" shortcut on Trades and Positions rows.
-- **Shared pieces:** `lib/tags.ts` holds the types, the `tagsApi` / `tasksApi`
-  clients (built on `lib/api.ts`), and the helpers every surface uses —
-  `itemKey`, `itemRoute`, `nextTaskStatus`. Writes from a click go through
+- **Shared pieces:** `types/tags.ts` holds the types; `lib/tags.ts` holds the
+  `tagsApi` / `tasksApi` clients (built on `lib/api.ts`) and the helpers every
+  surface uses — `itemKey`, `itemRoute`, `nextTaskStatus`. Writes from a click go through
   `hooks/useAsyncAction.ts` (one in flight at a time, error kept for display);
   the `AI` marker is `AgentBadge.tsx`.
 

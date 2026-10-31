@@ -5,7 +5,7 @@
 // plain data.
 
 import { formatMarkTime } from "./markTime";
-import type { TradeGroupPnlRow } from "./tradeGroups";
+import type { TradeGroupPnlRow } from "../types/tradeGroups";
 
 export type SortColumn =
   | "strategy"

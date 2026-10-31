@@ -4,35 +4,8 @@ import { PRIVACY_MASK } from "../utils/privacy";
 import { enqueueSyncJob, useJobWatcher } from "../hooks/useJobWatcher";
 import { useSseList } from "../hooks/useSseList";
 import { api } from "../lib/api";
-
-interface Order {
-  id: number;
-  account_id: number;
-  account_alias: string | null;
-  con_id: number | null;
-  symbol: string;
-  sec_type: string;
-  exchange: string;
-  currency: string;
-  side: string;
-  quantity: number;
-  order_type: string;
-  limit_price: number | null;
-  tif: string;
-  status: string;
-  contract_month: string | null;
-  contract_expiry: string | null;
-  option_right: string | null;
-  option_strike: string | null;
-  contract_display_name: string;
-  local_symbol: string | null;
-  ib_order_id: number | null;
-  ib_perm_id: number | null;
-  filled_quantity: number;
-  avg_fill_price: number | null;
-  created_at: string;
-  updated_at: string;
-}
+import type { Order } from "../types/orders";
+import { formatDate, formatExpiry } from "../utils/date";
 
 type OrderFilter = "all" | "working" | "closed";
 
@@ -60,20 +33,6 @@ const TERMINAL_STATUSES = new Set([
   "rejected",
   "failed",
 ]);
-
-function formatExpiry(value: string | null | undefined): string {
-  if (!value) return "—";
-  if (value.length === 8 && !value.includes("-")) {
-    return `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}`;
-  }
-  return value;
-}
-
-function formatDate(value: string): string {
-  const parsed = Date.parse(value);
-  if (Number.isNaN(parsed)) return "—";
-  return new Date(parsed).toLocaleDateString();
-}
 
 function getDisplayedSymbol(order: Order): string {
   return (order.symbol || "").trim().toUpperCase();

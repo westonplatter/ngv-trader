@@ -20,20 +20,20 @@
 // Unsettled executions carry settled=false and data_source="tws"; settled
 // openings carry data_source="demo" and no settled flag.
 //
-// Fixtures reuse the real component/API types so they cannot silently drift
-// from the shapes the UI actually consumes.
+// Fixtures reuse the API types in ../types so they cannot silently drift from
+// the shapes the UI actually consumes.
 
-import type { FlexQueryToken } from "../components/FlexQueryTokensTable";
-import type { Position, TradeGroupRef } from "../components/PositionsTable";
+import type { FlexQueryToken } from "../types/flexQueryTokens";
+import type { Position, TradeGroupRef } from "../types/positions";
+import type { Strategy } from "../types/strategies";
+import type { TradeExecutionRow } from "../types/trades";
 import type {
   GroupExecution,
   GroupExecutionsResponse,
   GroupOpenPosition,
-  Strategy,
   TradeGroup,
   TradeGroupDetail,
-} from "../components/StrategiesPage";
-import type { TradeExecutionRow } from "../components/TradesTable";
+} from "../types/tradeGroups";
 
 const ACCOUNT_ALIAS = "DU1234567";
 const ACCOUNT_ID = 1;

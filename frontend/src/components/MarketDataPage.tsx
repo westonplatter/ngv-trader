@@ -1,20 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, errorMessage } from "../lib/api";
+import type { Job } from "../types/jobs";
 import { useSseList } from "../hooks/useSseList";
-
-interface Job {
-  id: number;
-  job_type: string;
-  status: string;
-  payload: Record<string, unknown>;
-  result: Record<string, unknown> | null;
-  attempts: number;
-  max_attempts: number;
-  created_at: string;
-  started_at: string | null;
-  completed_at: string | null;
-  last_error: string | null;
-}
 
 const STATUS_CLASS: Record<string, string> = {
   queued: "text-yellow-700 bg-yellow-100",

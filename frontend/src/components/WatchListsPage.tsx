@@ -17,6 +17,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { api, errorMessage } from "../lib/api";
+import { formatExpiry } from "../utils/date";
 
 interface WatchListSummary {
   id: number;
@@ -100,15 +101,6 @@ const INSTRUMENT_COLUMNS: {
   { key: "exchange", label: "Exchange", muted: true },
   { key: "multiplier", label: "Multiplier", muted: true },
 ];
-
-function formatExpiry(value: string | null | undefined): string {
-  if (!value) return "\u2014";
-  // YYYYMMDD → YYYY-MM-DD
-  if (value.length === 8 && !value.includes("-")) {
-    return `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}`;
-  }
-  return value;
-}
 
 function formatQuotePrice(value: number | null | undefined): string {
   if (value === null || value === undefined) {

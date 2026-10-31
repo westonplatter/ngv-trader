@@ -3,7 +3,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { api } from "../lib/api";
 import { enqueueSyncJob, useJobWatcher } from "../hooks/useJobWatcher";
-import type { TradeGroupPnlRow } from "../lib/tradeGroups";
 import { usePrivacy } from "../contexts/usePrivacy";
 import { useResizableColumn } from "../hooks/useResizableColumn";
 import { ibCodesTitle, parseIbCodes } from "../lib/ibCodes";
@@ -11,136 +10,18 @@ import { formatMarkTime } from "../lib/markTime";
 import { linkify } from "../utils/linkify";
 import GroupTasks from "./GroupTasks";
 import TagChips, { TagChipView } from "./TagChips";
-import type { TagChip } from "../lib/tags";
+import type { Strategy } from "../types/strategies";
+import type {
+  GroupAccountPnl,
+  GroupExecution,
+  GroupExecutionsResponse,
+  GroupOpenPosition,
+  TradeGroup,
+  TradeGroupDetail,
+} from "../types/tradeGroups";
+import { formatDateTime } from "../utils/date";
 import { formatGreek, formatMoney, formatPercent } from "../utils/number";
 import { PRIVACY_MASK, formatRelativeReturn } from "../utils/privacy";
-
-// The list-endpoint row (id/name/status/strategy plus the P&L split and
-// instruments, all in ../lib/tradeGroups) with the fields only the workspace
-// needs. One source for the P&L shape, so this page and the Strategy P&L table
-// cannot describe the same payload differently.
-export type TradeGroup = TradeGroupPnlRow & {
-  strategy_id?: number | null;
-  tags?: TagChip[];
-  open_task_count?: number;
-  notes: string | null;
-  meta_yaml: string | null;
-  status: "open" | "closed" | "archived";
-  opened_at: string;
-  closed_at: string | null;
-  opened_by: string | null;
-  closed_by: string | null;
-};
-
-export type TradeGroupDetail = TradeGroup & {
-  execution_count: number;
-};
-
-export type GroupExecution = {
-  id: number;
-  trade_id: number | null;
-  account_id: number;
-  account_alias: string | null;
-  executed_at: string;
-  side: string | null;
-  quantity: number;
-  price: number;
-  commission: number | null;
-  realized_pnl: number | null;
-  exec_role: string;
-  sec_type: string | null;
-  contract_display: string | null;
-  data_source: string;
-  // IBKR FlexQuery trade codes (the `notes` attribute): A=assigned,
-  // Ep=from expiration, Ex=exercise, P=partial, WS=wash sale, etc.
-  ib_codes: string | null;
-  // False for preemptively-tagged live fills not yet settled.
-  settled?: boolean;
-  multiplier?: number;
-  // Signed qty × price × multiplier + commission (debit positive, credit
-  // negative). Null on combo_summary rows so legs aren't double-counted.
-  cost_basis?: number | null;
-};
-
-export type GroupOpenPosition = {
-  account_id: number;
-  account_alias: string | null;
-  con_id: number;
-  symbol: string | null;
-  local_symbol: string | null;
-  contract_display: string | null;
-  sec_type: string | null;
-  // Option contract detail (null for non-options / no settled snapshot yet).
-  right: string | null;
-  option_expiry_date: string | null;
-  dte: number | null;
-  strike: number | null;
-  position: number;
-  avg_cost: number;
-  multiplier: string | null;
-  mark_price: number | null;
-  position_value: number | null;
-  fifo_pnl_unrealized: number | null;
-  as_of_date: string | null;
-  // Intraday overlay (additive): live current-state fields.
-  source: string;
-  mark: number | null;
-  mark_ts: string | null;
-  live_unrealized: number | null;
-  // Staleness of the live TWS overlay: true when the settled snapshot is newer
-  // (prior-MT-day live snapshot). When stale, the live overlay cells are blanked
-  // and the freshness badge reads "stale" (not green "live").
-  live_fetched_at: string | null;
-  live_is_stale: boolean;
-  // Per-contract greeks from the live option-metrics sync (null for non-options
-  // or when that job hasn't run). The table shows them scaled by position size.
-  delta: number | null;
-  gamma: number | null;
-  // Per-contract implied volatility (decimal fraction) from the same live
-  // option-metrics sync. Not scaled by position size; shown as a percent.
-  iv: number | null;
-};
-
-export type GroupAccountPnl = {
-  account_id: number;
-  account_alias: string | null;
-  realized_pnl: number | null;
-  unrealized_pnl: number | null;
-  intraday_unrealized_pnl: number | null;
-  intraday_realized_pnl: number | null;
-  intraday_total_pnl: number | null;
-};
-
-export type GroupExecutionsResponse = {
-  trade_group_id: number;
-  total_realized_pnl: number | null;
-  total_unrealized_pnl: number | null;
-  executions: GroupExecution[];
-  open_positions: GroupOpenPosition[];
-  // Intraday overlay (additive).
-  intraday_unrealized_pnl: number | null;
-  intraday_realized_pnl: number | null;
-  intraday_total_pnl: number | null;
-  marks_as_of: string | null;
-  // Per-account breakdown (additive).
-  by_account: GroupAccountPnl[];
-};
-
-export type Strategy = {
-  id: number;
-  name: string;
-  normalized_name: string;
-  created_by: string;
-  created_at: string;
-  archived_at: string | null;
-};
-
-function formatDate(value: string | null): string {
-  if (!value) return "-";
-  const parsed = Date.parse(value);
-  if (Number.isNaN(parsed)) return "-";
-  return new Date(parsed).toLocaleString();
-}
 
 // Resolve which strategy owns a trade group, so a deep link that only carries
 // a trade_group_id can select the right parent strategy. Returns the strategy
@@ -1339,7 +1220,7 @@ export default function StrategiesPage() {
                               <div className="mt-1 flex items-baseline justify-between gap-3">
                                 <p className="text-xs text-gray-500">
                                   #{group.id} · Opened{" "}
-                                  {formatDate(group.opened_at)}
+                                  {formatDateTime(group.opened_at)}
                                 </p>
                                 {group.total_pnl != null && (
                                   <span
@@ -1460,13 +1341,13 @@ export default function StrategiesPage() {
                     <div>
                       <span className="text-xs text-gray-500">Opened</span>
                       <p className="text-gray-800">
-                        {formatDate(groupDetail.opened_at)}
+                        {formatDateTime(groupDetail.opened_at)}
                       </p>
                     </div>
                     <div>
                       <span className="text-xs text-gray-500">Closed</span>
                       <p className="text-gray-800">
-                        {formatDate(groupDetail.closed_at)}
+                        {formatDateTime(groupDetail.closed_at)}
                       </p>
                     </div>
                     <div>
@@ -2266,7 +2147,7 @@ export default function StrategiesPage() {
                                       className="border-t border-gray-100"
                                     >
                                       <td className="px-2 py-1 text-gray-700">
-                                        {formatDate(ex.executed_at)}
+                                        {formatDateTime(ex.executed_at)}
                                       </td>
                                       <td className="px-2 py-1 text-gray-700">
                                         {ex.account_alias ??

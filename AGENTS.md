@@ -67,6 +67,7 @@ What each check covers: [validation.md](docs/contributing/validation.md).
 | ------------------------------------------------------------------------ | -------------------------------------------------------------------------- |
 | Repo layout, primitives, services, key files by concern                  | [codebase-map.md](docs/contributing/codebase-map.md)                       |
 | Domain vocabulary                                                        | [CONCEPTS.md](CONCEPTS.md)                                                 |
+| Frontend conventions: layout, data access, state, tests                  | [frontend-style.md](docs/contributing/frontend-style.md)                   |
 | Setup, architecture diagram, running locally                             | [getting-started.md](docs/getting-started.md)                              |
 | Workers and the job queue                                                | [workers.md](docs/design/workers.md)                                       |
 | Trade and execution sync                                                 | [trades-and-executions-sync.md](docs/design/trades-and-executions-sync.md) |

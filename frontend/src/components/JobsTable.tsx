@@ -2,21 +2,8 @@ import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useSseList } from "../hooks/useSseList";
 import { api } from "../lib/api";
-
-interface Job {
-  id: number;
-  job_type: string;
-  status: string;
-  payload: Record<string, unknown> | null;
-  attempts: number;
-  max_attempts: number;
-  created_at: string;
-  started_at: string | null;
-  completed_at: string | null;
-  archived_at: string | null;
-  available_at: string | null;
-  last_error: string | null;
-}
+import type { Job } from "../types/jobs";
+import { formatDuration, parseTime } from "../utils/date";
 
 const STATUS_CLASS: Record<string, string> = {
   queued: "text-yellow-700 bg-yellow-100",
@@ -40,24 +27,6 @@ function retryInMs(job: Job, nowMs: number): number | null {
   const availableMs = parseTime(job.available_at);
   if (availableMs === null || availableMs <= nowMs) return null;
   return availableMs - nowMs;
-}
-
-function parseTime(value: string | null): number | null {
-  if (!value) return null;
-  const parsed = Date.parse(value);
-  return Number.isNaN(parsed) ? null : parsed;
-}
-
-function formatDuration(ms: number | null): string {
-  if (ms === null) return "—";
-  const seconds = Math.max(0, Math.floor(ms / 1000));
-  if (seconds < 60) return `${seconds}s`;
-  const minutes = Math.floor(seconds / 60);
-  const remSeconds = seconds % 60;
-  if (minutes < 60) return `${minutes}m ${remSeconds}s`;
-  const hours = Math.floor(minutes / 60);
-  const remMinutes = minutes % 60;
-  return `${hours}h ${remMinutes}m`;
 }
 
 function computeQueueMs(job: Job, nowMs: number): number {
