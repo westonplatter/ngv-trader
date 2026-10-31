@@ -338,15 +338,15 @@ It currently supports:
 3. viewing trade groups filtered by selected strategy
 4. creating trade groups under the selected strategy
 5. viewing group detail
-6. editing group name, notes, and status
+6. editing group name, notes, status, and strategy (moving a group to another
+   strategy re-selects that strategy so the group stays in view)
 7. deleting trade groups
 8. viewing a read-only timeline
 
 The current page does not provide:
 
 1. direct execution assignment from inside the Strategies page
-2. changing a group's strategy after creation (the API supports it)
-3. UI for trade-group linking such as manual roll-link creation
+2. UI for trade-group linking such as manual roll-link creation
 
 ## Timeline Semantics
 
