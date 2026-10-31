@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterable
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime
 from typing import Any
 
@@ -40,10 +40,12 @@ from src.models import (
     TradeGroupExecution,
     TradeGroupLiveExecution,
 )
-from src.services.execution_pnl import execution_lifecycle
-from src.services.execution_pnl import execution_realized_pnl as _execution_realized_pnl
+from src.services.execution_pnl import execution_lifecycle, realized_pnl_total
 from src.services.intraday_overlay import (
+    OverlayTotals,
     PositionView,
+    dedupe_live_realized,
+    intraday_unrealized_total,
     is_live_stale,
     is_overlay_superseded,
     merge_positions,
@@ -51,20 +53,13 @@ from src.services.intraday_overlay import (
 )
 
 
-def trade_group_realized_pnl(executions: list[Any]) -> float | None:
-    """Combo-aware realized PnL over a group's assigned executions.
+def trade_group_realized_pnl(executions: Iterable[Any]) -> float | None:
+    """Realized PnL over a group's linked executions: the shared combo-aware rule.
 
-    Mirrors the trade-group detail rule: when ``combo_summary`` rows are present
-    they carry the spread's rolled-up realized PnL (sum those plus any
-    standalone, non-leg rows); otherwise sum every non-combo_summary fill.
+    A group links to specific execution rows, so every linked row counts (see
+    :func:`realized_pnl_total` for why a trade, by contrast, filters revisions).
     """
-    combo_totals = [r for ex in executions if ex.exec_role == "combo_summary" for r in [_execution_realized_pnl(ex.raw)] if r is not None]
-    if combo_totals:
-        standalone = [r for ex in executions if ex.exec_role not in {"combo_summary", "leg"} for r in [_execution_realized_pnl(ex.raw)] if r is not None]
-        return sum(combo_totals) + sum(standalone)
-
-    values = [r for ex in executions if ex.exec_role != "combo_summary" for r in [_execution_realized_pnl(ex.raw)] if r is not None]
-    return sum(values) if values else None
+    return realized_pnl_total(executions)
 
 
 def _combine_total(realized: float | None, settled_unrealized: float | None) -> float | None:
@@ -276,40 +271,75 @@ def load_overlay_context(session: Session, account_con_pairs: set[tuple[int, int
     )
 
 
-@dataclass(frozen=True)
-class TradeGroupBatchPnl:
-    """Per-group PnL figures from the batched read path."""
+# ---------------------------------------------------------------------------
+# The facade: a group's ledger in, its overlay out.
+#
+# Every consumer of the live-over-settled overlay — the detail endpoint, the
+# batched list behind the Strategy P&L table, and the single-group service the
+# tradebot and MCP tools call — runs the same pipeline on the same inputs:
+# load_overlay_context → merge_positions → apportion_to_group → overlay_totals.
+# It lives here once. Callers choose only how the ledgers are loaded.
+# ---------------------------------------------------------------------------
 
-    realized_pnl: float | None
-    settled_unrealized_pnl: float | None
-    intraday_unrealized_pnl: float | None = None
-    intraday_realized_pnl: float | None = None
-    intraday_total_pnl: float | None = None
-    marks_as_of: datetime | None = None
-    # True only when the group has live-sourced marks and *every* one of them is
-    # stale. A group with a mix of fresh and stale legs is not flagged: its
-    # ``marks_as_of`` (the newest mark) already says how current the figures are,
-    # and flagging a whole row on one stale leg trains the operator to ignore the
-    # badge.
-    live_is_stale: bool = False
+
+@dataclass(frozen=True)
+class GroupLedger:
+    """What one trade group has been assigned: its settled fills and the tagged
+    unsettled fills that have not settled yet. Everything the overlay needs about
+    the group — its position scope, holdings, and realized PnL — derives from these.
+
+    ``extra_pairs`` are positions whose only link to the group is a live
+    assignment whose fill row is absent (the link table carries the pair);
+    :func:`load_group_ledgers` fills it in.
+    """
+
+    executions: list[Any]
+    live_fills: list[Any] = field(default_factory=list)
+    extra_pairs: frozenset[PairKey] = frozenset()
 
     @property
-    def total_pnl(self) -> float | None:
-        """Settled Total PnL — realized + settled unrealized, never the overlay."""
-        return _combine_total(self.realized_pnl, self.settled_unrealized_pnl)
+    def pairs(self) -> set[PairKey]:
+        """``(account_id, con_id)`` pairs the group's positions are drawn from."""
+        pairs = {(ex.account_id, ex.con_id) for ex in self.executions if ex.con_id is not None}
+        pairs |= {(ex.account_id, ex.con_id) for ex in self.live_fills if ex.con_id is not None}
+        return pairs | set(self.extra_pairs)
+
+    @property
+    def settled_exec_ids(self) -> set[str]:
+        return {ex.ib_exec_id for ex in self.executions if ex.ib_exec_id}
+
+    @property
+    def holdings(self) -> GroupHoldings:
+        return group_holdings(self.executions, self.live_fills)
+
+    @property
+    def realized_pnl(self) -> float | None:
+        return trade_group_realized_pnl(self.executions)
+
+    def realized_pnl_by_account(self) -> dict[int, float | None]:
+        """The same rule per account partition, so the parts reconcile to the total."""
+        by_account: dict[int, list[Any]] = {}
+        for ex in self.executions:
+            by_account.setdefault(ex.account_id, []).append(ex)
+        return {account_id: trade_group_realized_pnl(rows) for account_id, rows in by_account.items()}
 
 
-def _group_execution_index(
+def load_group_ledgers(
     session: Session,
     group_ids: list[int],
+    *,
     account_id: int | None = None,
-) -> tuple[dict[int, list[Any]], dict[int, set[tuple[int, int]]], dict[int, set[str]], set[tuple[int, int]]]:
-    """One query for every settled execution across ``group_ids``, indexed by group.
+    include_live: bool = True,
+) -> dict[int, GroupLedger]:
+    """Every group's ledger in three queries (one with ``include_live=False``),
+    however many groups are asked for.
 
-    ``account_id`` narrows to that account's fills. Group membership is
-    cross-account by design, so a group can hold legs in several accounts;
-    without this, an account-filtered view would list the right groups but total
-    every account's legs into each row.
+    ``account_id`` narrows each ledger to that account's fills. Group membership
+    is cross-account by design, so without it an account-filtered view would
+    list the right groups but total every account's legs into each row.
+
+    ``include_live=False`` skips the tagged unsettled fills; the settled-only
+    figures do not need them.
     """
     stmt = (
         select(TradeGroupExecution.trade_group_id, TradeExecution)
@@ -318,21 +348,20 @@ def _group_execution_index(
     )
     if account_id is not None:
         stmt = stmt.where(TradeExecution.account_id == account_id)
-    exec_rows = session.execute(stmt).all()
-
     execs_by_group: dict[int, list[Any]] = {}
-    pairs_by_group: dict[int, set[tuple[int, int]]] = {}
-    settled_ids_by_group: dict[int, set[str]] = {}
-    all_pairs: set[tuple[int, int]] = set()
-    for group_id, execution in exec_rows:
+    for group_id, execution in session.execute(stmt).all():
         execs_by_group.setdefault(group_id, []).append(execution)
-        if execution.con_id is not None:
-            pair = (execution.account_id, execution.con_id)
-            pairs_by_group.setdefault(group_id, set()).add(pair)
-            all_pairs.add(pair)
-        if execution.ib_exec_id:
-            settled_ids_by_group.setdefault(group_id, set()).add(execution.ib_exec_id)
-    return execs_by_group, pairs_by_group, settled_ids_by_group, all_pairs
+
+    live_pairs = _tagged_live_pairs(session, group_ids, account_id) if include_live else {}
+    live_fills = _tagged_live_fills(session, group_ids, account_id) if include_live else {}
+    return {
+        group_id: GroupLedger(
+            executions=execs_by_group.get(group_id, []),
+            live_fills=live_fills.get(group_id, []),
+            extra_pairs=frozenset(live_pairs.get(group_id, set())),
+        )
+        for group_id in group_ids
+    }
 
 
 def _tagged_live_pairs(session: Session, group_ids: list[int], account_id: int | None = None) -> dict[int, set[tuple[int, int]]]:
@@ -374,14 +403,6 @@ def _tagged_live_fills(session: Session, group_ids: list[int], account_id: int |
     return fills
 
 
-def trade_group_account_con_pairs(session: Session, group_id: int) -> set[tuple[int, int]]:
-    """The ``(account_id, con_id)`` pairs a single group's positions are drawn from."""
-    _, pairs_by_group, _, _ = _group_execution_index(session, [group_id])
-    pairs = set(pairs_by_group.get(group_id, set()))
-    pairs |= _tagged_live_pairs(session, [group_id]).get(group_id, set())
-    return pairs
-
-
 def _group_live_is_stale(views: list[Any], flex_rows: list[Any], live_rows: list[Any]) -> bool:
     """True when the group has overlay-backed rows and every one of them is stale.
 
@@ -396,6 +417,142 @@ def _group_live_is_stale(views: list[Any], flex_rows: list[Any], live_rows: list
     return bool(flags) and all(flags)
 
 
+def _combine_intraday(unrealized: float | None, realized: float | None) -> float | None:
+    if unrealized is None and realized is None:
+        return None
+    return (unrealized or 0.0) + (realized or 0.0)
+
+
+@dataclass(frozen=True)
+class AccountOverlay:
+    """One account's slice of a group's overlay figures."""
+
+    unrealized: float | None  # settled
+    intraday_unrealized: float | None
+    intraday_realized: float | None
+    intraday_total: float | None
+
+
+@dataclass(frozen=True)
+class GroupOverlay:
+    """The live-over-settled overlay for one group: the position views cut down
+    to the group's share, the group totals, and the per-account breakdown that
+    reconciles to them. The rows the views were merged from ride along so a
+    display layer can label them without re-querying.
+    """
+
+    views: list[PositionView]
+    flex_rows: list[Any]
+    live_rows: list[Any]
+    expiries: dict[int, str]
+    realized_pnl: float | None
+    totals: OverlayTotals
+    by_account: dict[int, AccountOverlay]
+    # True only when the group has live-sourced marks and *every* one of them is
+    # stale. A group with a mix of fresh and stale legs is not flagged: its
+    # ``marks_as_of`` (the newest mark) already says how current the figures are,
+    # and flagging a whole row on one stale leg trains the operator to ignore the
+    # badge.
+    live_is_stale: bool
+
+
+def _account_breakdown(
+    views: list[PositionView],
+    live_execs: list[Any],
+    settled_exec_ids: set[str],
+    realized_by_account: dict[int, float | None],
+) -> dict[int, AccountOverlay]:
+    """Per-account figures using the same partitioning as the group totals."""
+    views_by_account: dict[int, list[PositionView]] = {}
+    for view in views:
+        views_by_account.setdefault(view.account_id, []).append(view)
+    live_execs_by_account: dict[int, list[Any]] = {}
+    for ex in live_execs:
+        live_execs_by_account.setdefault(ex.account_id, []).append(ex)
+
+    by_account: dict[int, AccountOverlay] = {}
+    for account_id in set(views_by_account) | set(realized_by_account):
+        acct_views = views_by_account.get(account_id, [])
+        acct_settled = [v.settled_unrealized for v in acct_views if v.settled_unrealized is not None]
+        acct_unrealized = sum(acct_settled) if acct_settled else None
+        acct_intraday_unrealized = intraday_unrealized_total(acct_views)
+        acct_realized = realized_by_account.get(account_id)
+        _, acct_live_realized = dedupe_live_realized(settled_exec_ids, live_execs_by_account.get(account_id, []))
+        acct_intraday_realized = (acct_realized or 0.0) + acct_live_realized if (acct_realized is not None or acct_live_realized) else None
+        by_account[account_id] = AccountOverlay(
+            unrealized=acct_unrealized,
+            intraday_unrealized=acct_intraday_unrealized,
+            intraday_realized=acct_intraday_realized,
+            intraday_total=_combine_intraday(acct_intraday_unrealized, acct_intraday_realized),
+        )
+    return by_account
+
+
+def _overlay_one(context: OverlayContext, ledger: GroupLedger) -> GroupOverlay:
+    """Run the pipeline for one group over a context loaded for its pairs (or more)."""
+    pairs = ledger.pairs
+    # Merge per group rather than once over a union of groups: merge_positions
+    # drops a settled row when *its account* has live data, so a union-wide merge
+    # would silently net-close a group whose own pairs have no live rows.
+    flex_slice = [row for row in context.flex_rows if (row.account_id, row.con_id) in pairs]
+    live_slice = [row for row in context.live_rows if (row.account_id, row.con_id) in pairs]
+    exec_slice = [row for row in context.live_execs if (row.account_id, row.con_id) in pairs]
+    views = merge_positions(flex_slice, live_slice, context.quotes, context.magnifiers, context.metrics, context.account_as_of)
+    views, flex_shares = apportion_to_group(views, flex_slice, ledger.holdings)
+    realized = ledger.realized_pnl
+    settled_exec_ids = ledger.settled_exec_ids
+    totals = overlay_totals(flex_slice, views, exec_slice, settled_exec_ids, realized, flex_shares)
+    return GroupOverlay(
+        views=views,
+        flex_rows=flex_slice,
+        live_rows=live_slice,
+        expiries=context.expiries,
+        realized_pnl=realized,
+        totals=totals,
+        by_account=_account_breakdown(views, exec_slice, settled_exec_ids, ledger.realized_pnl_by_account()),
+        live_is_stale=_group_live_is_stale(views, flex_slice, live_slice),
+    )
+
+
+def overlay_for_ledgers(session: Session, ledgers: dict[int, GroupLedger]) -> dict[int, GroupOverlay]:
+    """The overlay for every ledger, loading the rows once for all of them.
+
+    The overlay context is loaded for the union of the ledgers' pairs (a fixed
+    seven queries) and sliced per group, so the cost does not grow with the
+    number of groups. A caller that already holds a group's rows builds its
+    :class:`GroupLedger` directly and skips :func:`load_group_ledgers`.
+    """
+    all_pairs: set[PairKey] = set()
+    for ledger in ledgers.values():
+        all_pairs |= ledger.pairs
+    context = load_overlay_context(session, all_pairs)
+    return {group_id: _overlay_one(context, ledger) for group_id, ledger in ledgers.items()}
+
+
+def overlay_for_groups(session: Session, group_ids: list[int], *, account_id: int | None = None) -> dict[int, GroupOverlay]:
+    """Load the ledgers and compute the overlay: the whole pipeline in one call."""
+    return overlay_for_ledgers(session, load_group_ledgers(session, group_ids, account_id=account_id))
+
+
+@dataclass(frozen=True)
+class TradeGroupBatchPnl:
+    """Per-group PnL figures from the batched read path."""
+
+    realized_pnl: float | None
+    settled_unrealized_pnl: float | None
+    intraday_unrealized_pnl: float | None = None
+    intraday_realized_pnl: float | None = None
+    intraday_total_pnl: float | None = None
+    marks_as_of: datetime | None = None
+    # See ``GroupOverlay.live_is_stale``.
+    live_is_stale: bool = False
+
+    @property
+    def total_pnl(self) -> float | None:
+        """Settled Total PnL — realized + settled unrealized, never the overlay."""
+        return _combine_total(self.realized_pnl, self.settled_unrealized_pnl)
+
+
 def trade_group_batch_pnls(
     session: Session,
     group_ids: list[int],
@@ -405,10 +562,9 @@ def trade_group_batch_pnls(
 ) -> dict[int, TradeGroupBatchPnl]:
     """Realized + settled/intraday PnL for many trade groups, without an N+1.
 
-    Query count is fixed in ``len(group_ids)``: one for the groups' executions,
-    two for the preemptively-tagged unsettled fills, and the six the overlay
-    context needs. Only the per-group *slicing* is per group, and that is pure
-    Python over already-loaded rows.
+    Query count is fixed in ``len(group_ids)``: the three the ledgers need plus
+    the seven the overlay context needs. Only the per-group *slicing* is per
+    group, and that is pure Python over already-loaded rows.
 
     ``include_intraday=False`` skips the overlay entirely and answers from two
     queries (executions + the settled Position snapshot), which is the cost the
@@ -427,11 +583,12 @@ def trade_group_batch_pnls(
     if not group_ids:
         return {}
 
-    execs_by_group, pairs_by_group, settled_ids_by_group, all_pairs = _group_execution_index(session, group_ids, account_id)
-    realized_by_group = {group_id: trade_group_realized_pnl(execs_by_group.get(group_id, [])) for group_id in group_ids}
-
     if not include_intraday:
-        settled_by_pair: dict[tuple[int, int], tuple[float, float]] = {}
+        ledgers = load_group_ledgers(session, group_ids, account_id=account_id, include_live=False)
+        all_pairs: set[PairKey] = set()
+        for ledger in ledgers.values():
+            all_pairs |= ledger.pairs
+        settled_by_pair: dict[PairKey, tuple[float, float]] = {}
         if all_pairs:
             pos_rows = session.execute(
                 select(Position.account_id, Position.con_id, Position.position, Position.fifo_pnl_unrealized).where(
@@ -443,59 +600,29 @@ def trade_group_batch_pnls(
                 if fifo is not None:
                     settled_by_pair[(account_id, con_id)] = (position, fifo)
         result: dict[int, TradeGroupBatchPnl] = {}
-        for group_id in group_ids:
-            held = group_holdings(execs_by_group.get(group_id, [])).settled
+        for group_id, ledger in ledgers.items():
+            held = ledger.holdings.settled
             values = [
-                fifo * held_fraction(held.get(pair), position)
-                for pair in pairs_by_group.get(group_id, set())
-                if pair in settled_by_pair
-                for position, fifo in [settled_by_pair[pair]]
+                fifo * held_fraction(held.get(pair), position) for pair in ledger.pairs if pair in settled_by_pair for position, fifo in [settled_by_pair[pair]]
             ]
             result[group_id] = TradeGroupBatchPnl(
-                realized_pnl=realized_by_group[group_id],
+                realized_pnl=ledger.realized_pnl,
                 settled_unrealized_pnl=sum(values) if values else None,
             )
         return result
 
-    for group_id, extra in _tagged_live_pairs(session, group_ids, account_id).items():
-        pairs_by_group.setdefault(group_id, set()).update(extra)
-        all_pairs |= extra
-    live_fills_by_group = _tagged_live_fills(session, group_ids, account_id)
-
-    context = load_overlay_context(session, all_pairs)
-
-    result = {}
-    for group_id in group_ids:
-        pairs = pairs_by_group.get(group_id, set())
-        # Merge per group rather than once over the union: merge_positions drops
-        # a settled row when *its account* has live data, so a union-wide merge
-        # would silently net-close a group whose own pairs have no live rows.
-        # Slicing first keeps the batch identical to the single-group path (R6);
-        # the queries above already ran once, so this costs no round-trips.
-        flex_slice = [row for row in context.flex_rows if (row.account_id, row.con_id) in pairs]
-        live_slice = [row for row in context.live_rows if (row.account_id, row.con_id) in pairs]
-        exec_slice = [row for row in context.live_execs if (row.account_id, row.con_id) in pairs]
-        views = merge_positions(flex_slice, live_slice, context.quotes, context.magnifiers, context.metrics, context.account_as_of)
-        holdings = group_holdings(execs_by_group.get(group_id, []), live_fills_by_group.get(group_id, []))
-        views, flex_shares = apportion_to_group(views, flex_slice, holdings)
-        totals = overlay_totals(
-            flex_slice,
-            views,
-            exec_slice,
-            settled_ids_by_group.get(group_id, set()),
-            realized_by_group[group_id],
-            flex_shares,
+    return {
+        group_id: TradeGroupBatchPnl(
+            realized_pnl=overlay.realized_pnl,
+            settled_unrealized_pnl=overlay.totals.settled_unrealized,
+            intraday_unrealized_pnl=overlay.totals.intraday_unrealized,
+            intraday_realized_pnl=overlay.totals.intraday_realized,
+            intraday_total_pnl=overlay.totals.intraday_total,
+            marks_as_of=overlay.totals.marks_as_of,
+            live_is_stale=overlay.live_is_stale,
         )
-        result[group_id] = TradeGroupBatchPnl(
-            realized_pnl=realized_by_group[group_id],
-            settled_unrealized_pnl=totals.settled_unrealized,
-            intraday_unrealized_pnl=totals.intraday_unrealized,
-            intraday_realized_pnl=totals.intraday_realized,
-            intraday_total_pnl=totals.intraday_total,
-            marks_as_of=totals.marks_as_of,
-            live_is_stale=_group_live_is_stale(views, flex_slice, live_slice),
-        )
-    return result
+        for group_id, overlay in overlay_for_groups(session, group_ids, account_id=account_id).items()
+    }
 
 
 def trade_group_total_pnls(session: Session, group_ids: list[int], account_id: int | None = None) -> dict[int, float | None]:
@@ -632,36 +759,14 @@ def compute_trade_group_pnl(session: Session, group_id: int) -> TradeGroupPnl:
     if group is None:
         raise ValueError(f"Trade group #{group_id} not found.")
 
-    executions = list(
-        session.execute(
-            select(TradeExecution)
-            .join(TradeGroupExecution, TradeGroupExecution.trade_execution_id == TradeExecution.id)
-            .where(TradeGroupExecution.trade_group_id == group_id)
-        )
-        .scalars()
-        .all()
-    )
-
-    realized = trade_group_realized_pnl(executions)
-    account_con_pairs = {(ex.account_id, ex.con_id) for ex in executions if ex.con_id is not None}
-    # Preemptively-tagged unsettled fills open positions too — include them so
-    # this service and the detail endpoint scope the overlay identically.
-    account_con_pairs |= _tagged_live_pairs(session, [group_id]).get(group_id, set())
-    settled_exec_ids = {ex.ib_exec_id for ex in executions if ex.ib_exec_id}
-
-    context = load_overlay_context(session, account_con_pairs)
-    views = merge_positions(context.flex_rows, context.live_rows, context.quotes, context.magnifiers, context.metrics, context.account_as_of)
-    holdings = group_holdings(executions, _tagged_live_fills(session, [group_id]).get(group_id, []))
-    views, flex_shares = apportion_to_group(views, context.flex_rows, holdings)
-    totals = overlay_totals(context.flex_rows, views, context.live_execs, settled_exec_ids, realized, flex_shares)
-
+    overlay = overlay_for_groups(session, [group_id])[group_id]
     return TradeGroupPnl(
         group_id=group.id,
         group_name=group.name,
-        realized_pnl=realized,
-        settled_unrealized_pnl=totals.settled_unrealized,
-        intraday_unrealized_pnl=totals.intraday_unrealized,
-        intraday_realized_pnl=totals.intraday_realized,
-        intraday_total_pnl=totals.intraday_total,
-        marks_as_of=totals.marks_as_of,
+        realized_pnl=overlay.realized_pnl,
+        settled_unrealized_pnl=overlay.totals.settled_unrealized,
+        intraday_unrealized_pnl=overlay.totals.intraday_unrealized,
+        intraday_realized_pnl=overlay.totals.intraday_realized,
+        intraday_total_pnl=overlay.totals.intraday_total,
+        marks_as_of=overlay.totals.marks_as_of,
     )

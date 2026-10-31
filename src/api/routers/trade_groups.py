@@ -33,14 +33,7 @@ from src.services.execution_display import contract_display_from_raw, execution_
 from src.services.option_expiry import option_expiry_and_dte
 from src.services.strategies import normalize_strategy_name, require_strategy
 from src.utils.sql import escape_like
-from src.services.intraday_overlay import (
-    dedupe_live_realized,
-    intraday_unrealized_total,
-    is_live_stale,
-    merge_positions,
-    overlay_totals,
-    parse_multiplier,
-)
+from src.services.intraday_overlay import is_live_stale, parse_multiplier
 from src.services.trade_group_instruments import (
     InstrumentPatternError,
     instrument_filter_condition,
@@ -48,13 +41,11 @@ from src.services.trade_group_instruments import (
 )
 from src.services.trade_group_meta import TradeGroupMetaError, parse_meta_yaml
 from src.services.trade_group_pnl import (
-    GroupHoldings,
+    GroupLedger,
+    GroupOverlay,
     TradeGroupBatchPnl,
-    apportion_to_group,
-    group_holdings,
-    load_overlay_context,
+    overlay_for_ledgers,
     trade_group_batch_pnls,
-    trade_group_realized_pnl,
 )
 from src.services.ui_events import (
     TOPIC_POSITIONS,
@@ -1285,121 +1276,24 @@ class TradeGroupExecutionsResponse(BaseModel):
     by_account: list[TradeGroupAccountPnl] = []
 
 
-class _AccountOverlay(BaseModel):
-    unrealized: float | None
-    intraday_unrealized: float | None
-    intraday_realized: float | None
-    intraday_total: float | None
-
-
-class _OpenPositionsOverlay(BaseModel):
-    open_positions: list[TradeGroupOpenPositionItem]
-    total_unrealized: float | None
-    intraday_unrealized: float | None
-    intraday_realized: float | None
-    intraday_total: float | None
-    marks_as_of: datetime | None
-    by_account: dict[int, _AccountOverlay] = {}
-
-
-def _combine_intraday(unrealized: float | None, realized: float | None) -> float | None:
-    if unrealized is None and realized is None:
-        return None
-    return (unrealized or 0.0) + (realized or 0.0)
-
-
-def _build_open_positions_overlay(
-    db: Session,
-    account_con_pairs: set[tuple[int, int]],
-    settled_exec_ids: set[str],
-    total_pnl: float | None,
-    realized_by_account: dict[int, float | None] | None = None,
-    holdings: GroupHoldings | None = None,
-) -> _OpenPositionsOverlay:
-    """Merge the live TWS overlay onto the settled snapshot for a group's pairs.
-
-    Settled totals stay backward-compatible; intraday fields are additive.
-    ``holdings`` cuts each position down to the group's own share; ``None``
-    keeps whole account positions.
-    """
-    empty = _OpenPositionsOverlay(
-        open_positions=[],
-        total_unrealized=None,
-        intraday_unrealized=None,
-        intraday_realized=None,
-        intraday_total=None,
-        marks_as_of=None,
-    )
-    if not account_con_pairs:
-        return empty
-
-    # One shared loader for every overlay consumer (price magnifiers, security-
-    # master expiries, option metrics), so this panel and the batched Strategy
-    # P&L list path cannot merge from different inputs.
-    context = load_overlay_context(db, account_con_pairs)
-    flex_rows, live_rows, live_execs = context.flex_rows, context.live_rows, context.live_execs
-    expiries = context.expiries
-    views = merge_positions(flex_rows, live_rows, context.quotes, context.magnifiers, context.metrics, context.account_as_of)
-    flex_shares = None
-    if holdings is not None:
-        views, flex_shares = apportion_to_group(views, flex_rows, holdings)
-
-    view_account_ids = {v.account_id for v in views}
-    alias_by_id = {}
+def _open_position_items(db: Session, overlay: GroupOverlay) -> list[TradeGroupOpenPositionItem]:
+    """Label the overlay's apportioned views for the response."""
+    alias_by_id: dict[int, Account] = {}
+    view_account_ids = {v.account_id for v in overlay.views}
     if view_account_ids:
         alias_by_id = {a.id: a for a in db.execute(select(Account).where(Account.id.in_(list(view_account_ids)))).scalars().all()}
-    flex_by_key = {(p.account_id, p.con_id): p for p in flex_rows}
-    live_fetched_by_key = {(p.account_id, p.con_id): p.fetched_at for p in live_rows}
-
-    open_positions = [
+    flex_by_key = {(p.account_id, p.con_id): p for p in overlay.flex_rows}
+    live_fetched_by_key = {(p.account_id, p.con_id): p.fetched_at for p in overlay.live_rows}
+    return [
         _view_to_open_position(
             view,
             flex_by_key.get((view.account_id, view.con_id)),
             alias_by_id.get(view.account_id),
             live_fetched_by_key.get((view.account_id, view.con_id)),
-            expiries.get(view.con_id),
+            overlay.expiries.get(view.con_id),
         )
-        for view in views
+        for view in overlay.views
     ]
-
-    # Single source for the group totals (shared with the trade_group_pnl tool).
-    totals = overlay_totals(flex_rows, views, live_execs, settled_exec_ids, total_pnl, flex_shares)
-
-    # Per-account breakdown using the same partitioning as the totals above, so
-    # the per-account values reconcile to the group totals.
-    realized_by_account = realized_by_account or {}
-    views_by_account: dict[int, list] = {}
-    for view in views:
-        views_by_account.setdefault(view.account_id, []).append(view)
-    live_execs_by_account: dict[int, list] = {}
-    for ex in live_execs:
-        live_execs_by_account.setdefault(ex.account_id, []).append(ex)
-
-    by_account: dict[int, _AccountOverlay] = {}
-    for acct_id in set(views_by_account) | set(realized_by_account):
-        acct_views = views_by_account.get(acct_id, [])
-        acct_settled = [v.settled_unrealized for v in acct_views if v.settled_unrealized is not None]
-        acct_unrealized = sum(acct_settled) if acct_settled else None
-        acct_intraday_unrealized = intraday_unrealized_total(acct_views)
-        acct_realized = realized_by_account.get(acct_id)
-        _, acct_live_realized = dedupe_live_realized(settled_exec_ids, live_execs_by_account.get(acct_id, []))
-        acct_intraday_realized = (acct_realized or 0.0) + acct_live_realized if (acct_realized is not None or acct_live_realized) else None
-        by_account[acct_id] = _AccountOverlay(
-            unrealized=acct_unrealized,
-            intraday_unrealized=acct_intraday_unrealized,
-            intraday_realized=acct_intraday_realized,
-            intraday_total=_combine_intraday(acct_intraday_unrealized, acct_intraday_realized),
-        )
-
-    return _OpenPositionsOverlay(
-        open_positions=open_positions,
-        total_unrealized=totals.settled_unrealized,
-        intraday_unrealized=totals.intraday_unrealized,
-        intraday_realized=totals.intraday_realized,
-        intraday_total=totals.intraday_total,
-        marks_as_of=totals.marks_as_of,
-        by_account=by_account,
-    )
 
 
 def _view_to_open_position(view, flex, account, live_fetched_at, ref_expiry=None) -> TradeGroupOpenPositionItem:
@@ -1492,11 +1386,9 @@ def trade_group_executions(trade_group_id: int, db: Session = DB_SESSION_DEPENDE
     ).all()
 
     items: list[TradeGroupExecutionItem] = []
-    rows_by_account: dict[int, list[tuple]] = {}
     alias_by_account: dict[int, str | None] = {}
     for row in rows:
         execution, contract_ref, _trade, account = row
-        rows_by_account.setdefault(execution.account_id, []).append(row)
         alias_by_account.setdefault(execution.account_id, account.alias if account else None)
         multiplier = parse_multiplier(contract_ref.multiplier if contract_ref else None)
         items.append(
@@ -1585,28 +1477,17 @@ def trade_group_executions(trade_group_id: int, db: Session = DB_SESSION_DEPENDE
             )
         )
 
-    # Realized total via the shared combo-aware helper (also used by the
-    # trade_group_pnl tool, so the figures cannot diverge). The same helper runs
-    # per account partition so the per-account totals reconcile to the group.
-    total_pnl = trade_group_realized_pnl([execution for execution, _ref, _trade, _account in rows])
-    realized_by_account = {acct_id: trade_group_realized_pnl([execution for execution, *_ in acct_rows]) for acct_id, acct_rows in rows_by_account.items()}
+    # The group's ledger is what this endpoint already loaded: the settled rows
+    # above and the tagged unsettled fills. The overlay facade (shared with the
+    # list endpoint and the trade_group_pnl tool) turns it into the open
+    # positions, the totals, and a per-account breakdown that reconciles to them.
+    ledger = GroupLedger(
+        executions=[execution for execution, *_ in rows],
+        live_fills=[live_exec for live_exec, _account in live_rows],
+    )
+    overlay = overlay_for_ledgers(db, {trade_group_id: ledger})[trade_group_id]
+    realized_by_account = ledger.realized_pnl_by_account()
 
-    # Open positions linked to this group: match on (account_id, con_id) pairs
-    # that appear in any of the group's executions, cut down to the quantity the
-    # group's own fills hold (a contract split across groups counts once). The
-    # settled snapshot (FlexQuery `positions`) is the base; the live TWS overlay
-    # (`live_positions` + `latest_quote` + `live_executions`) is merged on top.
-    account_con_pairs = {(execution.account_id, execution.con_id) for execution, _ref, _trade, _account in rows if execution.con_id is not None}
-    # Also surface positions whose only link to this group is a tagged *unsettled*
-    # live fill (a strike opened today, not yet in trade_executions). Without this,
-    # a freshly-opened position stays hidden from Open Positions until it settles.
-    account_con_pairs |= {(le.account_id, le.con_id) for le, _account in live_rows if le.con_id is not None}
-    settled_exec_ids = {execution.ib_exec_id for execution, _ref, _trade, _account in rows if execution.ib_exec_id}
-    holdings = group_holdings([execution for execution, *_ in rows], [live_exec for live_exec, _account in live_rows])
-    overlay = _build_open_positions_overlay(db, account_con_pairs, settled_exec_ids, total_pnl, realized_by_account, holdings)
-
-    # Assemble the per-account breakdown over the union of accounts that have
-    # realized PnL (from executions) and/or open positions (from the overlay).
     by_account = [
         TradeGroupAccountPnl(
             account_id=acct_id,
@@ -1622,13 +1503,13 @@ def trade_group_executions(trade_group_id: int, db: Session = DB_SESSION_DEPENDE
 
     return TradeGroupExecutionsResponse(
         trade_group_id=trade_group_id,
-        total_realized_pnl=total_pnl,
-        total_unrealized_pnl=overlay.total_unrealized,
+        total_realized_pnl=overlay.realized_pnl,
+        total_unrealized_pnl=overlay.totals.settled_unrealized,
         executions=items,
-        open_positions=overlay.open_positions,
-        intraday_unrealized_pnl=overlay.intraday_unrealized,
-        intraday_realized_pnl=overlay.intraday_realized,
-        intraday_total_pnl=overlay.intraday_total,
-        marks_as_of=overlay.marks_as_of,
+        open_positions=_open_position_items(db, overlay),
+        intraday_unrealized_pnl=overlay.totals.intraday_unrealized,
+        intraday_realized_pnl=overlay.totals.intraday_realized,
+        intraday_total_pnl=overlay.totals.intraday_total,
+        marks_as_of=overlay.totals.marks_as_of,
         by_account=by_account,
     )

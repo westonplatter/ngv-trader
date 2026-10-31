@@ -21,6 +21,7 @@ from src.models import (
     TradeGroupLiveExecution,
 )
 from src.services.execution_display import contract_display_from_raw, execution_ib_codes
+from src.services.execution_pnl import ExecutionPnlRow, realized_pnl_total
 from src.services.execution_pnl import execution_realized_pnl as _execution_realized_pnl
 from src.services.jobs import (
     JOB_TYPE_TRADES_SYNC_FLEXQUERY,
@@ -95,7 +96,7 @@ def _combo_lifecycle(leg_lifecycles: Iterable[str | None]) -> str | None:
 def _trade_lifecycle_from_execution(
     raw: dict | None,
     exec_role: str | None,
-    trade_executions: Sequence[tuple[dict | None, str | None, bool]] = (),
+    trade_executions: Sequence[ExecutionPnlRow] = (),
 ) -> str | None:
     """Open/Close for a fill; for a combo summary, the rollup of its legs.
 
@@ -129,25 +130,12 @@ def _trade_lifecycle_from_execution(
     return None
 
 
-def _trade_realized_pnl_from_executions(executions: list[tuple[dict | None, str | None, bool]]) -> float | None:
-    canonical = [(raw, exec_role) for raw, exec_role, is_canonical in executions if is_canonical]
-    if not canonical:
-        return None
+def _trade_realized_pnl_from_executions(executions: Sequence[ExecutionPnlRow]) -> float | None:
+    """A trade's realized PnL: the shared combo-aware rule over its canonical fills.
 
-    combo_values = [
-        realized_pnl
-        for raw, exec_role in canonical
-        if exec_role == "combo_summary"
-        for realized_pnl in [_execution_realized_pnl(raw)]
-        if realized_pnl is not None
-    ]
-    if combo_values:
-        return sum(combo_values)
-
-    values = [realized_pnl for raw, _ in canonical for realized_pnl in [_execution_realized_pnl(raw)] if realized_pnl is not None]
-    if not values:
-        return None
-    return sum(values)
+    A trade carries every revision of a fill; only the canonical one counts.
+    """
+    return realized_pnl_total(row for row in executions if row.is_canonical)
 
 
 class TradeResponse(BaseModel):
@@ -314,7 +302,7 @@ def list_trades(  # noqa: C901, PLR0912
 
     raw_by_trade_id: dict[int, dict] = {}
     raw_exec_role_by_trade_id: dict[int, str | None] = {}
-    execution_summary_by_trade_id: dict[int, list[tuple[dict | None, str | None, bool]]] = {}
+    execution_summary_by_trade_id: dict[int, list[ExecutionPnlRow]] = {}
     contract_ref_by_trade_id: dict[int, ContractRef] = {}
     assigned_trade_group_id_by_trade_id: dict[int, int] = {}
     if trade_ids:
@@ -345,7 +333,7 @@ def list_trades(  # noqa: C901, PLR0912
 
         for trade_id, raw, con_id, exec_role, is_canonical in execution_rows:
             execution_summary_by_trade_id.setdefault(trade_id, []).append(
-                (raw, exec_role, is_canonical),
+                ExecutionPnlRow(raw, exec_role, is_canonical),
             )
             if trade_id not in raw_by_trade_id:
                 raw_by_trade_id[trade_id] = raw
@@ -457,7 +445,7 @@ def get_trade(trade_id: int, db: Session = DB_SESSION_DEPENDENCY):
         .where(TradeExecution.trade_id == trade_id)
         .order_by(TradeExecution.executed_at.asc(), TradeExecution.id.asc())
     ).all()
-    execution_summary_rows = [(raw, exec_role, is_canonical) for raw, exec_role, is_canonical in execution_summary_result]
+    execution_summary_rows = [ExecutionPnlRow(raw, exec_role, is_canonical) for raw, exec_role, is_canonical in execution_summary_result]
     assigned_trade_group_id = db.execute(
         select(TradeGroupExecution.trade_group_id)
         .join(TradeExecution, TradeExecution.id == TradeGroupExecution.trade_execution_id)
@@ -596,7 +584,7 @@ def list_all_trade_executions(  # noqa: C901, PLR0912, PLR0915
     for trade_id, ib_exec_id in combo_rows:
         parent_ib_exec_id_by_trade_id[trade_id] = ib_exec_id
 
-    trade_executions_summary: dict[int, list[tuple[dict | None, str | None, bool]]] = {}
+    trade_executions_summary: dict[int, list[ExecutionPnlRow]] = {}
     summary_rows = db.execute(
         select(
             TradeExecution.trade_id,
@@ -606,7 +594,7 @@ def list_all_trade_executions(  # noqa: C901, PLR0912, PLR0915
         ).where(TradeExecution.trade_id.in_(trade_ids))
     ).all()
     for trade_id, raw, exec_role, is_canonical in summary_rows:
-        trade_executions_summary.setdefault(trade_id, []).append((raw, exec_role, is_canonical))
+        trade_executions_summary.setdefault(trade_id, []).append(ExecutionPnlRow(raw, exec_role, is_canonical))
 
     assigned_group_by_trade_id: dict[int, int] = {}
     assignment_rows = db.execute(

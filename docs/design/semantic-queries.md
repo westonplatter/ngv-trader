@@ -291,16 +291,21 @@ different homes:
 `intraday_realized_pnl`, `intraday_total_pnl`, and `marks_as_of` — the detail-view
 figures.
 
-Shared formulas: the API endpoint (`GET /trade-groups/{id}/executions`) and
-`compute_trade_group_pnl()` both go through `intraday_overlay.overlay_totals()` +
-`trade_group_realized_pnl()`, so each formula has exactly one implementation.
+One pipeline: the API endpoint (`GET /trade-groups/{id}/executions`), the
+batched list behind the Strategy P&L table, and `compute_trade_group_pnl()` all
+call the overlay facade in `src/services/trade_group_pnl.py`. A `GroupLedger`
+(the group's settled fills plus its tagged **unsettled** fills) goes in;
+`overlay_for_ledgers()` loads the overlay inputs — including `price_magnifier`
+and `latest_option_metrics` — through the one loader, `load_overlay_context()`,
+and returns a `GroupOverlay`: the apportioned position views, the totals from
+`intraday_overlay.overlay_totals()`, and the per-account breakdown. The ledger
+derives the group's position scope, holdings, and realized PnL, so the tool, the
+list, and the detail view cannot scope or merge differently.
 
-Shared inputs: both call paths widen the group's `(account_id, con_id)` pairs with
-those reached only via tagged **unsettled** live fills (`_tagged_live_pairs`),
-then load the overlay inputs — including `price_magnifier` and
-`latest_option_metrics` — through the one loader, `load_overlay_context()`, and
-pass them into `merge_positions()`. The tool and the detail view scope and merge
-the overlay identically.
+Realized PnL has one rule, `execution_pnl.realized_pnl_total()`, used for a
+trade, a trade group, and each account partition of a group. Only the row
+selection differs: a trade passes its canonical fills (it holds every revision),
+a group passes the rows it links to.
 
 **Two properties to keep in mind:**
 
