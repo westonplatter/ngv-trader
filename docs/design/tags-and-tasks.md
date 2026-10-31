@@ -163,22 +163,8 @@ live fill); `offset-risk` was applied by an agent.
 
 Not done yet; noted while building and testing this feature.
 
-- **`scripts/screenshot.mjs` in cloud sessions** looks for `playwright-core` and
-  `/opt/pw-browsers/chromium`; the current container ships the full `playwright`
-  package globally and Chromium under `/opt/pw-browsers/chromium-<rev>/`. It ran
-  only with `PW_CHROMIUM` set and a `NODE_PATH` shim. Teach it both layouts.
-
 ### Found while building
 
-- **Semantic-layer naming clash.** The semantic model's `tag` dimension
-  (`osi/ngv_semantic_model.yaml`) is the _trade group name_, and the MCP
-  `find_trade_groups` / `trade_group_pnl` docs tell agents to filter
-  `query_metric` by `tag`. Next to the new `find_by_tags` tool an agent can mix
-  them up. Candidate fix: rename the dimension to `trade_group` (touches the
-  YAML, tool docstrings, the tradebot prompt, and the semantic docs). Left as is
-  here on purpose.
-- **Changing a group's strategy** is supported by `PATCH /trade-groups/{id}`
-  (`strategy_id`) but the Strategies page has no control for it.
 - **Non-primary strategy links** were not migrated when strategies moved out of
   the tag tables; the UI never wrote any.
 - **Tag search scales in Python.** `GET /tags/search` loads every open link and

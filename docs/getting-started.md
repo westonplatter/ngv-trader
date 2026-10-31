@@ -48,11 +48,12 @@ git clone <repo-url> ngv-trader
 cd ngv-trader
 ```
 
-Most of the repo's history is committed UI screenshots. If you don't need it,
-`--depth 1` clones ~1.7M instead of ~6.5M:
+UI screenshots live on the separate `media` branch, and older history still
+carries screenshots committed before that. If you need neither, clone just the
+latest `main`:
 
 ```bash
-git clone --depth 1 <repo-url> ngv-trader
+git clone --depth 1 --single-branch <repo-url> ngv-trader
 ```
 
 Unshallow later with `git fetch --unshallow`.
