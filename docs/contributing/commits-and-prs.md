@@ -93,8 +93,7 @@ git -C /tmp/media add -A && git -C /tmp/media commit -m "docs: add <feature> scr
 git -C /tmp/media push origin media && git worktree remove /tmp/media
 ```
 
-`git clone --single-branch` skips the branch. Older screenshots predating this
-rule still sit in `docs/screenshots/` on `main`.
+`git clone --single-branch` skips the branch.
 
 **Extending coverage.** If a changed view reads an endpoint the demo doesn't cover
 yet, add a fixture to `demoData.ts` and a route to `routeGet` (or a write handler) in
