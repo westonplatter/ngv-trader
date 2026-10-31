@@ -17,7 +17,7 @@ import TradebotChat from "./components/TradebotChat";
 import StrategiesPage from "./components/StrategiesPage";
 import TagsPage from "./components/TagsPage";
 import TasksPage from "./components/TasksPage";
-import TradesTable from "./components/TradesTable";
+import TradesPage from "./components/trades/TradesPage";
 import WatchListsPage from "./components/WatchListsPage";
 import WorkerStatusLights from "./components/WorkerStatusLights";
 import { PrivacyProvider } from "./contexts/PrivacyContext";
@@ -114,7 +114,7 @@ function App() {
             }
           />
           <Route path="/orders" element={<OrdersTable />} />
-          <Route path="/trades" element={<TradesTable />} />
+          <Route path="/trades" element={<TradesPage />} />
           <Route path="/strategies" element={<StrategiesPage />} />
           <Route path="/strategies/table" element={<StrategyPnlTable />} />
           <Route path="/tags" element={<TagsPage />} />

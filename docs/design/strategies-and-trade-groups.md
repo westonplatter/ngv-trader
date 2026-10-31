@@ -384,7 +384,7 @@ Typical live workflow:
 1. `src/models.py`
 2. `src/api/routers/trade_groups.py`
 3. `src/api/routers/strategies.py`, `src/api/routers/reports.py`
-4. `frontend/src/components/TradesTable.tsx`
+4. `frontend/src/components/trades/`
 5. `frontend/src/components/positions/`
 6. `frontend/src/components/StrategiesPage.tsx`, `frontend/src/components/StrategyPnlTable.tsx`, `frontend/src/lib/strategyPnl.ts`
 7. `src/services/trade_group_pnl.py` (batched per-group P&L), `src/services/trade_group_instruments.py` (instrument derivation and the pattern filter)

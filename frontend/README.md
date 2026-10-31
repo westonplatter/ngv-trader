@@ -21,7 +21,7 @@ Conventions (layout, data access, state, tests) are in
 | `/accounts` | `FlexQueryTokensTable` + `AccountsTable` | FlexQuery tokens and IBKR account aliases |
 | `/positions` | `positions/PositionsPage` | Current portfolio positions with live overlay |
 | `/orders` | `OrdersTable` | Order tracking |
-| `/trades` | `TradesTable` | Trade history and executions |
+| `/trades` | `trades/TradesPage` | Trade history and executions |
 | `/strategies` | `StrategiesPage` | Strategies and trade groups workspace |
 | `/strategies/table` | `StrategyPnlTable` | Strategy P&L table across trade groups |
 | `/tags` | `TagsPage` | Free-form tags and tag search |
