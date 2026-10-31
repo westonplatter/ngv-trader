@@ -337,7 +337,7 @@ def _exec_roles_by_exec_id(fills: list) -> dict[str, str]:
     fill becomes ``combo_summary`` and its non-BAG siblings become ``leg``;
     everything else stays ``standalone``.
 
-    Mirrors the settled path (``trade_sync_tws._retag_combo_roles``) but computes
+    Mirrors the settled path (``fill_ingest._retag_combo_legs``) but computes
     the roles in-memory over the current batch, keeping the intraday sync
     self-contained and idempotent on ``ib_exec_id``. Like FlexQuery's
     ``_combo_groups``, a group must span at least 2 distinct leg conIds to

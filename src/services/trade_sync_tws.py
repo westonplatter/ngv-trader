@@ -1,8 +1,12 @@
-"""Sync trade executions from IBKR into Postgres.
+"""Sync trade executions from IBKR TWS into Postgres.
 
-Fetches fills via ib_async, upserts into trade_executions with idempotency
-on ib_exec_id, enforces canonical revision flags, resolves parent trades,
-and recomputes trade aggregates from canonical executions.
+Fetches fills via ib_async, normalizes them, and hands them to the shared
+ingest (``src/services/fill_ingest.py``), which resolves parent trades, upserts
+``trade_executions`` (idempotent on ``ib_exec_id``), enforces canonical revision
+flags, and recomputes trade aggregates from canonical executions.
+
+Dormant: not registered with the jobs worker while FlexQuery is the active
+path (see docs/design/workers.md). Kept so re-enabling is a one-line change.
 """
 
 from __future__ import annotations
@@ -12,20 +16,11 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from ib_async import IB, ExecutionFilter
-from sqlalchemy import Engine, inspect, select
-from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy import Engine, inspect
 from sqlalchemy.orm import Session
 
-from src.models import Trade, TradeExecution
-from src.services.sync_common import (
-    _enforce_canonical_flags,
-    _ensure_account,
-    _parse_exec_id,
-    _recompute_trade_aggregates,
-    _safe_float,
-    _safe_int,
-    _safe_str,
-)
+from src.services.fill_ingest import TWS_SOURCE, NormalizedFill, ingest_fills, normalize_side
+from src.services.sync_common import _safe_float, _safe_int, _safe_str
 
 logger = logging.getLogger("trade_sync")
 
@@ -36,15 +31,6 @@ def check_trades_tables_ready(engine: Engine) -> None:
     for required in ("trades", "trade_executions", "accounts"):
         if required not in tables:
             raise RuntimeError(f"'{required}' table does not exist. Run: task migrate")
-
-
-_SIDE_NORMALIZATION = {"BOT": "BUY", "SLD": "SELL"}
-
-
-def _normalize_side(val: str | None) -> str | None:
-    if val is None:
-        return None
-    return _SIDE_NORMALIZATION.get(val, val)
 
 
 def _fill_to_raw(fill: Any) -> dict:
@@ -91,99 +77,69 @@ def _fill_to_raw(fill: Any) -> dict:
     return raw
 
 
-def _resolve_or_create_trade(
-    session: Session,
-    account_id: int,
-    ib_perm_id: int | None,
-    order_ref: str | None,
-    ib_order_id: int | None,
-    symbol: str | None,
-    side: str | None,
-    trade_date: str | None,
-    now: datetime,
-) -> Trade:
-    """Find or create a parent Trade row using the spec's resolution order."""
-    # 1. Match by (account_id, ib_perm_id) when perm_id is meaningful
-    if ib_perm_id is not None and ib_perm_id > 0:
-        stmt = select(Trade).where(
-            Trade.account_id == account_id,
-            Trade.ib_perm_id == ib_perm_id,
-        )
-        existing = session.execute(stmt).scalars().first()
-        if existing is not None:
-            return existing
-        trade = Trade(
-            account_id=account_id,
-            ib_perm_id=ib_perm_id,
-            order_ref=order_ref,
-            ib_order_id=ib_order_id,
-            symbol=symbol,
-            side=side,
-            status="partial",
-            fetched_at=now,
-            created_at=now,
-            updated_at=now,
-        )
-        session.add(trade)
-        session.flush()
-        return trade
+def _fill_exec_time(execution: Any) -> datetime | None:
+    exec_time = getattr(execution, "time", None)
+    if exec_time is None:
+        return None
+    if isinstance(exec_time, str):
+        try:
+            exec_time = datetime.fromisoformat(exec_time)
+        except ValueError:
+            return None
+    if exec_time.tzinfo is None:
+        exec_time = exec_time.replace(tzinfo=timezone.utc)
+    return exec_time
 
-    # 2. Match by (account_id, order_ref) — only when order_ref looks like a
-    #    unique trade identifier (e.g. "ngtrader-order-42", "ngtrader-spread-7").
-    #    Generic IBKR tool refs like "SpreadTrader" are shared across many
-    #    unrelated trades and must NOT be used as a matching key.
-    if order_ref and order_ref.startswith("ngtrader-"):
-        stmt = select(Trade).where(
-            Trade.account_id == account_id,
-            Trade.order_ref == order_ref,
-        )
-        existing = session.execute(stmt).scalars().first()
-        if existing is not None:
-            return existing
-        trade = Trade(
-            account_id=account_id,
-            ib_perm_id=ib_perm_id,
-            order_ref=order_ref,
-            ib_order_id=ib_order_id,
-            symbol=symbol,
-            side=side,
-            status="partial",
-            fetched_at=now,
-            created_at=now,
-            updated_at=now,
-        )
-        session.add(trade)
-        session.flush()
-        return trade
 
-    # 3. Composite fallback: (account_id, ib_order_id, symbol, side, trade_date)
-    stmt = select(Trade).where(
-        Trade.account_id == account_id,
-        Trade.ib_order_id == ib_order_id,
-        Trade.symbol == symbol,
-        Trade.side == side,
-    )
-    candidates = session.execute(stmt).scalars().all()
-    for candidate in candidates:
-        if candidate.first_executed_at is not None:
-            candidate_date = candidate.first_executed_at.strftime("%Y-%m-%d")
-            if candidate_date == trade_date:
-                return candidate
-    trade = Trade(
-        account_id=account_id,
-        ib_perm_id=ib_perm_id,
-        order_ref=order_ref,
-        ib_order_id=ib_order_id,
-        symbol=symbol,
-        side=side,
-        status="partial",
-        fetched_at=now,
-        created_at=now,
-        updated_at=now,
-    )
-    session.add(trade)
-    session.flush()
-    return trade
+def tws_fills_to_fills(fills: list[Any], window_start: datetime) -> list[NormalizedFill]:
+    """Normalize ``ib.fills()`` into fills for the shared ingest.
+
+    Skips fills with no execution, exec id, timestamp, or account, and fills
+    older than ``window_start``. A ``BAG`` fill is the spread's own summary; its
+    legs arrive as plain fills under the same permId and are re-tagged by the
+    ingest once the summary is on the trade.
+    """
+    normalized: list[NormalizedFill] = []
+    for fill in fills:
+        execution = getattr(fill, "execution", None)
+        if execution is None:
+            continue
+        exec_id = getattr(execution, "execId", None)
+        if not exec_id:
+            continue
+        exec_time = _fill_exec_time(execution)
+        if exec_time is None or exec_time < window_start:
+            continue
+        account_code = str(getattr(execution, "acctNumber", "") or "").strip()
+        if not account_code:
+            continue
+
+        contract = getattr(fill, "contract", None)
+        sec_type = _safe_str(getattr(contract, "secType", None)) if contract else None
+        comm_report = getattr(fill, "commissionReport", None)
+        normalized.append(
+            NormalizedFill(
+                account_code=account_code,
+                ib_exec_id=exec_id,
+                executed_at=exec_time,
+                quantity=_safe_float(getattr(execution, "shares", None)) or 0.0,
+                price=_safe_float(getattr(execution, "price", None)) or 0.0,
+                side=normalize_side(_safe_str(getattr(execution, "side", None))),
+                symbol=_safe_str(getattr(contract, "symbol", None)) if contract else None,
+                sec_type=sec_type,
+                con_id=_safe_int(getattr(contract, "conId", None)) if contract else None,
+                exchange=_safe_str(getattr(execution, "exchange", None)),
+                currency=_safe_str(getattr(contract, "currency", None)) if contract else None,
+                commission=_safe_float(getattr(comm_report, "commission", None)) if comm_report else None,
+                raw=_fill_to_raw(fill),
+                ib_perm_id=_safe_int(getattr(execution, "permId", None)),
+                ib_order_id=_safe_int(getattr(execution, "orderId", None)),
+                order_ref=_safe_str(getattr(execution, "orderRef", None)),
+                liquidity=_safe_str(getattr(execution, "liquidation", None)),
+                is_combo_summary=sec_type == "BAG",
+            )
+        )
+    return normalized
 
 
 def sync_trades_once(
@@ -234,193 +190,16 @@ def sync_trades_with_ib(
     fills = ib.fills()
     logger.info("Fetched %d fills from TWS (lookback=%d days)", len(fills), lookback_days)
 
-    inserted_count = 0
-    updated_count = 0
-    canonical_changes = 0
-    touched_trade_ids: set[int] = set()
-    affected_bases: list[tuple[int, str]] = []
-
     with Session(engine) as session:
-        for fill in fills:
-            execution = getattr(fill, "execution", None)
-            if execution is None:
-                continue
-
-            exec_id = getattr(execution, "execId", None)
-            if not exec_id:
-                continue
-
-            # Parse execution time
-            exec_time = getattr(execution, "time", None)
-            if exec_time is None:
-                continue
-            if isinstance(exec_time, str):
-                try:
-                    exec_time = datetime.fromisoformat(exec_time)
-                except ValueError:
-                    continue
-            if exec_time.tzinfo is None:
-                exec_time = exec_time.replace(tzinfo=timezone.utc)
-
-            # Skip fills outside lookback window
-            if exec_time < window_start:
-                continue
-
-            # Resolve account
-            account_code = str(getattr(execution, "acctNumber", "") or "").strip()
-            if not account_code:
-                continue
-            account = _ensure_account(session, account_code)
-
-            # Parse exec ID into base + revision
-            exec_id_base, exec_revision = _parse_exec_id(exec_id)
-
-            # Extract execution fields
-            ib_perm_id = _safe_int(getattr(execution, "permId", None))
-            ib_order_id = _safe_int(getattr(execution, "orderId", None))
-            order_ref = _safe_str(getattr(execution, "orderRef", None))
-            quantity = _safe_float(getattr(execution, "shares", None)) or 0.0
-            price = _safe_float(getattr(execution, "price", None)) or 0.0
-            side = _normalize_side(_safe_str(getattr(execution, "side", None)))
-            exchange = _safe_str(getattr(execution, "exchange", None))
-
-            # Contract info
-            contract = getattr(fill, "contract", None)
-            symbol = _safe_str(getattr(contract, "symbol", None)) if contract else None
-            sec_type = _safe_str(getattr(contract, "secType", None)) if contract else None
-            currency = _safe_str(getattr(contract, "currency", None)) if contract else None
-
-            # Commission
-            comm_report = getattr(fill, "commissionReport", None)
-            commission = _safe_float(getattr(comm_report, "commission", None)) if comm_report else None
-            liquidity = _safe_str(getattr(execution, "liquidation", None))
-
-            # Trade date for composite fallback
-            trade_date = exec_time.strftime("%Y-%m-%d")
-
-            # Resolve parent trade
-            trade = _resolve_or_create_trade(
-                session=session,
-                account_id=account.id,
-                ib_perm_id=ib_perm_id,
-                order_ref=order_ref,
-                ib_order_id=ib_order_id,
-                symbol=symbol,
-                side=side,
-                trade_date=trade_date,
-                now=now,
-            )
-            # Backfill symbol/sec_type on trade if missing
-            if trade.symbol is None and symbol:
-                trade.symbol = symbol
-            if trade.sec_type is None and sec_type:
-                trade.sec_type = sec_type
-            if trade.exchange is None and exchange:
-                trade.exchange = exchange
-            if trade.currency is None and currency:
-                trade.currency = currency
-
-            raw = _fill_to_raw(fill)
-
-            # Determine exec_role from contract secType.
-            # BAG = combo summary fill; others start as standalone
-            # and get re-tagged to "leg" after all fills are processed.
-            exec_sec_type = sec_type  # already extracted above
-            con_id = _safe_int(getattr(contract, "conId", None)) if contract else None
-            if exec_sec_type == "BAG":
-                exec_role = "combo_summary"
-            else:
-                exec_role = "standalone"
-
-            # Upsert execution (idempotent on ib_exec_id)
-            stmt = (
-                insert(TradeExecution)
-                .values(
-                    trade_id=trade.id,
-                    account_id=account.id,
-                    ib_exec_id=exec_id,
-                    exec_id_base=exec_id_base,
-                    exec_revision=exec_revision,
-                    ib_perm_id=ib_perm_id,
-                    ib_order_id=ib_order_id,
-                    order_ref=order_ref,
-                    sec_type=exec_sec_type,
-                    con_id=con_id,
-                    exec_role=exec_role,
-                    executed_at=exec_time,
-                    quantity=quantity,
-                    price=price,
-                    side=side,
-                    exchange=exchange,
-                    currency=currency,
-                    liquidity=liquidity,
-                    commission=commission,
-                    is_canonical=True,  # will be corrected below
-                    raw=raw,
-                    fetched_at=now,
-                    created_at=now,
-                    updated_at=now,
-                )
-                .on_conflict_do_update(
-                    index_elements=["ib_exec_id"],
-                    set_={
-                        "trade_id": trade.id,
-                        "quantity": quantity,
-                        "price": price,
-                        "commission": commission,
-                        "sec_type": exec_sec_type,
-                        "con_id": con_id,
-                        "exec_role": exec_role,
-                        "raw": raw,
-                        "fetched_at": now,
-                        "updated_at": now,
-                    },
-                )
-            )
-            result = session.execute(stmt)
-            # xmax == 0 means a fresh insert in PostgreSQL
-            result_rowcount = getattr(result, "rowcount", None)
-            if hasattr(result, "returned_defaults") or result_rowcount == 1:
-                # Check if this was an insert or update by looking at returning
-                # We track both — the canonical enforcement pass handles correctness
-                inserted_count += 1
-
-            affected_bases.append((account.id, exec_id_base))
-            touched_trade_ids.add(trade.id)
-
-        # Enforce canonical flags for all affected exec_id_bases
-        for acct_id, base in affected_bases:
-            changes = _enforce_canonical_flags(session, acct_id, base)
-            canonical_changes += changes
-
-        # Re-tag exec_role: for each touched trade, if any execution is
-        # combo_summary (secType=BAG), mark sibling standalones as "leg".
-        # Also ensure trades.sec_type = 'BAG' for combo trades.
-        for trade_id in touched_trade_ids:
-            execs_stmt = select(TradeExecution).where(TradeExecution.trade_id == trade_id)
-            trade_execs = session.execute(execs_stmt).scalars().all()
-            has_combo = any(ex.exec_role == "combo_summary" for ex in trade_execs)
-            if has_combo:
-                parent_trade = session.get(Trade, trade_id)
-                if parent_trade and parent_trade.sec_type != "BAG":
-                    parent_trade.sec_type = "BAG"
-                for ex in trade_execs:
-                    if ex.exec_role == "standalone":
-                        ex.exec_role = "leg"
-                session.flush()
-
-        # Recompute aggregates for all touched parent trades
-        for trade_id in touched_trade_ids:
-            _recompute_trade_aggregates(session, trade_id, now)
-
+        result = ingest_fills(session, tws_fills_to_fills(fills, window_start), source=TWS_SOURCE, now=now)
         session.commit()
 
     return {
         "fetched_executions_count": len(fills),
-        "inserted_executions_count": inserted_count,
-        "updated_executions_count": updated_count,
-        "canonical_changes_count": canonical_changes,
-        "touched_trades_count": len(touched_trade_ids),
+        "inserted_executions_count": result.inserted,
+        "updated_executions_count": result.updated,
+        "canonical_changes_count": result.canonical_changes,
+        "touched_trades_count": len(result.touched_trade_ids),
         "window_start": window_start.isoformat(),
         "window_end": now.isoformat(),
     }

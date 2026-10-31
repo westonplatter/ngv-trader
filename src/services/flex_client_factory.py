@@ -10,7 +10,14 @@ Retry delays additionally scale with the width of the requested window — see
 
 from __future__ import annotations
 
-from ngv_reports_ibkr.flex_client import FlexClient
+from datetime import date
+
+from ngv_reports_ibkr.flex_client import DateRange, FlexClient
+
+
+class FlexTokenExpiredError(RuntimeError):
+    """Raised when the FlexQuery token is expired or invalid."""
+
 
 # Windows this wide or narrower need no extra patience — IBKR builds them quickly.
 SHORT_RANGE_DAYS = 7
@@ -82,3 +89,20 @@ def make_flex_client(span_days: int | None = None, max_retries: int = 10) -> Fle
         max_retry_delay=MAX_RETRY_DELAY_SECONDS * scale,
         statement_poll_delay=STATEMENT_POLL_DELAY_SECONDS * scale,
     )
+
+
+def fetch_flex_xml(token: str, query_id: str, start_date: date, end_date: date) -> str:
+    """Fetch one report's XML with a client tuned to the window's width.
+
+    IBKR rejects an expired or invalid token with a message, not a status, so
+    the message is matched and surfaced as :class:`FlexTokenExpiredError`.
+    """
+    client = make_flex_client(span_days=(end_date - start_date).days)
+    date_range = DateRange(from_date=start_date, to_date=end_date)
+    try:
+        return client.fetch_flex_report(token=token, query_id=query_id, date_range=date_range)
+    except Exception as exc:  # noqa: BLE001 — surface as typed error
+        message = str(exc).lower()
+        if "expired" in message or "invalid" in message or "token" in message:
+            raise FlexTokenExpiredError(f"FlexQuery token rejected: {exc}") from exc
+        raise
