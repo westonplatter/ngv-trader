@@ -14,26 +14,25 @@ from sqlalchemy import func, or_, select, tuple_
 from sqlalchemy.orm import Session
 
 from src.api.deps import get_db
-from src.api.routers.tags import ItemRefBody, TagChip, resolve_items, resolve_tags, validate_created_by
-from src.models import LiveExecution, LivePosition, Position, Tag, TagLink, Task, TaskLink, Trade
+from src.api.schemas import ItemRefBody, TagChip
+from src.models import TASK_ENTITY_TYPES, TASK_STATUSES, LiveExecution, LivePosition, Position, Tag, TagLink, Task, TaskLink, Trade
 from src.services.item_links import (
-    TASK_ENTITY_TYPES,
     ItemRef,
     attach_tag,
     attach_task,
     describe_items,
     detach_task,
+    expand_items,
     item_key,
     link_item,
     normalize_tag_value,
     now_utc,
     tags_by_item,
 )
+from src.services.tags import resolve_tags, validate_created_by
 
 router = APIRouter()
 DB_SESSION_DEPENDENCY = Depends(get_db)
-
-TASK_STATUSES = ("todo", "in_progress", "done")
 
 
 class TaskLinkResponse(BaseModel):
@@ -204,7 +203,7 @@ def create_task(body: TaskCreateRequest, db: Session = DB_SESSION_DEPENDENCY):
     title = body.title.strip()
     if not title:
         raise HTTPException(status_code=400, detail="title cannot be empty")
-    items = resolve_items(db, body.links, TASK_ENTITY_TYPES) if body.links else []
+    items = _items(db, body.links) if body.links else []
     # Resolve tags before writing anything: an unknown id is a 404, not an FK error at commit.
     tags = resolve_tags(db, body.tags, created_by, create=True) if body.tags else []
     now = now_utc()
@@ -254,7 +253,7 @@ def link_task(task_id: int, body: TaskLinksRequest, db: Session = DB_SESSION_DEP
     """Link items to a task. A live fill fans out to every live fill of its order."""
     task = _ensure_task(db, task_id)
     created_by = validate_created_by(body.created_by)
-    for item in resolve_items(db, body.items, TASK_ENTITY_TYPES):
+    for item in _items(db, body.items):
         attach_task(db, task.id, item, created_by)
         db.flush()
     task.updated_at = now_utc()
@@ -272,13 +271,18 @@ def unlink_task(task_id: int, body: TaskLinksRequest, db: Session = DB_SESSION_D
     return _responses(db, [task])[0]
 
 
+def _items(db: Session, items: list[ItemRefBody]) -> list[ItemRef]:
+    """Validate items and fan a live fill out to its whole order (400 / 404 on a bad item)."""
+    return expand_items(db, [item.ref() for item in items], TASK_ENTITY_TYPES)
+
+
 def _unlink_items(db: Session, items: list[ItemRefBody]) -> list[ItemRef]:
-    """Like ``resolve_items``, but a deleted item can still be unlinked by its key."""
+    """Like ``_items``, but a deleted item can still be unlinked by its key."""
     out = []
     for body in items:
         ref = body.ref()
         if ref.entity_type == "live_execution" and db.execute(select(LiveExecution.id).where(LiveExecution.ib_exec_id == ref.ib_exec_id)).first():
-            out += resolve_items(db, [body], TASK_ENTITY_TYPES)
+            out += _items(db, [body])
         else:
             out.append(ref)
     return out

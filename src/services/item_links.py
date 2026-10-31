@@ -38,6 +38,7 @@ from src.models import (
     TradeExecution,
     TradeGroup,
 )
+from src.services.errors import NotFoundError, ServiceError
 from src.services.intraday_overlay import ct_date
 
 # Typed key columns per entity type. A live fill also carries account_id/con_id.
@@ -49,14 +50,15 @@ ENTITY_KEYS: dict[str, tuple[str, ...]] = {
     "position": ("account_id", "con_id"),
     "live_execution": ("ib_exec_id",),
 }
-TAG_ENTITY_TYPES = ("trade", "live_execution", "position", "trade_group", "task")
-TASK_ENTITY_TYPES = ("strategy", "trade_group", "position", "trade", "live_execution")
-
 LinkModel = type[TagLink] | type[TaskLink]
 
 
-class ItemError(ValueError):
-    """An item reference that is malformed or names a missing item."""
+class ItemError(ServiceError):
+    """An item reference that is malformed."""
+
+
+class ItemNotFound(ItemError, NotFoundError):
+    """A well-formed item reference that names a missing item."""
 
 
 def now_utc() -> datetime:
@@ -87,13 +89,13 @@ class ItemRef:
         return {ENTITY_KEYS[self.entity_type][0]: self.id}
 
 
-def _require(condition: bool, message: str) -> None:
+def _require(condition: bool, message: str, error: type[ItemError] = ItemError) -> None:
     if not condition:
-        raise ItemError(message)
+        raise error(message)
 
 
 def resolve_item(session: Session, ref: ItemRef, allowed: Iterable[str]) -> ItemRef:
-    """Validate a reference and fill denormalized fields; raises ``ItemError``."""
+    """Validate a reference and fill denormalized fields; raises ``ItemError`` / ``ItemNotFound``."""
     _require(ref.entity_type in allowed, f"entity_type must be one of {', '.join(allowed)}")
     if ref.entity_type == "position":
         _require(ref.account_id is not None and ref.con_id is not None, "a position needs account_id and con_id")
@@ -101,12 +103,12 @@ def resolve_item(session: Session, ref: ItemRef, allowed: Iterable[str]) -> Item
     if ref.entity_type == "live_execution":
         _require(bool(ref.ib_exec_id), "a live_execution needs ib_exec_id")
         live = session.execute(select(LiveExecution).where(LiveExecution.ib_exec_id == ref.ib_exec_id)).scalar_one_or_none()
-        _require(live is not None, f"live execution {ref.ib_exec_id} not found")
+        _require(live is not None, f"live execution {ref.ib_exec_id} not found", ItemNotFound)
         assert live is not None
         return ItemRef("live_execution", account_id=live.account_id, con_id=live.con_id, ib_exec_id=live.ib_exec_id)
     _require(ref.id is not None, f"a {ref.entity_type} needs id")
     model = {"trade": Trade, "trade_group": TradeGroup, "task": Task, "strategy": Strategy}[ref.entity_type]
-    _require(session.get(model, ref.id) is not None, f"{ref.entity_type} {ref.id} not found")
+    _require(session.get(model, ref.id) is not None, f"{ref.entity_type} {ref.id} not found", ItemNotFound)
     return ItemRef(ref.entity_type, id=ref.id)
 
 

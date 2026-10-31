@@ -3,6 +3,7 @@ topics: ["tags", "tasks", "positions", "trades", "agent-tools", "frontend"]
 code_dirs_or_files:
   [
     "src/services/item_links.py",
+    "src/services/tags.py",
     "src/api/routers/tags.py",
     "src/api/routers/tasks.py",
     "src/services/group_link_carryover.py",
@@ -90,7 +91,11 @@ All in `src/services/item_links.py`.
 
 ## API
 
-Routers `src/api/routers/tags.py` and `src/api/routers/tasks.py`.
+Routers `src/api/routers/tags.py` and `src/api/routers/tasks.py`. The catalog
+logic they share (`created_by` validation, name → tag resolution) is
+`src/services/tags.py`; shared request/response models are `src/api/schemas.py`.
+Services raise `ServiceError` / `NotFoundError` (`src/services/errors.py`), which
+the app answers with 400 / 404.
 
 | Endpoint                                                                     | Notes                                                             |
 | ---------------------------------------------------------------------------- | ----------------------------------------------------------------- |
