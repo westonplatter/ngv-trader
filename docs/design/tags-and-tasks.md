@@ -161,13 +161,6 @@ Not done yet; noted while building and testing this feature.
 
 ### Found while building
 
-- **Semantic-layer naming clash.** The semantic model's `tag` dimension
-  (`osi/ngv_semantic_model.yaml`) is the _trade group name_, and the MCP
-  `find_trade_groups` / `trade_group_pnl` docs tell agents to filter
-  `query_metric` by `tag`. Next to the new `find_by_tags` tool an agent can mix
-  them up. Candidate fix: rename the dimension to `trade_group` (touches the
-  YAML, tool docstrings, the tradebot prompt, and the semantic docs). Left as is
-  here on purpose.
 - **Flat accounts keep stale rows.** The Flex position sync returns early when
   an account's report has no positions, so it never deletes that account's
   `positions` rows; the intraday sync only replaces `live_positions` for
