@@ -12,8 +12,7 @@
 
 - **Positions & live P&L** — Track positions across accounts with unrealized P&L, plus a live intraday TWS overlay showing current marks.
 
-
-![Trades page showing executions with their trade-group tags, sync controls, and a contract-scoped filter](docs/screenshots/trades-trade-group-detail-link.png)
+![Trades page showing executions with their trade-group tags, sync controls, and a contract-scoped filter](https://raw.githubusercontent.com/westonplatter/ngv-trader/media/screenshots/trades/trades-trade-group-detail-link.png)
 
 ## Getting Started
 
