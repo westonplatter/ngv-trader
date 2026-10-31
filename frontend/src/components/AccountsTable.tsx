@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { request } from "../lib/api";
+import { api, errorMessage } from "../lib/api";
 import type { Account } from "../types/accounts";
 
 function CopyIcon() {
@@ -101,9 +101,10 @@ export default function AccountsTable() {
   };
 
   function fetchAccounts() {
-    request<Account[]>("GET", "/accounts")
+    api
+      .get<Account[]>("/accounts")
       .then(setAccounts)
-      .catch((err) => setError(err.message))
+      .catch((err: unknown) => setError(errorMessage(err, "Load failed")))
       .finally(() => setLoading(false));
   }
 
@@ -124,7 +125,8 @@ export default function AccountsTable() {
   function saveAlias(id: number) {
     setSaving(true);
     const alias = editValue.trim() || null;
-    request<Account>("PATCH", `/accounts/${id}`, { alias })
+    api
+      .patch<Account>(`/accounts/${id}`, { alias })
       .then((updated) => {
         setAccounts((prev) =>
           prev.map((a) => (a.id === updated.id ? updated : a)),
@@ -132,7 +134,7 @@ export default function AccountsTable() {
         setEditingId(null);
         setEditValue("");
       })
-      .catch((err) => setError(err.message))
+      .catch((err: unknown) => setError(errorMessage(err, "Save failed")))
       .finally(() => setSaving(false));
   }
 

@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { request } from "../lib/api";
+import { useCallback, useEffect, useState } from "react";
+import { api, errorMessage } from "../lib/api";
 import type { Job } from "../types/jobs";
-import { useSSE, type ConnectionStatus } from "../lib/events";
+import { useSseList } from "../hooks/useSseList";
 
 const STATUS_CLASS: Record<string, string> = {
   queued: "text-yellow-700 bg-yellow-100",
@@ -9,6 +9,8 @@ const STATUS_CLASS: Record<string, string> = {
   completed: "text-green-700 bg-green-100",
   failed: "text-red-700 bg-red-100",
 };
+
+const JOB_REMOVE_EVENTS = ["job.archived"] as const;
 
 const MARKET_DATA_JOB_TYPES = [
   "contracts.chain_sync",
@@ -84,15 +86,8 @@ const PRESETS: JobPreset[] = [
   },
 ];
 
-interface PendingFilterJob {
-  preset: JobPreset;
-  futPrice: number | null;
-  filterConfig: Record<string, unknown>;
-  payload: Record<string, unknown>;
-}
-
-// GET /futures/{symbol}/option-filter: the strike/DTE window the backend
-// derives from the current futures price plus the configured filter.
+// `GET /futures/:symbol/option-filter`: the computed strike/DTE bounds for a
+// chain sync, plus the config they came from.
 interface OptionFilterResponse {
   fut_price: number | null;
   filter_config: Record<string, unknown>;
@@ -101,6 +96,13 @@ interface OptionFilterResponse {
     strike_lte: number | null;
     dte_lte: number | null;
   };
+}
+
+interface PendingFilterJob {
+  preset: JobPreset;
+  futPrice: number | null;
+  filterConfig: Record<string, unknown>;
+  payload: Record<string, unknown>;
 }
 
 function formatAge(isoStr: string): string {
@@ -158,7 +160,6 @@ function StepperField({
 }
 
 export default function MarketDataPage() {
-  const [jobs, setJobs] = useState<Job[]>([]);
   const [products, setProducts] = useState<ActivatedProduct[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState<string | null>(null);
@@ -177,65 +178,62 @@ export default function MarketDataPage() {
   const [dteLte, setDteLte] = useState<number | null>(null);
   const [modulus, setModulus] = useState<number | null>(null);
 
-  const prevStatusRef = useRef<ConnectionStatus | null>(null);
-
-  const loadJobs = useCallback(() => {
-    request<Job[]>("GET", "/jobs?include_archived=false")
-      .then((rows) => {
-        setJobs(rows.filter((j) => MARKET_DATA_JOB_TYPES.includes(j.job_type)));
-        setError(null);
-      })
-      .catch((err: Error) => setError(err.message));
-  }, []);
+  const loadMarketDataJobs = useCallback(
+    () =>
+      api
+        .get<Job[]>("/jobs?include_archived=false")
+        .then((rows) =>
+          rows.filter((j) => MARKET_DATA_JOB_TYPES.includes(j.job_type)),
+        ),
+    [],
+  );
 
   const loadProducts = useCallback(() => {
-    request<ActivatedProduct[]>("GET", "/activated-products")
+    api
+      .get<ActivatedProduct[]>("/activated-products")
       .then((rows) => setProducts(rows))
-      .catch((err: Error) => setError(err.message));
+      .catch((err: unknown) => setError(errorMessage(err, "Load failed")));
   }, []);
 
   // Initial fetch on mount.
   useEffect(() => {
-    loadJobs();
     loadProducts();
-  }, [loadJobs, loadProducts]);
+  }, [loadProducts]);
 
-  // Merge SSE job events (only for market-data job types).
-  const handleJobEvent = useCallback(
-    (payload: Job, eventType: string) => {
-      if (!MARKET_DATA_JOB_TYPES.includes(payload.job_type)) return;
+  const acceptMarketDataJob = useCallback(
+    (payload: Job) => MARKET_DATA_JOB_TYPES.includes(payload.job_type),
+    [],
+  );
+
+  // A finished activated-products sync changes the products table too.
+  const onJobEvent = useCallback(
+    (payload: Job) => {
       if (
         payload.job_type === "contracts.sync_activated" &&
         payload.status === "completed"
       ) {
         loadProducts();
       }
-      if (eventType === "job.archived") {
-        setJobs((prev) => prev.filter((j) => j.id !== payload.id));
-        return;
-      }
-      setJobs((prev) => {
-        const idx = prev.findIndex((j) => j.id === payload.id);
-        if (idx >= 0) {
-          const next = [...prev];
-          next[idx] = payload;
-          return next;
-        }
-        return [payload, ...prev];
-      });
     },
     [loadProducts],
   );
 
-  const sseStatus = useSSE<Job>("jobs", handleJobEvent);
+  const jobKey = useCallback((job: Job) => job.id, []);
 
-  // Re-fetch REST snapshot on reconnect.
-  useEffect(() => {
-    if (prevStatusRef.current === "disconnected" && sseStatus === "connected") {
-      loadJobs();
-    }
-    prevStatusRef.current = sseStatus;
-  }, [sseStatus, loadJobs]);
+  const {
+    items: jobs,
+    error: listError,
+    reload: loadJobs,
+  } = useSseList<Job>({
+    topic: "jobs",
+    load: loadMarketDataJobs,
+    key: jobKey,
+    accept: acceptMarketDataJob,
+    removeOn: JOB_REMOVE_EVENTS,
+    onEvent: onJobEvent,
+  });
+
+  const shownError = error ?? listError;
 
   const enqueueJob = async (
     jobType: string,
@@ -245,7 +243,7 @@ export default function MarketDataPage() {
     setSubmitting(key);
     setMessage(null);
     try {
-      const job = await request<Job>("POST", "/jobs", {
+      const job = await api.post<Job>("/jobs", {
         job_type: jobType,
         payload,
         source: "ui",
@@ -263,7 +261,7 @@ export default function MarketDataPage() {
     setSubmitting(`rerun-${jobId}`);
     setMessage(null);
     try {
-      const job = await request<Job>("POST", `/jobs/${jobId}/rerun`);
+      const job = await api.post<Job>(`/jobs/${jobId}/rerun`);
       setMessage(`Job #${job.id} enqueued (rerun of #${jobId})`);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : String(err));
@@ -275,7 +273,7 @@ export default function MarketDataPage() {
   const archiveJob = async (jobId: number) => {
     setSubmitting(`archive-${jobId}`);
     try {
-      await request("POST", `/jobs/${jobId}/archive`);
+      await api.post(`/jobs/${jobId}/archive`);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -289,10 +287,8 @@ export default function MarketDataPage() {
       try {
         setSubmitting(preset.label);
         setError(null);
-        const filter = await request<OptionFilterResponse>(
-          "GET",
+        const filter = await api.get<OptionFilterResponse>(
           `/futures/${symbol}/option-filter`,
-          undefined,
           { fallback: "Filter fetch failed" },
         );
         const payload: Record<string, unknown> = { ...preset.payload };
@@ -353,9 +349,9 @@ export default function MarketDataPage() {
     <div className="mx-auto max-w-5xl space-y-6">
       <h1 className="text-lg font-bold text-gray-900">Market Data</h1>
 
-      {error && (
+      {shownError && (
         <div className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-          {error}
+          {shownError}
           <button
             onClick={() => setError(null)}
             className="ml-2 text-xs underline"

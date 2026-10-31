@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { request } from "../lib/api";
-import { useSSE, type ConnectionStatus } from "../lib/events";
+import { useCallback, useMemo } from "react";
+import { useSseList } from "../hooks/useSseList";
+import { api } from "../lib/api";
 
 type LightColor = "green" | "yellow" | "red";
 
@@ -39,49 +39,29 @@ function formatAge(seconds: number | null): string {
 }
 
 export default function WorkerStatusLights() {
-  const [statusMap, setStatusMap] = useState<Record<string, WorkerStatus>>({});
-  const prevStatusRef = useRef<ConnectionStatus | null>(null);
+  // On a failed load every known worker shows the red fallback.
+  const loadStatuses = useCallback(
+    () =>
+      api
+        .get<WorkerStatus[]>("/workers/status")
+        .catch(() => KNOWN_WORKERS.map(fallbackStatus)),
+    [],
+  );
 
-  const loadStatuses = useCallback(() => {
-    request<WorkerStatus[]>("GET", "/workers/status")
-      .then((rows) => {
-        const next: Record<string, WorkerStatus> = {};
-        rows.forEach((row) => {
-          next[row.worker_type] = row;
-        });
-        setStatusMap(next);
-      })
-      .catch(() => {
-        const next: Record<string, WorkerStatus> = {};
-        KNOWN_WORKERS.forEach((workerType) => {
-          next[workerType] = fallbackStatus(workerType);
-        });
-        setStatusMap(next);
-      });
-  }, []);
+  // Snapshot on mount, upsert heartbeats from the stream, re-fetch on reconnect.
+  const { items } = useSseList<WorkerStatus>({
+    topic: "worker_status",
+    load: loadStatuses,
+    key: (row) => row.worker_type,
+  });
 
-  // Initial fetch on mount.
-  useEffect(() => {
-    loadStatuses();
-  }, [loadStatuses]);
-
-  // Merge SSE worker heartbeat events.
-  const handleWorkerEvent = useCallback((payload: WorkerStatus) => {
-    setStatusMap((prev) => ({
-      ...prev,
-      [payload.worker_type]: payload,
-    }));
-  }, []);
-
-  const sseStatus = useSSE<WorkerStatus>("worker_status", handleWorkerEvent);
-
-  // Re-fetch on reconnect.
-  useEffect(() => {
-    if (prevStatusRef.current === "disconnected" && sseStatus === "connected") {
-      loadStatuses();
-    }
-    prevStatusRef.current = sseStatus;
-  }, [sseStatus, loadStatuses]);
+  const statusMap = useMemo(() => {
+    const next: Record<string, WorkerStatus> = {};
+    items.forEach((row) => {
+      next[row.worker_type] = row;
+    });
+    return next;
+  }, [items]);
 
   return (
     <div className="ml-auto flex items-center gap-4">

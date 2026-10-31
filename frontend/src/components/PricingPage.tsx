@@ -1,8 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Plot from "react-plotly.js";
-import { request } from "../lib/api";
-import type { Job } from "../types/jobs";
-import { useSSE, type ConnectionStatus } from "../lib/events";
+import { api, errorMessage } from "../lib/api";
+import { useJobWatcher, type WatchedJob } from "../hooks/useJobWatcher";
 import ComboboxInput, { type ComboboxOption } from "./ComboboxInput";
 
 const PRICING_API_BASE = "/pricing-api";
@@ -118,6 +117,55 @@ interface ModelOutputs {
 interface ExpectedPnlResponse {
   model_inputs: Record<string, unknown>;
   model_outputs: ModelOutputs;
+}
+
+// Fold a finished price-fetch job into the leg that asked for it. A completed
+// snapshot fills the quote fields; a failed job marks the leg.
+function applyPriceJobResult(
+  prev: LegRow[],
+  legId: string,
+  job: WatchedJob,
+): LegRow[] {
+  const legIdx = prev.findIndex((l) => l.id === legId);
+  if (legIdx === -1) return prev;
+  const leg = prev[legIdx];
+  const next = [...prev];
+  if (job.status === "completed") {
+    const result = job.result;
+    const snapshot = (result?.snapshot as Record<string, unknown>) ?? {};
+    const results = Array.isArray(result?.results)
+      ? (result.results as Array<Record<string, unknown>>)
+      : ((snapshot?.results as Array<Record<string, unknown>>) ?? []);
+    const priceData = results[0];
+    next[legIdx] = {
+      ...leg,
+      fetchStatus: "done",
+      selectedConId:
+        priceData?.con_id != null
+          ? Number(priceData.con_id)
+          : leg.selectedConId,
+      bid: priceData?.bid != null ? Number(priceData.bid) : leg.bid,
+      ask: priceData?.ask != null ? Number(priceData.ask) : leg.ask,
+      ivstart: priceData?.iv != null ? Number(priceData.iv) : leg.ivstart,
+      undPrice:
+        priceData?.und_price != null
+          ? Number(priceData.und_price)
+          : leg.undPrice,
+      volume: priceData?.volume != null ? Number(priceData.volume) : leg.volume,
+      openInterest:
+        priceData?.open_interest != null
+          ? Number(priceData.open_interest)
+          : leg.openInterest,
+      tradePrice:
+        priceData?.bid != null && priceData?.ask != null
+          ? (Number(priceData.bid) + Number(priceData.ask)) / 2
+          : leg.tradePrice,
+      observedAt: new Date().toISOString(),
+    };
+  } else if (job.status === "failed") {
+    next[legIdx] = { ...leg, fetchStatus: "error" };
+  }
+  return next;
 }
 
 type SidebarActionStatus = "idle" | "pending" | "success" | "error";
@@ -243,10 +291,10 @@ export default function PricingPage() {
 
   // --- Fetch term structure on instrument change ---
   useEffect(() => {
-    request<FuturesContract[]>(
-      "GET",
-      `/futures/${instrument}/term-structure?front_n=12`,
-    )
+    api
+      .get<FuturesContract[]>(
+        `/futures/${instrument}/term-structure?front_n=12`,
+      )
       .then((data) => {
         setFuturesContracts(data);
         if (data.length > 0) {
@@ -256,23 +304,25 @@ export default function PricingPage() {
           setSpotMax((price * 1.2).toFixed(2));
         }
       })
-      .catch((err) => setError(err.message))
+      .catch((err) => setError(errorMessage(err, "Load failed")))
       .finally(() => setFuturesLoading(false));
   }, [instrument]);
 
   // --- Fetch option chain catalog ---
   useEffect(() => {
-    request<ChainEntry[]>("GET", `/futures/${instrument}/chain`)
+    api
+      .get<ChainEntry[]>(`/futures/${instrument}/chain`)
       .then((data) => setAvailableOptions(data))
-      .catch((err) => setError(err.message))
+      .catch((err) => setError(errorMessage(err, "Load failed")))
       .finally(() => setOptionsLoading(false));
   }, [instrument]);
 
   // --- Fetch saved structures ---
   const fetchSavedStructures = useCallback(() => {
-    request<SavedStructure[]>("GET", "/structures")
+    api
+      .get<SavedStructure[]>("/structures")
       .then((data) => setSavedStructures(data))
-      .catch((err) => setError(err.message));
+      .catch((err) => setError(errorMessage(err, "Load failed")));
   }, []);
 
   useEffect(() => {
@@ -351,7 +401,7 @@ export default function PricingPage() {
     setSaveStatus("pending");
     setSaveFeedback(null);
     try {
-      await request("PUT", `/structures/${loadedStructureId}`, {
+      await api.put(`/structures/${loadedStructureId}`, {
         name:
           savedStructures.find((s) => s.id === loadedStructureId)?.name ?? "",
         instrument,
@@ -383,7 +433,7 @@ export default function PricingPage() {
     setSaveFeedback(null);
     const spot = parseFloat(spotPrice);
     try {
-      const created = await request<SavedStructure>("POST", "/structures", {
+      const created = await api.post<SavedStructure>("/structures", {
         name,
         instrument,
         legs: legsToSaved(legs),
@@ -391,26 +441,15 @@ export default function PricingPage() {
       });
       setLoadedStructureId(created.id);
       fetchSavedStructures();
-    } catch (err) {
-      setSaveStatus("error");
-      setSaveFeedback(
-        `Save failed: ${err instanceof Error ? err.message : String(err)}`,
-      );
+    } catch {
+      // a failed save-as leaves the sidebar untouched
     }
   }, [instrument, legs, spotPrice, fetchSavedStructures]);
 
   const handleDeleteStructure = useCallback(async () => {
     if (loadedStructureId == null) return;
     if (!window.confirm("Delete this saved structure?")) return;
-    try {
-      await request("DELETE", `/structures/${loadedStructureId}`);
-    } catch (err) {
-      setSaveStatus("error");
-      setSaveFeedback(
-        `Delete failed: ${err instanceof Error ? err.message : String(err)}`,
-      );
-      return;
-    }
+    await api.delete(`/structures/${loadedStructureId}`);
     setSaveStatus("idle");
     setSaveFeedback(null);
     setLoadedStructureId(null);
@@ -433,6 +472,8 @@ export default function PricingPage() {
   }, []);
 
   // --- Qualify + snapshot ---
+  const { watch } = useJobWatcher();
+
   const fetchPriceForContract = useCallback(
     async (legId: string, entry: ChainEntry) => {
       setLegs((prev) =>
@@ -463,9 +504,12 @@ export default function PricingPage() {
                 },
                 source: "pricing-ui",
               };
-        const job = await request<{ id: number }>("POST", "/jobs", jobPayload);
+        const job = await api.post<{ id: number }>("/jobs", jobPayload);
         setLegs((prev) =>
           prev.map((l) => (l.id === legId ? { ...l, fetchJobId: job.id } : l)),
+        );
+        watch(job.id, (done) =>
+          setLegs((prev) => applyPriceJobResult(prev, legId, done)),
         );
       } catch (err) {
         setLegs((prev) =>
@@ -478,67 +522,8 @@ export default function PricingPage() {
         );
       }
     },
-    [],
+    [watch],
   );
-
-  // --- SSE job events ---
-  const prevSseStatus = useRef<ConnectionStatus | null>(null);
-
-  const handleJob = useCallback((payload: Job, eventType: string) => {
-    if (eventType === "job.archived") return;
-    setLegs((prev) => {
-      const legIdx = prev.findIndex((l) => l.fetchJobId === payload.id);
-      if (legIdx === -1) return prev;
-      const leg = prev[legIdx];
-      const next = [...prev];
-      if (payload.status === "completed") {
-        const result = payload.result;
-        const snapshot = (result?.snapshot as Record<string, unknown>) ?? {};
-        const results = Array.isArray(result?.results)
-          ? (result.results as Array<Record<string, unknown>>)
-          : ((snapshot?.results as Array<Record<string, unknown>>) ?? []);
-        const priceData = results[0];
-        next[legIdx] = {
-          ...leg,
-          fetchStatus: "done",
-          selectedConId:
-            priceData?.con_id != null
-              ? Number(priceData.con_id)
-              : leg.selectedConId,
-          bid: priceData?.bid != null ? Number(priceData.bid) : leg.bid,
-          ask: priceData?.ask != null ? Number(priceData.ask) : leg.ask,
-          ivstart: priceData?.iv != null ? Number(priceData.iv) : leg.ivstart,
-          undPrice:
-            priceData?.und_price != null
-              ? Number(priceData.und_price)
-              : leg.undPrice,
-          volume:
-            priceData?.volume != null ? Number(priceData.volume) : leg.volume,
-          openInterest:
-            priceData?.open_interest != null
-              ? Number(priceData.open_interest)
-              : leg.openInterest,
-          tradePrice:
-            priceData?.bid != null && priceData?.ask != null
-              ? (Number(priceData.bid) + Number(priceData.ask)) / 2
-              : leg.tradePrice,
-          observedAt: new Date().toISOString(),
-        };
-      } else if (payload.status === "failed") {
-        next[legIdx] = { ...leg, fetchStatus: "error" };
-      }
-      return next;
-    });
-  }, []);
-
-  const sseStatus = useSSE<Job>("jobs", handleJob);
-
-  useEffect(() => {
-    if (prevSseStatus.current === "disconnected" && sseStatus === "connected") {
-      // Re-fetch on reconnect if needed
-    }
-    prevSseStatus.current = sseStatus;
-  }, [sseStatus]);
 
   // --- Submit ---
   const handleSubmit = async () => {
@@ -572,10 +557,9 @@ export default function PricingPage() {
 
     const daysIntoFuture = Math.max(...legs.map((l) => l.dte), 1);
     try {
-      const res = await fetch(`${PRICING_API_BASE}/expected-pnl`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      const data = await api.post<ExpectedPnlResponse>(
+        "/expected-pnl",
+        {
           spot_price: spot,
           legs: apiLegs,
           spot_min: sMin,
@@ -583,13 +567,9 @@ export default function PricingPage() {
           days_into_future: daysIntoFuture,
           day_step: parseInt(dayStep) || 1,
           strike_step: parseFloat(strikeStep) || 1,
-        }),
-      });
-      if (!res.ok) {
-        const body = await res.text();
-        throw new Error(`HTTP ${res.status}: ${body}`);
-      }
-      const data: ExpectedPnlResponse = await res.json();
+        },
+        { base: PRICING_API_BASE },
+      );
       setPnlData(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));

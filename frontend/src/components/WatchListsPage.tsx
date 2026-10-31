@@ -16,7 +16,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { request } from "../lib/api";
+import { api, errorMessage } from "../lib/api";
 import { formatExpiry } from "../utils/date";
 
 interface WatchListSummary {
@@ -201,7 +201,8 @@ export default function WatchListsPage() {
   );
 
   const fetchLists = useCallback(() => {
-    request<WatchListSummary[]>("GET", "/watch-lists")
+    api
+      .get<WatchListSummary[]>("/watch-lists")
       .then((data) => {
         setLists(data);
         // Auto-select first watch list if none selected
@@ -210,7 +211,7 @@ export default function WatchListsPage() {
           return prev;
         });
       })
-      .catch((err) => setError(err.message))
+      .catch((err: unknown) => setError(errorMessage(err, "Request failed")))
       .finally(() => setLoading(false));
   }, []);
 
@@ -222,9 +223,10 @@ export default function WatchListsPage() {
   };
 
   const fetchDetail = useCallback((id: number) => {
-    request<WatchListDetail>("GET", `/watch-lists/${id}`)
+    api
+      .get<WatchListDetail>(`/watch-lists/${id}`)
       .then(setDetail)
-      .catch((err) => setError(err.message));
+      .catch((err: unknown) => setError(errorMessage(err, "Load failed")));
   }, []);
 
   useEffect(() => {
@@ -253,10 +255,10 @@ export default function WatchListsPage() {
     setLists(reordered);
 
     // Persist to backend
-    request("PUT", "/watch-lists/reorder", {
-      ids: reordered.map((wl) => wl.id),
-    }).catch((err) => {
-      setError(err.message);
+    api
+      .put("/watch-lists/reorder", { ids: reordered.map((wl) => wl.id) })
+      .catch((err: unknown) => {
+        setError(errorMessage(err, "Reorder failed"));
       // Revert on failure
       fetchLists();
     });
@@ -265,23 +267,25 @@ export default function WatchListsPage() {
   const handleCreate = () => {
     if (!newName.trim()) return;
     setCreating(true);
-    request<WatchListSummary>("POST", "/watch-lists", {
-      name: newName.trim(),
-      description: newDesc.trim() || null,
-    })
+    api
+      .post<WatchListSummary>("/watch-lists", {
+        name: newName.trim(),
+        description: newDesc.trim() || null,
+      })
       .then((created) => {
         setNewName("");
         setNewDesc("");
         fetchLists();
         selectWatchList(created.id);
       })
-      .catch((err) => setError(err.message))
+      .catch((err: unknown) => setError(errorMessage(err, "Request failed")))
       .finally(() => setCreating(false));
   };
 
   const handleDelete = (id: number) => {
     if (!confirm("Delete this watch list and all its instruments?")) return;
-    request("DELETE", `/watch-lists/${id}`)
+    api
+      .delete(`/watch-lists/${id}`)
       .then(() => {
         if (selectedId === id) {
           selectWatchList(null);
@@ -289,7 +293,7 @@ export default function WatchListsPage() {
         }
         fetchLists();
       })
-      .catch((err) => setError(err.message));
+      .catch((err: unknown) => setError(errorMessage(err, "Request failed")));
   };
 
   const startEditing = (
@@ -304,16 +308,17 @@ export default function WatchListsPage() {
 
   const handleEditSave = (id: number) => {
     if (!editName.trim()) return;
-    request("PATCH", `/watch-lists/${id}`, {
-      name: editName.trim(),
-      description: editDesc.trim() || null,
-    })
+    api
+      .patch(`/watch-lists/${id}`, {
+        name: editName.trim(),
+        description: editDesc.trim() || null,
+      })
       .then(() => {
         setEditingId(null);
         fetchLists();
         if (selectedId === id) fetchDetail(id);
       })
-      .catch((err) => setError(err.message));
+      .catch((err: unknown) => setError(errorMessage(err, "Request failed")));
   };
 
   const handleRemoveInstrumentRequest = (instrumentId: number) => {
@@ -325,13 +330,14 @@ export default function WatchListsPage() {
   const handleRemoveInstrumentConfirm = (instrumentId: number) => {
     if (selectedId === null) return;
     setRemovingInstrumentId(instrumentId);
-    request("DELETE", `/watch-lists/${selectedId}/instruments/${instrumentId}`)
+    api
+      .delete(`/watch-lists/${selectedId}/instruments/${instrumentId}`)
       .then(() => {
         setRemoveConfirmId(null);
         fetchDetail(selectedId);
         fetchLists();
       })
-      .catch((err) => setError(err.message))
+      .catch((err: unknown) => setError(errorMessage(err, "Request failed")))
       .finally(() => setRemovingInstrumentId(null));
   };
 
@@ -339,15 +345,15 @@ export default function WatchListsPage() {
     if (selectedId === null) return;
     setRefreshingQuotes(true);
     setQuotesRefreshMessage(null);
-    request<WatchListQuotesRefreshResponse>(
-      "POST",
-      `/watch-lists/${selectedId}/quotes/refresh`,
-    )
+    api
+      .post<WatchListQuotesRefreshResponse>(
+        `/watch-lists/${selectedId}/quotes/refresh`,
+      )
       .then((data) => {
         setQuotesRefreshMessage(data.message);
         fetchDetail(selectedId);
       })
-      .catch((err) => setError(err.message))
+      .catch((err: unknown) => setError(errorMessage(err, "Request failed")))
       .finally(() => setRefreshingQuotes(false));
   };
 

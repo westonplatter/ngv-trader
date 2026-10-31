@@ -1,16 +1,15 @@
 import type { CSSProperties } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { request } from "../lib/api";
+import { api } from "../lib/api";
+import { enqueueSyncJob, useJobWatcher } from "../hooks/useJobWatcher";
 import { usePrivacy } from "../contexts/usePrivacy";
 import { useResizableColumn } from "../hooks/useResizableColumn";
 import { ibCodesTitle, parseIbCodes } from "../lib/ibCodes";
 import { formatMarkTime } from "../lib/markTime";
-import { formatDateTime } from "../utils/date";
 import { linkify } from "../utils/linkify";
 import GroupTasks from "./GroupTasks";
 import TagChips, { TagChipView } from "./TagChips";
-import type { SyncJobResponse } from "../types/jobs";
 import type { Strategy } from "../types/strategies";
 import type {
   GroupAccountPnl,
@@ -20,6 +19,7 @@ import type {
   TradeGroup,
   TradeGroupDetail,
 } from "../types/tradeGroups";
+import { formatDateTime } from "../utils/date";
 import { formatGreek, formatMoney, formatPercent } from "../utils/number";
 import { PRIVACY_MASK, formatRelativeReturn } from "../utils/privacy";
 
@@ -30,10 +30,7 @@ async function fetchGroupStrategyValue(
   groupId: number,
 ): Promise<string | null> {
   try {
-    const detail = await request<TradeGroupDetail>(
-      "GET",
-      `/trade-groups/${groupId}`,
-    );
+    const detail = await api.get<TradeGroupDetail>(`/trade-groups/${groupId}`);
     return detail.primary_strategy_value;
   } catch {
     return null;
@@ -155,6 +152,7 @@ const FOCUS_PREF_KEY = "trade_tagging_focus_mode";
 export default function StrategiesPage() {
   const { privacyMode } = usePrivacy();
   const [searchParams, setSearchParams] = useSearchParams();
+  const { watch } = useJobWatcher();
 
   const [strategies, setStrategies] = useState<Strategy[]>([]);
   const [selectedStrategyId, setSelectedStrategyId] = useState<number | null>(
@@ -298,10 +296,8 @@ export default function StrategiesPage() {
   const loadStrategies = useCallback(async () => {
     const params = new URLSearchParams({ limit: "200" });
     if (showArchivedStrategies) params.set("include_archived", "true");
-    const raw = await request<Strategy[]>(
-      "GET",
+    const raw = await api.get<Strategy[]>(
       `/strategies?${params.toString()}`,
-      undefined,
       { fallback: "Unable to load strategies" },
     );
     const data = [...raw].sort((a, b) =>
@@ -328,10 +324,8 @@ export default function StrategiesPage() {
       limit: "200",
       strategy: strategyValue,
     });
-    const data = await request<TradeGroup[]>(
-      "GET",
+    const data = await api.get<TradeGroup[]>(
       `/trade-groups?${params.toString()}`,
-      undefined,
       { fallback: "Unable to load trade groups" },
     );
     setGroups(data);
@@ -343,20 +337,15 @@ export default function StrategiesPage() {
   }, []);
 
   const loadGroupDetail = useCallback(async (groupId: number) => {
-    const data = await request<TradeGroupDetail>(
-      "GET",
-      `/trade-groups/${groupId}`,
-      undefined,
-      { fallback: "Unable to load group detail" },
-    );
+    const data = await api.get<TradeGroupDetail>(`/trade-groups/${groupId}`, {
+      fallback: "Unable to load group detail",
+    });
     setGroupDetail(data);
   }, []);
 
   const loadExecutions = useCallback(async (tradeGroupId: number) => {
-    const data = await request<GroupExecutionsResponse>(
-      "GET",
+    const data = await api.get<GroupExecutionsResponse>(
       `/trade-groups/${tradeGroupId}/executions`,
-      undefined,
       { fallback: "Unable to load group executions" },
     );
     setExecutions(data.executions);
@@ -524,7 +513,8 @@ export default function StrategiesPage() {
   // stale GET overwrite it.
   useEffect(() => {
     let active = true;
-    request<{ value?: unknown }>("GET", `/user-preferences/${FOCUS_PREF_KEY}`)
+    api
+      .get<{ value?: unknown } | null>(`/user-preferences/${FOCUS_PREF_KEY}`)
       .then((data) => {
         if (active && !focusTouchedRef.current && data?.value === true) {
           setFocusMode(true);
@@ -545,9 +535,9 @@ export default function StrategiesPage() {
       focusWriteChainRef.current = focusWriteChainRef.current
         .catch(() => {})
         .then(() =>
-          request<void>("PUT", `/user-preferences/${FOCUS_PREF_KEY}`, {
-            value: next,
-          }),
+          api
+            .put(`/user-preferences/${FOCUS_PREF_KEY}`, { value: next })
+            .then(() => undefined),
         );
       return next;
     });
@@ -587,24 +577,17 @@ export default function StrategiesPage() {
     setLiveSyncing(true);
     setLiveSyncMessage(null);
     try {
-      const data = await request<SyncJobResponse>(
-        "POST",
+      const data = await enqueueSyncJob(
         "/positions/sync/intraday-tws",
-        {
-          source: "manual-ui",
-          request_text: "Refresh live intraday overlay from trade group view.",
-          max_attempts: 3,
-        },
+        "Refresh live intraday overlay from trade group view.",
       );
       setLiveSyncMessage(
         `Queued intraday TWS sync job #${data.job_id} (${data.status}). Refreshing shortly…`,
       );
-      // TWS session + reqTickers take longer than a flex enqueue; poll a couple times.
-      const refresh = () => {
+      // Refresh once the worker reports the job finished.
+      watch(data.job_id, () => {
         if (selectedGroupId != null) void loadExecutions(selectedGroupId);
-      };
-      window.setTimeout(refresh, 3000);
-      window.setTimeout(refresh, 8000);
+      });
     } catch (err) {
       setLiveSyncMessage(
         err instanceof Error ? err.message : "Unknown sync error",
@@ -623,10 +606,12 @@ export default function StrategiesPage() {
     setError(null);
     setMessage(null);
 
-    const createdStrategy = await request<Strategy>(
-      "POST",
+    const createdStrategy = await api.post<Strategy>(
       "/strategies",
-      { name: newStrategyValue.trim(), created_by: "ui-trader" },
+      {
+        name: newStrategyValue.trim(),
+        created_by: "ui-trader",
+      },
       { fallback: "Unable to create strategy" },
     );
     setNewStrategyValue("");
@@ -641,7 +626,7 @@ export default function StrategiesPage() {
     setMessage(null);
 
     const action = archived ? "archive" : "unarchive";
-    await request("POST", `/strategies/${strategy.id}/${action}`, undefined, {
+    await api.post(`/strategies/${strategy.id}/${action}`, undefined, {
       fallback: `Unable to ${action} strategy`,
     });
 
@@ -662,8 +647,7 @@ export default function StrategiesPage() {
     setError(null);
     setMessage(null);
 
-    const createdGroup = await request<TradeGroup>(
-      "POST",
+    const createdGroup = await api.post<TradeGroup>(
       "/trade-groups",
       {
         name: newGroupName.trim(),
@@ -717,7 +701,7 @@ export default function StrategiesPage() {
       return;
     }
 
-    await request("PATCH", `/trade-groups/${selectedGroupId}`, body, {
+    await api.patch(`/trade-groups/${selectedGroupId}`, body, {
       fallback: "Unable to update trade group",
     });
 
@@ -756,8 +740,7 @@ export default function StrategiesPage() {
     setError(null);
     setMessage(null);
 
-    await request(
-      "DELETE",
+    await api.delete<void>(
       `/trade-groups/${selectedGroupId}?source=manual&created_by=ui-trader&reason=deleted+from+strategies+page`,
       undefined,
       { fallback: "Unable to delete trade group" },

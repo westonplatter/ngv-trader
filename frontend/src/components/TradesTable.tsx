@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { usePrivacy } from "../contexts/usePrivacy";
 import { PRIVACY_MASK } from "../utils/privacy";
-import { request } from "../lib/api";
+import { api, errorMessage } from "../lib/api";
+import { enqueueSyncJob, useJobWatcher } from "../hooks/useJobWatcher";
 import { ibCodesTitle, parseIbCodes } from "../lib/ibCodes";
 import { useSSE } from "../lib/events";
 import { formatMoney } from "../utils/number";
@@ -11,13 +12,9 @@ import { tradeGroupLabel } from "../lib/tradeGroups";
 import TagChips, { TagInput } from "./TagChips";
 import TaskQuickAdd from "./TaskQuickAdd";
 import { tagsApi, tradeRowItem } from "../lib/tags";
-import type { SyncJobResponse } from "../types/jobs";
 import type { ItemRef } from "../types/tags";
 import type { TradeExecutionRow } from "../types/trades";
 import type { TradeGroupResult } from "../types/tradeGroups";
-
-const JOB_POLL_INTERVAL_MS = 2000;
-const JOB_POLL_TIMEOUT_MS = 5 * 60 * 1000;
 
 const STATUS_CLASS: Record<string, string> = {
   filled: "bg-emerald-100 text-emerald-800",
@@ -45,20 +42,6 @@ function rowGroupId(row: TradeExecutionRow): number | null {
 function rowGroupKey(row: TradeExecutionRow): string {
   if (row.trade_id !== null) return `t:${row.trade_id}`;
   return `l:${row.parent_ib_exec_id ?? row.ib_exec_id}`;
-}
-
-// Execution ids behind a settled trade, for the group assign/unassign calls.
-async function loadTradeExecutionIds(
-  tradeId: number | null,
-): Promise<number[]> {
-  if (tradeId == null) throw new Error("Missing trade id.");
-  const executions = await request<{ id: number }[]>(
-    "GET",
-    `/trades/${tradeId}/executions`,
-    undefined,
-    { fallback: "Unable to load executions" },
-  );
-  return executions.map((ex) => ex.id);
 }
 
 function formatDateTime(value: string | null | undefined): string {
@@ -138,8 +121,7 @@ function TradeGroupCell({
     try {
       if (unsettled) {
         if (!ibExecId) throw new Error("Missing live execution id.");
-        await request(
-          "POST",
+        await api.post(
           `/trade-groups/${group.id}/live-executions:assign`,
           {
             ib_exec_ids: [ibExecId],
@@ -153,13 +135,16 @@ function TradeGroupCell({
         return;
       }
 
-      const executionIds = await loadTradeExecutionIds(tradeId);
+      const tradeExecutions = await api.get<{ id: number }[]>(
+        `/trades/${tradeId}/executions`,
+        { fallback: "Unable to load executions" },
+      );
+      const executionIds = tradeExecutions.map((ex) => ex.id);
       if (executionIds.length === 0) {
         throw new Error("Trade has no executions to assign.");
       }
 
-      await request(
-        "POST",
+      await api.post(
         `/trade-groups/${group.id}/executions:assign`,
         {
           execution_ids: executionIds,
@@ -194,8 +179,7 @@ function TradeGroupCell({
     try {
       if (unsettled) {
         if (!ibExecId) throw new Error("Missing live execution id.");
-        await request(
-          "POST",
+        await api.post(
           `/trade-groups/${groupId}/live-executions:unassign`,
           {
             ib_exec_ids: [ibExecId],
@@ -209,10 +193,13 @@ function TradeGroupCell({
         return;
       }
 
-      const executionIds = await loadTradeExecutionIds(tradeId);
+      const tradeExecutions = await api.get<{ id: number }[]>(
+        `/trades/${tradeId}/executions`,
+        { fallback: "Unable to load executions" },
+      );
+      const executionIds = tradeExecutions.map((ex) => ex.id);
 
-      await request(
-        "POST",
+      await api.post(
         `/trade-groups/${groupId}/executions:unassign`,
         {
           execution_ids: executionIds,
@@ -327,6 +314,7 @@ export default function TradesTable() {
   // Filters live in the URL (?account=&range=&group=&cols=&symbol=) so a refresh
   // or shared link restores the view. Defaults are omitted to keep URLs short.
   const [searchParams, setSearchParams] = useSearchParams();
+  const { watch } = useJobWatcher();
   const setFilterParam = useCallback(
     (key: string, value: string, defaultValue: string) => {
       setSearchParams(
@@ -382,15 +370,13 @@ export default function TradesTable() {
   }, [allTradeGroups]);
 
   const loadTradeGroups = useCallback(async () => {
-    // Label lookup only: a failure here leaves ids unlabeled rather than
-    // surfacing a page-level error.
+    let data: TradeGroupResult[];
     try {
-      setAllTradeGroups(
-        await request<TradeGroupResult[]>("GET", "/trade-groups?limit=500"),
-      );
+      data = await api.get<TradeGroupResult[]>("/trade-groups?limit=500");
     } catch {
-      // keep whatever labels we already had
+      return;
     }
+    setAllTradeGroups(data);
   }, []);
 
   const serverSymbol = useMemo(() => {
@@ -411,10 +397,8 @@ export default function TradesTable() {
     const params = new URLSearchParams({ limit: "5000" });
     if (conIdFilter !== null) params.set("con_id", String(conIdFilter));
     else if (serverSymbol) params.set("symbol", serverSymbol);
-    const data = await request<TradeExecutionRow[]>(
-      "GET",
+    const data = await api.get<TradeExecutionRow[]>(
       `/trade-executions?${params.toString()}`,
-      undefined,
       { fallback: "Unable to load executions" },
     );
     setExecutions(data);
@@ -555,50 +539,31 @@ export default function TradesTable() {
     }
   };
 
-  // Polls the job until it reaches a terminal state, then surfaces a
+  // Watches the job until it reaches a terminal state, then surfaces a
   // notification and refreshes the table (no full page reload needed).
-  const pollJobUntilDone = (jobId: number, label: string) => {
+  const watchJobUntilDone = (jobId: number, label: string) => {
     if (
       typeof Notification !== "undefined" &&
       Notification.permission === "default"
     ) {
       void Notification.requestPermission().catch(() => {});
     }
-    const deadline = Date.now() + JOB_POLL_TIMEOUT_MS;
-    const poll = async () => {
-      if (Date.now() > deadline) return;
-      try {
-        const job = await request<{
-          status: string;
-          last_error?: string | null;
-        }>("GET", `/jobs/${jobId}`);
-        if (job.status === "completed" || job.status === "failed") {
-          const finished =
-            job.status === "completed"
-              ? `${label} job #${jobId} completed.`
-              : `${label} job #${jobId} failed${
-                  job.last_error ? `: ${job.last_error}` : "."
-                }`;
-          if (job.status === "completed") {
-            setSyncMessage(finished);
-          } else {
-            setSyncError(finished);
-          }
-          notifyJobDone(finished);
-          void loadExecutions().catch(() => {});
-          void loadTradeGroups().catch(() => {});
-          return;
-        }
-      } catch {
-        // transient network or non-2xx error; keep polling until the deadline
+    watch(jobId, (job) => {
+      const finished =
+        job.status === "completed"
+          ? `${label} job #${jobId} completed.`
+          : `${label} job #${jobId} failed${
+              job.last_error ? `: ${job.last_error}` : "."
+            }`;
+      if (job.status === "completed") {
+        setSyncMessage(finished);
+      } else {
+        setSyncError(finished);
       }
-      window.setTimeout(() => {
-        void poll();
-      }, JOB_POLL_INTERVAL_MS);
-    };
-    window.setTimeout(() => {
-      void poll();
-    }, JOB_POLL_INTERVAL_MS);
+      notifyJobDone(finished);
+      void loadExecutions().catch(() => {});
+      void loadTradeGroups().catch(() => {});
+    });
   };
 
   const kickOffTradesSync = async (
@@ -614,25 +579,22 @@ export default function TradesTable() {
     setSyncMessage(null);
     setSyncError(null);
     try {
-      const data = await request<{
+      const data = await enqueueSyncJob<{
         job_id: number;
         status: string;
         start_date?: string | null;
         end_date?: string | null;
       }>(
-        "POST",
         "/trades/sync/flex-query",
+        `${label} (flex query) from Trades page.`,
         {
-          source: "manual-ui",
-          request_text: `${label} (flex query) from Trades page.`,
-          max_attempts: 3,
           ...(options.days !== undefined ? { days: options.days } : {}),
           ...(options.sinceLastTrade ? { since_last_trade: true } : {}),
           ...(options.startDate && options.endDate
             ? { start_date: options.startDate, end_date: options.endDate }
             : {}),
         },
-        { fallback: "Unable to queue sync" },
+        "Unable to queue sync",
       );
       const rangeNote =
         data.start_date && data.end_date
@@ -641,14 +603,10 @@ export default function TradesTable() {
       setSyncMessage(
         `Queued ${label.toLowerCase()} job #${data.job_id} (${data.status}).${rangeNote}`,
       );
-      // Give the worker a moment to pick up the row, then poll to
-      // completion so we can reload the table and notify once it's done.
-      window.setTimeout(() => {
-        void loadExecutions().catch(() => {});
-      }, 2000);
-      pollJobUntilDone(data.job_id, label);
+      // Watch to completion so we can reload the table and notify once done.
+      watchJobUntilDone(data.job_id, label);
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Unknown sync error";
+      const message = errorMessage(err, "Unknown sync error");
       setSyncError(message);
     } finally {
       setSyncing(false);
@@ -660,29 +618,18 @@ export default function TradesTable() {
     setSyncMessage(null);
     setSyncError(null);
     try {
-      const data = await request<SyncJobResponse>(
-        "POST",
+      const data = await enqueueSyncJob(
         "/positions/sync/intraday-tws",
-        {
-          source: "manual-ui",
-          request_text: "Intraday TWS sync from Trades page.",
-          max_attempts: 3,
-        },
-        { fallback: "Unable to queue intraday sync" },
+        "Intraday TWS sync from Trades page.",
+        {},
+        "Unable to queue intraday sync",
       );
       setSyncMessage(
         `Queued intraday TWS sync job #${data.job_id} (${data.status}).`,
       );
-      // TWS session + reqTickers take longer than a flex enqueue; poll twice.
-      window.setTimeout(() => {
-        void loadExecutions().catch(() => {});
-      }, 3000);
-      window.setTimeout(() => {
-        void loadExecutions().catch(() => {});
-      }, 8000);
-      pollJobUntilDone(data.job_id, "Intraday TWS sync");
+      watchJobUntilDone(data.job_id, "Intraday TWS sync");
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Unknown sync error";
+      const message = errorMessage(err, "Unknown sync error");
       setSyncError(message);
     } finally {
       setSyncing(false);

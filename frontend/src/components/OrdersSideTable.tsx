@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { usePrivacy } from "../contexts/usePrivacy";
 import { PRIVACY_MASK } from "../utils/privacy";
-import { request } from "../lib/api";
+import { useSseList } from "../hooks/useSseList";
+import { api } from "../lib/api";
 import type { Order } from "../types/orders";
 import { formatDuration, parseTime } from "../utils/date";
-import { useSSE, type ConnectionStatus } from "../lib/events";
 
 const STATUS_CLASS: Record<string, string> = {
   queued: "text-yellow-700 bg-yellow-100",
@@ -50,51 +50,17 @@ function computeTotalMs(order: Order, nowMs: number): number {
 
 export default function OrdersSideTable() {
   const { privacyMode } = usePrivacy();
-  const [orders, setOrders] = useState<Order[]>([]);
-  const [error, setError] = useState<string | null>(null);
   const [nowMs, setNowMs] = useState<number>(() => Date.now());
 
-  // Track previous SSE status so we can detect reconnect transitions.
-  const prevStatusRef = useRef<ConnectionStatus | null>(null);
+  const loadOrders = useCallback(() => api.get<Order[]>("/orders"), []);
 
-  const loadOrders = useCallback(() => {
-    request<Order[]>("GET", "/orders")
-      .then((rows) => {
-        setOrders(rows.slice(0, 20));
-        setError(null);
-      })
-      .catch((err: Error) => setError(err.message));
-  }, []);
-
-  // Initial fetch on mount.
-  useEffect(() => {
-    loadOrders();
-  }, [loadOrders]);
-
-  // Merge an incoming SSE order payload into the orders list.
-  const handleOrderEvent = useCallback((payload: Order) => {
-    setOrders((prev) => {
-      const idx = prev.findIndex((o) => o.id === payload.id);
-      let next: Order[];
-      if (idx >= 0) {
-        next = [...prev];
-        next[idx] = payload;
-      } else {
-        next = [payload, ...prev];
-      }
-      return next.slice(0, 20);
-    });
-  }, []);
-
-  const sseStatus = useSSE<Order>("orders", handleOrderEvent);
-
-  // Re-fetch REST snapshot on reconnect.
-  useEffect(() => {
-    if (prevStatusRef.current === "disconnected" && sseStatus === "connected") {
-      loadOrders();
-    }
-    prevStatusRef.current = sseStatus;
-  }, [sseStatus, loadOrders]);
+  // Snapshot on mount, upsert from the orders stream, re-fetch on reconnect.
+  const { items: orders, error } = useSseList<Order>({
+    topic: "orders",
+    load: loadOrders,
+    key: (order) => order.id,
+    cap: 20,
+  });
 
   useEffect(() => {
     const timer = window.setInterval(() => setNowMs(Date.now()), 1000);

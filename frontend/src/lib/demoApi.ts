@@ -1,16 +1,18 @@
-// Demo API interceptor.
+// Demo API transport.
 //
-// When demo mode is on (see ./demoMode), this patches the global `fetch` so any
-// request to the backend API is answered from static fixtures (./demoData)
-// instead of hitting the network. Components keep calling `fetch` exactly as
-// they do against a live backend — no per-component demo branches required.
+// When demo mode is on (see ./demoMode), this replaces the API client's
+// transport (see ./api `setApiFetch`) so any request to the backend API is
+// answered from static fixtures (./demoData) instead of hitting the network.
+// Components keep calling `api.*` exactly as they do against a live backend —
+// no per-component demo branches required, and the global `fetch` is untouched.
 //
-// Only requests under API_BASE_URL are intercepted; everything else (Vite
-// assets, etc.) falls through to the real fetch. Server-Sent Events use
-// EventSource, not fetch, so they simply fail to connect in demo mode and the
-// UI degrades gracefully to its last-known state.
+// Only requests under API_BASE_URL are intercepted; anything else the client is
+// pointed at (the pricing service, say) falls through to the real network.
+// Server-Sent Events use EventSource, not the client, so they simply fail to
+// connect in demo mode and the UI degrades gracefully to its last-known state.
 
 import { API_BASE_URL } from "../config";
+import { setApiFetch, type ApiFetch } from "./api";
 import {
   DEMO_ACCOUNTS,
   DEMO_FLEXQUERY_TOKENS,
@@ -81,6 +83,19 @@ function routeGet(path: string, params: URLSearchParams): Json | undefined {
   if (path === "/tags/search") return demoTagSearch(params);
   if (path === "/tasks") return demoTaskList(params);
 
+  // Sync buttons watch the job they queued; answer as already finished so the
+  // page refreshes once instead of polling a backend that is not there.
+  const jobMatch = path.match(/^\/jobs\/(\d+)$/);
+  if (jobMatch) {
+    return {
+      id: Number(jobMatch[1]),
+      job_type: "demo",
+      status: "completed",
+      result: null,
+      last_error: null,
+    };
+  }
+
   const execMatch = path.match(/^\/trade-groups\/(\d+)\/executions$/);
   if (execMatch) return demoGroupExecutions(Number(execMatch[1])) ?? undefined;
 
@@ -120,36 +135,19 @@ export function installDemoApi(): void {
   if (installed || typeof window === "undefined") return;
   installed = true;
 
-  const realFetch = window.fetch.bind(window);
+  const realFetch: ApiFetch = (input, init) => window.fetch(input, init);
 
-  const demoFetch = async (
-    input: RequestInfo | URL,
-    init?: RequestInit,
-  ): Promise<Response> => {
-    const url =
-      typeof input === "string"
-        ? input
-        : input instanceof URL
-          ? input.href
-          : input.url;
-
+  const demoFetch: ApiFetch = async (url, init) => {
     if (url.startsWith(API_BASE_URL)) {
-      const method = (
-        init?.method ?? (input instanceof Request ? input.method : "GET")
-      ).toUpperCase();
+      const method = (init?.method ?? "GET").toUpperCase();
       const [path, search = ""] = splitOnce(
         url.slice(API_BASE_URL.length),
         "?",
       );
       return handle(method, path, new URLSearchParams(search));
     }
-
-    return realFetch(input as RequestInfo, init);
+    return realFetch(url, init);
   };
 
-  // `fetch` carries statics (preconnect) that a bare function literal lacks;
-  // copy them across so the override stays a drop-in replacement.
-  window.fetch = Object.assign(demoFetch, {
-    preconnect: window.fetch.preconnect,
-  });
+  setApiFetch(demoFetch);
 }

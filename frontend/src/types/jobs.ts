@@ -19,10 +19,3 @@ export interface Job {
   created_at: string;
   updated_at: string;
 }
-
-// Response of every "kick off a sync" POST (/positions/sync/*, /orders/sync,
-// /trades/sync/*): the queued job and its initial status.
-export interface SyncJobResponse {
-  job_id: number;
-  status: string;
-}

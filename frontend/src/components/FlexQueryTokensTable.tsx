@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { request } from "../lib/api";
+import { api, errorMessage, request } from "../lib/api";
 import type { FlexQueryToken } from "../types/flexQueryTokens";
 
 // The token value is write-only: it is sent on create/update and never comes
@@ -45,9 +45,10 @@ export default function FlexQueryTokensTable() {
   const [edit, setEdit] = useState<EditState>(EMPTY_EDIT);
 
   function fetchTokens() {
-    request<FlexQueryToken[]>("GET", "/flexquery-tokens")
+    api
+      .get<FlexQueryToken[]>("/flexquery-tokens")
       .then(setTokens)
-      .catch((err) => setError(err.message))
+      .catch((err: unknown) => setError(errorMessage(err, "Load failed")))
       .finally(() => setLoading(false));
   }
 
@@ -56,7 +57,7 @@ export default function FlexQueryTokensTable() {
   }, []);
 
   // The API returns a readable `detail` for the cases a user can cause —
-  // duplicate name, unset encryption key — and `request` surfaces it.
+  // duplicate name, unset encryption key — and the client surfaces it.
   async function send(path: string, method: string, body: unknown) {
     setSaving(true);
     setError(null);
@@ -65,7 +66,7 @@ export default function FlexQueryTokensTable() {
       fetchTokens();
       return true;
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errorMessage(err, String(err)));
       return false;
     } finally {
       setSaving(false);

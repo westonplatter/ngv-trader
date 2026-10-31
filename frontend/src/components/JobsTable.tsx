@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { request } from "../lib/api";
+import { useSseList } from "../hooks/useSseList";
+import { api } from "../lib/api";
 import type { Job } from "../types/jobs";
 import { formatDuration, parseTime } from "../utils/date";
-import { useSSE, type ConnectionStatus } from "../lib/events";
 
 const STATUS_CLASS: Record<string, string> = {
   queued: "text-yellow-700 bg-yellow-100",
@@ -84,63 +84,30 @@ function ParamsCell({ payload }: { payload: Job["payload"] }) {
 }
 
 export default function JobsTable() {
-  const [jobs, setJobs] = useState<Job[]>([]);
-  const [error, setError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [nowMs, setNowMs] = useState<number>(() => Date.now());
   const [actioning, setActioning] = useState<Set<number>>(new Set());
 
-  // Track previous SSE status so we can detect reconnect transitions.
-  const prevStatusRef = useRef<ConnectionStatus | null>(null);
+  const loadJobs = useCallback(() => api.get<Job[]>("/jobs"), []);
 
-  const loadJobs = useCallback(() => {
-    request<Job[]>("GET", "/jobs")
-      .then((rows) => {
-        setJobs(rows.slice(0, 20));
-        setError(null);
-      })
-      .catch((err: Error) => setError(err.message));
-  }, []);
-
-  // Initial fetch on mount.
-  useEffect(() => {
-    loadJobs();
-  }, [loadJobs]);
-
-  // Merge an incoming SSE job payload into the jobs list.
-  const handleJobEvent = useCallback((payload: Job, eventType: string) => {
-    if (eventType === "job.archived") {
-      setJobs((prev) => prev.filter((j) => j.id !== payload.id));
-      return;
-    }
-    setJobs((prev) => {
-      const idx = prev.findIndex((j) => j.id === payload.id);
-      let next: Job[];
-      if (idx >= 0) {
-        next = [...prev];
-        next[idx] = payload;
-      } else {
-        next = [payload, ...prev];
-      }
-      return next.slice(0, 20);
-    });
-  }, []);
-
-  const sseStatus = useSSE<Job>("jobs", handleJobEvent);
-
-  // Re-fetch REST snapshot on reconnect.
-  useEffect(() => {
-    if (prevStatusRef.current === "disconnected" && sseStatus === "connected") {
-      loadJobs();
-    }
-    prevStatusRef.current = sseStatus;
-  }, [sseStatus, loadJobs]);
+  // Snapshot on mount, upsert from the jobs stream, re-fetch on reconnect.
+  const {
+    items: jobs,
+    error: loadError,
+    reload,
+  } = useSseList<Job>({
+    topic: "jobs",
+    load: loadJobs,
+    key: (job) => job.id,
+    cap: 20,
+    removeOn: ["job.archived"],
+  });
+  const error = actionError ?? loadError;
 
   useEffect(() => {
     const timer = window.setInterval(() => setNowMs(Date.now()), 1000);
     return () => window.clearInterval(timer);
   }, []);
-
-  const reload = loadJobs;
 
   const withAction = (jobId: number, action: () => Promise<void>) => {
     setActioning((prev) => {
@@ -149,8 +116,11 @@ export default function JobsTable() {
       return next;
     });
     action()
-      .then(() => reload())
-      .catch((err: Error) => setError(err.message))
+      .then(() => {
+        setActionError(null);
+        reload();
+      })
+      .catch((err: Error) => setActionError(err.message))
       .finally(() => {
         setActioning((prev) => {
           const next = new Set(prev);
@@ -161,10 +131,10 @@ export default function JobsTable() {
   };
 
   const rerunJob = (jobId: number) =>
-    withAction(jobId, () => request("POST", `/jobs/${jobId}/rerun`));
+    withAction(jobId, () => api.post<void>(`/jobs/${jobId}/rerun`));
 
   const archiveJob = (jobId: number) =>
-    withAction(jobId, () => request("POST", `/jobs/${jobId}/archive`));
+    withAction(jobId, () => api.post<void>(`/jobs/${jobId}/archive`));
 
   return (
     <div className="min-w-0 h-full min-h-0 rounded border border-gray-300 bg-white p-3 flex flex-col">

@@ -4,6 +4,7 @@ import { TextStreamChatTransport, type UIMessage } from "ai";
 import JobsTable from "./JobsTable";
 import OrdersSideTable from "./OrdersSideTable";
 import { API_BASE_URL } from "../config";
+import { apiFetch } from "../lib/api";
 
 const QUICK_PROMPTS = [
   "Show me current positions",
@@ -28,11 +29,26 @@ function sanitizeOutboundText(text: string): string {
   return withRedactedIbAccounts.trim() || "[redacted]";
 }
 
+// The AI SDK types its `fetch` option as the global one (statics included);
+// the client only needs the (url, init) call, so adapt and cast.
+const transportFetch = ((input: RequestInfo | URL, init?: RequestInit) =>
+  apiFetch(
+    typeof input === "string"
+      ? input
+      : input instanceof URL
+        ? input.href
+        : input.url,
+    init,
+  )) as typeof fetch;
+
 export default function TradebotChat() {
   const transport = useMemo(
     () =>
       new TextStreamChatTransport({
         api: `${API_BASE_URL}/tradebot/chat`,
+        // Go through the API client's transport so demo mode intercepts the
+        // stream like every other backend call.
+        fetch: transportFetch,
         prepareSendMessagesRequest: ({ id, messages, trigger, messageId }) => {
           const outboundMessages = messages
             .map((message) => {

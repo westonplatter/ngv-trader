@@ -60,24 +60,31 @@ frontend/src/
 
 ## Data access
 
-- Every API call goes through `request<T>(method, path, body?, options?)` in
-  `lib/api.ts`, or a resource module built on it (`tagsApi`, `tasksApi` in
-  `lib/tags.ts`). Components never call `fetch` or build URLs from
-  `API_BASE_URL` themselves. The one exception is the pricing proxy
-  (`/pricing-api`), which has a different base.
-- `request` throws `ApiError` on a non-2xx status with the backend `detail`
-  string when there is one; pass `fallback` for the message to show when there
-  is none. Callers set page-level `error` state from `err.message`.
-- Build query strings with `query({...})` from `lib/api.ts`; it skips empty
-  values and repeats keys for arrays.
-- A write triggered by a click goes through `useAsyncAction` in `hooks/`: it
-  serializes the call, clears and keeps the error, and exposes `pending` for
-  the button. Turn an unknown caught value into text with `errorMessage` from
-  `lib/api.ts`.
-- Response types are declared once and imported, not redeclared per page.
-- Live updates arrive over SSE through `useSSE(topic, onEvent)` in `lib/events.ts`.
-  Load the REST snapshot first, then merge events into local state. See
+- Every API call goes through `lib/api.ts`: the `api.get/post/put/patch/delete`
+  shorthands (or `request` underneath them), or a resource module built on them
+  (`tagsApi`, `tasksApi` in `lib/tags.ts`). Components never call `fetch` or
+  build URLs from `API_BASE_URL` themselves. A different backend (the pricing
+  service) is the `base` option; a raw `Response` (the chat stream) is
+  `apiFetch`.
+- A non-2xx status throws `ApiError` with the backend `detail` string when there
+  is one; pass `fallback` for the message to show when there is none. Turn a
+  caught value into text with `errorMessage(err, fallback?)` and set page-level
+  `error` state from it.
+- Build query strings with `query({...})`; it skips empty values and repeats
+  keys for arrays.
+- A write triggered by a click goes through `useAsyncAction` in `hooks/`: one
+  call in flight, error kept for display, `pending` for the button.
+- A list kept current from the stream is `useSseList` in `hooks/`: REST
+  snapshot, upsert by key on each event, re-fetch on reconnect. Anything else
+  that listens uses `useSSE(topic, onEvent)` from `lib/events.ts`. See
   [api-ux-sse.md](../design/api-ux-sse.md).
+- A background job is started with `enqueueSyncJob` and finished with
+  `useJobWatcher` (`hooks/useJobWatcher.ts`), which reads the `jobs` stream and
+  polls only while it is down. No fixed `setTimeout` refreshes.
+- Demo mode and tests swap the transport with `setApiFetch`; nothing patches the
+  global `fetch`.
+- Response types are declared once in `types/` and imported, not redeclared per
+  page.
 
 ## State
 
