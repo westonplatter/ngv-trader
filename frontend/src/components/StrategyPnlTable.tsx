@@ -27,15 +27,11 @@ import {
   sortRows,
   strategyLabel,
 } from "../lib/strategyPnl";
-import type { TradeGroupPnlRow } from "../lib/tradeGroups";
+import type { Account } from "../types/accounts";
+import type { SyncJobResponse } from "../types/jobs";
+import type { TradeGroupPnlRow } from "../types/tradeGroups";
 import { formatMoney } from "../utils/number";
 import { PRIVACY_MASK } from "../utils/privacy";
-
-interface AccountOption {
-  id: number;
-  alias: string | null;
-  masked_account: string;
-}
 
 const STATUS_OPTIONS = [
   { value: "open", label: "Open" },
@@ -66,7 +62,7 @@ export default function StrategyPnlTable() {
   const [sort, setSort] = useState<SortState>(DEFAULT_SORT);
 
   const [rows, setRows] = useState<TradeGroupPnlRow[]>([]);
-  const [accounts, setAccounts] = useState<AccountOption[]>([]);
+  const [accounts, setAccounts] = useState<Account[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
@@ -122,7 +118,7 @@ export default function StrategyPnlTable() {
   useEffect(() => {
     void (async () => {
       try {
-        setAccounts(await request<AccountOption[]>("GET", "/accounts"));
+        setAccounts(await request<Account[]>("GET", "/accounts"));
       } catch {
         /* the account filter degrades to "All accounts" */
       }
@@ -133,7 +129,7 @@ export default function StrategyPnlTable() {
     setSyncing(true);
     setSyncMessage(null);
     try {
-      const data = await request<{ job_id: number; status: string }>(
+      const data = await request<SyncJobResponse>(
         "POST",
         "/positions/sync/intraday-tws",
         {

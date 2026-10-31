@@ -5,14 +5,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { TagChipView, TagInput } from "./TagChips";
-import {
-  type Tag,
-  type TagEntityType,
-  type TaggedItem,
-  isAgent,
-  normalizeTagValue,
-  tagsApi,
-} from "../lib/tags";
+import { isAgent, normalizeTagValue, tagsApi } from "../lib/tags";
+import type { Tag, TagEntityType, TaggedItem } from "../types/tags";
 
 type Tab = "trades" | "positions" | "trade_groups" | "tasks";
 

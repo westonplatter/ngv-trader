@@ -7,51 +7,14 @@ import { ibCodesTitle, parseIbCodes } from "../lib/ibCodes";
 import { useSSE } from "../lib/events";
 import { formatMoney } from "../utils/number";
 import TradeGroupSearchSelect from "./TradeGroupSearchSelect";
-import { type TradeGroupResult, tradeGroupLabel } from "../lib/tradeGroups";
+import { tradeGroupLabel } from "../lib/tradeGroups";
 import TagChips, { TagInput } from "./TagChips";
 import TaskQuickAdd from "./TaskQuickAdd";
-import { type ItemRef, type TagChip, tagsApi, tradeRowItem } from "../lib/tags";
-
-export interface TradeExecutionRow {
-  id: number;
-  trade_id: number | null;
-  account_id: number;
-  account_alias: string | null;
-  ib_exec_id: string;
-  exec_role: string;
-  sec_type: string | null;
-  executed_at: string;
-  quantity: number;
-  price: number;
-  side: string | null;
-  exchange: string | null;
-  commission: number | null;
-  realized_pnl: number | null;
-  is_canonical: boolean;
-  con_id: number | null;
-  contract_display: string | null;
-  parent_ib_exec_id: string | null;
-  // IBKR FlexQuery trade codes (the `notes` attribute): A=assigned,
-  // Ep=from expiration, Ex=exercise, P=partial, WS=wash sale, etc.
-  ib_codes: string | null;
-  data_source?: string;
-  trade_ib_perm_id: number | null;
-  trade_order_ref: string | null;
-  trade_status: string;
-  trade_lifecycle: string | null;
-  trade_contract_display_name: string | null;
-  trade_realized_pnl: number | null;
-  trade_assigned_trade_group_id: number | null;
-  trade_first_executed_at: string | null;
-  trade_last_executed_at: string | null;
-  // Unsettled TWS overlay: false for live fills not yet settled.
-  settled?: boolean;
-  live_trade_group_id?: number | null;
-  // Free-form tags on the order (the trade once settled, else this live fill)
-  // and its not-done task count.
-  tags?: TagChip[];
-  open_task_count?: number;
-}
+import { tagsApi, tradeRowItem } from "../lib/tags";
+import type { SyncJobResponse } from "../types/jobs";
+import type { ItemRef } from "../types/tags";
+import type { TradeExecutionRow } from "../types/trades";
+import type { TradeGroupResult } from "../types/tradeGroups";
 
 const JOB_POLL_INTERVAL_MS = 2000;
 const JOB_POLL_TIMEOUT_MS = 5 * 60 * 1000;
@@ -697,7 +660,7 @@ export default function TradesTable() {
     setSyncMessage(null);
     setSyncError(null);
     try {
-      const data = await request<{ job_id: number; status: string }>(
+      const data = await request<SyncJobResponse>(
         "POST",
         "/positions/sync/intraday-tws",
         {

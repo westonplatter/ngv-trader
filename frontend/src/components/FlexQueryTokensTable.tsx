@@ -1,20 +1,9 @@
 import { useEffect, useState } from "react";
 import { request } from "../lib/api";
+import type { FlexQueryToken } from "../types/flexQueryTokens";
 
 // The token value is write-only: it is sent on create/update and never comes
 // back from the API, so there is nothing here to reveal or copy.
-export interface FlexQueryToken {
-  id: number;
-  name: string;
-  report_id: string;
-  is_active: boolean;
-  notes: string | null;
-  last_used_at: string | null;
-  account_count: number;
-  paused_until: string | null;
-  pause_reason: string | null;
-}
-
 // How long a manual pause lasts, matching the automatic cooldown applied when
 // IBKR answers 1025.
 const MANUAL_PAUSE_MINUTES = 20;

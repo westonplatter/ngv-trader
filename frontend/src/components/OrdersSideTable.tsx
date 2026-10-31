@@ -2,23 +2,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { usePrivacy } from "../contexts/usePrivacy";
 import { PRIVACY_MASK } from "../utils/privacy";
 import { request } from "../lib/api";
+import type { Order } from "../types/orders";
 import { formatDuration, parseTime } from "../utils/date";
 import { useSSE, type ConnectionStatus } from "../lib/events";
-
-interface OrderRow {
-  id: number;
-  symbol: string;
-  side: string;
-  quantity: number;
-  contract_month: string | null;
-  status: string;
-  filled_quantity: number;
-  avg_fill_price: number | null;
-  created_at: string;
-  submitted_at: string | null;
-  completed_at: string | null;
-  updated_at: string;
-}
 
 const STATUS_CLASS: Record<string, string> = {
   queued: "text-yellow-700 bg-yellow-100",
@@ -36,7 +22,7 @@ const TERMINAL_STATUSES = new Set([
   "failed",
 ]);
 
-function getEndMs(order: OrderRow, nowMs: number): number {
+function getEndMs(order: Order, nowMs: number): number {
   const completedMs = parseTime(order.completed_at);
   if (completedMs !== null) return completedMs;
   if (TERMINAL_STATUSES.has(order.status)) {
@@ -45,26 +31,26 @@ function getEndMs(order: OrderRow, nowMs: number): number {
   return nowMs;
 }
 
-function computeQueueMs(order: OrderRow, nowMs: number): number {
+function computeQueueMs(order: Order, nowMs: number): number {
   const createdMs = parseTime(order.created_at) ?? nowMs;
   const submittedMs = parseTime(order.submitted_at);
   return (submittedMs ?? getEndMs(order, nowMs)) - createdMs;
 }
 
-function computeRunMs(order: OrderRow, nowMs: number): number | null {
+function computeRunMs(order: Order, nowMs: number): number | null {
   const submittedMs = parseTime(order.submitted_at);
   if (submittedMs === null) return null;
   return getEndMs(order, nowMs) - submittedMs;
 }
 
-function computeTotalMs(order: OrderRow, nowMs: number): number {
+function computeTotalMs(order: Order, nowMs: number): number {
   const createdMs = parseTime(order.created_at) ?? nowMs;
   return getEndMs(order, nowMs) - createdMs;
 }
 
 export default function OrdersSideTable() {
   const { privacyMode } = usePrivacy();
-  const [orders, setOrders] = useState<OrderRow[]>([]);
+  const [orders, setOrders] = useState<Order[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [nowMs, setNowMs] = useState<number>(() => Date.now());
 
@@ -72,7 +58,7 @@ export default function OrdersSideTable() {
   const prevStatusRef = useRef<ConnectionStatus | null>(null);
 
   const loadOrders = useCallback(() => {
-    request<OrderRow[]>("GET", "/orders")
+    request<Order[]>("GET", "/orders")
       .then((rows) => {
         setOrders(rows.slice(0, 20));
         setError(null);
@@ -86,10 +72,10 @@ export default function OrdersSideTable() {
   }, [loadOrders]);
 
   // Merge an incoming SSE order payload into the orders list.
-  const handleOrderEvent = useCallback((payload: OrderRow) => {
+  const handleOrderEvent = useCallback((payload: Order) => {
     setOrders((prev) => {
       const idx = prev.findIndex((o) => o.id === payload.id);
-      let next: OrderRow[];
+      let next: Order[];
       if (idx >= 0) {
         next = [...prev];
         next[idx] = payload;
@@ -100,7 +86,7 @@ export default function OrdersSideTable() {
     });
   }, []);
 
-  const sseStatus = useSSE<OrderRow>("orders", handleOrderEvent);
+  const sseStatus = useSSE<Order>("orders", handleOrderEvent);
 
   // Re-fetch REST snapshot on reconnect.
   useEffect(() => {

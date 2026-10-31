@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { request } from "../lib/api";
+import type { Account } from "../types/accounts";
 
 function CopyIcon() {
   return (
@@ -66,15 +67,6 @@ function EyeIcon() {
       />
     </svg>
   );
-}
-
-interface Account {
-  id: number;
-  account: string;
-  masked_account: string;
-  alias: string | null;
-  flex_query_token_id: number | null;
-  flex_query_token_name: string | null;
 }
 
 type RevealMode = "hidden" | "partial" | "full";

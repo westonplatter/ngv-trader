@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Plot from "react-plotly.js";
 import { request } from "../lib/api";
+import type { Job } from "../types/jobs";
 import { useSSE, type ConnectionStatus } from "../lib/events";
 import ComboboxInput, { type ComboboxOption } from "./ComboboxInput";
 
@@ -481,17 +482,9 @@ export default function PricingPage() {
   );
 
   // --- SSE job events ---
-  interface JobEvent {
-    id: number;
-    status: string;
-    job_type: string;
-    result: Record<string, unknown> | null;
-    last_error: string | null;
-  }
-
   const prevSseStatus = useRef<ConnectionStatus | null>(null);
 
-  const handleJobEvent = useCallback((payload: JobEvent, eventType: string) => {
+  const handleJob = useCallback((payload: Job, eventType: string) => {
     if (eventType === "job.archived") return;
     setLegs((prev) => {
       const legIdx = prev.findIndex((l) => l.fetchJobId === payload.id);
@@ -538,7 +531,7 @@ export default function PricingPage() {
     });
   }, []);
 
-  const sseStatus = useSSE<JobEvent>("jobs", handleJobEvent);
+  const sseStatus = useSSE<Job>("jobs", handleJob);
 
   useEffect(() => {
     if (prevSseStatus.current === "disconnected" && sseStatus === "connected") {

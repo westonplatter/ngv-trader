@@ -6,14 +6,14 @@
 // carry the AI marker. Items are keyed exactly as the API keys them, and the
 // fixtures reuse the existing demo positions, trades, and groups.
 
-import type { Position } from "../components/PositionsTable";
-import type { TradeExecutionRow } from "../components/TradesTable";
+import type { Position } from "../types/positions";
+import type { TradeExecutionRow } from "../types/trades";
 import {
   DEMO_POSITIONS,
   DEMO_TRADE_EXECUTIONS,
   DEMO_TRADE_GROUPS,
 } from "./demoData";
-import type { ItemRef, Tag, TagChip, TaggedItem, Task, TaskLink } from "./tags";
+import type { ItemRef, Tag, TagChip, TaggedItem, Task, TaskLink } from "../types/tags";
 
 const ACCOUNT_ID = 1;
 const AGENT = "agent:local-llm";

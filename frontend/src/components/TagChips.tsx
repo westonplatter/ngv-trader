@@ -3,15 +3,8 @@
 // small marker so a person can tell what an LLM agent did.
 
 import { useEffect, useRef, useState } from "react";
-import {
-  type ItemRef,
-  type Tag,
-  type TagChip,
-  agentName,
-  isAgent,
-  normalizeTagValue,
-  tagsApi,
-} from "../lib/tags";
+import { agentName, isAgent, normalizeTagValue, tagsApi } from "../lib/tags";
+import type { ItemRef, Tag, TagChip } from "../types/tags";
 
 export function TagChipView({
   chip,

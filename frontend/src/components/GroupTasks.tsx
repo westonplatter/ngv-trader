@@ -3,13 +3,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import {
-  TASK_STATUS_LABEL,
-  TASK_STATUS_ORDER,
-  type Task,
-  isAgent,
-  tasksApi,
-} from "../lib/tags";
+import { TASK_STATUS_LABEL, TASK_STATUS_ORDER, isAgent, tasksApi } from "../lib/tags";
+import type { Task } from "../types/tags";
 
 export default function GroupTasks({
   tradeGroupId,

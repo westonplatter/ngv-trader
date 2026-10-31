@@ -38,14 +38,21 @@ frontend/src/
   hooks/            reusable React hooks that are not tied to one domain
   lib/              domain modules: API clients, SSE client, demo fixtures,
                     page logic extracted for testing
+  types/            API request and response shapes, one file per resource
+                    (positions.ts, orders.ts, tradeGroups.ts, ...), no runtime code
   utils/            domain-agnostic helpers: number and date formatting, linkify
   index.css         Tailwind import only
 ```
 
 - `lib/` knows about ngv-trader entities (trade groups, tags, marks).
   `utils/` does not; a `utils/` function would make sense in any app.
-- `lib/` and `utils/` never import from `components/`. Shared types move down,
-  not components up.
+- A response type read by more than one module lives in `types/<resource>.ts`
+  and mirrors the backend Pydantic model it names in its header comment. A type
+  only one component reads may stay in that file. Never declare the same
+  payload twice.
+- Dependencies point one way: `components/` → `lib/`, `hooks/`, `contexts/` →
+  `types/`, `utils/`. Nothing under `lib/`, `utils/`, or `types/` imports from
+  `components/`. Shared types move down, not components up.
 - A page component is the component mounted by a route in `App.tsx`. Widgets
   shared by several pages (`TagChips`, `ComboboxInput`, `TradeGroupSearchSelect`)
   also live in `components/`.

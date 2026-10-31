@@ -14,7 +14,7 @@ import {
   sortRows,
   strategyLabel,
 } from "./strategyPnl";
-import type { TradeGroupPnlRow } from "./tradeGroups";
+import type { TradeGroupPnlRow } from "../types/tradeGroups";
 
 function row(overrides: Partial<TradeGroupPnlRow> = {}): TradeGroupPnlRow {
   return {

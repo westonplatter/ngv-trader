@@ -1,7 +1,8 @@
 import type React from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { request } from "../lib/api";
-import { type TradeGroupResult, tradeGroupLabel } from "../lib/tradeGroups";
+import { tradeGroupLabel } from "../lib/tradeGroups";
+import type { TradeGroupResult } from "../types/tradeGroups";
 
 // `fetch` has no default timeout: a request the server accepts but never answers
 // — an API restart dropping an in-flight connection, say — leaves its promise

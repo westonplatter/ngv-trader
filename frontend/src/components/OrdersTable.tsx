@@ -2,37 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePrivacy } from "../contexts/usePrivacy";
 import { PRIVACY_MASK } from "../utils/privacy";
 import { request } from "../lib/api";
+import type { SyncJobResponse } from "../types/jobs";
+import type { Order } from "../types/orders";
 import { formatDate, formatExpiry } from "../utils/date";
 import { useSSE, type ConnectionStatus } from "../lib/events";
-
-interface Order {
-  id: number;
-  account_id: number;
-  account_alias: string | null;
-  con_id: number | null;
-  symbol: string;
-  sec_type: string;
-  exchange: string;
-  currency: string;
-  side: string;
-  quantity: number;
-  order_type: string;
-  limit_price: number | null;
-  tif: string;
-  status: string;
-  contract_month: string | null;
-  contract_expiry: string | null;
-  option_right: string | null;
-  option_strike: string | null;
-  contract_display_name: string;
-  local_symbol: string | null;
-  ib_order_id: number | null;
-  ib_perm_id: number | null;
-  filled_quantity: number;
-  avg_fill_price: number | null;
-  created_at: string;
-  updated_at: string;
-}
 
 type OrderFilter = "all" | "working" | "closed";
 
@@ -179,7 +152,7 @@ export default function OrdersTable() {
     setSyncMessage(null);
     setSyncError(null);
     try {
-      const data = await request<{ job_id: number; status: string }>(
+      const data = await request<SyncJobResponse>(
         "POST",
         "/orders/sync",
         {

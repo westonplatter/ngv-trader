@@ -5,16 +5,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import TagChips from "./TagChips";
-import {
-  TASK_STATUS_LABEL,
-  TASK_STATUS_ORDER,
-  type Task,
-  type TaskLink,
-  type TaskStatus,
-  agentName,
-  isAgent,
-  tasksApi,
-} from "../lib/tags";
+import { TASK_STATUS_LABEL, TASK_STATUS_ORDER, agentName, isAgent, tasksApi } from "../lib/tags";
+import type { Task, TaskLink, TaskStatus } from "../types/tags";
 
 const STATUS_CLASS: Record<TaskStatus, string> = {
   todo: "bg-gray-100 text-gray-800",

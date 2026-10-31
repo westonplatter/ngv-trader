@@ -3,7 +3,8 @@
 
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { type ItemRef, tasksApi } from "../lib/tags";
+import { tasksApi } from "../lib/tags";
+import type { ItemRef } from "../types/tags";
 
 export default function TaskQuickAdd({
   item,
