@@ -3,6 +3,8 @@
 // small marker so a person can tell what an LLM agent did.
 
 import { useEffect, useRef, useState } from "react";
+import AgentBadge from "./AgentBadge";
+import { useAsyncAction } from "../hooks/useAsyncAction";
 import {
   type ItemRef,
   type Tag,
@@ -34,14 +36,7 @@ export function TagChipView({
           : "Applied by you"
       }
     >
-      {agent && (
-        <span
-          className="rounded bg-violet-100 px-1 text-[9px] font-semibold uppercase text-violet-700"
-          aria-label="agent"
-        >
-          AI
-        </span>
-      )}
+      <AgentBadge createdBy={chip.created_by} what="Applied" />
       {chip.value}
       {onRemove && (
         <button
@@ -204,17 +199,7 @@ export default function TagChips({
   readOnly?: boolean;
 }) {
   const [adding, setAdding] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const run = async (action: () => Promise<unknown>) => {
-    try {
-      setError(null);
-      await action();
-      onChanged();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    }
-  };
+  const { run, error } = useAsyncAction(onChanged);
 
   return (
     <span className="inline-flex flex-wrap items-center gap-1">

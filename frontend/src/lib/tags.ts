@@ -4,7 +4,7 @@
 // Tags are sticky notes. They never group items (that is trade groups) and never
 // feed reporting (that is strategies).
 
-import { API_BASE_URL } from "../config";
+import { query, request } from "./api";
 
 export type TagChip = {
   id: number;
@@ -86,6 +86,40 @@ export const TASK_STATUS_LABEL: Record<TaskStatus, string> = {
 
 export const TASK_STATUS_ORDER: TaskStatus[] = ["todo", "in_progress", "done"];
 
+// The status a one-click cycle moves to: todo → in progress → done → todo.
+export function nextTaskStatus(status: TaskStatus): TaskStatus {
+  return TASK_STATUS_ORDER[
+    (TASK_STATUS_ORDER.indexOf(status) + 1) % TASK_STATUS_ORDER.length
+  ];
+}
+
+// A string key for an item, for React keys and lookups: the typed key the API
+// uses, so two refs to the same item always match.
+export function itemKey(item: ItemRef): string {
+  if (item.entity_type === "position")
+    return `position:${item.account_id}:${item.con_id}`;
+  if (item.entity_type === "live_execution")
+    return `live_execution:${item.ib_exec_id}`;
+  return `${item.entity_type}:${item.id}`;
+}
+
+// Where a link or search result should take the person. Trades route by
+// symbol when the API supplied one.
+export function itemRoute(
+  item: ItemRef & { details?: Record<string, unknown> },
+): string {
+  if (item.entity_type === "trade_group")
+    return `/strategies?trade_group_id=${item.id}`;
+  if (item.entity_type === "strategy")
+    return `/strategies?strategy_id=${item.id}`;
+  if (item.entity_type === "task") return "/tasks";
+  if (item.entity_type === "position") return "/positions";
+  const symbol = item.details?.symbol;
+  return typeof symbol === "string"
+    ? `/trades?symbol=${encodeURIComponent(symbol)}`
+    : "/trades";
+}
+
 export function isAgent(createdBy: string | null | undefined): boolean {
   return Boolean(createdBy && createdBy.startsWith("agent:"));
 }
@@ -101,48 +135,6 @@ export function normalizeTagValue(value: string): string {
     .toLowerCase()
     .replace(/[\s_-]+/g, "-")
     .replace(/^-+|-+$/g, "");
-}
-
-async function request<T>(
-  method: string,
-  path: string,
-  body?: unknown,
-): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    method,
-    headers:
-      body === undefined ? undefined : { "Content-Type": "application/json" },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  if (!response.ok) {
-    let detail = `${method} ${path} failed (${response.status})`;
-    try {
-      const payload = (await response.json()) as { detail?: unknown };
-      if (typeof payload.detail === "string") detail = payload.detail;
-    } catch {
-      // keep the generic message
-    }
-    throw new Error(detail);
-  }
-  return response.status === 204
-    ? (undefined as T)
-    : ((await response.json()) as T);
-}
-
-function query(
-  params: Record<
-    string,
-    string | number | boolean | string[] | null | undefined
-  >,
-): string {
-  const search = new URLSearchParams();
-  for (const [key, value] of Object.entries(params)) {
-    if (value === null || value === undefined || value === "") continue;
-    if (Array.isArray(value)) value.forEach((v) => search.append(key, v));
-    else search.set(key, String(value));
-  }
-  const text = search.toString();
-  return text ? `?${text}` : "";
 }
 
 export const tagsApi = {
