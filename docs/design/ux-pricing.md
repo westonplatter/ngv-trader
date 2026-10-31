@@ -2,7 +2,8 @@
 topics: ["frontend", "pricing", "options", "futures", "contract-qualification"]
 code_dirs_or_files:
   [
-    "frontend/src/components/PricingPage.tsx",
+    "frontend/src/components/pricing/",
+    "frontend/src/lib/pricing/",
     "src/services/contract_sync.py",
     "src/api/routers/futures.py",
     "src/workers/jobs.py",
@@ -114,7 +115,8 @@ Returns `{ model_inputs, model_outputs: { min_dte, pnl_records, pnl_records_coun
 
 | File                                                            | Purpose                                  |
 | --------------------------------------------------------------- | ---------------------------------------- |
-| `frontend/src/components/PricingPage.tsx`                       | Main pricing page with dynamic legs      |
+| `frontend/src/components/pricing/`                              | Pricing page: hooks, panes, and the page |
+| `frontend/src/lib/pricing/`                                     | Leg, cascade, and chart logic (tested)   |
 | `frontend/src/components/ComboboxInput.tsx`                     | Reusable fuzzy-search dropdown           |
 | `src/models.py` — `OptionChainMeta`                             | Unqualified option chain catalog         |
 | `src/services/contract_sync.py` — `sync_futures_chain`          | Chain sync: IND → FUT → chain metadata   |
