@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { API_BASE_URL } from "../config";
+import { api, errorMessage } from "../lib/api";
 
 function CopyIcon() {
   return (
@@ -109,13 +109,10 @@ export default function AccountsTable() {
   };
 
   function fetchAccounts() {
-    fetch(`${API_BASE_URL}/accounts`)
-      .then((res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.json();
-      })
+    api
+      .get<Account[]>("/accounts")
       .then(setAccounts)
-      .catch((err) => setError(err.message))
+      .catch((err: unknown) => setError(errorMessage(err, "Load failed")))
       .finally(() => setLoading(false));
   }
 
@@ -136,23 +133,16 @@ export default function AccountsTable() {
   function saveAlias(id: number) {
     setSaving(true);
     const alias = editValue.trim() || null;
-    fetch(`${API_BASE_URL}/accounts/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ alias }),
-    })
-      .then((res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.json();
-      })
-      .then((updated: Account) => {
+    api
+      .patch<Account>(`/accounts/${id}`, { alias })
+      .then((updated) => {
         setAccounts((prev) =>
           prev.map((a) => (a.id === updated.id ? updated : a)),
         );
         setEditingId(null);
         setEditValue("");
       })
-      .catch((err) => setError(err.message))
+      .catch((err: unknown) => setError(errorMessage(err, "Save failed")))
       .finally(() => setSaving(false));
   }
 

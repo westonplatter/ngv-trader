@@ -39,7 +39,8 @@ For domain vocabulary, see [CONCEPTS.md](../../CONCEPTS.md).
 - `src/api/schemas.py`: request/response models used by more than one router (routers never import from each other for these); `src/api/annotations.py` fills `tags` / `open_task_count` on read rows.
 - `src/services/errors.py`: `ServiceError` (400) / `NotFoundError` (404) that services raise instead of `HTTPException`; `src/api/main.py` maps them to `{"detail": ...}`.
 - `src/api/routers/*.py`: REST surface — `positions`, `orders`, `trades`, `futures` (market data), `activated_products`, `jobs`, `workers`, `events` (SSE), `tradebot` (chat), `watch_lists`, `strategies`, `tags`, `tasks`, `trade_groups`, `accounts`, `structures`, `reports`, `admin`, `user_preferences`, `flexquery_tokens`.
-- `frontend/src/components/*.tsx`: React UI (positions, orders, trades, strategies, pricing, tradebot chat) consuming `/api/v1/*`.
+- `frontend/src/components/*.tsx`: React UI (positions, orders, trades, strategies, pricing, tradebot chat) consuming `/api/v1/*` through `frontend/src/lib/api.ts` (the one HTTP client; demo mode swaps its transport).
+- `frontend/src/hooks/`: `useSseList` (REST snapshot kept live from one SSE topic) and `useJobWatcher` (queue a sync job, act when it finishes).
 
 ## Services
 

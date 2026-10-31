@@ -10,7 +10,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { API_BASE_URL } from "../config";
+import { api } from "../lib/api";
+import { enqueueSyncJob, useJobWatcher } from "../hooks/useJobWatcher";
 import { usePrivacy } from "../contexts/usePrivacy";
 import {
   DEFAULT_SORT,
@@ -58,6 +59,7 @@ function pnlClass(value: number | null): string {
 export default function StrategyPnlTable() {
   const navigate = useNavigate();
   const { privacyMode } = usePrivacy();
+  const { watch } = useJobWatcher();
 
   const [status, setStatus] = useState("open");
   const [accountId, setAccountId] = useState("all");
@@ -90,20 +92,9 @@ export default function StrategyPnlTable() {
     const id = ++requestId.current;
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE_URL}/trade-groups?${query}`);
-      if (!res.ok) {
-        // A malformed instrument pattern comes back as a 400 with a readable
-        // message; surface it rather than an opaque status code.
-        let detail = `HTTP ${res.status}`;
-        try {
-          const body = (await res.json()) as { detail?: string };
-          if (body.detail) detail = body.detail;
-        } catch {
-          /* non-JSON error body — keep the status line */
-        }
-        throw new Error(detail);
-      }
-      const data = (await res.json()) as TradeGroupPnlRow[];
+      // A malformed instrument pattern comes back as a 400 with a readable
+      // message; the client surfaces that rather than an opaque status code.
+      const data = await api.get<TradeGroupPnlRow[]>(`/trade-groups?${query}`);
       if (id !== requestId.current) return; // a newer request already answered
       setRows(data);
       setError(null);
@@ -130,9 +121,7 @@ export default function StrategyPnlTable() {
   useEffect(() => {
     void (async () => {
       try {
-        const res = await fetch(`${API_BASE_URL}/accounts`);
-        if (!res.ok) return;
-        setAccounts((await res.json()) as AccountOption[]);
+        setAccounts(await api.get<AccountOption[]>("/accounts"));
       } catch {
         /* the account filter degrades to "All accounts" */
       }
@@ -143,24 +132,15 @@ export default function StrategyPnlTable() {
     setSyncing(true);
     setSyncMessage(null);
     try {
-      const res = await fetch(`${API_BASE_URL}/positions/sync/intraday-tws`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          source: "manual-ui",
-          request_text:
-            "Refresh live intraday overlay from the Strategy P&L table.",
-          max_attempts: 3,
-        }),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = (await res.json()) as { job_id: number; status: string };
+      const data = await enqueueSyncJob(
+        "/positions/sync/intraday-tws",
+        "Refresh live intraday overlay from the Strategy P&L table.",
+      );
       setSyncMessage(
         `Queued intraday TWS sync job #${data.job_id} (${data.status}). Refreshing shortly…`,
       );
-      // TWS session + reqTickers take longer than a flex enqueue; poll twice.
-      window.setTimeout(() => void load(), 3000);
-      window.setTimeout(() => void load(), 8000);
+      // Reload once the worker reports the job finished.
+      watch(data.job_id, () => void load());
     } catch (err: unknown) {
       setSyncMessage(
         err instanceof Error ? err.message : "Failed to queue sync.",
