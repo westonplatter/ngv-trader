@@ -1,5 +1,60 @@
 # Changelog
 
+## [0.1.19](https://github.com/westonplatter/ngv-trader/compare/v0.1.18...v0.1.19) (2026-10-31)
+
+
+### Features
+
+* add free-form tags and tasks ([#313](https://github.com/westonplatter/ngv-trader/issues/313)) ([6e3c3a5](https://github.com/westonplatter/ngv-trader/commit/6e3c3a5c1ddd30aea18497811d9debfa5a8c146a))
+* **frontend:** change a trade group's strategy ([#319](https://github.com/westonplatter/ngv-trader/issues/319)) ([d3d05cb](https://github.com/westonplatter/ngv-trader/commit/d3d05cb708bf5c0fd86d871ba275cf26e65e0edb))
+* **frontend:** show tags and tasks in demo mode ([#314](https://github.com/westonplatter/ngv-trader/issues/314)) ([67e99f8](https://github.com/westonplatter/ngv-trader/commit/67e99f8cab278f0c4e45af8296d23d710850d8fe))
+
+
+### Bug Fixes
+
+* **positions:** clear a fully flat account on the Flex position sync ([#320](https://github.com/westonplatter/ngv-trader/issues/320)) ([1ec314b](https://github.com/westonplatter/ngv-trader/commit/1ec314b71104eeb66a8d61f98460421177a03df4))
+
+
+### Documentation
+
+* add tags-and-tasks spec and rename trade-tagging doc ([#311](https://github.com/westonplatter/ngv-trader/issues/311)) ([eeaa9f2](https://github.com/westonplatter/ngv-trader/commit/eeaa9f2a26904cba66babe2ef2f996b8768b7436))
+* **readme:** add trades page screenshot ([#297](https://github.com/westonplatter/ngv-trader/issues/297)) ([bb75eaf](https://github.com/westonplatter/ngv-trader/commit/bb75eafd968b78eb6c9259872628ac956eb81c63))
+
+
+### Code Refactoring
+
+* **api:** build tag links in one place; end router-to-router imports ([#327](https://github.com/westonplatter/ngv-trader/issues/327)) ([efda110](https://github.com/westonplatter/ngv-trader/commit/efda110f4b38917343583a31dc5e3420ab02de20))
+* **api:** share tag schemas and catalog logic across routers ([#321](https://github.com/westonplatter/ngv-trader/issues/321)) ([7cc02b0](https://github.com/westonplatter/ngv-trader/commit/7cc02b042d9d087c21b24c40b2b2df9f552dcbf6))
+* **db:** move strategies out of the tag tables ([#312](https://github.com/westonplatter/ngv-trader/issues/312)) ([3b92eb5](https://github.com/westonplatter/ngv-trader/commit/3b92eb5901e541f540723032789799c5daddd952))
+* **frontend:** one api client plus sse-list and job-watcher hooks ([#325](https://github.com/westonplatter/ngv-trader/issues/325)) ([bda848c](https://github.com/westonplatter/ngv-trader/commit/bda848c0af21b5ca8c3b9e14f4f69cb8acdc13dc))
+* **frontend:** share the API client, async-action hook, and tag atoms ([#324](https://github.com/westonplatter/ngv-trader/issues/324)) ([78b05cf](https://github.com/westonplatter/ngv-trader/commit/78b05cfd12327d80e0b75a1c99d262c453d08309))
+* **frontend:** shared API client, types folder, and style guide ([#326](https://github.com/westonplatter/ngv-trader/issues/326)) ([e6686a8](https://github.com/westonplatter/ngv-trader/commit/e6686a83686fea46b079823e9c0cd1e1c77657fb))
+* **pnl:** one overlay facade and one realized-pnl rule for trade groups ([#328](https://github.com/westonplatter/ngv-trader/issues/328)) ([b54dd0a](https://github.com/westonplatter/ngv-trader/commit/b54dd0a5c404ae1b97758aacfa242f0640273f90))
+* **semantic:** rename the tag dimension to trade_group ([#318](https://github.com/westonplatter/ngv-trader/issues/318)) ([7dd4905](https://github.com/westonplatter/ngv-trader/commit/7dd4905b5585354672871cccae41c4c5a5816d86))
+* **services:** split item_links into refs, links, and descriptions ([#322](https://github.com/westonplatter/ngv-trader/issues/322)) ([800b894](https://github.com/westonplatter/ngv-trader/commit/800b8945d1ee9a11e55ac768d4be084133513fb4))
+
+
+### Miscellaneous Chores
+
+* **deps-dev:** bump eslint from 10.11.0 to 10.12.0 in /frontend ([#304](https://github.com/westonplatter/ngv-trader/issues/304)) ([3e73a8f](https://github.com/westonplatter/ngv-trader/commit/3e73a8fea4ef8f06fcb074127568d0112305b33b))
+* **deps-dev:** bump globals from 17.12.0 to 17.13.0 in /frontend ([#305](https://github.com/westonplatter/ngv-trader/issues/305)) ([f0bfee1](https://github.com/westonplatter/ngv-trader/commit/f0bfee1559506663650e6ccf5629ae593ab667bf))
+* **deps-dev:** bump ruff from 0.16.5 to 0.17.0 ([#309](https://github.com/westonplatter/ngv-trader/issues/309)) ([bc8cd37](https://github.com/westonplatter/ngv-trader/commit/bc8cd372eefa73df5f8c20767d6c9a0e25408529))
+* **deps-dev:** bump typescript-eslint from 8.70.1 to 8.71.1 in /frontend ([#302](https://github.com/westonplatter/ngv-trader/issues/302)) ([b4a2a0d](https://github.com/westonplatter/ngv-trader/commit/b4a2a0dc2f51d364038cbbf381f667df6a14226d))
+* **deps-dev:** bump typescript-eslint in /frontend ([b4a2a0d](https://github.com/westonplatter/ngv-trader/commit/b4a2a0dc2f51d364038cbbf381f667df6a14226d))
+* **deps:** bump certifi from 2026.1.4 to 2026.10.19 ([#306](https://github.com/westonplatter/ngv-trader/issues/306)) ([46e103b](https://github.com/westonplatter/ngv-trader/commit/46e103b1c97ca2615bfabc33296611cfb281ea32))
+* **deps:** bump fastapi from 0.141.1 to 0.142.2 ([#300](https://github.com/westonplatter/ngv-trader/issues/300)) ([f037846](https://github.com/westonplatter/ngv-trader/commit/f0378460dfcca4265c3ef3e1b13bd83b56cf3069))
+* **deps:** bump fastapi from 0.142.2 to 0.143.0 ([#310](https://github.com/westonplatter/ngv-trader/issues/310)) ([208389a](https://github.com/westonplatter/ngv-trader/commit/208389ae8e90dbd6dd1216e596d147d1618f80f1))
+* **deps:** bump langgraph from 1.2.11 to 1.2.14 ([#315](https://github.com/westonplatter/ngv-trader/issues/315)) ([cff0e4a](https://github.com/westonplatter/ngv-trader/commit/cff0e4a4d14037cca05f1ec1a569444786fb87a7))
+* **deps:** bump mcp from 2.2.0 to 2.3.0 ([#303](https://github.com/westonplatter/ngv-trader/issues/303)) ([34c8c13](https://github.com/westonplatter/ngv-trader/commit/34c8c13f3a5cc05deb23b047220ed21f0849d512))
+* **deps:** bump opentelemetry-api from 1.44.0 to 1.45.1 ([#307](https://github.com/westonplatter/ngv-trader/issues/307)) ([2642032](https://github.com/westonplatter/ngv-trader/commit/2642032f354106384225bb713224e1fc6be8e636))
+* **docs:** move screenshots to the media branch and fix screenshot.mjs ([#317](https://github.com/westonplatter/ngv-trader/issues/317)) ([7d4fb24](https://github.com/westonplatter/ngv-trader/commit/7d4fb241ba6dcfa316d083e492167314d56acaec))
+* **python:** pin the Ruff line length and format to it ([#323](https://github.com/westonplatter/ngv-trader/issues/323)) ([b780567](https://github.com/westonplatter/ngv-trader/commit/b7805675ba6393daebca146f36af3378be3aec84))
+
+
+### Continuous Integration
+
+* record GitHub repo settings in .github/settings ([#301](https://github.com/westonplatter/ngv-trader/issues/301)) ([68bb6d4](https://github.com/westonplatter/ngv-trader/commit/68bb6d41bce6e9a40f3bd710788cc03b367087ab))
+
 ## [0.1.18](https://github.com/westonplatter/ngv-trader/compare/v0.1.17...v0.1.18) (2026-10-10)
 
 
