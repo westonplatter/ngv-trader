@@ -244,7 +244,7 @@ export default function TradeGroupSearchSelect({
   if (mode === "display") {
     // False positive: `openSearch` touches a ref, but it is handed to the
     // render prop to be wired onto a click handler, never invoked during
-    // render. Both call sites (TradesTable, PositionsTable) only call it from
+    // render. Both call sites (TradesTable, PositionCell) only call it from
     // onClick.
     // eslint-disable-next-line react-hooks/refs
     return <>{renderTrigger(openSearch)}</>;
