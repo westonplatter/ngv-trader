@@ -16,9 +16,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { API_BASE_URL } from "../config";
-
-const API_BASE = API_BASE_URL;
+import { api, errorMessage } from "../lib/api";
 
 interface WatchListSummary {
   id: number;
@@ -211,12 +209,9 @@ export default function WatchListsPage() {
   );
 
   const fetchLists = useCallback(() => {
-    fetch(`${API_BASE}/watch-lists`)
-      .then((res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.json();
-      })
-      .then((data: WatchListSummary[]) => {
+    api
+      .get<WatchListSummary[]>("/watch-lists")
+      .then((data) => {
         setLists(data);
         // Auto-select first watch list if none selected
         setSelectedId((prev) => {
@@ -224,7 +219,7 @@ export default function WatchListsPage() {
           return prev;
         });
       })
-      .catch((err) => setError(err.message))
+      .catch((err: unknown) => setError(errorMessage(err, "Request failed")))
       .finally(() => setLoading(false));
   }, []);
 
@@ -236,13 +231,10 @@ export default function WatchListsPage() {
   };
 
   const fetchDetail = useCallback((id: number) => {
-    fetch(`${API_BASE}/watch-lists/${id}`)
-      .then((res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.json();
-      })
+    api
+      .get<WatchListDetail>(`/watch-lists/${id}`)
       .then(setDetail)
-      .catch((err) => setError(err.message));
+      .catch((err: unknown) => setError(errorMessage(err, "Load failed")));
   }, []);
 
   useEffect(() => {
@@ -271,12 +263,10 @@ export default function WatchListsPage() {
     setLists(reordered);
 
     // Persist to backend
-    fetch(`${API_BASE}/watch-lists/reorder`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ids: reordered.map((wl) => wl.id) }),
-    }).catch((err) => {
-      setError(err.message);
+    api
+      .put("/watch-lists/reorder", { ids: reordered.map((wl) => wl.id) })
+      .catch((err: unknown) => {
+        setError(errorMessage(err, "Reorder failed"));
       // Revert on failure
       fetchLists();
     });
@@ -285,17 +275,10 @@ export default function WatchListsPage() {
   const handleCreate = () => {
     if (!newName.trim()) return;
     setCreating(true);
-    fetch(`${API_BASE}/watch-lists`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
+    api
+      .post<WatchListSummary>("/watch-lists", {
         name: newName.trim(),
         description: newDesc.trim() || null,
-      }),
-    })
-      .then((res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.json();
       })
       .then((created) => {
         setNewName("");
@@ -303,22 +286,22 @@ export default function WatchListsPage() {
         fetchLists();
         selectWatchList(created.id);
       })
-      .catch((err) => setError(err.message))
+      .catch((err: unknown) => setError(errorMessage(err, "Request failed")))
       .finally(() => setCreating(false));
   };
 
   const handleDelete = (id: number) => {
     if (!confirm("Delete this watch list and all its instruments?")) return;
-    fetch(`${API_BASE}/watch-lists/${id}`, { method: "DELETE" })
-      .then((res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    api
+      .delete(`/watch-lists/${id}`)
+      .then(() => {
         if (selectedId === id) {
           selectWatchList(null);
           setDetail(null);
         }
         fetchLists();
       })
-      .catch((err) => setError(err.message));
+      .catch((err: unknown) => setError(errorMessage(err, "Request failed")));
   };
 
   const startEditing = (
@@ -333,21 +316,17 @@ export default function WatchListsPage() {
 
   const handleEditSave = (id: number) => {
     if (!editName.trim()) return;
-    fetch(`${API_BASE}/watch-lists/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
+    api
+      .patch(`/watch-lists/${id}`, {
         name: editName.trim(),
         description: editDesc.trim() || null,
-      }),
-    })
-      .then((res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      })
+      .then(() => {
         setEditingId(null);
         fetchLists();
         if (selectedId === id) fetchDetail(id);
       })
-      .catch((err) => setError(err.message));
+      .catch((err: unknown) => setError(errorMessage(err, "Request failed")));
   };
 
   const handleRemoveInstrumentRequest = (instrumentId: number) => {
@@ -359,16 +338,14 @@ export default function WatchListsPage() {
   const handleRemoveInstrumentConfirm = (instrumentId: number) => {
     if (selectedId === null) return;
     setRemovingInstrumentId(instrumentId);
-    fetch(`${API_BASE}/watch-lists/${selectedId}/instruments/${instrumentId}`, {
-      method: "DELETE",
-    })
-      .then((res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    api
+      .delete(`/watch-lists/${selectedId}/instruments/${instrumentId}`)
+      .then(() => {
         setRemoveConfirmId(null);
         fetchDetail(selectedId);
         fetchLists();
       })
-      .catch((err) => setError(err.message))
+      .catch((err: unknown) => setError(errorMessage(err, "Request failed")))
       .finally(() => setRemovingInstrumentId(null));
   };
 
@@ -376,18 +353,15 @@ export default function WatchListsPage() {
     if (selectedId === null) return;
     setRefreshingQuotes(true);
     setQuotesRefreshMessage(null);
-    fetch(`${API_BASE}/watch-lists/${selectedId}/quotes/refresh`, {
-      method: "POST",
-    })
-      .then((res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.json();
-      })
-      .then((data: WatchListQuotesRefreshResponse) => {
+    api
+      .post<WatchListQuotesRefreshResponse>(
+        `/watch-lists/${selectedId}/quotes/refresh`,
+      )
+      .then((data) => {
         setQuotesRefreshMessage(data.message);
         fetchDetail(selectedId);
       })
-      .catch((err) => setError(err.message))
+      .catch((err: unknown) => setError(errorMessage(err, "Request failed")))
       .finally(() => setRefreshingQuotes(false));
   };
 

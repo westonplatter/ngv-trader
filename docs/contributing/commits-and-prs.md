@@ -63,9 +63,9 @@ add one when a picture makes the change easier to review.
 
 **Demo mode.** Enable with the `?demo=1` URL query param (e.g. `/positions?demo=1`)
 or `VITE_DEMO_MODE=1` in `frontend/.env`. When on, `frontend/src/lib/demoApi.ts`
-intercepts `fetch` and answers every backend call from the fixtures in
-`frontend/src/lib/demoData.ts` — so all pages render without a backend and
-components need no demo-specific code. A "DEMO MODE" banner is shown so screenshots
+swaps the API client's transport (`setApiFetch` in `frontend/src/lib/api.ts`) and
+answers every backend call from the fixtures in `frontend/src/lib/demoData.ts` — so
+all pages render without a backend and components need no demo-specific code. A "DEMO MODE" banner is shown so screenshots
 are unambiguous.
 
 **Capturing.** With the dev server running (`task frontend`):

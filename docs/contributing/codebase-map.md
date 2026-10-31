@@ -37,7 +37,8 @@ For domain vocabulary, see [CONCEPTS.md](../../CONCEPTS.md).
 - `src/schemas.py`: Pandera DataFrame schema for positions validation shape.
 - `src/api/deps.py`: FastAPI DB session dependency (`get_db`).
 - `src/api/routers/*.py`: REST surface — `positions`, `orders`, `trades`, `futures` (market data), `activated_products`, `jobs`, `workers`, `events` (SSE), `tradebot` (chat), `watch_lists`, `strategies`, `tags`, `tasks`, `trade_groups`, `accounts`, `structures`, `reports`, `admin`, `user_preferences`, `flexquery_tokens`.
-- `frontend/src/components/*.tsx`: React UI (positions, orders, trades, strategies, pricing, tradebot chat) consuming `/api/v1/*`.
+- `frontend/src/components/*.tsx`: React UI (positions, orders, trades, strategies, pricing, tradebot chat) consuming `/api/v1/*` through `frontend/src/lib/api.ts` (the one HTTP client; demo mode swaps its transport).
+- `frontend/src/hooks/`: `useSseList` (REST snapshot kept live from one SSE topic) and `useJobWatcher` (queue a sync job, act when it finishes).
 
 ## Services
 

@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { usePrivacy } from "../contexts/usePrivacy";
 import { PRIVACY_MASK } from "../utils/privacy";
-import { API_BASE_URL } from "../config";
-import { useSSE, type ConnectionStatus } from "../lib/events";
+import { enqueueSyncJob, useJobWatcher } from "../hooks/useJobWatcher";
+import { useSseList } from "../hooks/useSseList";
+import { api } from "../lib/api";
 
 interface Order {
   id: number;
@@ -80,9 +81,6 @@ function getDisplayedSymbol(order: Order): string {
 
 export default function OrdersTable() {
   const { privacyMode } = usePrivacy();
-  const [orders, setOrders] = useState<Order[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
   const [syncError, setSyncError] = useState<string | null>(null);
@@ -94,26 +92,20 @@ export default function OrdersTable() {
   );
   const [symbolRegexFilter, setSymbolRegexFilter] = useState("");
 
-  // Track previous SSE status so we can detect reconnect transitions.
-  const prevStatusRef = useRef<ConnectionStatus | null>(null);
+  const loadOrders = useCallback(() => api.get<Order[]>("/orders"), []);
 
-  const loadOrders = useCallback(() => {
-    fetch(`${API_BASE_URL}/orders`)
-      .then((res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.json();
-      })
-      .then((data: Order[]) => {
-        setOrders(data);
-        setError(null);
-      })
-      .catch((err: Error) => {
-        setError(err.message);
-      })
-      .finally(() => {
-        setLoading(false);
-      });
-  }, []);
+  // Snapshot on mount, upsert from the orders stream, re-fetch on reconnect.
+  const {
+    items: orders,
+    loading,
+    error,
+    reload,
+  } = useSseList<Order>({
+    topic: "orders",
+    load: loadOrders,
+    key: (order) => order.id,
+  });
+  const { watch } = useJobWatcher();
 
   const symbolFilter = useMemo(() => {
     const raw = symbolRegexFilter.trim();
@@ -163,52 +155,17 @@ export default function OrdersTable() {
     });
   }, [filteredOrders]);
 
-  // Initial fetch on mount.
-  useEffect(() => {
-    loadOrders();
-  }, [loadOrders]);
-
-  // Merge an incoming SSE order payload into the orders list.
-  const handleOrderEvent = useCallback((payload: Order) => {
-    setOrders((prev) => {
-      const idx = prev.findIndex((o) => o.id === payload.id);
-      if (idx >= 0) {
-        const next = [...prev];
-        next[idx] = payload;
-        return next;
-      }
-      return [payload, ...prev];
-    });
-  }, []);
-
-  const sseStatus = useSSE<Order>("orders", handleOrderEvent);
-
-  // Re-fetch REST snapshot on reconnect.
-  useEffect(() => {
-    if (prevStatusRef.current === "disconnected" && sseStatus === "connected") {
-      loadOrders();
-    }
-    prevStatusRef.current = sseStatus;
-  }, [sseStatus, loadOrders]);
-
   const kickOffOrderSync = async () => {
     setSyncing(true);
     setSyncMessage(null);
     setSyncError(null);
     try {
-      const res = await fetch(`${API_BASE_URL}/orders/sync`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          source: "manual-ui",
-          request_text: "Manual order fetch/sync from Orders page.",
-          max_attempts: 3,
-        }),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data: { job_id: number; status: string } = await res.json();
+      const data = await enqueueSyncJob(
+        "/orders/sync",
+        "Manual order fetch/sync from Orders page.",
+      );
       setSyncMessage(`Queued order sync job #${data.job_id} (${data.status}).`);
-      window.setTimeout(() => loadOrders(), 1000);
+      watch(data.job_id, () => reload());
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unknown sync error";
       setSyncError(message);
@@ -227,21 +184,12 @@ export default function OrdersTable() {
       return next;
     });
     try {
-      const res = await fetch(`${API_BASE_URL}/orders/${orderId}/cancel`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          source: "manual-ui",
-          request_text: "Cancelled from Orders UI",
-        }),
+      const data = await api.post<Order>(`/orders/${orderId}/cancel`, {
+        source: "manual-ui",
+        request_text: "Cancelled from Orders UI",
       });
-      if (!res.ok) {
-        const body = await res.text();
-        throw new Error(body || `HTTP ${res.status}`);
-      }
-      const data: Order = await res.json();
       setCancelMessage(`Order #${data.id} is now '${data.status}'.`);
-      loadOrders();
+      reload();
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Unknown cancel error";
