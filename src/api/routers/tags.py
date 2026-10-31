@@ -17,8 +17,9 @@ from src.api.deps import get_db
 from src.api.schemas import ItemRefBody, TagChip
 from src.models import TAG_ENTITY_TYPES, Tag, TagLink
 from src.services.item_descriptions import describe_items, tag_chip
-from src.services.item_links import attach_tag, detach_tag, now_utc
+from src.services.item_links import attach_tag, detach_tag, move_tag_links, now_utc
 from src.services.item_refs import ItemRef, expand_items, item_key, link_item
+from src.utils.sql import escape_like
 from src.services.tags import get_or_create_tag, normalize_tag_value, require_tag, resolve_tags, validate_created_by
 
 router = APIRouter()
@@ -123,7 +124,7 @@ def list_tags(
     if not include_archived:
         stmt = stmt.where(Tag.archived_at.is_(None))
     if q:
-        escaped = normalize_tag_value(q).replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        escaped = escape_like(normalize_tag_value(q))
         stmt = stmt.where(Tag.normalized_value.like(f"%{escaped}%", escape="\\"))
     # Most-used first, so type-ahead suggests the tags actually in use. Ordered in
     # SQL so the limit keeps the most-used tags, not the first ones by name.
@@ -183,21 +184,7 @@ def merge_tag(tag_id: int, body: TagMergeRequest, db: Session = DB_SESSION_DEPEN
         raise HTTPException(status_code=400, detail="Cannot merge a tag into itself")
     source = require_tag(db, tag_id)
     target = require_tag(db, body.into_tag_id)
-    for link in db.execute(select(TagLink).where(TagLink.tag_id == source.id)).scalars().all():
-        if link.ended_at is None:
-            attach_tag(db, target.id, link_item(link), link.created_by)
-        else:
-            db.add(
-                TagLink(
-                    tag_id=target.id,
-                    entity_type=link.entity_type,
-                    created_by=link.created_by,
-                    assigned_at=link.assigned_at,
-                    ended_at=link.ended_at,
-                    **link_item(link).key(),
-                )
-            )
-        db.flush()
+    move_tag_links(db, source.id, target.id)
     db.delete(source)
     db.commit()
     return _responses(db, [target])[0]
