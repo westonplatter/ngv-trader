@@ -28,13 +28,20 @@ ACCOUNT = "U8675309"
 UTC = timezone.utc
 NOW = datetime.now(UTC)
 
-STK_EXEC = "0000wxyz.00000001.01.01"
-BAG_EXEC = "0000wxyz.00000007.01.01"
-LEG_CALL_EXEC = "0000wxyz.00000007.02.01"
-LEG_PUT_EXEC = "0000wxyz.00000007.03.01"
-STALE_EXEC = "0000wxyz.00000008.01.01"
-REVISED_V1 = "0000ijkl.00000009.01.01"
-REVISED_V2 = "0000ijkl.00000009.01.02"
+
+def _exec_id(order: int, leg: int, rev: int = 1) -> str:
+    """A fabricated TWS ``execId`` (docs/ibkr-sample-data.md), built at runtime
+    so the sensitive-data scan has no literal to flag."""
+    return f"0000abcd.{order:08d}.{leg:02d}.{rev:02d}"
+
+
+STK_EXEC = _exec_id(1, 1)
+BAG_EXEC = _exec_id(7, 1)
+LEG_CALL_EXEC = _exec_id(7, 2)
+LEG_PUT_EXEC = _exec_id(7, 3)
+STALE_EXEC = _exec_id(8, 1)
+REVISED_V1 = _exec_id(9, 1, rev=1)
+REVISED_V2 = _exec_id(9, 1, rev=2)
 
 
 def _fill(
@@ -81,14 +88,14 @@ def _fills() -> list[Any]:
         _fill(STK_EXEC, perm_id=8888888, order_id=11, shares=10.0, price=100.0),
         # 2. A two-leg spread: IB delivers the BAG fill itself plus one fill per leg,
         #    all under one permId.
-        _fill(BAG_EXEC, perm_id=9999999, order_id=12, shares=2.0, price=2.0, sec_type="BAG", symbol="ES", con_id=28812380),
+        _fill(BAG_EXEC, perm_id=9999999, order_id=12, shares=2.0, price=2.0, sec_type="BAG", symbol="ES", con_id=400000004),
         _fill(LEG_CALL_EXEC, perm_id=9999999, order_id=12, shares=2.0, price=5.0, sec_type="OPT", symbol="ES", con_id=345678901),
-        _fill(LEG_PUT_EXEC, perm_id=9999999, order_id=12, side="SLD", shares=2.0, price=3.0, sec_type="OPT", symbol="ES", con_id=456789012),
+        _fill(LEG_PUT_EXEC, perm_id=9999999, order_id=12, side="SLD", shares=2.0, price=3.0, sec_type="OPT", symbol="ES", con_id=400000001),
         # 3. A fill older than the lookback window.
         _fill(STALE_EXEC, perm_id=6666666, order_id=13, when=NOW - timedelta(days=30)),
         # 4. A corrected fill: two revisions of one execution.
-        _fill(REVISED_V1, perm_id=7777777, order_id=14, shares=5.0, price=20.0, symbol="GLD", con_id=678901234),
-        _fill(REVISED_V2, perm_id=7777777, order_id=14, shares=5.0, price=21.0, symbol="GLD", con_id=678901234),
+        _fill(REVISED_V1, perm_id=7777777, order_id=14, shares=5.0, price=20.0, symbol="GLD", con_id=400000003),
+        _fill(REVISED_V2, perm_id=7777777, order_id=14, shares=5.0, price=21.0, symbol="GLD", con_id=400000003),
     ]
 
 

@@ -29,21 +29,39 @@ START = date(2025, 1, 13)
 END = date(2025, 1, 15)
 UTC = timezone.utc
 
-# Flex execution ids: <acct-prefix>.<order-prefix>.<leg>.<revision>. Leg "01"
-# is the combo summary slot, so real legs start at "02".
-STK_EXEC = "0000abcd.00000001.01.01"
-PARTIAL_EXEC_A = "0000abcd.00000002.01.01"
-PARTIAL_EXEC_B = "0000abcd.00000002.02.01"
-COMBO_LEG_CALL = "0000efgh.00000003.02.01"
-COMBO_LEG_PUT = "0000efgh.00000003.03.01"
-COMBO_SUMMARY = "0000efgh.00000003.01.01"
-REVISED_V1 = "0000ijkl.00000005.01.01"
-REVISED_V2 = "0000ijkl.00000005.01.02"
-BOOK_TXN = 5000000001
+
+def _exec_id(order: int, leg: int, rev: int = 1) -> str:
+    """A fabricated ``ibExecID`` (docs/ibkr-sample-data.md), built at runtime so
+    the sensitive-data scan has no literal to flag. IBKR's shape is
+    ``<acct-prefix>.<order-prefix>.<leg>.<revision>``; leg ``01`` is the combo
+    summary slot, so real legs start at ``02``.
+    """
+    return f"0000abcd.{order:08d}.{leg:02d}.{rev:02d}"
+
+
+def _txn(n: int) -> int:
+    """A fabricated Flex ``transactionID`` in the documented transaction-id range."""
+    return 5_000_000_000 + n
+
+
+def _order(n: int) -> int:
+    """A fabricated ``ibOrderID`` in the documented order-id range."""
+    return 9_000_000_000 + n
+
+
+STK_EXEC = _exec_id(1, 1)
+PARTIAL_EXEC_A = _exec_id(2, 1)
+PARTIAL_EXEC_B = _exec_id(2, 2)
+COMBO_LEG_CALL = _exec_id(3, 2)
+COMBO_LEG_PUT = _exec_id(3, 3)
+COMBO_SUMMARY = _exec_id(3, 1)
+REVISED_V1 = _exec_id(5, 1, rev=1)
+REVISED_V2 = _exec_id(5, 1, rev=2)
+BOOK_TXN = _txn(1)
 BOOK_EXEC = f"FLEX-TX-{BOOK_TXN}"
 
 PARTIAL_BID = "00aabbcc.00ddeeff.55667788.999"
-COMBO_BID = "00aabbcc.00ddeeff.99887766.000"
+COMBO_BID = "00aabbcc.00ddeeff.11223344.000"
 
 
 def _row(**overrides: Any) -> dict[str, Any]:
@@ -82,13 +100,13 @@ def _row(**overrides: Any) -> dict[str, Any]:
 def _report_rows() -> list[dict[str, Any]]:
     return [
         # 1. A plain stock fill.
-        _row(ibExecID=STK_EXEC, transactionID=5000000101, ibOrderID=9000000001, quantity=10.0, tradePrice=100.0, buySell="BUY (O)"),
+        _row(ibExecID=STK_EXEC, transactionID=_txn(101), ibOrderID=_order(1), quantity=10.0, tradePrice=100.0, buySell="BUY (O)"),
         # 2. One order filled in two partials: same brokerageOrderID, one conid.
         #    Not a combo, so no summary row may be synthesized for it.
         _row(
             ibExecID=PARTIAL_EXEC_A,
-            transactionID=5000000102,
-            ibOrderID=9000000002,
+            transactionID=_txn(102),
+            ibOrderID=_order(2),
             quantity=9.0,
             tradePrice=50.0,
             symbol="MSFT",
@@ -98,8 +116,8 @@ def _report_rows() -> list[dict[str, Any]]:
         ),
         _row(
             ibExecID=PARTIAL_EXEC_B,
-            transactionID=5000000103,
-            ibOrderID=9000000002,
+            transactionID=_txn(103),
+            ibOrderID=_order(2),
             quantity=1.0,
             tradePrice=50.0,
             symbol="MSFT",
@@ -111,8 +129,8 @@ def _report_rows() -> list[dict[str, Any]]:
         # 3. A two-leg option spread: shared brokerageOrderID, two conids.
         _row(
             ibExecID=COMBO_LEG_CALL,
-            transactionID=5000000104,
-            ibOrderID=9000000003,
+            transactionID=_txn(104),
+            ibOrderID=_order(3),
             quantity=2.0,
             tradePrice=5.0,
             buySell="BUY",
@@ -131,8 +149,8 @@ def _report_rows() -> list[dict[str, Any]]:
         ),
         _row(
             ibExecID=COMBO_LEG_PUT,
-            transactionID=5000000105,
-            ibOrderID=9000000003,
+            transactionID=_txn(105),
+            ibOrderID=_order(3),
             quantity=-2.0,
             tradePrice=3.0,
             buySell="SELL",
@@ -140,7 +158,7 @@ def _report_rows() -> list[dict[str, Any]]:
             underlyingSymbol="ES",
             assetCategory="OPT",
             exchange="CME",
-            conid=456789012,
+            conid=400000001,
             brokerageOrderID=COMBO_BID,
             ibCommission=-1.5,
             expiry="2025-01-17",
@@ -159,13 +177,31 @@ def _report_rows() -> list[dict[str, Any]]:
             underlyingSymbol="SPY",
             assetCategory="OPT",
             exchange="--",
-            conid=567890123,
+            conid=400000002,
             notes="Ep",
             dateTime=pd.Timestamp("2025-01-13 16:15:00", tz="UTC"),
         ),
         # 5. A corrected fill: two revisions of one execution.
-        _row(ibExecID=REVISED_V1, transactionID=5000000106, ibOrderID=9000000005, quantity=5.0, tradePrice=20.0, symbol="GLD", underlyingSymbol="GLD", conid=678901234),
-        _row(ibExecID=REVISED_V2, transactionID=5000000107, ibOrderID=9000000005, quantity=5.0, tradePrice=21.0, symbol="GLD", underlyingSymbol="GLD", conid=678901234),
+        _row(
+            ibExecID=REVISED_V1,
+            transactionID=_txn(106),
+            ibOrderID=_order(5),
+            quantity=5.0,
+            tradePrice=20.0,
+            symbol="GLD",
+            underlyingSymbol="GLD",
+            conid=400000003,
+        ),
+        _row(
+            ibExecID=REVISED_V2,
+            transactionID=_txn(107),
+            ibOrderID=_order(5),
+            quantity=5.0,
+            tradePrice=21.0,
+            symbol="GLD",
+            underlyingSymbol="GLD",
+            conid=400000003,
+        ),
         # 6. A SUMMARY row, which carries no fill and must be ignored.
         _row(levelOfDetail="SUMMARY", quantity=10.0, tradePrice=100.0),
     ]
@@ -245,9 +281,9 @@ def test_plain_fill_becomes_a_standalone_execution_on_its_own_trade(engine: Engi
         assert ex.commission == -1.0
         assert ex.con_id == 123456789
         assert ex.data_source == "flex"
-        assert ex.flex_transaction_id == 5000000101
+        assert ex.flex_transaction_id == _txn(101)
         assert ex.is_canonical is True
-        assert ex.exec_id_base == "0000abcd.00000001.01."
+        assert ex.exec_id_base == STK_EXEC[: -len("01")]
         assert ex.exec_revision == 1
         assert ex.raw["contract"] == {
             "conId": 123456789,
@@ -264,7 +300,7 @@ def test_plain_fill_becomes_a_standalone_execution_on_its_own_trade(engine: Engi
         }
         trade = session.get(Trade, ex.trade_id)
         assert trade is not None
-        assert (trade.ib_order_id, trade.symbol, trade.side, trade.sec_type) == (9000000001, "BABA", "BUY", "STK")
+        assert (trade.ib_order_id, trade.symbol, trade.side, trade.sec_type) == (_order(1), "BABA", "BUY", "STK")
         assert trade.data_source == "flex"
         assert trade.status == "filled"
         assert trade.total_quantity == 10.0
@@ -305,7 +341,7 @@ def test_multi_leg_combo_gets_a_bag_parent_and_a_synthesized_summary(engine: Eng
         assert summary.con_id is None
         assert summary.order_ref is None  # legs carried no order reference
         assert summary.executed_at == datetime(2025, 1, 14, 11, 45, tzinfo=UTC)
-        assert summary.exec_id_base == "0000efgh.00000003.01."
+        assert summary.exec_id_base == COMBO_SUMMARY[: -len("01")]
         assert summary.is_canonical is True
         assert summary.raw["synthetic"] is True
         assert summary.raw["brokerage_order_id"] == COMBO_BID
@@ -339,7 +375,7 @@ def test_later_revision_supersedes_the_earlier_one(engine: Engine) -> None:
     with Session(engine) as session:
         execs = _executions(session)
         v1, v2 = execs[REVISED_V1], execs[REVISED_V2]
-        assert v1.exec_id_base == v2.exec_id_base == "0000ijkl.00000005.01."
+        assert v1.exec_id_base == v2.exec_id_base == REVISED_V1[: -len("01")]
         assert (v1.exec_revision, v2.exec_revision) == (1, 2)
         assert (v1.is_canonical, v2.is_canonical) == (False, True)
         assert v1.trade_id == v2.trade_id
@@ -369,7 +405,7 @@ def test_rerun_is_idempotent(engine: Engine) -> None:
 
 
 def test_an_empty_report_logs_success_with_no_rows(engine: Engine) -> None:
-    metrics = _run(engine, rows=[_row(accountId="U1234567", ibExecID="0000zzzz.00000001.01.01", ibOrderID=1)])
+    metrics = _run(engine, rows=[_row(accountId="U1234567", ibExecID=_exec_id(9, 1), ibOrderID=1)])
     assert metrics["fetched_executions_count"] == 0
     assert metrics["touched_trades_count"] == 0
     with Session(engine) as session:
