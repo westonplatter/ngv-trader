@@ -3,11 +3,12 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import AgentBadge from "./AgentBadge";
+import { useAsyncAction } from "../hooks/useAsyncAction";
 import {
   TASK_STATUS_LABEL,
-  TASK_STATUS_ORDER,
   type Task,
-  isAgent,
+  nextTaskStatus,
   tasksApi,
 } from "../lib/tags";
 
@@ -21,27 +22,26 @@ export default function GroupTasks({
 }) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [title, setTitle] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const load = useCallback(() => {
     tasksApi
       .list({ tradeGroupId })
       .then(setTasks)
-      .catch((err: Error) => setError(err.message));
+      .catch((err: Error) => setLoadError(err.message));
   }, [tradeGroupId]);
 
   useEffect(() => load(), [load]);
 
-  const run = async (action: () => Promise<unknown>) => {
-    try {
-      setError(null);
-      await action();
-      load();
-      onChanged?.();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    }
-  };
+  const {
+    run,
+    error: actionError,
+    pending,
+  } = useAsyncAction(() => {
+    load();
+    onChanged?.();
+  });
+  const error = actionError ?? loadError;
 
   return (
     <div>
@@ -56,11 +56,7 @@ export default function GroupTasks({
       </div>
       <ul className="mt-1 space-y-1">
         {tasks.map((task) => {
-          const next =
-            TASK_STATUS_ORDER[
-              (TASK_STATUS_ORDER.indexOf(task.status) + 1) %
-                TASK_STATUS_ORDER.length
-            ];
+          const next = nextTaskStatus(task.status);
           return (
             <li key={task.id} className="flex items-center gap-2 text-sm">
               <button
@@ -68,17 +64,14 @@ export default function GroupTasks({
                 onClick={() =>
                   run(() => tasksApi.patch(task.id, { status: next }))
                 }
-                className="w-20 shrink-0 rounded bg-gray-100 px-1.5 py-0.5 text-[11px] text-gray-700 hover:bg-gray-200"
+                disabled={pending}
+                className="w-20 shrink-0 rounded bg-gray-100 px-1.5 py-0.5 text-[11px] text-gray-700 hover:bg-gray-200 disabled:opacity-50"
                 title={`Move to ${TASK_STATUS_LABEL[next]}`}
               >
                 {TASK_STATUS_LABEL[task.status]}
               </button>
               <span className="truncate text-gray-800">{task.title}</span>
-              {isAgent(task.created_by) && (
-                <span className="rounded bg-violet-100 px-1 text-[9px] font-semibold uppercase text-violet-700">
-                  AI
-                </span>
-              )}
+              <AgentBadge createdBy={task.created_by} />
             </li>
           );
         })}
