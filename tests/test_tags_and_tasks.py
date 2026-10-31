@@ -341,7 +341,6 @@ def test_unknown_items_are_rejected(client: TestClient) -> None:
     assert response.status_code == 400
 
 
-
 def test_task_with_unknown_tag_id_is_404(client: TestClient) -> None:
     response = client.post(f"{API}/tasks", json={"title": "x", "tags": [999_999]})
     assert response.status_code == 404

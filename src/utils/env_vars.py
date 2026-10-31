@@ -66,7 +66,7 @@ def resolve_1password_reference(name: str, reference: str) -> str:
         if details:
             raise ValueError(f"Could not resolve 1Password reference for {name} ('{reference}'): {details}") from exc
         raise ValueError(
-            f"Could not resolve 1Password reference for {name} ('{reference}'). " "Run `op signin` or start with `op run --env-file=.env.dev -- <command>`."
+            f"Could not resolve 1Password reference for {name} ('{reference}'). Run `op signin` or start with `op run --env-file=.env.dev -- <command>`."
         ) from exc
 
     resolved = result.stdout.strip()

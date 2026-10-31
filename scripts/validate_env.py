@@ -70,7 +70,7 @@ def check_env_file(env_name: str) -> bool:
                 result(
                     f"{var} is set",
                     False,
-                    f"Contains op:// reference ({val}). " "Wrap with: op run --env-file=.env.dev -- <command>",
+                    f"Contains op:// reference ({val}). Wrap with: op run --env-file=.env.dev -- <command>",
                 )
                 and all_ok
             )

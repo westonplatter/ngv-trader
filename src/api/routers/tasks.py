@@ -276,4 +276,3 @@ def _unlink_items(db: Session, items: list[ItemRefBody]) -> list[ItemRef]:
         else:
             out.append(ref)
     return out
-

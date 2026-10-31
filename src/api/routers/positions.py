@@ -199,7 +199,9 @@ def _apply_fill_fifo(lots: list[list], quantity: float, group: TradeGroupRef | N
         lots.append([remaining, group])
 
 
-def _open_lot_trade_groups(db: Session) -> tuple[
+def _open_lot_trade_groups(
+    db: Session,
+) -> tuple[
     dict[tuple[int, int], list[TradeGroupRef]],
     dict[tuple[int, int], list[TradeGroupRef]],
 ]:

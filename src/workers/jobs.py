@@ -83,7 +83,7 @@ class IBSessionPool:
             ib.connect(host, port, clientId=client_id, timeout=connect_timeout_seconds)
         except TimeoutError as exc:
             raise RuntimeError(
-                "Timed out connecting to TWS/Gateway " f"(host={host}, port={port}, client_id={client_id}, timeout={connect_timeout_seconds}s)."
+                f"Timed out connecting to TWS/Gateway (host={host}, port={port}, client_id={client_id}, timeout={connect_timeout_seconds}s)."
             ) from exc
         self._entries[key] = IBPoolEntry(ib=ib, last_used_monotonic=now)
         return ib
@@ -181,7 +181,7 @@ def handle_contracts_sync(job: Job, engine: Engine, ib_pool: IBSessionPool) -> d
             currency = raw.get("currency", "USD")
 
             if not exchange:
-                raise RuntimeError(f"No exchange specified for {symbol} {sec_type}. " "The job payload must include an exchange.")
+                raise RuntimeError(f"No exchange specified for {symbol} {sec_type}. The job payload must include an exchange.")
 
             if sec_type == "FUT":
                 specs.append(Future(symbol=symbol, exchange=exchange, currency=currency))
