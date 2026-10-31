@@ -239,6 +239,8 @@ function formatExpiration(expiration: string, isMonthly: boolean): string {
 
 // --- Main Component ---
 
+const PRICE_FETCH_TIMEOUT_MS = 30 * 60 * 1000;
+
 export default function PricingPage() {
   // Instrument & futures
   const [instrument, setInstrument] = useState<string>("CL");
@@ -449,11 +451,17 @@ export default function PricingPage() {
   const handleDeleteStructure = useCallback(async () => {
     if (loadedStructureId == null) return;
     if (!window.confirm("Delete this saved structure?")) return;
-    await api.delete(`/structures/${loadedStructureId}`);
-    setSaveStatus("idle");
-    setSaveFeedback(null);
-    setLoadedStructureId(null);
-    fetchSavedStructures();
+    try {
+      await api.delete(`/structures/${loadedStructureId}`);
+      setSaveStatus("idle");
+      setSaveFeedback(null);
+      setLoadedStructureId(null);
+      fetchSavedStructures();
+    } catch (err) {
+      // Leave the structure selected so the person can retry.
+      setSaveStatus("error");
+      setSaveFeedback(`Delete failed: ${errorMessage(err)}`);
+    }
   }, [loadedStructureId, fetchSavedStructures]);
 
   // --- Leg handlers ---
@@ -508,8 +516,12 @@ export default function PricingPage() {
         setLegs((prev) =>
           prev.map((l) => (l.id === legId ? { ...l, fetchJobId: job.id } : l)),
         );
-        watch(job.id, (done) =>
-          setLegs((prev) => applyPriceJobResult(prev, legId, done)),
+        // Price fetches used to wait with no deadline; a long queue must not
+        // strand the leg at "fetching", so allow well past the 5-minute default.
+        watch(
+          job.id,
+          (done) => setLegs((prev) => applyPriceJobResult(prev, legId, done)),
+          { timeoutMs: PRICE_FETCH_TIMEOUT_MS },
         );
       } catch (err) {
         setLegs((prev) =>

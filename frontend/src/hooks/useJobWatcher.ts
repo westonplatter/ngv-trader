@@ -2,8 +2,10 @@
 //
 // Pages used to POST a sync endpoint and then refresh on fixed timers (3s and
 // 8s) or hand-roll a `GET /jobs/:id` poll. Job state already arrives on the
-// `jobs` SSE topic, so this watches that stream for the job's terminal status
-// and only falls back to polling while the stream is not connected.
+// `jobs` SSE topic, so this watches that stream for the job's terminal status.
+// The stream is the fast path; polling is the safety net. The worker's "job
+// updated" notify is best-effort, so a lost one must not strand a page: while
+// the stream is down a watch is polled every 2s, and while it is up, every 10s.
 
 import { useCallback, useEffect, useRef } from "react";
 import { api } from "../lib/api";
@@ -59,17 +61,37 @@ export interface WatchOptions {
 }
 
 const POLL_INTERVAL_MS = 2000;
+// While the stream is connected it normally delivers completion; this slow poll
+// only covers a notify that never arrived.
+const CONNECTED_POLL_INTERVAL_MS = 10_000;
 const DEFAULT_TIMEOUT_MS = 5 * 60 * 1000;
 
 interface Watch {
   onDone: JobDoneHandler;
   deadline: number;
+  // When this watch was last read from `GET /jobs/:id` (ms since epoch).
+  lastChecked: number;
+}
+
+// Whether a live watch is due for a `GET /jobs/:id` at `now`.
+export function shouldPoll(
+  watch: Pick<Watch, "deadline" | "lastChecked">,
+  now: number,
+  sseConnected: boolean,
+): boolean {
+  if (now > watch.deadline) return false;
+  const interval = sseConnected ? CONNECTED_POLL_INTERVAL_MS : POLL_INTERVAL_MS;
+  return now - watch.lastChecked >= interval;
 }
 
 // Returns `watch(jobId, onDone)`. `onDone` fires once, with the job row, when
 // the job reaches `completed` or `failed`. Several jobs can be watched at once.
 export function useJobWatcher(): {
-  watch: (jobId: number, onDone: JobDoneHandler, options?: WatchOptions) => void;
+  watch: (
+    jobId: number,
+    onDone: JobDoneHandler,
+    options?: WatchOptions,
+  ) => void;
 } {
   const watchesRef = useRef<Map<number, Watch>>(new Map());
   const sseConnectedRef = useRef(false);
@@ -101,7 +123,8 @@ export function useJobWatcher(): {
     [settle],
   );
 
-  // Polling fallback: only while the stream is down, and only for live watches.
+  // Polling safety net: fast while the stream is down, slow while it is up, and
+  // only for live watches. Expired watches are dropped without calling `onDone`.
   useEffect(() => {
     const timer = window.setInterval(() => {
       const now = Date.now();
@@ -110,7 +133,10 @@ export function useJobWatcher(): {
           watchesRef.current.delete(jobId);
           continue;
         }
-        if (!sseConnectedRef.current) void checkOnce(jobId);
+        if (shouldPoll(watch, now, sseConnectedRef.current)) {
+          watch.lastChecked = now;
+          void checkOnce(jobId);
+        }
       }
     }, POLL_INTERVAL_MS);
     return () => window.clearInterval(timer);
@@ -118,9 +144,11 @@ export function useJobWatcher(): {
 
   const watch = useCallback(
     (jobId: number, onDone: JobDoneHandler, options: WatchOptions = {}) => {
+      const now = Date.now();
       watchesRef.current.set(jobId, {
         onDone,
-        deadline: Date.now() + (options.timeoutMs ?? DEFAULT_TIMEOUT_MS),
+        deadline: now + (options.timeoutMs ?? DEFAULT_TIMEOUT_MS),
+        lastChecked: now,
       });
       // The job may already be done (fast worker, or a stream event that
       // arrived before this call); read it once rather than wait.
