@@ -173,12 +173,16 @@ with settled numbers) while being disqualified here. See
 - `intraday_unrealized_total`, `marks_as_of`, `dedupe_live_realized`.
 - `compute_unrealized` / `parse_multiplier` — the shared cost-basis convention.
 
-Every consumer loads its rows through `load_overlay_context()` in
-`src/services/trade_group_pnl.py` — positions, live positions, quotes, live
-executions, price magnifiers, security-master expiries, option metrics, and the
-account-level newest `as_of_date`, in a fixed seven queries. It is one loader on
-purpose: a magnifier fetched on one path and not another is how a cents-quoted
-future comes out 100x wrong on one screen and right on the next.
+Every consumer runs the same pipeline through the facade in
+`src/services/trade_group_pnl.py`: `overlay_for_ledgers()` (or
+`overlay_for_groups()`, which loads the ledgers first) takes each group's
+`GroupLedger` and returns a `GroupOverlay`. Inside, `load_overlay_context()`
+fetches positions, live positions, quotes, live executions, price magnifiers,
+security-master expiries, option metrics, and the account-level newest
+`as_of_date` in a fixed seven queries, then `merge_positions()`,
+`apportion_to_group()`, and `overlay_totals()` run per group. It is one pipeline
+on purpose: a magnifier fetched on one path and not another is how a
+cents-quoted future comes out 100x wrong on one screen and right on the next.
 
 `account_as_of` is deliberately computed over the **whole account**, not the
 requested pairs — a superseded capture's own contract is by definition absent
@@ -226,9 +230,9 @@ the responses match prior behavior.
   screens can disagree about the same holding. Account-level facts belong on the
   `OverlayContext` (computed account-wide), never derived from the sliced rows.
 - `GET /trade-groups?include_intraday=true` — the same overlay computed for
-  **many groups at once**, behind the Strategy P&L table. Loads the union of
-  every visible group's pairs once, then slices per group and reuses
-  `overlay_totals()`, so the query count is fixed in the row count. The merge
+  **many groups at once**, behind the Strategy P&L table. `overlay_for_ledgers()`
+  loads the union of every visible group's pairs once, then slices per group, so
+  the query count is fixed in the row count. The merge
   itself runs per group rather than once over the union: `merge_positions()`
   drops a settled row when _its account_ has a current capture, so a union-wide
   merge would net-close a group whose own pairs have no live rows. `account_as_of`
