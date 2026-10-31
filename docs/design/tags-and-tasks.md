@@ -2,7 +2,10 @@
 topics: ["tags", "tasks", "positions", "trades", "agent-tools", "frontend"]
 code_dirs_or_files:
   [
+    "src/services/item_refs.py",
     "src/services/item_links.py",
+    "src/services/item_descriptions.py",
+    "src/services/tags.py",
     "src/api/routers/tags.py",
     "src/api/routers/tasks.py",
     "src/services/group_link_carryover.py",
@@ -66,7 +69,10 @@ use the word "tag".
 
 ## Sync behavior
 
-All in `src/services/item_links.py`.
+All in `src/services/item_links.py`. (Item keys and validation are
+`src/services/item_refs.py`; the read-side lookups — tags per item, open-task
+counts, display labels — are `src/services/item_descriptions.py`, with one
+describer per entity type.)
 
 - **Live fill → settled trade.** Each entry point in
   `src/services/group_link_carryover.py` also moves a live fill's tag and task
@@ -85,12 +91,20 @@ All in `src/services/item_links.py`.
   from the T-1 report, including positions opened today, so a row's absence
   alone proves nothing. Ended tags are hidden in the UI and returned by search
   with `include_ended`. Re-tagging a reopened position opens a new link.
+  An account that goes fully flat is handled by the Flex position sync: when the
+  report has the account's statement with an empty `OpenPositions` section, it
+  clears the account's rows and ends its tags, dated by the statement's
+  `toDate`. A missing statement or section changes nothing.
 - **Task links never end.** A task linked to a closed position keeps the link;
   the UI shows the position as closed.
 
 ## API
 
-Routers `src/api/routers/tags.py` and `src/api/routers/tasks.py`.
+Routers `src/api/routers/tags.py` and `src/api/routers/tasks.py`. The catalog
+logic they share (`created_by` validation, name → tag resolution) is
+`src/services/tags.py`; shared request/response models are `src/api/schemas.py`.
+Services raise `ServiceError` / `NotFoundError` (`src/services/errors.py`), which
+the app answers with 400 / 404.
 
 | Endpoint                                                                     | Notes                                                             |
 | ---------------------------------------------------------------------------- | ----------------------------------------------------------------- |
@@ -137,6 +151,11 @@ is human-only, so there are no tools for it.
   group; one-click status change; done behind a toggle.
 - **Linked surfaces:** a Tasks section in trade-group detail; a task badge and
   "+ task" shortcut on Trades and Positions rows.
+- **Shared pieces:** `lib/tags.ts` holds the types, the `tagsApi` / `tasksApi`
+  clients (built on `lib/api.ts`), and the helpers every surface uses —
+  `itemKey`, `itemRoute`, `nextTaskStatus`. Writes from a click go through
+  `hooks/useAsyncAction.ts` (one in flight at a time, error kept for display);
+  the `AI` marker is `AgentBadge.tsx`.
 
 ## Demo mode
 
@@ -159,27 +178,8 @@ live fill); `offset-risk` was applied by an agent.
 
 Not done yet; noted while building and testing this feature.
 
-- **`scripts/screenshot.mjs` in cloud sessions** looks for `playwright-core` and
-  `/opt/pw-browsers/chromium`; the current container ships the full `playwright`
-  package globally and Chromium under `/opt/pw-browsers/chromium-<rev>/`. It ran
-  only with `PW_CHROMIUM` set and a `NODE_PATH` shim. Teach it both layouts.
-
 ### Found while building
 
-- **Semantic-layer naming clash.** The semantic model's `tag` dimension
-  (`osi/ngv_semantic_model.yaml`) is the _trade group name_, and the MCP
-  `find_trade_groups` / `trade_group_pnl` docs tell agents to filter
-  `query_metric` by `tag`. Next to the new `find_by_tags` tool an agent can mix
-  them up. Candidate fix: rename the dimension to `trade_group` (touches the
-  YAML, tool docstrings, the tradebot prompt, and the semantic docs). Left as is
-  here on purpose.
-- **Flat accounts keep stale rows.** The Flex position sync returns early when
-  an account's report has no positions, so it never deletes that account's
-  `positions` rows; the intraday sync only replaces `live_positions` for
-  accounts that still hold something. Either way a fully flat account keeps its
-  position tags open. Pre-existing sync behavior; fix there, not in the tag code.
-- **Changing a group's strategy** is supported by `PATCH /trade-groups/{id}`
-  (`strategy_id`) but the Strategies page has no control for it.
 - **Non-primary strategy links** were not migrated when strategies moved out of
   the tag tables; the UI never wrote any.
 - **Tag search scales in Python.** `GET /tags/search` loads every open link and

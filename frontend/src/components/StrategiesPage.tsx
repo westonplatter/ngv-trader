@@ -20,6 +20,7 @@ import { PRIVACY_MASK, formatRelativeReturn } from "../utils/privacy";
 // needs. One source for the P&L shape, so this page and the Strategy P&L table
 // cannot describe the same payload differently.
 export type TradeGroup = TradeGroupPnlRow & {
+  strategy_id?: number | null;
   tags?: TagChip[];
   open_task_count?: number;
   notes: string | null;
@@ -327,6 +328,7 @@ export default function StrategiesPage() {
   const [editNotes, setEditNotes] = useState("");
   const [editMetaYaml, setEditMetaYaml] = useState("");
   const [editStatus, setEditStatus] = useState<TradeGroup["status"]>("open");
+  const [editStrategyId, setEditStrategyId] = useState<number | null>(null);
   // Save errors surface inside the edit form rather than the page-level banner:
   // a malformed-YAML 400 needs to be read next to the field that caused it.
   const [editError, setEditError] = useState<string | null>(null);
@@ -788,7 +790,7 @@ export default function StrategiesPage() {
     setError(null);
     setMessage(null);
 
-    const body: Record<string, string | null> = {};
+    const body: Record<string, string | number | null> = {};
     if (editName.trim() !== (groupDetail?.name ?? "")) {
       body.name = editName.trim();
     }
@@ -799,6 +801,11 @@ export default function StrategiesPage() {
     // provided" and only an empty string as an explicit clear.
     if (editMetaYaml !== (groupDetail?.meta_yaml ?? "")) {
       body.meta_yaml = editMetaYaml;
+    }
+    const strategyChanged =
+      editStrategyId !== (groupDetail?.strategy_id ?? null);
+    if (strategyChanged) {
+      body.strategy_id = editStrategyId;
     }
     if (editStatus !== groupDetail?.status) {
       body.status = editStatus;
@@ -819,7 +826,13 @@ export default function StrategiesPage() {
 
     setMessage("Trade group updated.");
     setEditingGroup(false);
-    await loadGroups(selectedStrategy?.name ?? null);
+    // A group moved to another strategy leaves the current list; follow it so
+    // it stays selected (the strategy selection reloads the group list).
+    if (strategyChanged && editStrategyId !== null) {
+      setSelectedStrategyId(editStrategyId);
+    } else {
+      await loadGroups(selectedStrategy?.name ?? null);
+    }
     await loadGroupDetail(selectedGroupId);
   };
 
@@ -829,6 +842,7 @@ export default function StrategiesPage() {
     setEditNotes(groupDetail.notes ?? "");
     setEditMetaYaml(groupDetail.meta_yaml ?? "");
     setEditStatus(groupDetail.status);
+    setEditStrategyId(groupDetail.strategy_id ?? null);
     setEditError(null);
     setEditingGroup(true);
   };
@@ -2398,6 +2412,42 @@ export default function StrategiesPage() {
                       <code>dates</code>, <code>profit_targets</code>. Other
                       keys pass through. Leave empty to clear.
                     </p>
+                  </div>
+                  <div>
+                    <label
+                      htmlFor="edit-group-strategy"
+                      className="mb-1 block text-xs text-gray-600"
+                    >
+                      Strategy
+                    </label>
+                    <select
+                      id="edit-group-strategy"
+                      value={editStrategyId ?? ""}
+                      onChange={(e) =>
+                        setEditStrategyId(
+                          e.target.value ? Number(e.target.value) : null,
+                        )
+                      }
+                      className="w-full rounded border border-gray-300 px-2 py-1 text-sm"
+                    >
+                      <option value="">No strategy</option>
+                      {/* The current strategy may be archived and hidden from the list. */}
+                      {groupDetail.strategy_id != null &&
+                        !strategies.some(
+                          (strategy) => strategy.id === groupDetail.strategy_id,
+                        ) && (
+                          <option value={groupDetail.strategy_id}>
+                            {groupDetail.primary_strategy_value ??
+                              `Strategy #${groupDetail.strategy_id}`}
+                          </option>
+                        )}
+                      {strategies.map((strategy) => (
+                        <option key={strategy.id} value={strategy.id}>
+                          {strategy.name}
+                          {strategy.archived_at ? " (archived)" : ""}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                   <div>
                     <label className="mb-1 block text-xs text-gray-600">

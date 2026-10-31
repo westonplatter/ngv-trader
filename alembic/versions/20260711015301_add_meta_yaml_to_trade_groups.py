@@ -10,6 +10,7 @@ round-trips exactly. The parsed structure is exposed by the API at read time;
 recognized blocks (delta/date/profit targets) let an agent read intent while
 arbitrary keys pass through. Additive, nullable, no backfill.
 """
+
 from typing import Sequence, Union
 
 from alembic import op
@@ -17,8 +18,8 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = 'a3bf4e84435e'
-down_revision: Union[str, Sequence[str], None] = '01711d684634'
+revision: str = "a3bf4e84435e"
+down_revision: Union[str, Sequence[str], None] = "01711d684634"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

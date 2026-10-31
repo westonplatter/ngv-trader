@@ -47,7 +47,7 @@ def fetch_and_add_instrument(
         try:
             ib.connect(host, port, clientId=client_id, timeout=connect_timeout_seconds)
         except TimeoutError as exc:
-            raise RuntimeError(f"Timed out connecting to TWS/Gateway " f"(host={host}, port={port}, client_id={client_id}).") from exc
+            raise RuntimeError(f"Timed out connecting to TWS/Gateway (host={host}, port={port}, client_id={client_id}).") from exc
         return fetch_and_add_instrument_with_ib(
             engine=engine,
             ib=ib,

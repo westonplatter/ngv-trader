@@ -74,10 +74,13 @@ describe("request", () => {
 
   test("falls back to the caller's label and the status", async () => {
     stub(() => new Response("", { status: 500 }));
-    const err = await request("GET", "/x", { fallback: "Unable to load" }).catch(
-      (e: unknown) => e,
-    );
+    const err = await request("GET", "/x", undefined, {
+      fallback: "Unable to load",
+    }).catch((e: unknown) => e);
     expect((err as ApiError).message).toBe("Unable to load (500)");
+    stub(() => new Response("", { status: 500 }));
+    const plain = await api.get("/x").catch((e: unknown) => e);
+    expect((plain as ApiError).message).toBe("GET /x failed (500)");
   });
 });
 
@@ -103,8 +106,9 @@ describe("helpers", () => {
     expect(query({})).toBe("");
   });
 
-  test("errorMessage reads an Error and otherwise the fallback", () => {
+  test("errorMessage reads an Error, then the fallback, then the value", () => {
     expect(errorMessage(new Error("boom"), "x")).toBe("boom");
     expect(errorMessage("boom", "x")).toBe("x");
+    expect(errorMessage("boom")).toBe("boom");
   });
 });

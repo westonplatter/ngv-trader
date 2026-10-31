@@ -209,7 +209,7 @@ def get_or_qualify_contract(ib: IB, order: Order) -> Contract:
     )
     qualified = ib.qualifyContracts(fallback)
     if len(qualified) != 1:
-        raise RuntimeError(f"Could not qualify contract for order {order.id}. " f"If this is a futures front-month intent, submit symbol as '/{symbol}'.")
+        raise RuntimeError(f"Could not qualify contract for order {order.id}. If this is a futures front-month intent, submit symbol as '/{symbol}'.")
     return qualified[0]
 
 
@@ -282,7 +282,7 @@ def apply_trade_progress(
                 session=session,
                 order_id=order.id,
                 event_type=event_type,
-                message=(f"{message_prefix}: forced transition to {normalized_status} from " f"ib_status={trade.orderStatus.status}"),
+                message=(f"{message_prefix}: forced transition to {normalized_status} from ib_status={trade.orderStatus.status}"),
                 status=order.status,
                 filled_quantity=order.filled_quantity,
                 avg_fill_price=order.avg_fill_price,
@@ -315,8 +315,7 @@ def apply_trade_progress(
             order_id=order.id,
             event_type=event_type,
             message=(
-                f"{message_prefix}: ib_status={trade.orderStatus.status}, "
-                f"filled={filled_quantity}, remaining={trade.remaining()}, avg_fill={avg_fill_price}"
+                f"{message_prefix}: ib_status={trade.orderStatus.status}, filled={filled_quantity}, remaining={trade.remaining()}, avg_fill={avg_fill_price}"
             ),
             status=order.status,
             filled_quantity=order.filled_quantity,
@@ -418,7 +417,7 @@ def process_order(
             message_prefix="order final",
         )
         if not trade.isDone():
-            timeout_message = f"Order timed out after {timeout_seconds:.1f}s waiting for terminal status; " "marking as failed."
+            timeout_message = f"Order timed out after {timeout_seconds:.1f}s waiting for terminal status; marking as failed."
             order.status = ORDER_STATUS_FAILED
             order.last_error = timeout_message
             order.updated_at = now_utc()
@@ -567,7 +566,7 @@ def connect_tws_with_retries(
             ib.connect(host, port, clientId=client_id, timeout=timeout_seconds)
             return
         except TimeoutError:
-            last_exc = RuntimeError("Timed out connecting to TWS/Gateway " f"(host={host}, port={port}, client_id={client_id}, timeout={timeout_seconds}s).")
+            last_exc = RuntimeError(f"Timed out connecting to TWS/Gateway (host={host}, port={port}, client_id={client_id}, timeout={timeout_seconds}s).")
         except Exception as exc:  # noqa: BLE001
             last_exc = exc
 
@@ -614,7 +613,7 @@ def run_worker(args: argparse.Namespace) -> int:
             )
         except Exception as exc:  # noqa: BLE001
             message = (
-                "Failed to connect to TWS/Gateway after retries. Verify TWS/Gateway is running, " "API access is enabled, and host/port/client-id are correct."
+                "Failed to connect to TWS/Gateway after retries. Verify TWS/Gateway is running, API access is enabled, and host/port/client-id are correct."
             )
             print(message)
             upsert_worker_heartbeat(

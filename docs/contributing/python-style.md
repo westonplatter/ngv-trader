@@ -22,7 +22,8 @@ description: Python conventions for this repo — uv, type hints, import placeme
 ## Verifying code
 
 - Never run Python or shell to test code.
-- Use Ruff for fast feedback during edits.
+- Use Ruff for fast feedback during edits. `uv run ruff format <files>` formats at the
+  repo's pinned width (`line-length = 160` in `pyproject.toml`); never pass your own.
 - Require Pyright to pass before declaring changes correct.
 - Verify imports with `uv run python scripts/check.py <module>` — see [validation.md](validation.md).
 

@@ -557,7 +557,7 @@ _TOOL_SPECS.append(
                 "intraday_unrealized_pnl / intraday_realized_pnl / intraday_total_pnl plus marks_as_of. "
                 "Intraday figures are 'as of the last live TWS refresh', not tick-live, and are a per-group "
                 "attribution (not additive across groups). For analytics across many groups use query_metric "
-                "(e.g. realized_pnl grouped by tag)."
+                "(e.g. realized_pnl grouped by trade_group)."
             ),
             "parameters": {
                 "type": "object",
@@ -1296,7 +1296,7 @@ def _tool_check_watchlist_job(session: Session, _: str, args: dict[str, Any]) ->
     if job is None:
         raise ValueError(f"Job #{job_id} not found.")
     if job.job_type != JOB_TYPE_WATCHLIST_ADD_INSTRUMENT:
-        raise ValueError(f"Job #{job_id} is not a watchlist.add_instrument job " f"(it is '{job.job_type}').")
+        raise ValueError(f"Job #{job_id} is not a watchlist.add_instrument job (it is '{job.job_type}').")
 
     if job.status == "completed":
         return {
@@ -1536,7 +1536,7 @@ def _model_node(state: _GraphState) -> _GraphState:
     ]
 
     if not isinstance(tool_calls, list) or not tool_calls:
-        final_text = assistant_text.strip() or ("I could not complete that request with confidence. " "Please retry with a more specific instruction.")
+        final_text = assistant_text.strip() or ("I could not complete that request with confidence. Please retry with a more specific instruction.")
         return {
             **state,
             "completion": completion,
@@ -1556,7 +1556,7 @@ def _tools_node(state: _GraphState) -> _GraphState:
     if completion is None:
         return {
             **state,
-            "final_text": ("I could not complete that request with confidence. " "Please retry with a more specific instruction."),
+            "final_text": ("I could not complete that request with confidence. Please retry with a more specific instruction."),
         }
 
     assistant_message = _extract_assistant_message(completion)
@@ -1603,7 +1603,7 @@ def _tools_node(state: _GraphState) -> _GraphState:
 def _tool_limit_node(state: _GraphState) -> _GraphState:
     return {
         **state,
-        "final_text": ("I reached the maximum number of tool steps for this request. " "Please retry with a more specific instruction."),
+        "final_text": ("I reached the maximum number of tool steps for this request. Please retry with a more specific instruction."),
     }
 
 
@@ -1682,4 +1682,4 @@ def run_tradebot_agent(session: Session, messages: Sequence[ChatInputMessage]) -
     if isinstance(final_text, str) and final_text.strip():
         return final_text.strip()
 
-    return "I could not complete that request with confidence. " "Please retry with a more specific instruction."
+    return "I could not complete that request with confidence. Please retry with a more specific instruction."

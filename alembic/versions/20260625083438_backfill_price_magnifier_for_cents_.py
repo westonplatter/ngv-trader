@@ -48,7 +48,7 @@ def upgrade() -> None:
     bind = op.get_bind()
     # Cents-quoted roots → 100.
     bind.execute(
-        sa.text("UPDATE contracts SET price_magnifier = 100 " "WHERE price_magnifier IS NULL AND symbol = ANY(:roots)"),
+        sa.text("UPDATE contracts SET price_magnifier = 100 WHERE price_magnifier IS NULL AND symbol = ANY(:roots)"),
         {"roots": list(CENTS_QUOTED_ROOTS)},
     )
     # Everything else still NULL → 1 (the safe default).

@@ -1,6 +1,8 @@
-// The one HTTP client for the backend API. Every component goes through
-// `api.*` (or `request`) rather than calling `fetch` directly, so error
-// handling, JSON encoding, and the base URL live in one place.
+// The one HTTP client for the backend API: a `request` that throws the
+// server's `detail` on failure, `api.*` shorthands, and a `query` that drops
+// empty params. Components and API modules (see ./tags.ts) build on these
+// instead of calling `fetch` directly, so the base URL, JSON encoding, and
+// error messages live in one place.
 //
 // `setApiFetch` swaps the underlying transport. Demo mode uses it to answer
 // requests from static fixtures (see ./demoApi) and tests use it to stub the
@@ -63,13 +65,14 @@ export async function readErrorMessage(
     : generic;
 }
 
-// `err.message` when it is an Error, otherwise the fallback.
-export function errorMessage(err: unknown, fallback: string): string {
-  return err instanceof Error && err.message ? err.message : fallback;
+// The message to show for a failed request: `err.message` when it is an
+// Error, otherwise `fallback` when given, otherwise the value as text.
+export function errorMessage(err: unknown, fallback?: string): string {
+  if (err instanceof Error && err.message) return err.message;
+  return fallback ?? String(err);
 }
 
 export interface RequestOptions {
-  body?: unknown;
   signal?: AbortSignal;
   // Error-message prefix when the response carries no readable detail.
   fallback?: string;
@@ -82,9 +85,10 @@ export interface RequestOptions {
 export async function request<T>(
   method: string,
   path: string,
+  body?: unknown,
   options: RequestOptions = {},
 ): Promise<T> {
-  const { body, signal, fallback, base = API_BASE_URL } = options;
+  const { signal, fallback, base = API_BASE_URL } = options;
   const response = await fetchImpl(`${base}${path}`, {
     method,
     headers:
@@ -94,7 +98,7 @@ export async function request<T>(
   });
   if (!response.ok) {
     throw new ApiError(
-      await readErrorMessage(response, fallback),
+      await readErrorMessage(response, fallback ?? `${method} ${path} failed`),
       response.status,
     );
   }
@@ -103,25 +107,28 @@ export async function request<T>(
   return (text ? JSON.parse(text) : undefined) as T;
 }
 
-type Options = Omit<RequestOptions, "body">;
-
 export const api = {
-  get: <T>(path: string, options?: Options) =>
-    request<T>("GET", path, options),
-  post: <T>(path: string, body?: unknown, options?: Options) =>
-    request<T>("POST", path, { ...options, body }),
-  put: <T>(path: string, body?: unknown, options?: Options) =>
-    request<T>("PUT", path, { ...options, body }),
-  patch: <T>(path: string, body?: unknown, options?: Options) =>
-    request<T>("PATCH", path, { ...options, body }),
-  delete: <T>(path: string, body?: unknown, options?: Options) =>
-    request<T>("DELETE", path, { ...options, body }),
+  get: <T>(path: string, options?: RequestOptions) =>
+    request<T>("GET", path, undefined, options),
+  post: <T>(path: string, body?: unknown, options?: RequestOptions) =>
+    request<T>("POST", path, body, options),
+  put: <T>(path: string, body?: unknown, options?: RequestOptions) =>
+    request<T>("PUT", path, body, options),
+  patch: <T>(path: string, body?: unknown, options?: RequestOptions) =>
+    request<T>("PATCH", path, body, options),
+  delete: <T>(path: string, body?: unknown, options?: RequestOptions) =>
+    request<T>("DELETE", path, body, options),
 };
 
-export type QueryValue = string | number | boolean | string[] | null | undefined;
+export type QueryValue =
+  | string
+  | number
+  | boolean
+  | string[]
+  | null
+  | undefined;
 
-// Build a query string, skipping null/undefined/empty values. Arrays repeat the
-// key. Returns "" when nothing survives, otherwise a leading "?".
+// "?a=1&b=x&b=y" from a params object; null, undefined, and "" are left out.
 export function query(params: Record<string, QueryValue>): string {
   const search = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {

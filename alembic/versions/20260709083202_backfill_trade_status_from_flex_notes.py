@@ -54,11 +54,13 @@ def _outcome(notes: str | None) -> str:
 def upgrade() -> None:
     """Relabel trades whose canonical fills all share one non-fill outcome."""
     bind = op.get_bind()
-    rows = bind.execute(sa.text("""
+    rows = bind.execute(
+        sa.text("""
             SELECT trade_id, raw->>'notes' AS notes
             FROM trade_executions
             WHERE is_canonical = true
-            """)).fetchall()
+            """)
+    ).fetchall()
 
     outcomes_by_trade: dict[int, set[str]] = defaultdict(set)
     for trade_id, notes in rows:

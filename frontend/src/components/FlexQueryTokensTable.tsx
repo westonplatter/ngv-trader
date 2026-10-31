@@ -73,7 +73,7 @@ export default function FlexQueryTokensTable() {
     setSaving(true);
     setError(null);
     try {
-      await request(method, path, { body });
+      await request(method, path, body);
       fetchTokens();
       return true;
     } catch (err) {

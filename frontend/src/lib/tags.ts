@@ -4,7 +4,7 @@
 // Tags are sticky notes. They never group items (that is trade groups) and never
 // feed reporting (that is strategies).
 
-import { api, query } from "./api";
+import { query, request } from "./api";
 
 export type TagChip = {
   id: number;
@@ -86,6 +86,40 @@ export const TASK_STATUS_LABEL: Record<TaskStatus, string> = {
 
 export const TASK_STATUS_ORDER: TaskStatus[] = ["todo", "in_progress", "done"];
 
+// The status a one-click cycle moves to: todo → in progress → done → todo.
+export function nextTaskStatus(status: TaskStatus): TaskStatus {
+  return TASK_STATUS_ORDER[
+    (TASK_STATUS_ORDER.indexOf(status) + 1) % TASK_STATUS_ORDER.length
+  ];
+}
+
+// A string key for an item, for React keys and lookups: the typed key the API
+// uses, so two refs to the same item always match.
+export function itemKey(item: ItemRef): string {
+  if (item.entity_type === "position")
+    return `position:${item.account_id}:${item.con_id}`;
+  if (item.entity_type === "live_execution")
+    return `live_execution:${item.ib_exec_id}`;
+  return `${item.entity_type}:${item.id}`;
+}
+
+// Where a link or search result should take the person. Trades route by
+// symbol when the API supplied one.
+export function itemRoute(
+  item: ItemRef & { details?: Record<string, unknown> },
+): string {
+  if (item.entity_type === "trade_group")
+    return `/strategies?trade_group_id=${item.id}`;
+  if (item.entity_type === "strategy")
+    return `/strategies?strategy_id=${item.id}`;
+  if (item.entity_type === "task") return "/tasks";
+  if (item.entity_type === "position") return "/positions";
+  const symbol = item.details?.symbol;
+  return typeof symbol === "string"
+    ? `/trades?symbol=${encodeURIComponent(symbol)}`
+    : "/trades";
+}
+
 export function isAgent(createdBy: string | null | undefined): boolean {
   return Boolean(createdBy && createdBy.startsWith("agent:"));
 }
@@ -105,25 +139,26 @@ export function normalizeTagValue(value: string): string {
 
 export const tagsApi = {
   list: (q?: string, includeArchived = false) =>
-    api.get<Tag[]>(
+    request<Tag[]>(
+      "GET",
       `/tags${query({ q, include_archived: includeArchived || undefined })}`,
     ),
   create: (value: string, color?: string | null) =>
-    api.post<Tag>("/tags", { value, color, created_by: "user" }),
+    request<Tag>("POST", "/tags", { value, color, created_by: "user" }),
   patch: (id: number, body: { value?: string; color?: string | null }) =>
-    api.patch<Tag>(`/tags/${id}`, body),
-  archive: (id: number) => api.post<Tag>(`/tags/${id}/archive`),
-  unarchive: (id: number) => api.post<Tag>(`/tags/${id}/unarchive`),
+    request<Tag>("PATCH", `/tags/${id}`, body),
+  archive: (id: number) => request<Tag>("POST", `/tags/${id}/archive`),
+  unarchive: (id: number) => request<Tag>("POST", `/tags/${id}/unarchive`),
   merge: (id: number, intoTagId: number) =>
-    api.post<Tag>(`/tags/${id}/merge`, { into_tag_id: intoTagId }),
+    request<Tag>("POST", `/tags/${id}/merge`, { into_tag_id: intoTagId }),
   attach: (tags: (number | string)[], items: ItemRef[]) =>
-    api.post<{ changed: number }>("/tag-links", {
+    request<{ changed: number }>("POST", "/tag-links", {
       tags,
       items,
       created_by: "user",
     }),
   detach: (tags: (number | string)[], items: ItemRef[]) =>
-    api.delete<{ changed: number }>("/tag-links", {
+    request<{ changed: number }>("DELETE", "/tag-links", {
       tags,
       items,
       created_by: "user",
@@ -135,7 +170,8 @@ export const tagsApi = {
     entityType?: TagEntityType;
     includeEnded?: boolean;
   }) =>
-    api.get<{ items: TaggedItem[] }>(
+    request<{ items: TaggedItem[] }>(
+      "GET",
       `/tags/search${query({
         all: params.all,
         any: params.any,
@@ -155,7 +191,8 @@ export const tasksApi = {
     tradeGroupId?: number;
     symbol?: string;
   }) =>
-    api.get<Task[]>(
+    request<Task[]>(
+      "GET",
       `/tasks${query({
         status: params.status,
         include_done: params.includeDone || undefined,
@@ -170,16 +207,16 @@ export const tasksApi = {
     notes?: string | null;
     links?: ItemRef[];
     tags?: (number | string)[];
-  }) => api.post<Task>("/tasks", { ...body, created_by: "user" }),
+  }) => request<Task>("POST", "/tasks", { ...body, created_by: "user" }),
   patch: (
     id: number,
     body: { title?: string; notes?: string | null; status?: TaskStatus },
-  ) => api.patch<Task>(`/tasks/${id}`, body),
-  remove: (id: number) => api.delete<void>(`/tasks/${id}`),
+  ) => request<Task>("PATCH", `/tasks/${id}`, body),
+  remove: (id: number) => request<void>("DELETE", `/tasks/${id}`),
   link: (id: number, items: ItemRef[]) =>
-    api.post<Task>(`/tasks/${id}/links`, { items, created_by: "user" }),
+    request<Task>("POST", `/tasks/${id}/links`, { items, created_by: "user" }),
   unlink: (id: number, items: ItemRef[]) =>
-    api.delete<Task>(`/tasks/${id}/links`, { items }),
+    request<Task>("DELETE", `/tasks/${id}/links`, { items }),
 };
 
 // The item a trades-page row stands for: the trade once settled, else the live

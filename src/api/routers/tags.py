@@ -4,7 +4,6 @@ See docs/design/tags-and-tasks.md. Tags never group items and never feed
 reporting; strategies and trade groups have their own routers.
 """
 
-import re
 from collections import defaultdict
 from datetime import datetime
 from typing import Any
@@ -15,44 +14,15 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from src.api.deps import get_db
-from src.models import Tag, TagLink
-from src.services.item_links import (
-    TAG_ENTITY_TYPES,
-    ItemError,
-    ItemRef,
-    attach_tag,
-    describe_items,
-    detach_tag,
-    expand_items,
-    item_key,
-    link_item,
-    normalize_tag_value,
-    now_utc,
-    tag_chip,
-)
+from src.api.schemas import ItemRefBody, TagChip
+from src.models import TAG_ENTITY_TYPES, Tag, TagLink
+from src.services.item_descriptions import describe_items, tag_chip
+from src.services.item_links import attach_tag, detach_tag, now_utc
+from src.services.item_refs import ItemRef, expand_items, item_key, link_item
+from src.services.tags import get_or_create_tag, normalize_tag_value, require_tag, resolve_tags, validate_created_by
 
 router = APIRouter()
 DB_SESSION_DEPENDENCY = Depends(get_db)
-
-# `user`, or `agent:<name>` for writes made by an LLM agent.
-CREATED_BY_PATTERN = re.compile(r"^(user|agent:[A-Za-z0-9_.\-]+)$")
-
-
-def validate_created_by(created_by: str) -> str:
-    if not CREATED_BY_PATTERN.match(created_by):
-        raise HTTPException(status_code=400, detail="created_by must be 'user' or 'agent:<name>'")
-    return created_by
-
-
-class TagChip(BaseModel):
-    """A tag as shown on an item, with who applied it there."""
-
-    id: int
-    value: str
-    color: str | None
-    created_by: str
-    assigned_at: datetime
-    ended_at: datetime | None = None
 
 
 class TagResponse(BaseModel):
@@ -82,20 +52,6 @@ class TagPatchRequest(BaseModel):
 
 class TagMergeRequest(BaseModel):
     into_tag_id: int
-
-
-class ItemRefBody(BaseModel):
-    """One item. ``id`` for trades, trade groups, tasks, and strategies; ``account_id`` +
-    ``con_id`` for a position; ``ib_exec_id`` for a live (unsettled) fill."""
-
-    entity_type: str
-    id: int | None = None
-    account_id: int | None = None
-    con_id: int | None = None
-    ib_exec_id: str | None = None
-
-    def ref(self) -> ItemRef:
-        return ItemRef(self.entity_type, id=self.id, account_id=self.account_id, con_id=self.con_id, ib_exec_id=self.ib_exec_id)
 
 
 class TagLinksRequest(BaseModel):
@@ -150,50 +106,10 @@ def _responses(db: Session, tags: list[Tag]) -> list[TagResponse]:
     return out
 
 
-def _ensure_tag(db: Session, tag_id: int) -> Tag:
-    tag = db.get(Tag, tag_id)
-    if tag is None:
-        raise HTTPException(status_code=404, detail="Tag not found")
-    return tag
-
-
-def get_or_create_tag(db: Session, value: str, created_by: str, color: str | None = None) -> Tag:
-    """The tag with this normalized value, created if missing. Unarchives nothing."""
-    normalized = normalize_tag_value(value)
-    if not normalized:
-        raise HTTPException(status_code=400, detail="value cannot be empty")
-    existing = db.execute(select(Tag).where(Tag.normalized_value == normalized)).scalar_one_or_none()
-    if existing is not None:
-        return existing
-    tag = Tag(value=value.strip(), normalized_value=normalized, color=color, created_by=created_by, created_at=now_utc())
-    db.add(tag)
-    db.flush()
-    return tag
-
-
-def resolve_tags(db: Session, handles: list[int | str], created_by: str, create: bool) -> list[Tag]:
-    tags: dict[int, Tag] = {}
-    for handle in handles:
-        if isinstance(handle, int):
-            tag = _ensure_tag(db, handle)
-        elif create:
-            tag = get_or_create_tag(db, handle, created_by)
-        else:
-            found = db.execute(select(Tag).where(Tag.normalized_value == normalize_tag_value(handle))).scalar_one_or_none()
-            if found is None:
-                raise HTTPException(status_code=404, detail=f"Tag {handle!r} not found")
-            tag = found
-        tags[tag.id] = tag
-    return list(tags.values())
-
-
-def resolve_items(db: Session, items: list[ItemRefBody], allowed: tuple[str, ...]) -> list[ItemRef]:
-    """Validate items and fan a live fill out to its whole order; 400/404 on bad input."""
-    try:
-        return expand_items(db, [item.ref() for item in items], allowed)
-    except ItemError as exc:
-        status = 404 if "not found" in str(exc) else 400
-        raise HTTPException(status_code=status, detail=str(exc)) from exc
+def _items(db: Session, items: list[ItemRefBody], allowed: tuple[str, ...]) -> list[ItemRef]:
+    """Validate items and fan a live fill out to its whole order. A bad item raises
+    ``ItemError`` / ``ItemNotFound``, which the app answers with 400 / 404."""
+    return expand_items(db, [item.ref() for item in items], allowed)
 
 
 @router.get("/tags", response_model=list[TagResponse])
@@ -226,7 +142,7 @@ def create_tag(body: TagCreateRequest, db: Session = DB_SESSION_DEPENDENCY):
 
 @router.patch("/tags/{tag_id}", response_model=TagResponse)
 def patch_tag(tag_id: int, body: TagPatchRequest, db: Session = DB_SESSION_DEPENDENCY):
-    tag = _ensure_tag(db, tag_id)
+    tag = require_tag(db, tag_id)
     if body.value is not None:
         normalized = normalize_tag_value(body.value)
         if not normalized:
@@ -244,7 +160,7 @@ def patch_tag(tag_id: int, body: TagPatchRequest, db: Session = DB_SESSION_DEPEN
 
 @router.post("/tags/{tag_id}/archive", response_model=TagResponse)
 def archive_tag(tag_id: int, db: Session = DB_SESSION_DEPENDENCY):
-    tag = _ensure_tag(db, tag_id)
+    tag = require_tag(db, tag_id)
     if tag.archived_at is None:
         tag.archived_at = now_utc()
         db.commit()
@@ -253,7 +169,7 @@ def archive_tag(tag_id: int, db: Session = DB_SESSION_DEPENDENCY):
 
 @router.post("/tags/{tag_id}/unarchive", response_model=TagResponse)
 def unarchive_tag(tag_id: int, db: Session = DB_SESSION_DEPENDENCY):
-    tag = _ensure_tag(db, tag_id)
+    tag = require_tag(db, tag_id)
     if tag.archived_at is not None:
         tag.archived_at = None
         db.commit()
@@ -265,8 +181,8 @@ def merge_tag(tag_id: int, body: TagMergeRequest, db: Session = DB_SESSION_DEPEN
     """Move every link of ``tag_id`` onto ``into_tag_id``, then delete ``tag_id``."""
     if body.into_tag_id == tag_id:
         raise HTTPException(status_code=400, detail="Cannot merge a tag into itself")
-    source = _ensure_tag(db, tag_id)
-    target = _ensure_tag(db, body.into_tag_id)
+    source = require_tag(db, tag_id)
+    target = require_tag(db, body.into_tag_id)
     for link in db.execute(select(TagLink).where(TagLink.tag_id == source.id)).scalars().all():
         if link.ended_at is None:
             attach_tag(db, target.id, link_item(link), link.created_by)
@@ -291,7 +207,7 @@ def merge_tag(tag_id: int, body: TagMergeRequest, db: Session = DB_SESSION_DEPEN
 def attach_tags(body: TagLinksRequest, db: Session = DB_SESSION_DEPENDENCY):
     """Attach tags to items. A live fill fans out to every live fill of its order."""
     created_by = validate_created_by(body.created_by)
-    items = resolve_items(db, body.items, TAG_ENTITY_TYPES)
+    items = _items(db, body.items, TAG_ENTITY_TYPES)
     tags = resolve_tags(db, body.tags, created_by, create=True)
     changed = 0
     for tag in tags:
@@ -305,8 +221,8 @@ def attach_tags(body: TagLinksRequest, db: Session = DB_SESSION_DEPENDENCY):
 @router.delete("/tag-links", response_model=TagLinksResponse)
 def detach_tags(body: TagLinksRequest, db: Session = DB_SESSION_DEPENDENCY):
     """Remove tags from items by hand. A live fill fans out like attaching does."""
-    items = resolve_items(db, body.items, TAG_ENTITY_TYPES)
-    tags = resolve_tags(db, body.tags, body.created_by, create=False)
+    items = _items(db, body.items, TAG_ENTITY_TYPES)
+    tags = resolve_tags(db, body.tags, validate_created_by(body.created_by), create=False)
     changed = sum(detach_tag(db, tag.id, item) for tag in tags for item in items)
     db.commit()
     return TagLinksResponse(changed=changed, tags=_responses(db, tags))

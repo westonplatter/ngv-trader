@@ -119,6 +119,11 @@ expires with no TWS connection. Two independent signals:
 The `≥1 fill` guard is load-bearing: an empty fill history means transferred-in
 lots or fills predating the sync window, not a close.
 
+The purge also runs when an account's snapshot is **flat**: the report carries
+the account's `FlexStatement` with an empty `OpenPositions` section. Its
+`positions` rows are deleted and the watermark is the statement's `toDate`. A
+statement or section that is missing from the report is not treated as flat.
+
 The comparison is **strict** because no venue's trade date runs more than one day
 ahead of the Chicago calendar date (CME rolls 17:00 CT; Blue Ocean ATS runs
 20:00–04:00 ET; ASX and Tokyo sit one day forward). That single bound removes any

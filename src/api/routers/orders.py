@@ -348,7 +348,7 @@ def cancel_order(
     if order.status != ORDER_STATUS_QUEUED:
         raise HTTPException(
             status_code=400,
-            detail=("Only queued orders can be cancelled from the API right now. " f"Current status is '{order.status}'."),
+            detail=(f"Only queued orders can be cancelled from the API right now. Current status is '{order.status}'."),
         )
 
     cancel_reason = "Cancelled via API before worker submission."
