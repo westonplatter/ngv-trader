@@ -105,7 +105,7 @@ Pick the store by who needs to see the value:
 - Derive instead of store. If a value can be computed from state already held,
   compute it in render or `useMemo`, do not mirror it in a second `useState`.
 - A mount-time preference GET must not clobber a toggle the user made before it
-  resolved. Guard with a "touched" ref as `StrategiesPage` does for focus mode.
+  resolved. Guard with a "touched" ref as `useFocusMode` does.
 
 ## Adding a route
 
