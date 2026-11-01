@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from collections.abc import Iterable
-from datetime import date, datetime, timezone
+from datetime import date, datetime
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -18,10 +18,7 @@ from sqlalchemy.orm import Session
 from src.models import LiveExecution, LivePosition, Position, TagLink, TaskLink, TradeExecution
 from src.services.intraday_overlay import ct_date
 from src.services.item_refs import ItemRef, link_filter, link_item, live_order_key
-
-
-def now_utc() -> datetime:
-    return datetime.now(timezone.utc)
+from src.utils.time import now_utc
 
 
 def new_tag_link(tag_id: int, item: ItemRef, created_by: str, assigned_at: datetime | None = None, ended_at: datetime | None = None) -> TagLink:

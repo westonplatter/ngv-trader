@@ -6,12 +6,11 @@ state and event helpers used by API/worker layers.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-
 from sqlalchemy.orm import Session
 
 from src.domain.enums import OrderStatus
 from src.models import Order, OrderEvent
+from src.utils.time import now_utc
 
 ORDER_STATUS_QUEUED = OrderStatus.QUEUED
 ORDER_STATUS_SUBMITTING = OrderStatus.SUBMITTING
@@ -74,10 +73,6 @@ ALLOWED_ORDER_STATUS_TRANSITIONS: dict[str, set[str]] = {
     ORDER_STATUS_REJECTED: set(),
     ORDER_STATUS_FAILED: set(),
 }
-
-
-def now_utc() -> datetime:
-    return datetime.now(timezone.utc)
 
 
 def can_transition_order_status(current_status: str, next_status: str) -> bool:
