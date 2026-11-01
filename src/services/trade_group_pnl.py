@@ -28,6 +28,7 @@ from sqlalchemy import func, select
 from sqlalchemy import tuple_ as sa_tuple
 from sqlalchemy.orm import Session
 
+from src.domain.enums import ExecRole
 from src.models import (
     ContractRef,
     LatestOptionMetrics,
@@ -113,12 +114,12 @@ def group_holdings(settled_execs: Iterable[Any], live_execs: Iterable[Any] = ())
     """
     settled_fills: dict[PairKey, list[tuple[float, str | None]]] = {}
     for ex in settled_execs:
-        if ex.con_id is None or ex.exec_role == "combo_summary" or not ex.is_canonical:
+        if ex.con_id is None or ex.exec_role == ExecRole.COMBO_SUMMARY or not ex.is_canonical:
             continue
         settled_fills.setdefault((ex.account_id, ex.con_id), []).append((_signed_quantity(ex.side, ex.quantity), execution_lifecycle(ex.raw)))
     live_fills: dict[PairKey, list[tuple[float, str | None]]] = {}
     for ex in live_execs:
-        if ex.con_id is None or ex.exec_role == "combo_summary":
+        if ex.con_id is None or ex.exec_role == ExecRole.COMBO_SUMMARY:
             continue
         live_fills.setdefault((ex.account_id, ex.con_id), []).append((_signed_quantity(ex.side, ex.quantity), None))
     return GroupHoldings(

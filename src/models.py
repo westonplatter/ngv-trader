@@ -21,6 +21,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from src.db_types import EncryptedString
+from src.domain.enums import EntityType
 
 
 class Base(DeclarativeBase):
@@ -637,8 +638,8 @@ class Strategy(Base):
 # Typed-key shape shared by ``tag_links`` and ``task_links``: each entity type
 # fills exactly its own key columns. A position is (account_id, con_id), never a
 # ``positions.id`` (sync replaces those rows); a live fill is its ``ib_exec_id``.
-TAG_ENTITY_TYPES = ("trade", "live_execution", "position", "trade_group", "task")
-TASK_ENTITY_TYPES = ("strategy", "trade_group", "position", "trade", "live_execution")
+TAG_ENTITY_TYPES = (EntityType.TRADE, EntityType.LIVE_EXECUTION, EntityType.POSITION, EntityType.TRADE_GROUP, EntityType.TASK)
+TASK_ENTITY_TYPES = (EntityType.STRATEGY, EntityType.TRADE_GROUP, EntityType.POSITION, EntityType.TRADE, EntityType.LIVE_EXECUTION)
 TASK_STATUSES = ("todo", "in_progress", "done")
 
 

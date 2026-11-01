@@ -23,17 +23,26 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from src.domain.enums import EntityType
 from src.models import LiveExecution, Strategy, TagLink, Task, TaskLink, Trade, TradeGroup
 from src.services.errors import NotFoundError, ServiceError
 
 # Typed key columns per entity type. A live fill also carries account_id/con_id.
 ENTITY_KEYS: dict[str, tuple[str, ...]] = {
-    "trade": ("trade_id",),
-    "trade_group": ("trade_group_id",),
-    "task": ("task_id",),
-    "strategy": ("strategy_id",),
-    "position": ("account_id", "con_id"),
-    "live_execution": ("ib_exec_id",),
+    EntityType.TRADE: ("trade_id",),
+    EntityType.TRADE_GROUP: ("trade_group_id",),
+    EntityType.TASK: ("task_id",),
+    EntityType.STRATEGY: ("strategy_id",),
+    EntityType.POSITION: ("account_id", "con_id"),
+    EntityType.LIVE_EXECUTION: ("ib_exec_id",),
+}
+
+# Entity types whose key is a row id, and the model that row lives in.
+_ID_KEYED_MODELS: dict[str, type[Any]] = {
+    EntityType.TRADE: Trade,
+    EntityType.TRADE_GROUP: TradeGroup,
+    EntityType.TASK: Task,
+    EntityType.STRATEGY: Strategy,
 }
 
 LinkModel = type[TagLink] | type[TaskLink]
@@ -59,9 +68,9 @@ class ItemRef:
 
     def key(self) -> dict[str, Any]:
         """The typed key columns for a link row."""
-        if self.entity_type == "position":
+        if self.entity_type == EntityType.POSITION:
             return {"account_id": self.account_id, "con_id": self.con_id}
-        if self.entity_type == "live_execution":
+        if self.entity_type == EntityType.LIVE_EXECUTION:
             return {"ib_exec_id": self.ib_exec_id, "account_id": self.account_id, "con_id": self.con_id}
         return {ENTITY_KEYS[self.entity_type][0]: self.id}
 
@@ -74,17 +83,17 @@ def _require(condition: bool, message: str, error: type[ItemError] = ItemError) 
 def resolve_item(session: Session, ref: ItemRef, allowed: Iterable[str]) -> ItemRef:
     """Validate a reference and fill denormalized fields; raises ``ItemError`` / ``ItemNotFound``."""
     _require(ref.entity_type in allowed, f"entity_type must be one of {', '.join(allowed)}")
-    if ref.entity_type == "position":
+    if ref.entity_type == EntityType.POSITION:
         _require(ref.account_id is not None and ref.con_id is not None, "a position needs account_id and con_id")
-        return ItemRef("position", account_id=ref.account_id, con_id=ref.con_id)
-    if ref.entity_type == "live_execution":
+        return ItemRef(EntityType.POSITION, account_id=ref.account_id, con_id=ref.con_id)
+    if ref.entity_type == EntityType.LIVE_EXECUTION:
         _require(bool(ref.ib_exec_id), "a live_execution needs ib_exec_id")
         live = session.execute(select(LiveExecution).where(LiveExecution.ib_exec_id == ref.ib_exec_id)).scalar_one_or_none()
         _require(live is not None, f"live execution {ref.ib_exec_id} not found", ItemNotFound)
         assert live is not None
-        return ItemRef("live_execution", account_id=live.account_id, con_id=live.con_id, ib_exec_id=live.ib_exec_id)
+        return ItemRef(EntityType.LIVE_EXECUTION, account_id=live.account_id, con_id=live.con_id, ib_exec_id=live.ib_exec_id)
     _require(ref.id is not None, f"a {ref.entity_type} needs id")
-    model = {"trade": Trade, "trade_group": TradeGroup, "task": Task, "strategy": Strategy}[ref.entity_type]
+    model = _ID_KEYED_MODELS[ref.entity_type]
     _require(session.get(model, ref.id) is not None, f"{ref.entity_type} {ref.id} not found", ItemNotFound)
     return ItemRef(ref.entity_type, id=ref.id)
 
@@ -117,10 +126,10 @@ def expand_items(session: Session, refs: Iterable[ItemRef], allowed: Iterable[st
     out: dict[tuple, ItemRef] = {}
     for ref in refs:
         resolved = resolve_item(session, ref, allowed)
-        if resolved.entity_type == "live_execution":
+        if resolved.entity_type == EntityType.LIVE_EXECUTION:
             assert resolved.ib_exec_id is not None
             for live in live_order_fills(session, resolved.ib_exec_id):
-                item = ItemRef("live_execution", account_id=live.account_id, con_id=live.con_id, ib_exec_id=live.ib_exec_id)
+                item = ItemRef(EntityType.LIVE_EXECUTION, account_id=live.account_id, con_id=live.con_id, ib_exec_id=live.ib_exec_id)
                 out[(item.entity_type, item.ib_exec_id)] = item
         else:
             out[(resolved.entity_type, resolved.id, resolved.account_id, resolved.con_id)] = resolved
@@ -130,9 +139,9 @@ def expand_items(session: Session, refs: Iterable[ItemRef], allowed: Iterable[st
 def link_filter(model: LinkModel, item: ItemRef) -> list[Any]:
     """WHERE clauses matching one item's links on ``model``."""
     clauses: list[Any] = [model.entity_type == item.entity_type]
-    if item.entity_type == "position":
+    if item.entity_type == EntityType.POSITION:
         clauses += [model.account_id == item.account_id, model.con_id == item.con_id]
-    elif item.entity_type == "live_execution":
+    elif item.entity_type == EntityType.LIVE_EXECUTION:
         clauses.append(model.ib_exec_id == item.ib_exec_id)
     else:
         clauses.append(getattr(model, ENTITY_KEYS[item.entity_type][0]) == item.id)
@@ -141,17 +150,17 @@ def link_filter(model: LinkModel, item: ItemRef) -> list[Any]:
 
 def item_key(item: ItemRef) -> Any:
     """The lookup key ``describe_items`` / ``tags_by_item`` use for an item."""
-    if item.entity_type == "position":
+    if item.entity_type == EntityType.POSITION:
         return (item.account_id, item.con_id)
-    if item.entity_type == "live_execution":
+    if item.entity_type == EntityType.LIVE_EXECUTION:
         return item.ib_exec_id
     return item.id
 
 
 def link_item(link: TagLink | TaskLink) -> ItemRef:
     """The item a link row points at."""
-    if link.entity_type == "position":
-        return ItemRef("position", account_id=link.account_id, con_id=link.con_id)
-    if link.entity_type == "live_execution":
-        return ItemRef("live_execution", account_id=link.account_id, con_id=link.con_id, ib_exec_id=link.ib_exec_id)
+    if link.entity_type == EntityType.POSITION:
+        return ItemRef(EntityType.POSITION, account_id=link.account_id, con_id=link.con_id)
+    if link.entity_type == EntityType.LIVE_EXECUTION:
+        return ItemRef(EntityType.LIVE_EXECUTION, account_id=link.account_id, con_id=link.con_id, ib_exec_id=link.ib_exec_id)
     return ItemRef(link.entity_type, id=getattr(link, ENTITY_KEYS[link.entity_type][0]))
