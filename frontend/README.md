@@ -28,7 +28,7 @@ Conventions (layout, data access, state, tests) are in
 | `/tasks` | `TasksPage` | Task list linked to trades, positions, and groups |
 | `/watchlists` | `WatchListsPage` | Instrument watch lists with live quotes |
 | `/market-data` | `MarketDataPage` | Futures and options market data jobs |
-| `/structures` | `PricingPage` | Options structure builder and PnL calculator |
+| `/structures` | `pricing/PricingPage` | Options structure builder and PnL calculator |
 
 `/` redirects to `/tradebot`. Nav entries live in `src/navItems.ts`.
 
