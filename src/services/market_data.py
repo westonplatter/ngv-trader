@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+import datetime as dt
 import logging
 import math
 from datetime import datetime, timezone
 from numbers import Real
+from typing import Any
 
 from ib_async import IB, Contract
-from sqlalchemy import select
+from sqlalchemy import Select, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
@@ -100,12 +102,104 @@ def _fetch_tickers(ib: IB, contracts: list[Contract]) -> dict[int, object]:
     return by_con_id
 
 
+def _fetch_tickers_connected(
+    host: str, port: int, client_id: int, connect_timeout_seconds: float, ib: IB | None, contracts: list[Contract]
+) -> dict[int, object]:
+    """Fetch tickers on the caller's IB session, or connect (and disconnect) one when none is given."""
+    owns_ib = ib is None
+    if ib is None:
+        ib = _connect(host, port, client_id, connect_timeout_seconds)
+    try:
+        return _fetch_tickers(ib, contracts)
+    finally:
+        if owns_ib and ib.isConnected():
+            ib.disconnect()
+
+
+def _load_future_prices(engine: Engine, fut_con_ids: set[int]) -> dict[int, float]:
+    """Latest FUT price (last, else close) per con_id from latest_futures, used as a fallback und_price."""
+    fut_prices: dict[int, float] = {}
+    if fut_con_ids:
+        with Session(engine) as session:
+            rows = session.execute(
+                select(LatestFutures.con_id, LatestFutures.last, LatestFutures.close).where(LatestFutures.con_id.in_(list(fut_con_ids)))
+            ).all()
+            for row in rows:
+                price = row.last if row.last and row.last > 0 else row.close
+                if price and price > 0:
+                    fut_prices[row.con_id] = float(price)
+    return fut_prices
+
+
+def _future_fields(ticker: object) -> dict[str, Any]:
+    """Quote columns shared by ts_futures and latest_futures."""
+    return {
+        "bid": _safe_float(getattr(ticker, "bid", None)),
+        "ask": _safe_float(getattr(ticker, "ask", None)),
+        "last": _safe_float(getattr(ticker, "last", None)),
+        "close": _safe_float(getattr(ticker, "close", None)),
+        "volume": _safe_int(getattr(ticker, "volume", None)),
+        "open_interest": _safe_int(getattr(ticker, "open_interest", None)),
+    }
+
+
+def _write_future_row(session: Session, ref: ContractRef, fields: dict[str, Any], now: datetime) -> None:
+    """Append to ts_futures, then guarded upsert into latest_futures."""
+    market_ts = now
+    session.add(TsFutures(con_id=ref.con_id, **fields, market_ts=market_ts, ingested_at=now))
+    session.execute(
+        insert(LatestFutures)
+        .values(con_id=ref.con_id, **fields, market_ts=market_ts, ingested_at=now, updated_at=now)
+        .on_conflict_do_update(
+            index_elements=["con_id"],
+            set_={**fields, "market_ts": market_ts, "ingested_at": now, "updated_at": now},
+            where=LatestFutures.__table__.c.market_ts <= market_ts,
+        )
+    )
+
+
+def _option_fields(ticker: object, ref: ContractRef, fut_prices: dict[int, float]) -> dict[str, Any]:
+    """Quote and greek columns shared by ts_futures_options and latest_futures_options."""
+    greeks = getattr(ticker, "modelGreeks", None)
+    und_price = _safe_float(getattr(greeks, "undPrice", None)) if greeks else None
+
+    # Fallback: use latest_futures price if IBKR didn't provide und_price
+    if und_price is None and ref.underlying_con_id:
+        und_price = fut_prices.get(ref.underlying_con_id)
+
+    return {
+        **_future_fields(ticker),
+        "iv": _safe_float(getattr(greeks, "impliedVol", None)) if greeks else None,
+        "delta": _safe_float(getattr(greeks, "delta", None)) if greeks else None,
+        "gamma": _safe_float(getattr(greeks, "gamma", None)) if greeks else None,
+        "theta": _safe_float(getattr(greeks, "theta", None)) if greeks else None,
+        "vega": _safe_float(getattr(greeks, "vega", None)) if greeks else None,
+        "und_price": und_price,
+    }
+
+
+def _write_option_row(session: Session, ref: ContractRef, fields: dict[str, Any], now: datetime) -> None:
+    """Append to ts_futures_options, then guarded upsert into latest_futures_options."""
+    market_ts = now
+    session.add(TsFuturesOptions(con_id=ref.con_id, **fields, market_ts=market_ts, ingested_at=now))
+    vals = {"con_id": ref.con_id, **fields, "market_ts": market_ts, "ingested_at": now, "updated_at": now}
+    session.execute(
+        insert(LatestFuturesOptions)
+        .values(**vals)
+        .on_conflict_do_update(
+            index_elements=["con_id"],
+            set_={k: v for k, v in vals.items() if k != "con_id"},
+            where=LatestFuturesOptions.__table__.c.market_ts <= market_ts,
+        )
+    )
+
+
 # ---------------------------------------------------------------------------
 # Action 2: Fetch futures term-structure prices
 # ---------------------------------------------------------------------------
 
 
-def fetch_futures_prices(
+def fetch_futures_prices(  # noqa: PLR0913 — public market-data signature used by callers
     engine: Engine,
     host: str,
     port: int,
@@ -222,7 +316,52 @@ def fetch_futures_prices(
 # ---------------------------------------------------------------------------
 
 
-def fetch_futures_options(
+def _option_refs_stmt(
+    symbol: str,
+    underlying_con_id: int | None,
+    strike_gte: float | None,
+    strike_lte: float | None,
+    dte_lte: int | None,
+    right: str | None,
+) -> Select[ContractRef]:
+    stmt = select(ContractRef).where(
+        ContractRef.symbol == symbol,
+        ContractRef.sec_type == "FOP",
+        ContractRef.is_active.is_(True),
+    )
+    if underlying_con_id is not None:
+        stmt = stmt.where(ContractRef.underlying_con_id == underlying_con_id)
+    if strike_gte is not None:
+        stmt = stmt.where(ContractRef.strike >= strike_gte)
+    if strike_lte is not None:
+        stmt = stmt.where(ContractRef.strike <= strike_lte)
+    if right is not None:
+        stmt = stmt.where(ContractRef.right == right.upper())
+    if dte_lte is not None:
+        max_expiry = (dt.date.today() + dt.timedelta(days=dte_lte)).strftime("%Y%m%d")
+        stmt = stmt.where(ContractRef.contract_expiry <= max_expiry)
+
+    return stmt.order_by(ContractRef.contract_expiry.asc(), ContractRef.strike.asc())
+
+
+def _apply_modulus_filter(all_refs: list[ContractRef], modulus_eq: float | None) -> list[ContractRef]:
+    """Apply modulus filter in Python (not easily expressible in SQL for floats)."""
+    if not (modulus_eq and modulus_eq > 0):
+        return all_refs
+
+    refs = []
+    for r in all_refs:
+        if r.strike is not None:
+            remainder = round(r.strike % modulus_eq, 10)
+            if remainder < 1e-9 or abs(remainder - modulus_eq) < 1e-9:
+                refs.append(r)
+        else:
+            refs.append(r)
+    logger.info("Modulus filter (mod=%.4f): %d → %d contracts", modulus_eq, len(all_refs), len(refs))
+    return refs
+
+
+def fetch_futures_options(  # noqa: PLR0913 — public job entry point; connection and filter fields are explicit
     engine: Engine,
     host: str,
     port: int,
@@ -238,8 +377,6 @@ def fetch_futures_options(
     connect_timeout_seconds: float = 20.0,
     ib: IB | None = None,
 ) -> dict:
-    import datetime as dt
-
     symbol = symbol.upper()
 
     # Default modulus from option_filters config if not provided
@@ -250,68 +387,22 @@ def fetch_futures_options(
         modulus_eq = filt.get("modulus_eq")
 
     with Session(engine) as session:
-        stmt = select(ContractRef).where(
-            ContractRef.symbol == symbol,
-            ContractRef.sec_type == "FOP",
-            ContractRef.is_active.is_(True),
-        )
-        if underlying_con_id is not None:
-            stmt = stmt.where(ContractRef.underlying_con_id == underlying_con_id)
-        if strike_gte is not None:
-            stmt = stmt.where(ContractRef.strike >= strike_gte)
-        if strike_lte is not None:
-            stmt = stmt.where(ContractRef.strike <= strike_lte)
-        if right is not None:
-            stmt = stmt.where(ContractRef.right == right.upper())
-        if dte_lte is not None:
-            max_expiry = (dt.date.today() + dt.timedelta(days=dte_lte)).strftime("%Y%m%d")
-            stmt = stmt.where(ContractRef.contract_expiry <= max_expiry)
-
-        stmt = stmt.order_by(ContractRef.contract_expiry.asc(), ContractRef.strike.asc())
+        stmt = _option_refs_stmt(symbol, underlying_con_id, strike_gte, strike_lte, dte_lte, right)
         all_refs = list(session.execute(stmt).scalars().all())
 
-    # Apply modulus filter in Python (not easily expressible in SQL for floats)
-    if modulus_eq and modulus_eq > 0:
-        refs = []
-        for r in all_refs:
-            if r.strike is not None:
-                remainder = round(r.strike % modulus_eq, 10)
-                if remainder < 1e-9 or abs(remainder - modulus_eq) < 1e-9:
-                    refs.append(r)
-            else:
-                refs.append(r)
-        logger.info("Modulus filter (mod=%.4f): %d → %d contracts", modulus_eq, len(all_refs), len(refs))
-    else:
-        refs = all_refs
+    refs = _apply_modulus_filter(all_refs, modulus_eq)
 
     if not refs:
         return {"symbol": symbol, "contracts": 0, "rows_inserted": 0}
 
     contracts = [_contract_from_ref(r) for r in refs]
-    owns_ib = ib is None
-    if ib is None:
-        ib = _connect(host, port, client_id, connect_timeout_seconds)
-    try:
-        by_con_id = _fetch_tickers(ib, contracts)
-    finally:
-        if owns_ib and ib.isConnected():
-            ib.disconnect()
+    by_con_id = _fetch_tickers_connected(host, port, client_id, connect_timeout_seconds, ib, contracts)
 
     now = _now_utc()
     inserted = 0
 
     # Pre-load FUT prices from latest_futures as fallback for und_price
-    fut_con_ids = {r.underlying_con_id for r in refs if r.underlying_con_id}
-    fut_prices: dict[int, float] = {}
-    if fut_con_ids:
-        with Session(engine) as session:
-            rows = session.execute(
-                select(LatestFutures.con_id, LatestFutures.last, LatestFutures.close).where(LatestFutures.con_id.in_(list(fut_con_ids)))
-            ).all()
-            for row in rows:
-                price = row.last if row.last and row.last > 0 else row.close
-                if price and price > 0:
-                    fut_prices[row.con_id] = float(price)
+    fut_prices = _load_future_prices(engine, {r.underlying_con_id for r in refs if r.underlying_con_id})
 
     with Session(engine) as session:
         for ref in refs:
@@ -319,80 +410,10 @@ def fetch_futures_options(
             if ticker is None:
                 continue
 
-            market_ts = now
-            bid = _safe_float(getattr(ticker, "bid", None))
-            ask = _safe_float(getattr(ticker, "ask", None))
-            last = _safe_float(getattr(ticker, "last", None))
-            close = _safe_float(getattr(ticker, "close", None))
-            volume = _safe_int(getattr(ticker, "volume", None))
-            oi = _safe_int(getattr(ticker, "open_interest", None))
-
-            # Extract greeks from modelGreeks
-            greeks = getattr(ticker, "modelGreeks", None)
-            iv = _safe_float(getattr(greeks, "impliedVol", None)) if greeks else None
-            delta = _safe_float(getattr(greeks, "delta", None)) if greeks else None
-            gamma = _safe_float(getattr(greeks, "gamma", None)) if greeks else None
-            theta = _safe_float(getattr(greeks, "theta", None)) if greeks else None
-            vega = _safe_float(getattr(greeks, "vega", None)) if greeks else None
-            und_price = _safe_float(getattr(greeks, "undPrice", None)) if greeks else None
-
-            # Fallback: use latest_futures price if IBKR didn't provide und_price
-            if und_price is None and ref.underlying_con_id:
-                und_price = fut_prices.get(ref.underlying_con_id)
-
-            if greeks is None:
+            if getattr(ticker, "modelGreeks", None) is None:
                 logger.warning("No modelGreeks for FOP con_id=%d (%s)", ref.con_id, ref.local_symbol)
 
-            # 1. Append to ts_futures_options
-            session.add(
-                TsFuturesOptions(
-                    con_id=ref.con_id,
-                    bid=bid,
-                    ask=ask,
-                    last=last,
-                    close=close,
-                    volume=volume,
-                    open_interest=oi,
-                    iv=iv,
-                    delta=delta,
-                    gamma=gamma,
-                    theta=theta,
-                    vega=vega,
-                    und_price=und_price,
-                    market_ts=market_ts,
-                    ingested_at=now,
-                )
-            )
-
-            # 2. Guarded upsert into latest_futures_options
-            vals = {
-                "con_id": ref.con_id,
-                "bid": bid,
-                "ask": ask,
-                "last": last,
-                "close": close,
-                "volume": volume,
-                "open_interest": oi,
-                "iv": iv,
-                "delta": delta,
-                "gamma": gamma,
-                "theta": theta,
-                "vega": vega,
-                "und_price": und_price,
-                "market_ts": market_ts,
-                "ingested_at": now,
-                "updated_at": now,
-            }
-            stmt = (
-                insert(LatestFuturesOptions)
-                .values(**vals)
-                .on_conflict_do_update(
-                    index_elements=["con_id"],
-                    set_={k: v for k, v in vals.items() if k != "con_id"},
-                    where=LatestFuturesOptions.__table__.c.market_ts <= market_ts,
-                )
-            )
-            session.execute(stmt)
+            _write_option_row(session, ref, _option_fields(ticker, ref, fut_prices), now)
             inserted += 1
 
         session.commit()
@@ -405,7 +426,35 @@ def fetch_futures_options(
 # ---------------------------------------------------------------------------
 
 
-def fetch_snapshot(
+def _snapshot_option(session: Session, ref: ContractRef, ticker: object, fut_prices: dict[int, float], now: datetime) -> dict:
+    fields = _option_fields(ticker, ref, fut_prices)
+    _write_option_row(session, ref, fields, now)
+    return {
+        "con_id": ref.con_id,
+        "sec_type": "FOP",
+        "bid": fields["bid"],
+        "ask": fields["ask"],
+        "last": fields["last"],
+        "iv": fields["iv"],
+        "delta": fields["delta"],
+        "und_price": fields["und_price"],
+    }
+
+
+def _snapshot_future(session: Session, ref: ContractRef, ticker: object, now: datetime) -> dict:
+    # FUT or other
+    fields = _future_fields(ticker)
+    _write_future_row(session, ref, fields, now)
+    return {
+        "con_id": ref.con_id,
+        "sec_type": ref.sec_type,
+        "bid": fields["bid"],
+        "ask": fields["ask"],
+        "last": fields["last"],
+    }
+
+
+def fetch_snapshot(  # noqa: PLR0913 — public job entry point; connection fields are explicit
     engine: Engine,
     host: str,
     port: int,
@@ -424,14 +473,7 @@ def fetch_snapshot(
         return {"contracts": 0, "rows_inserted": 0, "results": []}
 
     contracts = [_contract_from_ref(r) for r in refs]
-    owns_ib = ib is None
-    if ib is None:
-        ib = _connect(host, port, client_id, connect_timeout_seconds)
-    try:
-        by_con_id = _fetch_tickers(ib, contracts)
-    finally:
-        if owns_ib and ib.isConnected():
-            ib.disconnect()
+    by_con_id = _fetch_tickers_connected(host, port, client_id, connect_timeout_seconds, ib, contracts)
 
     now = _now_utc()
     inserted = 0
@@ -439,17 +481,7 @@ def fetch_snapshot(
 
     # Pre-load FUT prices as fallback for FOP und_price
     fop_refs = [r for r in refs if r.sec_type == "FOP"]
-    snap_fut_con_ids = {r.underlying_con_id for r in fop_refs if r.underlying_con_id}
-    snap_fut_prices: dict[int, float] = {}
-    if snap_fut_con_ids:
-        with Session(engine) as session:
-            rows = session.execute(
-                select(LatestFutures.con_id, LatestFutures.last, LatestFutures.close).where(LatestFutures.con_id.in_(list(snap_fut_con_ids)))
-            ).all()
-            for row in rows:
-                price = row.last if row.last and row.last > 0 else row.close
-                if price and price > 0:
-                    snap_fut_prices[row.con_id] = float(price)
+    snap_fut_prices = _load_future_prices(engine, {r.underlying_con_id for r in fop_refs if r.underlying_con_id})
 
     with Session(engine) as session:
         for ref in refs:
@@ -457,138 +489,10 @@ def fetch_snapshot(
             if ticker is None:
                 continue
 
-            market_ts = now
-            bid = _safe_float(getattr(ticker, "bid", None))
-            ask = _safe_float(getattr(ticker, "ask", None))
-            last = _safe_float(getattr(ticker, "last", None))
-            close = _safe_float(getattr(ticker, "close", None))
-            volume = _safe_int(getattr(ticker, "volume", None))
-            oi = _safe_int(getattr(ticker, "open_interest", None))
-
             if ref.sec_type == "FOP":
-                greeks = getattr(ticker, "modelGreeks", None)
-                iv = _safe_float(getattr(greeks, "impliedVol", None)) if greeks else None
-                delta = _safe_float(getattr(greeks, "delta", None)) if greeks else None
-                gamma = _safe_float(getattr(greeks, "gamma", None)) if greeks else None
-                theta = _safe_float(getattr(greeks, "theta", None)) if greeks else None
-                vega = _safe_float(getattr(greeks, "vega", None)) if greeks else None
-                und_price = _safe_float(getattr(greeks, "undPrice", None)) if greeks else None
-
-                if und_price is None and ref.underlying_con_id:
-                    und_price = snap_fut_prices.get(ref.underlying_con_id)
-
-                session.add(
-                    TsFuturesOptions(
-                        con_id=ref.con_id,
-                        bid=bid,
-                        ask=ask,
-                        last=last,
-                        close=close,
-                        volume=volume,
-                        open_interest=oi,
-                        iv=iv,
-                        delta=delta,
-                        gamma=gamma,
-                        theta=theta,
-                        vega=vega,
-                        und_price=und_price,
-                        market_ts=market_ts,
-                        ingested_at=now,
-                    )
-                )
-                vals = {
-                    "con_id": ref.con_id,
-                    "bid": bid,
-                    "ask": ask,
-                    "last": last,
-                    "close": close,
-                    "volume": volume,
-                    "open_interest": oi,
-                    "iv": iv,
-                    "delta": delta,
-                    "gamma": gamma,
-                    "theta": theta,
-                    "vega": vega,
-                    "und_price": und_price,
-                    "market_ts": market_ts,
-                    "ingested_at": now,
-                    "updated_at": now,
-                }
-                session.execute(
-                    insert(LatestFuturesOptions)
-                    .values(**vals)
-                    .on_conflict_do_update(
-                        index_elements=["con_id"],
-                        set_={k: v for k, v in vals.items() if k != "con_id"},
-                        where=LatestFuturesOptions.__table__.c.market_ts <= market_ts,
-                    )
-                )
-                results.append(
-                    {
-                        "con_id": ref.con_id,
-                        "sec_type": "FOP",
-                        "bid": bid,
-                        "ask": ask,
-                        "last": last,
-                        "iv": iv,
-                        "delta": delta,
-                        "und_price": und_price,
-                    }
-                )
+                results.append(_snapshot_option(session, ref, ticker, snap_fut_prices, now))
             else:
-                # FUT or other
-                session.add(
-                    TsFutures(
-                        con_id=ref.con_id,
-                        bid=bid,
-                        ask=ask,
-                        last=last,
-                        close=close,
-                        volume=volume,
-                        open_interest=oi,
-                        market_ts=market_ts,
-                        ingested_at=now,
-                    )
-                )
-                session.execute(
-                    insert(LatestFutures)
-                    .values(
-                        con_id=ref.con_id,
-                        bid=bid,
-                        ask=ask,
-                        last=last,
-                        close=close,
-                        volume=volume,
-                        open_interest=oi,
-                        market_ts=market_ts,
-                        ingested_at=now,
-                        updated_at=now,
-                    )
-                    .on_conflict_do_update(
-                        index_elements=["con_id"],
-                        set_={
-                            "bid": bid,
-                            "ask": ask,
-                            "last": last,
-                            "close": close,
-                            "volume": volume,
-                            "open_interest": oi,
-                            "market_ts": market_ts,
-                            "ingested_at": now,
-                            "updated_at": now,
-                        },
-                        where=LatestFutures.__table__.c.market_ts <= market_ts,
-                    )
-                )
-                results.append(
-                    {
-                        "con_id": ref.con_id,
-                        "sec_type": ref.sec_type,
-                        "bid": bid,
-                        "ask": ask,
-                        "last": last,
-                    }
-                )
+                results.append(_snapshot_future(session, ref, ticker, now))
 
             inserted += 1
 

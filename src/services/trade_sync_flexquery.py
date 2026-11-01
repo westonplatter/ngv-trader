@@ -213,7 +213,7 @@ def _mark_log_error(engine: Engine, log_id: int | None, message: str) -> None:
             session.commit()
 
 
-def sync_flex_trades(
+def sync_flex_trades(  # noqa: PLR0913 — public sync entry point used by callers
     engine: Engine,
     *,
     account_code: str,

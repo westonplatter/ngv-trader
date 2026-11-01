@@ -126,7 +126,7 @@ def check_db_ready() -> None:
             raise SystemExit(f"Missing '{required}' table. Run: task migrate")
 
 
-def main() -> int:
+def main() -> int:  # noqa: C901, PLR0912, PLR0915 — CLI entry point; one linear polling loop
     args = parse_args()
     if args.poll_seconds <= 0:
         raise SystemExit("--poll-seconds must be > 0.")

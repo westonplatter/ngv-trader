@@ -50,7 +50,7 @@ def _format_right(right: str | None) -> str | None:
     return None
 
 
-def contract_display_name(
+def contract_display_name(  # noqa: C901, PLR0911, PLR0912, PLR0913 — one branch per sec_type; public label signature
     symbol: str | None,
     sec_type: str | None,
     local_symbol: str | None = None,

@@ -28,7 +28,7 @@ def _normalize_expiry(raw: str) -> str:
     return raw.strip().replace("-", "")
 
 
-def find_contracts(
+def find_contracts(  # noqa: PLR0913 — public lookup signature; keyword filters are the API
     session: Session,
     symbol: str,
     sec_type: str,
@@ -71,7 +71,7 @@ def find_contracts(
     return results
 
 
-def select_contract(
+def select_contract(  # noqa: PLR0913 — public lookup signature; keyword filters are the API
     session: Session,
     symbol: str,
     sec_type: str,
@@ -282,7 +282,7 @@ def _select_future(
     return _build_result(selected, dte, req_month, req_available, avail_months)
 
 
-def _select_option(
+def _select_option(  # noqa: PLR0913 — forwards the public select_contract filters
     session: Session,
     symbol: str,
     sec_type: str,
@@ -352,7 +352,7 @@ def _sync_spec(symbol: str, sec_type: str) -> dict[str, str]:
     return {"symbol": symbol, "sec_type": sec_type, "exchange": exchange}
 
 
-def find_contracts_with_fallback(
+def find_contracts_with_fallback(  # noqa: PLR0913 — public lookup signature; keyword filters are the API
     session: Session,
     symbol: str,
     sec_type: str,

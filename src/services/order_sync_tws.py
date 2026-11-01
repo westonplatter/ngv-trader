@@ -6,6 +6,7 @@ Fetches open/recent broker orders and reconciles them into local `orders` and
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
 from ib_async import IB, Trade
@@ -64,18 +65,23 @@ def parse_order_ref(order_ref: str | None) -> int | None:
         return None
 
 
+_IB_STATUS_TO_ORDER_STATUS = {
+    "filled": ORDER_STATUS_FILLED,
+    "rejected": ORDER_STATUS_REJECTED,
+    "cancelled": ORDER_STATUS_CANCELLED,
+    "apicancelled": ORDER_STATUS_CANCELLED,
+    "inactive": ORDER_STATUS_CANCELLED,
+}
+_IB_WORKING_STATUSES = {"submitted", "presubmitted", "pendingsubmit"}
+
+
 def normalize_ib_status(ib_status: str | None, filled_qty: float) -> str:
     value = (ib_status or "").strip().lower()
-    if value == "filled":
-        return ORDER_STATUS_FILLED
-    if value == "rejected":
-        return ORDER_STATUS_REJECTED
-    if value in {"cancelled", "apicancelled", "inactive"}:
-        return ORDER_STATUS_CANCELLED
-    if value in {"submitted", "presubmitted", "pendingsubmit"}:
-        if filled_qty > 0:
-            return ORDER_STATUS_PARTIALLY_FILLED
-        return ORDER_STATUS_SUBMITTED
+    mapped = _IB_STATUS_TO_ORDER_STATUS.get(value)
+    if mapped is not None:
+        return mapped
+    if value in _IB_WORKING_STATUSES and filled_qty > 0:
+        return ORDER_STATUS_PARTIALLY_FILLED
     if value:
         return ORDER_STATUS_SUBMITTED
     return ORDER_STATUS_QUEUED
@@ -248,8 +254,9 @@ def _create_order_from_trade(session: Session, trade: Trade) -> Order:
     return order
 
 
-def _sync_trade_onto_order(session: Session, order: Order, trade: Trade) -> bool:
-    prev = (
+def _order_snapshot(order: Order) -> tuple:
+    """The broker-synced fields of an order, compared before and after a sync to detect a change."""
+    return (
         order.symbol,
         order.sec_type,
         order.exchange,
@@ -269,10 +276,9 @@ def _sync_trade_onto_order(session: Session, order: Order, trade: Trade) -> bool
         order.trading_class,
         order.contract_expiry,
     )
-    now = now_utc()
-    filled_quantity = max(0.0, float(trade.filled() or 0.0))
-    normalized_status = normalize_ib_status(getattr(trade.orderStatus, "status", None), filled_quantity)
-    avg_fill_price = parse_float(getattr(trade.orderStatus, "avgFillPrice", None))
+
+
+def _apply_trade_fields(order: Order, trade: Trade, filled_quantity: float, avg_fill_price: float | None, now: datetime) -> None:
     contract = trade.contract
 
     # Broker state is source-of-truth for identity and execution attributes.
@@ -297,64 +303,58 @@ def _sync_trade_onto_order(session: Session, order: Order, trade: Trade) -> bool
     order.filled_quantity = filled_quantity
     order.avg_fill_price = avg_fill_price
     order.updated_at = now
+
+
+def _reconcile_order_status(session: Session, order: Order, trade: Trade, normalized_status: str, now: datetime) -> bool:
+    """Move the order to the broker's status. Returns True when a status event was appended."""
+    if order.status == normalized_status:
+        session.flush()
+        return False
+
+    if can_transition_order_status(order.status, normalized_status):
+        transition_order_status(
+            session=session,
+            order=order,
+            next_status=normalized_status,
+            event_type="broker_order_synced_status",
+            message=(
+                f"Broker order sync status update: ib_status={getattr(trade.orderStatus, 'status', None)}, "
+                f"filled={order.filled_quantity}, avg_fill={order.avg_fill_price}"
+            ),
+        )
+        return True
+
+    order.status = normalized_status
+    if normalized_status in ORDER_TERMINAL_STATUSES and order.completed_at is None:
+        order.completed_at = now
+    session.flush()
+    append_order_event(
+        session=session,
+        order_id=order.id,
+        event_type="broker_order_synced_status",
+        message=f"Forced status update to {normalized_status} from broker sync.",
+        status=order.status,
+        filled_quantity=order.filled_quantity,
+        avg_fill_price=order.avg_fill_price,
+        ib_order_id=order.ib_order_id,
+    )
+    return True
+
+
+def _sync_trade_onto_order(session: Session, order: Order, trade: Trade) -> bool:
+    prev = _order_snapshot(order)
+    now = now_utc()
+    filled_quantity = max(0.0, float(trade.filled() or 0.0))
+    normalized_status = normalize_ib_status(getattr(trade.orderStatus, "status", None), filled_quantity)
+    avg_fill_price = parse_float(getattr(trade.orderStatus, "avgFillPrice", None))
+
+    _apply_trade_fields(order, trade, filled_quantity, avg_fill_price, now)
     if order.submitted_at is None and normalized_status != ORDER_STATUS_QUEUED:
         order.submitted_at = now
 
-    status_changed = order.status != normalized_status
-    emitted_status_event = False
-    if status_changed:
-        if can_transition_order_status(order.status, normalized_status):
-            transition_order_status(
-                session=session,
-                order=order,
-                next_status=normalized_status,
-                event_type="broker_order_synced_status",
-                message=(
-                    f"Broker order sync status update: ib_status={getattr(trade.orderStatus, 'status', None)}, "
-                    f"filled={filled_quantity}, avg_fill={avg_fill_price}"
-                ),
-            )
-            emitted_status_event = True
-        else:
-            order.status = normalized_status
-            if normalized_status in ORDER_TERMINAL_STATUSES and order.completed_at is None:
-                order.completed_at = now
-            session.flush()
-            append_order_event(
-                session=session,
-                order_id=order.id,
-                event_type="broker_order_synced_status",
-                message=f"Forced status update to {normalized_status} from broker sync.",
-                status=order.status,
-                filled_quantity=order.filled_quantity,
-                avg_fill_price=order.avg_fill_price,
-                ib_order_id=order.ib_order_id,
-            )
-            emitted_status_event = True
-    else:
-        session.flush()
+    emitted_status_event = _reconcile_order_status(session, order, trade, normalized_status, now)
 
-    current = (
-        order.symbol,
-        order.sec_type,
-        order.exchange,
-        order.currency,
-        order.side,
-        order.quantity,
-        order.order_type,
-        order.limit_price,
-        order.tif,
-        order.status,
-        order.filled_quantity,
-        order.avg_fill_price,
-        order.ib_order_id,
-        order.ib_perm_id,
-        order.con_id,
-        order.local_symbol,
-        order.trading_class,
-        order.contract_expiry,
-    )
-    if current == prev:
+    if _order_snapshot(order) == prev:
         return False
 
     if normalized_status in ORDER_TERMINAL_STATUSES and order.completed_at is None:

@@ -77,18 +77,23 @@ def parse_order_ref(order_ref: str | None) -> int | None:
         return None
 
 
+_IB_STATUS_TO_ORDER_STATUS = {
+    "filled": ORDER_STATUS_FILLED,
+    "rejected": ORDER_STATUS_REJECTED,
+    "cancelled": ORDER_STATUS_CANCELLED,
+    "apicancelled": ORDER_STATUS_CANCELLED,
+    "inactive": ORDER_STATUS_CANCELLED,
+}
+_IB_WORKING_STATUSES = {"submitted", "presubmitted", "pendingsubmit"}
+
+
 def normalize_ib_status(ib_status: str | None, filled_qty: float) -> OrderStatus:
     value = (ib_status or "").strip().lower()
-    if value == "filled":
-        return ORDER_STATUS_FILLED
-    if value in {"rejected"}:
-        return ORDER_STATUS_REJECTED
-    if value in {"cancelled", "apicancelled", "inactive"}:
-        return ORDER_STATUS_CANCELLED
-    if value in {"submitted", "presubmitted", "pendingsubmit"}:
-        if filled_qty > 0:
-            return ORDER_STATUS_PARTIALLY_FILLED
-        return ORDER_STATUS_SUBMITTED
+    mapped = _IB_STATUS_TO_ORDER_STATUS.get(value)
+    if mapped is not None:
+        return mapped
+    if value in _IB_WORKING_STATUSES and filled_qty > 0:
+        return ORDER_STATUS_PARTIALLY_FILLED
     if value:
         return ORDER_STATUS_SUBMITTED
     return ORDER_STATUS_QUEUED
@@ -101,6 +106,36 @@ def get_cl_min_days_to_expiry() -> int:
     return min_days_to_expiry
 
 
+def _qualify_known_con_id(ib: IB, order: Order, symbol: str, cl_min_days_to_expiry: int | None) -> Contract | None:
+    """Qualify the order's stored conId; None when it is unset, ambiguous, or too close to expiry for CL."""
+    if not order.con_id:
+        return None
+
+    contract_kwargs: dict[str, Any] = {
+        "conId": order.con_id,
+        "symbol": symbol,
+        "secType": order.sec_type,
+        "exchange": order.exchange,
+        "currency": order.currency,
+    }
+    if order.local_symbol is not None:
+        contract_kwargs["localSymbol"] = order.local_symbol
+    if order.trading_class is not None:
+        contract_kwargs["tradingClass"] = order.trading_class
+    contract = Contract(**contract_kwargs)
+    qualified = ib.qualifyContracts(contract)
+    if len(qualified) != 1:
+        return None
+
+    qualified_contract = qualified[0]
+    if cl_min_days_to_expiry is None:
+        return qualified_contract
+    days_to_expiry = contract_days_to_expiry(qualified_contract)
+    if days_to_expiry is not None and days_to_expiry >= cl_min_days_to_expiry:
+        return qualified_contract
+    return None
+
+
 def get_or_qualify_contract(ib: IB, order: Order) -> Contract:
     raw_symbol = (order.symbol or "").strip().upper()
     use_front_month_alias = order.sec_type == "FUT" and raw_symbol.startswith("/")
@@ -109,27 +144,9 @@ def get_or_qualify_contract(ib: IB, order: Order) -> Contract:
         raise RuntimeError(f"Order {order.id} has an invalid symbol '{order.symbol}'.")
     cl_min_days_to_expiry = get_cl_min_days_to_expiry() if symbol == "CL" else None
 
-    if order.con_id:
-        contract_kwargs: dict[str, Any] = {
-            "conId": order.con_id,
-            "symbol": symbol,
-            "secType": order.sec_type,
-            "exchange": order.exchange,
-            "currency": order.currency,
-        }
-        if order.local_symbol is not None:
-            contract_kwargs["localSymbol"] = order.local_symbol
-        if order.trading_class is not None:
-            contract_kwargs["tradingClass"] = order.trading_class
-        contract = Contract(**contract_kwargs)
-        qualified = ib.qualifyContracts(contract)
-        if len(qualified) == 1:
-            qualified_contract = qualified[0]
-            if cl_min_days_to_expiry is None:
-                return qualified_contract
-            days_to_expiry = contract_days_to_expiry(qualified_contract)
-            if days_to_expiry is not None and days_to_expiry >= cl_min_days_to_expiry:
-                return qualified_contract
+    known = _qualify_known_con_id(ib, order, symbol, cl_min_days_to_expiry)
+    if known is not None:
+        return known
 
     if use_front_month_alias:
         min_days_to_expiry = cl_min_days_to_expiry if cl_min_days_to_expiry is not None else 0
@@ -170,15 +187,9 @@ def _apply_contract_details(order: Order, trade: Trade) -> None:
         order.contract_expiry = contract.lastTradeDateOrContractMonth
 
 
-def apply_trade_progress(
-    session: Session,
-    order: Order,
-    trade: Trade,
-    *,
-    event_type: str,
-    message_prefix: str,
-) -> bool:
-    prev = (
+def _progress_snapshot(order: Order) -> tuple:
+    """The trade-progress fields of an order, compared before and after to detect a change."""
+    return (
         order.status,
         order.filled_quantity,
         order.avg_fill_price,
@@ -189,6 +200,56 @@ def apply_trade_progress(
         order.trading_class,
         order.contract_expiry,
     )
+
+
+def _reconcile_trade_status(
+    session: Session,
+    order: Order,
+    trade: Trade,
+    normalized_status: str,
+    event_type: str,
+    message_prefix: str,
+) -> bool:
+    """Move the order to the broker's status. Returns True when a transition event was appended."""
+    if order.status == normalized_status:
+        session.flush()
+        return False
+
+    if can_transition_order_status(order.status, normalized_status):
+        transition_order_status(
+            session=session,
+            order=order,
+            next_status=normalized_status,
+            event_type=event_type,
+            message=(
+                f"{message_prefix}: ib_status={trade.orderStatus.status}, "
+                f"filled={order.filled_quantity}, remaining={trade.remaining()}, avg_fill={order.avg_fill_price}"
+            ),
+        )
+        return True
+
+    # The broker's state wins during reconciliation even when the table
+    # disallows the move; the forced event records it.
+    transition_order_status(
+        session=session,
+        order=order,
+        next_status=normalized_status,
+        event_type=event_type,
+        message=f"{message_prefix}: ib_status={trade.orderStatus.status}",
+        force=True,
+    )
+    return False
+
+
+def apply_trade_progress(
+    session: Session,
+    order: Order,
+    trade: Trade,
+    *,
+    event_type: str,
+    message_prefix: str,
+) -> bool:
+    prev = _progress_snapshot(order)
 
     filled_quantity = max(0.0, float(trade.filled() or 0.0))
     normalized_status = normalize_ib_status(trade.orderStatus.status, filled_quantity)
@@ -203,47 +264,9 @@ def apply_trade_progress(
     order.avg_fill_price = avg_fill_price
     order.updated_at = now_utc()
 
-    status_changed = order.status != normalized_status
-    emitted_transition_event = False
-    if status_changed:
-        if can_transition_order_status(order.status, normalized_status):
-            transition_order_status(
-                session=session,
-                order=order,
-                next_status=normalized_status,
-                event_type=event_type,
-                message=(
-                    f"{message_prefix}: ib_status={trade.orderStatus.status}, "
-                    f"filled={filled_quantity}, remaining={trade.remaining()}, avg_fill={avg_fill_price}"
-                ),
-            )
-            emitted_transition_event = True
-        else:
-            # The broker's state wins during reconciliation even when the table
-            # disallows the move; the forced event records it.
-            transition_order_status(
-                session=session,
-                order=order,
-                next_status=normalized_status,
-                event_type=event_type,
-                message=f"{message_prefix}: ib_status={trade.orderStatus.status}",
-                force=True,
-            )
-    else:
-        session.flush()
+    emitted_transition_event = _reconcile_trade_status(session, order, trade, normalized_status, event_type, message_prefix)
 
-    current = (
-        order.status,
-        order.filled_quantity,
-        order.avg_fill_price,
-        order.ib_order_id,
-        order.ib_perm_id,
-        order.con_id,
-        order.local_symbol,
-        order.trading_class,
-        order.contract_expiry,
-    )
-    if current == prev:
+    if _progress_snapshot(order) == prev:
         return False
 
     if order.status in ORDER_TERMINAL_STATUSES and order.completed_at is None:
@@ -264,6 +287,93 @@ def apply_trade_progress(
             ib_order_id=order.ib_order_id,
         )
     return True
+
+
+def _record_contract_qualified(session: Session, order: Order, contract: Contract) -> None:
+    order.con_id = contract.conId
+    order.local_symbol = contract.localSymbol
+    order.trading_class = contract.tradingClass
+    order.contract_expiry = contract.lastTradeDateOrContractMonth
+    order.updated_at = now_utc()
+    append_order_event(
+        session=session,
+        order_id=order.id,
+        event_type="contract_qualified",
+        message=f"Qualified conId={contract.conId}, localSymbol={contract.localSymbol}",
+        status=order.status,
+        filled_quantity=order.filled_quantity,
+        avg_fill_price=order.avg_fill_price,
+        ib_order_id=order.ib_order_id,
+    )
+
+
+def _build_ib_order(order: Order, tws_account: str) -> LimitOrder | MarketOrder:
+    if order.order_type == "LMT":
+        if order.limit_price is None:
+            raise RuntimeError(f"Order {order.id} has order_type=LMT but no limit_price.")
+        ib_order: LimitOrder | MarketOrder = LimitOrder(order.side, order.quantity, order.limit_price)
+    else:
+        ib_order = MarketOrder(order.side, order.quantity)
+    ib_order.account = tws_account
+    ib_order.tif = order.tif
+    ib_order.orderRef = make_order_ref(order.id)
+    return ib_order
+
+
+def _poll_trade_to_final(ib: IB, session: Session, order: Order, trade: Trade, timeout_seconds: float) -> None:
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline and not trade.isDone():
+        ib.waitOnUpdate(timeout=1.0)
+        apply_trade_progress(
+            session=session,
+            order=order,
+            trade=trade,
+            event_type="order_progress",
+            message_prefix="order progress",
+        )
+        session.flush()
+
+    apply_trade_progress(
+        session=session,
+        order=order,
+        trade=trade,
+        event_type="order_final",
+        message_prefix="order final",
+    )
+
+
+def _record_order_timeout(session: Session, order: Order, timeout_seconds: float) -> None:
+    timeout_message = f"Order timed out after {timeout_seconds:.1f}s waiting for terminal status; marking as failed."
+    order.status = ORDER_STATUS_FAILED
+    order.last_error = timeout_message
+    order.updated_at = now_utc()
+    if order.completed_at is None:
+        order.completed_at = now_utc()
+    append_order_event(
+        session=session,
+        order_id=order.id,
+        event_type="order_timeout",
+        message=timeout_message,
+        status=order.status,
+        filled_quantity=order.filled_quantity,
+        avg_fill_price=order.avg_fill_price,
+        ib_order_id=order.ib_order_id,
+    )
+
+
+def _record_advanced_error(session: Session, order: Order, advanced_error: str) -> None:
+    order.last_error = advanced_error
+    order.updated_at = now_utc()
+    append_order_event(
+        session=session,
+        order_id=order.id,
+        event_type="ib_advanced_error",
+        message=advanced_error,
+        status=order.status,
+        filled_quantity=order.filled_quantity,
+        avg_fill_price=order.avg_fill_price,
+        ib_order_id=order.ib_order_id,
+    )
 
 
 def process_order(
@@ -287,21 +397,7 @@ def process_order(
 
     try:
         contract = get_or_qualify_contract(ib, order)
-        order.con_id = contract.conId
-        order.local_symbol = contract.localSymbol
-        order.trading_class = contract.tradingClass
-        order.contract_expiry = contract.lastTradeDateOrContractMonth
-        order.updated_at = now_utc()
-        append_order_event(
-            session=session,
-            order_id=order.id,
-            event_type="contract_qualified",
-            message=f"Qualified conId={contract.conId}, localSymbol={contract.localSymbol}",
-            status=order.status,
-            filled_quantity=order.filled_quantity,
-            avg_fill_price=order.avg_fill_price,
-            ib_order_id=order.ib_order_id,
-        )
+        _record_contract_qualified(session, order, contract)
 
         tws_account = account.account
         managed_accounts = ib.managedAccounts()
@@ -309,15 +405,7 @@ def process_order(
             masked = mask_ibkr_account(tws_account)
             raise RuntimeError(f"Account {masked} is not managed by this IBKR session")
 
-        if order.order_type == "LMT":
-            if order.limit_price is None:
-                raise RuntimeError(f"Order {order.id} has order_type=LMT but no limit_price.")
-            ib_order = LimitOrder(order.side, order.quantity, order.limit_price)
-        else:
-            ib_order = MarketOrder(order.side, order.quantity)
-        ib_order.account = tws_account
-        ib_order.tif = order.tif
-        ib_order.orderRef = make_order_ref(order.id)
+        ib_order = _build_ib_order(order, tws_account)
 
         raise RuntimeError("Order execution is not supported at this time.")
         trade = ib.placeOrder(contract, ib_order)
@@ -332,56 +420,12 @@ def process_order(
         )
         session.flush()
 
-        deadline = time.monotonic() + timeout_seconds
-        while time.monotonic() < deadline and not trade.isDone():
-            ib.waitOnUpdate(timeout=1.0)
-            apply_trade_progress(
-                session=session,
-                order=order,
-                trade=trade,
-                event_type="order_progress",
-                message_prefix="order progress",
-            )
-            session.flush()
-
-        apply_trade_progress(
-            session=session,
-            order=order,
-            trade=trade,
-            event_type="order_final",
-            message_prefix="order final",
-        )
+        _poll_trade_to_final(ib, session, order, trade, timeout_seconds)
         if not trade.isDone():
-            timeout_message = f"Order timed out after {timeout_seconds:.1f}s waiting for terminal status; marking as failed."
-            order.status = ORDER_STATUS_FAILED
-            order.last_error = timeout_message
-            order.updated_at = now_utc()
-            if order.completed_at is None:
-                order.completed_at = now_utc()
-            append_order_event(
-                session=session,
-                order_id=order.id,
-                event_type="order_timeout",
-                message=timeout_message,
-                status=order.status,
-                filled_quantity=order.filled_quantity,
-                avg_fill_price=order.avg_fill_price,
-                ib_order_id=order.ib_order_id,
-            )
+            _record_order_timeout(session, order, timeout_seconds)
 
         if trade.advancedError:
-            order.last_error = trade.advancedError
-            order.updated_at = now_utc()
-            append_order_event(
-                session=session,
-                order_id=order.id,
-                event_type="ib_advanced_error",
-                message=trade.advancedError,
-                status=order.status,
-                filled_quantity=order.filled_quantity,
-                avg_fill_price=order.avg_fill_price,
-                ib_order_id=order.ib_order_id,
-            )
+            _record_advanced_error(session, order, trade.advancedError)
     except Exception as exc:
         order.last_error = str(exc)
         transition_order_status(
