@@ -22,13 +22,13 @@ Conventions (layout, data access, state, tests) are in
 | `/positions` | `positions/PositionsPage` | Current portfolio positions with live overlay |
 | `/orders` | `OrdersTable` | Order tracking |
 | `/trades` | `trades/TradesPage` | Trade history and executions |
-| `/strategies` | `StrategiesPage` | Strategies and trade groups workspace |
+| `/strategies` | `strategies/StrategiesPage` | Strategies and trade groups workspace |
 | `/strategies/table` | `StrategyPnlTable` | Strategy P&L table across trade groups |
 | `/tags` | `TagsPage` | Free-form tags and tag search |
 | `/tasks` | `TasksPage` | Task list linked to trades, positions, and groups |
 | `/watchlists` | `WatchListsPage` | Instrument watch lists with live quotes |
 | `/market-data` | `MarketDataPage` | Futures and options market data jobs |
-| `/structures` | `PricingPage` | Options structure builder and PnL calculator |
+| `/structures` | `pricing/PricingPage` | Options structure builder and PnL calculator |
 
 `/` redirects to `/tradebot`. Nav entries live in `src/navItems.ts`.
 

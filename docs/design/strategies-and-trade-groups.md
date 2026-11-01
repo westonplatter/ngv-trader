@@ -5,7 +5,7 @@ code_dirs_or_files:
     "src/api/routers/trade_groups.py",
     "src/api/routers/strategies.py",
     "src/services/trade_group_instruments.py",
-    "frontend/src/components/StrategiesPage.tsx",
+    "frontend/src/components/strategies/",
     "frontend/src/components/StrategyPnlTable.tsx",
   ]
 description: Strategies and trade groups — data model, execution assignment and history, trade-group and strategy APIs, position chips, the Strategy P&L table, and the Strategies workspace.
@@ -16,7 +16,7 @@ description: Strategies and trade groups — data model, execution assignment an
 Current-state documentation for strategies, trade groups, execution assignment, and the Strategies UI.
 
 The UI surface for all of this is the **Strategies** page at `/strategies`
-(`frontend/src/components/StrategiesPage.tsx`), with a book-wide **Strategy P&L**
+(`frontend/src/components/strategies/`), with a book-wide **Strategy P&L**
 table at `/strategies/table`. Strategies live in their own `strategies` table and
 a group points at one through `trade_groups.strategy_id`. Strategies and trade
 groups never use the word "tag": that is reserved for the free-form tags in
@@ -329,7 +329,8 @@ group can list both `CL` and `CLZ6`.
 
 ### Strategies workspace
 
-The main Strategies UI is `frontend/src/components/StrategiesPage.tsx`.
+The main Strategies UI is `frontend/src/components/strategies/` (the page file
+wires hooks to panes; list logic and P&L math are pure in `frontend/src/lib/strategies/`).
 
 It currently supports:
 
@@ -386,6 +387,6 @@ Typical live workflow:
 3. `src/api/routers/strategies.py`, `src/api/routers/reports.py`
 4. `frontend/src/components/trades/`
 5. `frontend/src/components/positions/`
-6. `frontend/src/components/StrategiesPage.tsx`, `frontend/src/components/StrategyPnlTable.tsx`, `frontend/src/lib/strategyPnl.ts`
+6. `frontend/src/components/strategies/`, `frontend/src/components/StrategyPnlTable.tsx`, `frontend/src/lib/strategyPnl.ts`
 7. `src/services/trade_group_pnl.py` (batched per-group P&L), `src/services/trade_group_instruments.py` (instrument derivation and the pattern filter)
 8. `frontend/src/contexts/PrivacyContext.tsx`, `frontend/src/utils/privacy.ts` (privacy-mode masking used throughout the trade-group detail view)
