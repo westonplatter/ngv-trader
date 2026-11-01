@@ -53,13 +53,14 @@ The original set was #312–#336. After it, these also merged and need coverage:
 | #347 | Tradebot tool registry |
 | #348 | Contract lookup enqueues a job instead of calling TWS |
 | #349 | Money/quantity masking hook |
-| #350, #351 | Further changes after #349 |
+| #350 | Hoist the repeated bordered-button classes (frontend) |
+| #351 | `now_utc` defined once in `src/utils/time` |
 | #353 | Ruff complexity cleanup across many files |
 | #355 | Tags page split |
 | #356 | Strategy P&L table split |
 | #357 | Trade-group picker |
 
-**Coverage by the first run.** It exercised the #312–#349 behavior listed in this document, plus the job watcher (#331), and the ingest (C2), order and contract (B7), tradebot (D3), and semantic checks described below. It did **not** reach #350, #351, #353, #355, #356, #357. Prioritize those: the Tags page split (#355) in E3, the Strategy P&L table split (#356) and trade-group picker (#357) in E5, and the complexity cleanup (#353) through the C differentials and the F static checks.
+**Coverage by the first run.** It exercised the #312–#349 behavior listed in this document, plus the job watcher (#331), and the ingest (C2), order and contract (B7), tradebot (D3), and semantic checks described below. It did **not** reach #350, #351, #353, #355, #356, #357. Prioritize those: the Tags page split (#355) in E3; the Strategy P&L table split (#356) in E8 (sort and privacy) and F1 (demo routes); the trade-group picker (#357) in E1 and E2 (the `+ Assign` flow); `now_utc` (#351) by grepping for stragglers and re-running A13 (`completed_at`) and the job and order timestamp paths; and the complexity cleanup (#353) through the full A to D steps, the C differentials, and the F static checks.
 
 ## 1. Setup
 
@@ -206,10 +207,10 @@ Flows to drive (screenshot each; compare behavior to the spec, not to your taste
 - **E2. Trades.** Per-order checkboxes, "select all", bulk **Add tag** / **Remove tag** across a settled order and an unsettled live order; message reads "Tagged N items". Group-assign flow still works. This page was split in #332 (unreviewed).
 - **E3. Tags page** (split in #355, not yet verified). `/tags?all=long-beta`, `?any=…&none=…&tab=positions`; state lives in the URL and survives reload; rename / recolor / merge / archive; results are tabbed Trades | Positions | Trade groups | Tasks and each row links somewhere sensible (including a trade with no symbol → `/trades`).
 - **E4. Tasks page.** Create, one-click status cycle, **Done** button, edit, delete (confirm dialog), filters (status, tag, symbol, strategy, group), "Show done" toggle; a closed position link shows "(closed)". Double-click **Done** quickly: expect one PATCH, not two.
-- **E5. Strategies** (#319, #335 unreviewed split; #356 Strategy P&L table split and #357 trade-group picker not yet verified). Pick a group, change its strategy in the edit form (including "No strategy"); the page follows the group to its new strategy; archived-strategy edge case; group detail shows a Tasks section with quick-add. Exercise the Strategy P&L table (rows, totals, sort) and the trade-group picker wherever it appears.
+- **E5. Strategies** (#319, #335 unreviewed split). Pick a group, change its strategy in the edit form (including "No strategy"); the page follows the group to its new strategy; archived-strategy edge case; group detail shows a Tasks section with quick-add. The Strategy P&L table (#356) and the trade-group picker (#357) are covered in E8 and E1/E2.
 - **E6. Pricing** (#336 unreviewed split; #337 lazy load). Build a structure, save, load, delete (also with the API stopped to confirm "Delete failed: …" appears and the structure stays selected), fetch a leg price. Confirm the page loads lazily without a blank flash or console errors.
 - **E7. Job watcher (#331).** In Positions click a sync button; with no worker running the job stays queued. Then mark that job `completed` in `ngv_verify` (throwaway DB, fixture write): **with** `POST /api/v1/events/notify-job` (`{"job_id":N,"event":"job.updated"}`) the page refreshes immediately; **without** it the page must still refresh within about 10 seconds while the SSE stream is connected. Repeat with the API's SSE blocked.
-- **E8. Sort and privacy (#342, #349).** Turn privacy mode on and click every sortable header on Positions and Strategy P&L, baseline vs head, in demo mode. Expected: same row order for the same header and direction; money and quantity cells stay masked after every sort and after reload.
+- **E8. Sort and privacy (#342, #349, #356).** Turn privacy mode on and click every sortable header on Positions and Strategy P&L, baseline vs head, in demo mode. Expected: same row order for the same header and direction; money and quantity cells stay masked after every sort and after reload.
 - **E9. Pricing cascade (#340).** Seed a fake CL futures curve and FOP option chain in `ngv_verify`. Compare the leg cascade on baseline UI+API vs head UI+API: expiry → dependent selects → type switch → add leg → instrument switch. Expected: the same options offered at each step and the same resulting leg fields.
 
 **Baseline comparison for the UI.** The API's CORS allows only `http://localhost:5173`, so a baseline UI that talks to a real API must own that port: stop the head Vite, start the baseline (`/tmp/ngv-base/frontend`) on 5173 pointed at `:8011`. For demo-mode comparison (`?demo=1`, no API needed) the baseline and head can run side by side on other ports. Load every route in `src/App.tsx` on both and diff the visible `main` text and screenshots. The only expected differences are the Tags/Tasks surfaces, the new strategy picker, and anything listed in "What changed since".
