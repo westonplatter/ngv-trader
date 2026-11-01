@@ -25,6 +25,7 @@ For domain vocabulary, see [CONCEPTS.md](../../CONCEPTS.md).
 
 ## Primitives
 
+- `src/domain/enums.py`: `StrEnum` vocabularies for the string columns (`JobStatus`, `OrderStatus`, `ExecRole`, `OverlaySource`, `EntityType`, `DataSource`); members equal their DB strings, and the module constants (`JOB_STATUS_*`, `ORDER_STATUS_*`, `TAG_ENTITY_TYPES`) point at them.
 - `src/db.py`: DB URL and SQLAlchemy engine builders (`get_database_url`, `get_engine`).
 - `src/utils/ibkr_account.py`: account masking helper (`mask_ibkr_account`) for safer logs.
 - `src/utils/contract_display.py`: human-readable contract labels (`contract_display_name`).
