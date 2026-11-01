@@ -7,15 +7,11 @@ could not tell "opened since the snapshot" from "closed since the capture".
 
 from __future__ import annotations
 
-from collections.abc import Iterator
 from datetime import datetime, timedelta, timezone
 
 import pytest
-from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from src.api.deps import get_db
-from src.api.main import app
 from src.models import LatestQuote
 from src.services.intraday_overlay import ct_date, is_overlay_superseded
 from tests.trade_group_factories import (
@@ -29,17 +25,6 @@ from tests.trade_group_factories import (
 
 BASE = "/api/v1/positions"
 UTC = timezone.utc
-
-
-@pytest.fixture
-def client(db_session: Session) -> Iterator[TestClient]:
-    """A TestClient whose requests run inside the test's rolled-back session."""
-    app.dependency_overrides[get_db] = lambda: db_session
-    try:
-        with TestClient(app) as test_client:
-            yield test_client
-    finally:
-        app.dependency_overrides.pop(get_db, None)
 
 
 def _row(payload: list[dict], con_id: int) -> dict | None:
@@ -89,6 +74,7 @@ def test_live_row_with_a_settled_counterpart_is_flagged_not_dropped(client, db_s
     row = _row(client.get(BASE).json(), CON_CL)
 
     assert row is not None and row["live_is_stale"] is True
+    assert row["live_fetched_at"] is not None, "and how old the stale capture is"
 
 
 def test_account_with_no_settled_snapshot_keeps_its_live_only_rows(client, db_session):
@@ -122,47 +108,6 @@ def test_stale_equity_mark_is_still_served(client, db_session):
     _quote_at(db_session, CON_ES, datetime.now(UTC) - timedelta(hours=6), mark=117.98)
 
     assert _row(client.get(BASE).json(), CON_ES)["mark"] is not None
-
-
-class TestStaleOverlayDefersToSettled:
-    """A stale overlay is superseded data, not current state.
-
-    It must not win over a newer settled snapshot -- the bug that had a Saturday
-    request answering from Tuesday while a Friday snapshot sat unused.
-    """
-
-    def _stale_pair(self, session: Session, account, con_id: int, *, settled_qty: float, live_qty: float):
-        pos = make_position(session, account=account, con_id=con_id, quantity=settled_qty, avg_cost=70.0, fetched_at=datetime.now(UTC))
-        make_live_position(
-            session,
-            account=account,
-            con_id=con_id,
-            quantity=live_qty,
-            avg_cost=99_000.0,
-            fetched_at=datetime.now(UTC) - timedelta(days=4),
-        )
-        return pos
-
-    def test_stale_row_serves_settled_quantity_and_source(self, client, db_session):
-        account = make_account(db_session)
-        self._stale_pair(db_session, account, CON_CL, settled_qty=2.0, live_qty=1.0)
-
-        row = _row(client.get(BASE).json(), CON_CL)
-
-        assert row["position"] == 2.0, "the newer settled quantity wins"
-        assert row["source"] == "settled"
-        assert row["live_is_stale"] is True, "the flag still reports that an old capture exists"
-        assert row["live_fetched_at"] is not None, "and how old it is"
-
-    def test_fresh_overlay_still_wins(self, client, db_session):
-        account = make_account(db_session)
-        make_position(db_session, account=account, con_id=CON_CL, quantity=2.0, fetched_at=datetime.now(UTC))
-        make_live_position(db_session, account=account, con_id=CON_CL, quantity=1.0, fetched_at=datetime.now(UTC))
-
-        row = _row(client.get(BASE).json(), CON_CL)
-
-        assert row["position"] == 1.0, "a current overlay is still preferred"
-        assert row["source"] == "live"
 
 
 class TestAvgCostUnits:

@@ -3,6 +3,7 @@ title: Trim Overlapping Backend Tests - Plan
 type: test
 date: 2026-11-01
 execution: code
+status: implemented
 ---
 
 # Trim Overlapping Backend Tests - Plan
@@ -78,3 +79,14 @@ About 11 tests (~3% of the suite).
 3. Re-run. Per-module coverage must not drop, and the suite must pass.
 4. Optional: mutation test `trade_group_pnl.py` and `intraday_overlay.py` (`mutmut` or `cosmic-ray`) before and after, to confirm no regression slips through.
 5. `uv run python scripts/docs_check.py` after any doc change.
+
+## Outcome
+
+Implemented on 2026-11-01. 314 tests became 308; suite time 22 s to 12 s. Covered `src/` lines are identical before and after (4,829), and Pyright errors in `tests/` did not increase.
+
+Deviations from the cuts above, found while applying them:
+
+- Kept `test_batch_and_single_group_paths_apportion_the_same_way`. It is the only test of the batch path on the split-lot fixture; the multi-group equivalence test does not use that fixture.
+- Kept `test_instruments_can_be_scoped_to_one_account` (the direct test of the account argument) and folded the API-level scoped `instruments` assertions into the per-account breakdown test. The plan said to keep one side; cutting both would have left the argument untested.
+- Not done: removing `R6`/`KTD1`/`U3` plan-ID comments. Whether those plans are folded was not verified.
+- Not done: the optional mutation-testing check and the `test_tags_and_tasks.py` split.

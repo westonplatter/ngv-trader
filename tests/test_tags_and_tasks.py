@@ -2,16 +2,12 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
 from datetime import timedelta
 
-import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from src.api.deps import get_db
-from src.api.main import app
 from src.models import LiveExecution, LivePosition, TagLink, TaskLink
 from src.services.group_link_carryover import carry_over_link_to_executions, carry_over_settled_group_links
 from src.services.intraday_overlay import ct_date
@@ -31,17 +27,6 @@ from tests.trade_group_factories import (
 )
 
 API = "/api/v1"
-
-
-@pytest.fixture
-def client(db_session: Session) -> Iterator[TestClient]:
-    """A TestClient whose requests run inside the test's rolled-back session."""
-    app.dependency_overrides[get_db] = lambda: db_session
-    try:
-        with TestClient(app) as test_client:
-            yield test_client
-    finally:
-        app.dependency_overrides.pop(get_db, None)
 
 
 def _tag(client: TestClient, tags: list, items: list[dict], created_by: str = "user") -> dict:

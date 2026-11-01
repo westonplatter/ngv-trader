@@ -7,14 +7,11 @@ now holds only what its own tagged fills opened.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from src.api.deps import get_db
-from src.api.main import app
 from src.models import Account, TradeExecution, TradeGroup
 from src.services.execution_pnl import execution_lifecycle
 from src.services.trade_group_pnl import compute_trade_group_pnl, trade_group_batch_pnls
@@ -32,17 +29,6 @@ from tests.trade_group_factories import (
 
 BASE = "/api/v1/trade-groups"
 ACCOUNT_UNREALIZED = 4_000.0
-
-
-@pytest.fixture
-def client(db_session: Session) -> Iterator[TestClient]:
-    """A TestClient whose requests run inside the test's rolled-back session."""
-    app.dependency_overrides[get_db] = lambda: db_session
-    try:
-        with TestClient(app) as test_client:
-            yield test_client
-    finally:
-        app.dependency_overrides.pop(get_db, None)
 
 
 def _fill(session: Session, group: TradeGroup | None, account: Account, seq: int, *, side: str, quantity: float, lifecycle: str) -> TradeExecution:

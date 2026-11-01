@@ -62,17 +62,6 @@ def test_create_returns_metadata_without_the_token(client: TestClient) -> None:
     assert "token" not in body
 
 
-def test_create_stores_ciphertext(client: TestClient, engine: Engine) -> None:
-    body = _create(client)
-    with engine.connect() as conn:
-        stored = conn.execute(
-            text("SELECT token_encrypted FROM flexquery_tokens WHERE id = :id"),
-            {"id": body["id"]},
-        ).scalar_one()
-    assert stored != TOKEN_VALUE
-    assert crypto.decrypt(stored) == TOKEN_VALUE
-
-
 def test_list_never_returns_the_token(client: TestClient) -> None:
     _create(client)
     resp = client.get("/api/v1/flexquery-tokens")

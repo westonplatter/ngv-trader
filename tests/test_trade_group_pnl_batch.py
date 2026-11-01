@@ -47,30 +47,6 @@ def _batch_one(session: Session, group_id: int, **kwargs: Any):
 # --------------------------------------------------------------------------
 
 
-def test_batch_matches_compute_trade_group_pnl_field_by_field(db_session: Session) -> None:
-    """The batch figures equal the single-group figures for the same group."""
-    account = make_account(db_session)
-    group = make_group(db_session, "CL Dec'27 Short Gamma", account.id)
-    make_execution(db_session, group=group, account=account, con_id=CON_CL, realized=1_500.0, exec_id=make_exec_id(12345678))
-    make_position(db_session, account=account, con_id=CON_CL)
-    make_live_position(db_session, account=account, con_id=CON_CL)
-    make_quote(db_session, CON_CL, mark=73.0)
-    make_live_execution(db_session, account=account, con_id=CON_CL, exec_id=make_exec_id(12345679))
-
-    single = compute_trade_group_pnl(db_session, group.id)
-    batched = _batch_one(db_session, group.id)
-
-    assert batched.realized_pnl == single.realized_pnl
-    assert batched.settled_unrealized_pnl == single.settled_unrealized_pnl
-    assert batched.intraday_unrealized_pnl == single.intraday_unrealized_pnl
-    assert batched.intraday_realized_pnl == single.intraday_realized_pnl
-    assert batched.intraday_total_pnl == single.intraday_total_pnl
-    assert batched.marks_as_of == single.marks_as_of
-    # Not a vacuous comparison — the overlay actually produced numbers.
-    assert batched.intraday_unrealized_pnl is not None
-    assert batched.intraday_realized_pnl is not None
-
-
 def test_batch_matches_per_group_path_across_several_groups(db_session: Session) -> None:
     """Every group in a multi-group call agrees with its own single-group call."""
     main = make_account(db_session)
@@ -100,6 +76,10 @@ def test_batch_matches_per_group_path_across_several_groups(db_session: Session)
         assert row.intraday_realized_pnl == single.intraday_realized_pnl, group_id
         assert row.intraday_total_pnl == single.intraday_total_pnl, group_id
         assert row.marks_as_of == single.marks_as_of, group_id
+        if group_id == open_group.id:
+            # Not a vacuous comparison -- the overlay actually produced numbers.
+            assert row.intraday_unrealized_pnl is not None
+            assert row.intraday_realized_pnl is not None
 
 
 # --------------------------------------------------------------------------

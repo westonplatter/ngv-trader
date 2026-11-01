@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pytest
 from dotenv import load_dotenv
+from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
@@ -87,3 +88,17 @@ def db_session(engine: Engine) -> Iterator[Session]:
         session.close()
         trans.rollback()
         conn.close()
+
+
+@pytest.fixture
+def client(db_session: Session) -> Iterator[TestClient]:
+    """A TestClient whose requests run inside the test's rolled-back session."""
+    from src.api.deps import get_db
+    from src.api.main import app
+
+    app.dependency_overrides[get_db] = lambda: db_session
+    try:
+        with TestClient(app) as test_client:
+            yield test_client
+    finally:
+        app.dependency_overrides.pop(get_db, None)

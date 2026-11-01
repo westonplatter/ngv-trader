@@ -2,14 +2,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from src.api.deps import get_db
-from src.api.main import app
 from tests.trade_group_factories import (
     ACCOUNT_LSC,
     ACCOUNT_THIRD,
@@ -27,17 +24,6 @@ from tests.trade_group_factories import (
 )
 
 BASE = "/api/v1/trade-groups"
-
-
-@pytest.fixture
-def client(db_session: Session) -> Iterator[TestClient]:
-    """A TestClient whose requests run inside the test's rolled-back session."""
-    app.dependency_overrides[get_db] = lambda: db_session
-    try:
-        with TestClient(app) as test_client:
-            yield test_client
-    finally:
-        app.dependency_overrides.pop(get_db, None)
 
 
 @pytest.fixture
@@ -146,12 +132,6 @@ def test_account_alias_filter_source_is_unchanged(client: TestClient, book) -> N
 # --------------------------------------------------------------------------
 
 
-def test_instrument_pattern_selects_only_matching_groups(client: TestClient, book) -> None:
-    rows = client.get(BASE, params={"instrument": "CL.*"}).json()
-
-    assert [row["name"] for row in rows] == ["Crude campaign"]
-
-
 def test_instrument_and_account_filters_compose(client: TestClient, book) -> None:
     matching = client.get(BASE, params={"instrument": "NG", "account_id": book["lsc"].id}).json()
     conflicting = client.get(BASE, params={"instrument": "NG", "account_id": book["main"].id}).json()
@@ -167,41 +147,11 @@ def test_status_open_excludes_closed_and_archived_groups(client: TestClient, boo
     assert {"Crude campaign", "Gas campaign", "No fills yet"} <= set(names)
 
 
-def test_instrument_filter_populates_instruments_without_the_overlay(client: TestClient, book) -> None:
-    """If you filtered by instrument you get to see which ones matched."""
-    rows = client.get(BASE, params={"instrument": "CL.*"}).json()
-
-    assert rows[0]["instruments"] == ["CL"]
-    assert rows[0]["intraday_total_pnl"] is None
-
-
 def test_malformed_instrument_pattern_is_a_400_not_a_500(client: TestClient, book) -> None:
     resp = client.get(BASE, params={"instrument": "CL["})
 
     assert resp.status_code == 400
     assert "CL[" in resp.json()["detail"]
-
-
-def test_instrument_filter_applies_before_the_row_limit(client: TestClient, db_session: Session) -> None:
-    """R10: with a limit of 2 and three matching groups among ten, two come back."""
-    account = make_account(db_session)
-    app.dependency_overrides[get_db] = lambda: db_session
-    try:
-        for index in range(7):
-            decoy = make_group(db_session, f"Decoy {index}", account.id)
-            make_execution(db_session, group=decoy, account=account, con_id=CON_ES + index, exec_id=make_exec_id(5000 * 10000 + index), raw_symbol="ES")
-        for index in range(3):
-            target = make_group(db_session, f"Crude {index}", account.id)
-            make_execution(db_session, group=target, account=account, con_id=CON_CL + index, exec_id=make_exec_id(5100 * 10000 + index), raw_symbol="CL")
-        db_session.flush()
-
-        with TestClient(app) as test_client:
-            rows = test_client.get(BASE, params={"instrument": "^CL$", "limit": 2}).json()
-    finally:
-        app.dependency_overrides.pop(get_db, None)
-
-    assert len(rows) == 2
-    assert all(row["name"].startswith("Crude") for row in rows)
 
 
 # --------------------------------------------------------------------------
@@ -225,30 +175,6 @@ def test_list_row_agrees_with_the_group_detail_endpoint(client: TestClient, book
         assert row["marks_as_of"] == detail["marks_as_of"], name
 
 
-def test_account_filter_scopes_the_figures_not_just_the_row_list(client: TestClient, db_session: Session) -> None:
-    """A cross-account group must not report book-wide totals under one account."""
-    main = make_account(db_session)
-    lsc = make_account(db_session, ACCOUNT_LSC, "lsc")
-    group = make_group(db_session, "CL across both accounts", lsc.id)
-    make_execution(db_session, group=group, account=main, con_id=CON_CL, realized=1_000.0, exec_id=make_exec_id(80000001), raw_symbol="CL")
-    make_execution(db_session, group=group, account=lsc, con_id=CON_NG, realized=-250.0, exec_id=make_exec_id(80000002), raw_symbol="NG")
-    make_position(db_session, account=main, con_id=CON_CL, unrealized=5_000.0)
-    make_position(db_session, account=lsc, con_id=CON_NG, unrealized=-400.0)
-    db_session.flush()
-
-    params = {"include_intraday": "true", "status": "open"}
-    unscoped = _by_name(client.get(BASE, params=params).json())["CL across both accounts"]
-    scoped = _by_name(client.get(BASE, params={**params, "account_id": lsc.id}).json())["CL across both accounts"]
-
-    assert unscoped["realized_pnl"] == 750.0
-    assert unscoped["unrealized_pnl"] == 4_600.0
-    assert unscoped["instruments"] == ["CL", "NG"]
-
-    assert scoped["realized_pnl"] == -250.0
-    assert scoped["unrealized_pnl"] == -400.0
-    assert scoped["instruments"] == ["NG"]
-
-
 def test_account_scoped_row_matches_the_detail_endpoints_per_account_breakdown(client: TestClient, db_session: Session) -> None:
     """R6 extended: each account's row equals that account's slice on the panel."""
     main = make_account(db_session)
@@ -269,6 +195,14 @@ def test_account_scoped_row_matches_the_detail_endpoints_per_account_breakdown(c
         assert row["realized_pnl"] == panel["realized_pnl"], account.alias
         assert row["unrealized_pnl"] == panel["unrealized_pnl"], account.alias
         assert row["intraday_total_pnl"] == panel["intraday_total_pnl"], account.alias
+
+    scoped = {
+        account.alias: _by_name(client.get(BASE, params={"include_intraday": "true", "account_id": account.id}).json())["Cross-account campaign"]["instruments"]
+        for account in (main, lsc)
+    }
+    unscoped = _by_name(client.get(BASE, params={"include_intraday": "true"}).json())["Cross-account campaign"]["instruments"]
+    assert scoped == {main.alias: ["CL"], lsc.alias: ["NG"]}
+    assert unscoped == ["CL", "NG"]
 
 
 def test_account_filter_lists_a_group_held_in_that_account_not_only_owned_by_it(client: TestClient, db_session: Session) -> None:

@@ -170,18 +170,18 @@ def test_malformed_pattern_raises_before_reaching_the_database(pattern: str) -> 
         validate_instrument_pattern(pattern)
 
 
-def test_blank_pattern_is_rejected(db_session: Session) -> None:
-    for pattern in ("", "   "):
-        with pytest.raises(InstrumentPatternError):
-            validate_instrument_pattern(pattern)
+@pytest.mark.parametrize("pattern", ["", "   "])
+def test_blank_pattern_is_rejected(pattern: str) -> None:
+    with pytest.raises(InstrumentPatternError):
+        validate_instrument_pattern(pattern)
 
 
-def test_valid_patterns_round_trip_unchanged(db_session: Session) -> None:
-    for pattern in ("CL", "CL.*", "CL|NG", "^ES$"):
-        assert validate_instrument_pattern(pattern) == pattern
+@pytest.mark.parametrize("pattern", ["CL", "CL.*", "CL|NG", "^ES$"])
+def test_valid_patterns_round_trip_unchanged(pattern: str) -> None:
+    assert validate_instrument_pattern(pattern) == pattern
 
 
-def test_filter_condition_validates_its_pattern(db_session: Session) -> None:
+def test_filter_condition_validates_its_pattern() -> None:
     """The condition builder is the one seam the router calls, so it validates too."""
     with pytest.raises(InstrumentPatternError):
         instrument_filter_condition("CL[")

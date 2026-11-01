@@ -2,29 +2,14 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
 
-import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from src.api.deps import get_db
-from src.api.main import app
 from src.models import TradeGroup
 from tests.trade_group_factories import CON_CL, make_account, make_exec_id, make_execution
 
 API = "/api/v1"
-
-
-@pytest.fixture
-def client(db_session: Session) -> Iterator[TestClient]:
-    """A TestClient whose requests run inside the test's rolled-back session."""
-    app.dependency_overrides[get_db] = lambda: db_session
-    try:
-        with TestClient(app) as test_client:
-            yield test_client
-    finally:
-        app.dependency_overrides.pop(get_db, None)
 
 
 def _create_strategy(client: TestClient, name: str) -> dict:

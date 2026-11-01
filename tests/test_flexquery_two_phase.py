@@ -28,12 +28,6 @@ def test_first_check_ladder(span_days: int, expected: int) -> None:
     assert first_check_delay_seconds(span_days) == expected
 
 
-def test_windows_wider_than_a_week_wait_at_least_a_minute() -> None:
-    """The floor that keeps a 1001 from escalating into a 1025 lockout."""
-    for span in (SHORT_RANGE_DAYS + 1, 30, 90, 400):
-        assert first_check_delay_seconds(span) >= 60
-
-
 def test_unknown_span_is_the_most_patient() -> None:
     assert first_check_delay_seconds(None) == FIRST_CHECK_FALLBACK_SECONDS
 
@@ -171,10 +165,14 @@ def _paused_credential(seconds: int = 900):
 
 
 @pytest.mark.parametrize(
-    "handler_name",
-    ["handle_trades_flexquery_initiate_request", "handle_positions_flexquery_initiate_request"],
+    ("handler_name", "payload"),
+    [
+        ("handle_trades_flexquery_initiate_request", {}),
+        ("handle_positions_flexquery_initiate_request", {}),
+        ("handle_trades_flexquery_fetch_report", {"reference_code": "1000000001"}),
+    ],
 )
-def test_initiate_defers_without_contacting_ibkr_while_paused(monkeypatch: pytest.MonkeyPatch, handler_name: str) -> None:
+def test_handlers_defer_without_contacting_ibkr_while_paused(monkeypatch: pytest.MonkeyPatch, handler_name: str, payload: dict) -> None:
     """An unchecked send earns another 1025 and slides the cooldown forward."""
     import src.services.flex_client_factory as factory
     import src.workers.jobs as workers
@@ -186,30 +184,10 @@ def test_initiate_defers_without_contacting_ibkr_while_paused(monkeypatch: pytes
 
     monkeypatch.setattr(factory, "make_flex_client", _explode)
 
-    job = Job(job_type="x", payload={"token_id": 3, "start_date": "2026-08-07", "end_date": "2026-08-07"})
+    job = Job(job_type="x", payload={"token_id": 3, "start_date": "2026-08-07", "end_date": "2026-08-07", **payload})
 
     with pytest.raises(JobDeferred) as excinfo:
         getattr(workers, handler_name)(job, None, None)
 
     assert "paused" in excinfo.value.reason
     assert 0 < excinfo.value.retry_after_seconds <= 900
-
-
-def test_fetch_report_also_defers_while_paused(monkeypatch: pytest.MonkeyPatch) -> None:
-    import src.services.flex_client_factory as factory
-    import src.workers.jobs as workers
-
-    monkeypatch.setattr(workers, "load_credential_by_id", lambda engine, token_id: _paused_credential())
-
-    def _explode(*args, **kwargs):
-        raise AssertionError("a paused token must not build a Flex client")
-
-    monkeypatch.setattr(factory, "make_flex_client", _explode)
-
-    job = Job(
-        job_type="x",
-        payload={"token_id": 3, "reference_code": "1000000001", "start_date": "2026-08-07", "end_date": "2026-08-07"},
-    )
-
-    with pytest.raises(JobDeferred):
-        workers.handle_trades_flexquery_fetch_report(job, None, None)
