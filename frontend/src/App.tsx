@@ -9,12 +9,12 @@ import {
 import AccountsTable from "./components/AccountsTable";
 import FlexQueryTokensTable from "./components/FlexQueryTokensTable";
 import MarketDataPage from "./components/MarketDataPage";
-import PricingPage from "./components/PricingPage";
+import PricingPage from "./components/pricing/PricingPage";
 import OrdersTable from "./components/OrdersTable";
 import PositionsPage from "./components/positions/PositionsPage";
 import StrategyPnlTable from "./components/StrategyPnlTable";
 import TradebotChat from "./components/TradebotChat";
-import StrategiesPage from "./components/StrategiesPage";
+import StrategiesPage from "./components/strategies/StrategiesPage";
 import TagsPage from "./components/TagsPage";
 import TasksPage from "./components/TasksPage";
 import TradesPage from "./components/trades/TradesPage";
