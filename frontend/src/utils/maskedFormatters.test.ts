@@ -17,6 +17,12 @@ describe("makeFormatters with privacy off", () => {
     expect(f.masked(null)).toBeNull();
   });
 
+  test("greek formats and keeps the caller's fallback", () => {
+    expect(f.greek(0.4231)).toBe("0.423");
+    expect(f.greek(null)).toBe("—");
+    expect(f.greek(undefined, "n/a")).toBe("n/a");
+  });
+
   test("percent formats a fraction", () => {
     expect(f.percent(0.2453)).toBe("24.5%");
     expect(f.percent(undefined, "n/a")).toBe("n/a");
@@ -25,6 +31,12 @@ describe("makeFormatters with privacy off", () => {
   test("pnl is plain money", () => {
     expect(f.pnl(1250, 10000)).toBe("1,250.00");
     expect(f.pnl(null, 10000)).toBe("—");
+  });
+
+  test("pnl uses the caller's money style when given one", () => {
+    const usd = (v: number | null | undefined) => (v == null ? "n/a" : `$${v}`);
+    expect(f.pnl(1250, 10000, usd)).toBe("$1250");
+    expect(f.pnl(null, 10000, usd)).toBe("n/a");
   });
 });
 
@@ -35,6 +47,7 @@ describe("makeFormatters with privacy on", () => {
     expect(f.money(1234.5)).toBe(PRIVACY_MASK);
     expect(f.money(null, "-")).toBe(PRIVACY_MASK);
     expect(f.quantity(3)).toBe(PRIVACY_MASK);
+    expect(f.greek(0.4231)).toBe(PRIVACY_MASK);
     expect(f.percent(0.2453)).toBe(PRIVACY_MASK);
     expect(f.masked("abc")).toBe(PRIVACY_MASK);
     expect(f.masked(null)).toBe(PRIVACY_MASK);
@@ -45,5 +58,6 @@ describe("makeFormatters with privacy on", () => {
     expect(f.pnl(-300, 6000)).toBe("-5.0%");
     expect(f.pnl(null, 6000)).toBe(PRIVACY_MASK);
     expect(f.pnl(100, 0)).toBe(PRIVACY_MASK);
+    expect(f.pnl(1250, 10000, () => "$1250")).toBe("+12.5%");
   });
 });

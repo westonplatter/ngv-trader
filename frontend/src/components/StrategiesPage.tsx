@@ -4,7 +4,6 @@ import { useSearchParams } from "react-router-dom";
 import { api } from "../lib/api";
 import { useFormatters } from "../hooks/useFormatters";
 import { enqueueSyncJob, useJobWatcher } from "../hooks/useJobWatcher";
-import { usePrivacy } from "../contexts/usePrivacy";
 import { useResizableColumn } from "../hooks/useResizableColumn";
 import { ibCodesTitle, parseIbCodes } from "../lib/ibCodes";
 import { formatMarkTime } from "../lib/markTime";
@@ -21,8 +20,6 @@ import type {
 } from "../types/tradeGroups";
 import { useTradeGroupDetail } from "./strategies/useTradeGroupDetail";
 import { formatDateTime } from "../utils/date";
-import { formatGreek, formatMoney, formatPercent } from "../utils/number";
-import { PRIVACY_MASK, formatRelativeReturn } from "../utils/privacy";
 
 // Resolve which strategy owns a trade group, so a deep link that only carries
 // a trade_group_id can select the right parent strategy. Returns the strategy
@@ -157,7 +154,6 @@ const NO_POSITIONS: GroupOpenPosition[] = [];
 const NO_ACCOUNT_PNL: GroupAccountPnl[] = [];
 
 export default function StrategiesPage() {
-  const { privacyMode } = usePrivacy();
   const fmt = useFormatters();
   const [searchParams, setSearchParams] = useSearchParams();
   const { watch } = useJobWatcher();
@@ -1195,15 +1191,15 @@ export default function StrategiesPage() {
                                         : "text-red-700"
                                     }`}
                                   >
-                                    {privacyMode
-                                      ? PRIVACY_MASK
-                                      : group.total_pnl.toLocaleString(
-                                          undefined,
-                                          {
-                                            style: "currency",
-                                            currency: "USD",
-                                          },
-                                        )}
+                                    {fmt.masked(
+                                      group.total_pnl.toLocaleString(
+                                        undefined,
+                                        {
+                                          style: "currency",
+                                          currency: "USD",
+                                        },
+                                      ),
+                                    )}
                                   </span>
                                 )}
                               </div>
@@ -1453,15 +1449,15 @@ export default function StrategiesPage() {
                         capital = optionsAbs + equityAbs;
                       }
                     }
-                    const fmt = (v: number | null) =>
-                      privacyMode
-                        ? PRIVACY_MASK
-                        : v == null
+                    const usd = (v: number | null) =>
+                      fmt.masked(
+                        v == null
                           ? "—"
                           : v.toLocaleString(undefined, {
                               style: "currency",
                               currency: "USD",
-                            });
+                            }),
+                      );
                     const cls = (v: number | null) =>
                       v == null
                         ? "text-gray-500"
@@ -1483,7 +1479,7 @@ export default function StrategiesPage() {
                         <span
                           className={`text-right ${colorize ? cls(v) : "font-semibold text-gray-800"}`}
                         >
-                          {fmt(v)}
+                          {usd(v)}
                         </span>
                         <span
                           className={`text-right ${showPct ? cls(v) : "text-gray-400"}`}
@@ -1496,7 +1492,7 @@ export default function StrategiesPage() {
                       <div className="grid grid-cols-[7rem_6rem_5rem] items-baseline">
                         <span className="pl-3 text-gray-400">{label}:</span>
                         <span className="text-right font-medium text-gray-600">
-                          {fmt(v)}
+                          {usd(v)}
                         </span>
                         <span />
                       </div>
@@ -1540,7 +1536,7 @@ export default function StrategiesPage() {
                   {/* Per-account breakdown (only meaningful with >1 account) */}
                   {byAccount.length > 1 &&
                     (() => {
-                      const money = (v: number | null) =>
+                      const money = (v: number | null | undefined) =>
                         v == null
                           ? "—"
                           : v.toLocaleString(undefined, {
@@ -1613,34 +1609,24 @@ export default function StrategiesPage() {
                                     {acct.account_alias ?? acct.account_id}
                                   </span>
                                   <span className="text-right text-gray-500">
-                                    {privacyMode
-                                      ? PRIVACY_MASK
-                                      : money(capital)}
+                                    {fmt.masked(money(capital))}
                                   </span>
                                   <span className={`text-right ${cls(total)}`}>
-                                    {privacyMode
-                                      ? formatRelativeReturn(total, capital)
-                                      : money(total)}
+                                    {fmt.pnl(total, capital, money)}
                                   </span>
                                   <span
                                     className={`text-right ${cls(acct.realized_pnl)}`}
                                   >
-                                    {privacyMode
-                                      ? formatRelativeReturn(
-                                          acct.realized_pnl,
-                                          capital,
-                                        )
-                                      : money(acct.realized_pnl)}
+                                    {fmt.pnl(acct.realized_pnl, capital, money)}
                                   </span>
                                   <span
                                     className={`text-right ${cls(acct.unrealized_pnl)}`}
                                   >
-                                    {privacyMode
-                                      ? formatRelativeReturn(
-                                          acct.unrealized_pnl,
-                                          capital,
-                                        )
-                                      : money(acct.unrealized_pnl)}
+                                    {fmt.pnl(
+                                      acct.unrealized_pnl,
+                                      capital,
+                                      money,
+                                    )}
                                   </span>
                                 </div>
                               );
@@ -1783,42 +1769,42 @@ export default function StrategiesPage() {
                               <td className="px-2 py-1 text-right"></td>
                               <td className="px-2 py-1 text-right"></td>
                               <td className="px-2 py-1 text-right font-mono text-gray-700">
-                                {privacyMode
-                                  ? PRIVACY_MASK
-                                  : positionTotals.delta.count === 0
-                                    ? "—"
-                                    : formatGreek(positionTotals.delta.sum)}
+                                {fmt.greek(
+                                  positionTotals.delta.count === 0
+                                    ? null
+                                    : positionTotals.delta.sum,
+                                )}
                               </td>
                               <td className="px-2 py-1 text-right font-mono text-gray-700">
-                                {privacyMode
-                                  ? PRIVACY_MASK
-                                  : positionTotals.gamma.count === 0
-                                    ? "—"
-                                    : formatGreek(positionTotals.gamma.sum)}
-                              </td>
-                              <td className="px-2 py-1 text-right"></td>
-                              <td className="px-2 py-1 text-right font-mono text-gray-700">
-                                {privacyMode
-                                  ? PRIVACY_MASK
-                                  : positionTotals.avgCost.count === 0
-                                    ? "—"
-                                    : formatMoney(positionTotals.avgCost.sum)}
-                              </td>
-                              <td className="px-2 py-1 text-right font-mono text-gray-700">
-                                {privacyMode
-                                  ? PRIVACY_MASK
-                                  : positionTotals.costBasis.count === 0
-                                    ? "—"
-                                    : formatMoney(positionTotals.costBasis.sum)}
+                                {fmt.greek(
+                                  positionTotals.gamma.count === 0
+                                    ? null
+                                    : positionTotals.gamma.sum,
+                                )}
                               </td>
                               <td className="px-2 py-1 text-right"></td>
+                              <td className="px-2 py-1 text-right font-mono text-gray-700">
+                                {fmt.money(
+                                  positionTotals.avgCost.count === 0
+                                    ? null
+                                    : positionTotals.avgCost.sum,
+                                )}
+                              </td>
+                              <td className="px-2 py-1 text-right font-mono text-gray-700">
+                                {fmt.money(
+                                  positionTotals.costBasis.count === 0
+                                    ? null
+                                    : positionTotals.costBasis.sum,
+                                )}
+                              </td>
+                              <td className="px-2 py-1 text-right"></td>
                               <td className="px-2 py-1 text-right"></td>
                               <td className="px-2 py-1 text-right font-mono text-gray-700">
-                                {privacyMode
-                                  ? PRIVACY_MASK
-                                  : positionTotals.value.count === 0
-                                    ? "—"
-                                    : formatMoney(positionTotals.value.sum)}
+                                {fmt.money(
+                                  positionTotals.value.count === 0
+                                    ? null
+                                    : positionTotals.value.sum,
+                                )}
                               </td>
                               <td
                                 className={`px-2 py-1 text-right font-mono ${
@@ -1829,13 +1815,11 @@ export default function StrategiesPage() {
                                       : "text-red-700"
                                 }`}
                               >
-                                {privacyMode
-                                  ? PRIVACY_MASK
-                                  : positionTotals.unrealized.count === 0
-                                    ? "—"
-                                    : formatMoney(
-                                        positionTotals.unrealized.sum,
-                                      )}
+                                {fmt.money(
+                                  positionTotals.unrealized.count === 0
+                                    ? null
+                                    : positionTotals.unrealized.sum,
+                                )}
                               </td>
                               <td
                                 className={`px-2 py-1 text-right font-mono ${
@@ -1846,13 +1830,11 @@ export default function StrategiesPage() {
                                       : "text-red-700"
                                 }`}
                               >
-                                {privacyMode
-                                  ? PRIVACY_MASK
-                                  : positionTotals.liveUnrealized.count === 0
-                                    ? "—"
-                                    : formatMoney(
-                                        positionTotals.liveUnrealized.sum,
-                                      )}
+                                {fmt.money(
+                                  positionTotals.liveUnrealized.count === 0
+                                    ? null
+                                    : positionTotals.liveUnrealized.sum,
+                                )}
                               </td>
                               <td className="px-2 py-1"></td>
                               <td className="px-2 py-1"></td>
@@ -1915,82 +1897,44 @@ export default function StrategiesPage() {
                                     {fmt.quantity(pos.position)}
                                   </td>
                                   <td className="px-2 py-1 text-right font-mono text-gray-700">
-                                    {privacyMode
-                                      ? PRIVACY_MASK
-                                      : formatGreek(positionDelta)}
+                                    {fmt.greek(positionDelta)}
                                   </td>
                                   <td className="px-2 py-1 text-right font-mono text-gray-700">
-                                    {privacyMode
-                                      ? PRIVACY_MASK
-                                      : formatGreek(positionGamma)}
+                                    {fmt.greek(positionGamma)}
                                   </td>
                                   <td className="px-2 py-1 text-right font-mono text-gray-700">
-                                    {privacyMode
-                                      ? PRIVACY_MASK
-                                      : formatPercent(
-                                          liveStale ? null : pos.iv,
-                                        )}
+                                    {fmt.percent(liveStale ? null : pos.iv)}
                                   </td>
                                   <td className="px-2 py-1 text-right font-mono text-gray-700">
-                                    {privacyMode
-                                      ? PRIVACY_MASK
-                                      : formatMoney(pos.avg_cost)}
+                                    {fmt.money(pos.avg_cost)}
                                   </td>
                                   <td className="px-2 py-1 text-right font-mono text-gray-700">
-                                    {privacyMode
-                                      ? PRIVACY_MASK
-                                      : formatMoney(
-                                          pos.avg_cost * pos.position,
-                                        )}
+                                    {fmt.money(pos.avg_cost * pos.position)}
                                   </td>
                                   <td className="px-2 py-1 text-right font-mono text-gray-700">
-                                    {privacyMode
-                                      ? PRIVACY_MASK
-                                      : pos.mark_price == null
-                                        ? "—"
-                                        : formatMoney(pos.mark_price)}
+                                    {fmt.money(pos.mark_price)}
                                   </td>
                                   <td className="px-2 py-1 text-right font-mono text-gray-700">
-                                    {privacyMode
-                                      ? PRIVACY_MASK
-                                      : liveStale || pos.mark == null
-                                        ? "—"
-                                        : formatMoney(pos.mark)}
+                                    {fmt.money(liveStale ? null : pos.mark)}
                                   </td>
                                   <td className="px-2 py-1 text-right font-mono text-gray-700">
-                                    {privacyMode
-                                      ? PRIVACY_MASK
-                                      : pos.position_value == null
-                                        ? "—"
-                                        : formatMoney(pos.position_value)}
+                                    {fmt.money(pos.position_value)}
                                   </td>
                                   <td
                                     className={`px-2 py-1 text-right font-mono ${pnlClass}`}
                                   >
-                                    {privacyMode
-                                      ? formatRelativeReturn(
-                                          pos.fifo_pnl_unrealized,
-                                          Math.abs(pos.avg_cost * pos.position),
-                                        )
-                                      : pos.fifo_pnl_unrealized == null
-                                        ? "—"
-                                        : formatMoney(pos.fifo_pnl_unrealized)}
+                                    {fmt.pnl(
+                                      pos.fifo_pnl_unrealized,
+                                      Math.abs(pos.avg_cost * pos.position),
+                                    )}
                                   </td>
                                   <td
                                     className={`px-2 py-1 text-right font-mono ${livePnlClass}`}
                                   >
-                                    {privacyMode
-                                      ? liveStale
-                                        ? PRIVACY_MASK
-                                        : formatRelativeReturn(
-                                            pos.live_unrealized,
-                                            Math.abs(
-                                              pos.avg_cost * pos.position,
-                                            ),
-                                          )
-                                      : liveStale || pos.live_unrealized == null
-                                        ? "—"
-                                        : formatMoney(pos.live_unrealized)}
+                                    {fmt.pnl(
+                                      liveStale ? null : pos.live_unrealized,
+                                      Math.abs(pos.avg_cost * pos.position),
+                                    )}
                                   </td>
                                   <td className="px-2 py-1 text-gray-500">
                                     {pos.as_of_date ?? "—"}
@@ -2171,37 +2115,29 @@ export default function StrategiesPage() {
                                         {ex.side ?? "—"}
                                       </td>
                                       <td className="px-2 py-1 text-right font-mono text-gray-800">
-                                        {privacyMode
-                                          ? PRIVACY_MASK
-                                          : ex.quantity}
+                                        {fmt.quantity(ex.quantity)}
                                       </td>
                                       <td className="px-2 py-1 text-right font-mono text-gray-800">
-                                        {privacyMode
-                                          ? PRIVACY_MASK
-                                          : Number(ex.price.toFixed(4))}
+                                        {fmt.masked(
+                                          Number(ex.price.toFixed(4)),
+                                        )}
                                       </td>
                                       <td className="px-2 py-1 text-right font-mono text-gray-800">
-                                        {privacyMode
-                                          ? PRIVACY_MASK
-                                          : ex.cost_basis == null
-                                            ? "—"
-                                            : formatMoney(ex.cost_basis)}
+                                        {fmt.money(ex.cost_basis)}
                                       </td>
                                       <td
                                         className={`px-2 py-1 text-right font-mono ${pnlClass}`}
                                       >
-                                        {privacyMode
-                                          ? PRIVACY_MASK
-                                          : ex.realized_pnl == null
+                                        {fmt.masked(
+                                          ex.realized_pnl == null
                                             ? "—"
-                                            : ex.realized_pnl.toFixed(2)}
+                                            : ex.realized_pnl.toFixed(2),
+                                        )}
                                       </td>
                                       <td className="px-2 py-1 text-right font-mono text-gray-700">
-                                        {privacyMode
-                                          ? PRIVACY_MASK
-                                          : counted
-                                            ? running.toFixed(2)
-                                            : "—"}
+                                        {fmt.masked(
+                                          counted ? running.toFixed(2) : "—",
+                                        )}
                                       </td>
                                     </tr>
                                   );

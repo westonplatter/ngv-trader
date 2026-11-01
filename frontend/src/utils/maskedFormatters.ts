@@ -6,7 +6,7 @@
 // binds it to the privacy context. Components that already receive
 // `privacyMode` as a prop call `makeFormatters(privacyMode)` directly.
 
-import { formatMoney, formatPercent } from "./number";
+import { formatGreek, formatMoney, formatPercent } from "./number";
 import { PRIVACY_MASK, formatRelativeReturn } from "./privacy";
 
 export interface Formatters {
@@ -14,15 +14,19 @@ export interface Formatters {
   money: (value: number | null | undefined, fallback?: string) => string;
   /** Share/contract count, rendered raw when unmasked. */
   quantity: (value: number) => number | string;
+  /** Greek (delta/gamma/...) with a mask. */
+  greek: (value: number | null | undefined, fallback?: string) => string;
   /** Decimal fraction as a percent with a mask. */
   percent: (value: number | null | undefined, fallback?: string) => string;
   /**
    * P&L: a relative return (P&L / |cost basis|) when masked, so a viewer sees
-   * performance without a dollar figure; plain money otherwise.
+   * performance without a dollar figure; otherwise `format` (default
+   * `formatMoney`) for call sites that show a different money style.
    */
   pnl: (
     value: number | null | undefined,
     costBasis: number | null | undefined,
+    format?: (value: number | null | undefined) => string,
   ) => string;
   /** Any value that is hidden as-is in privacy mode (ids, raw prices, text). */
   masked: <T>(value: T) => T | string;
@@ -33,12 +37,12 @@ export function makeFormatters(privacyMode: boolean): Formatters {
     money: (value, fallback) =>
       privacyMode ? PRIVACY_MASK : formatMoney(value, fallback),
     quantity: (value) => (privacyMode ? PRIVACY_MASK : value),
+    greek: (value, fallback) =>
+      privacyMode ? PRIVACY_MASK : formatGreek(value, fallback),
     percent: (value, fallback) =>
       privacyMode ? PRIVACY_MASK : formatPercent(value, fallback),
-    pnl: (value, costBasis) =>
-      privacyMode
-        ? formatRelativeReturn(value, costBasis)
-        : formatMoney(value),
+    pnl: (value, costBasis, format = formatMoney) =>
+      privacyMode ? formatRelativeReturn(value, costBasis) : format(value),
     masked: (value) => (privacyMode ? PRIVACY_MASK : value),
   };
 }
