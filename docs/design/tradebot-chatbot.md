@@ -64,6 +64,19 @@ Action tools:
 Guardrails: list/limit params are bounded; failed tool calls return a structured
 error payload to the model; the DB session rolls back on tool exceptions.
 
+### How a tool is defined
+
+Every tool is a `Tool` (name, description, a Pydantic `Args` model, a handler) in the
+single `TOOLS` list in `tradebot_agent.py`. Add one with `@tool(name, description, ArgsModel)`
+on its handler, or with `_enqueue_job_tool(...)` for a tool that only enqueues a job. The
+`Args` model is both the validator and the source of the JSON schema sent to the model:
+`_TOOL_SPECS` and `_TOOL_HANDLERS` are derived from `TOOLS`, so they cannot drift.
+`_execute_tool_call` parses the arguments, validates them through the model, and returns
+`{"ok": false, "error": ...}` for bad JSON, a non-object, or a validation failure.
+`tests/snapshots/tradebot_tool_specs.json` pins the published specs; after an intended
+change to a tool's schema, regenerate it with `UPDATE_SNAPSHOTS=1` and review the diff.
+`query_metric` is registered only if the semantic model loads; its enums come from that model.
+
 ## Environment variables
 
 - `TRADEBOT_LLM_API_KEY` (or fallback `OPENAI_API_KEY`)
