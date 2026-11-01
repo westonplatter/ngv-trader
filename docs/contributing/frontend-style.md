@@ -62,6 +62,10 @@ frontend/src/
   never fetch. The page file is the composition root and should stay under a
   few hundred lines.
 - No per-component CSS files. Styling is Tailwind utility classes inline.
+- A class string repeated across files lives in `components/ui/buttonClasses.ts`
+  as a named constant (`OUTLINE_BUTTON`, `OUTLINE_BUTTON_COMPACT`). Do not build a
+  `Button` component. Avoid class-like words in comments there: Tailwind scans
+  source text, and a stray "outline" generates a CSS rule.
 
 ## Data access
 

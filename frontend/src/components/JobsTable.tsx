@@ -4,6 +4,7 @@ import { useSseList } from "../hooks/useSseList";
 import { api } from "../lib/api";
 import type { Job } from "../types/jobs";
 import { formatDuration, parseTime } from "../utils/date";
+import { OUTLINE_BUTTON_COMPACT } from "./ui/buttonClasses";
 
 const STATUS_CLASS: Record<string, string> = {
   queued: "text-yellow-700 bg-yellow-100",
@@ -222,7 +223,7 @@ export default function JobsTable() {
                         type="button"
                         onClick={() => rerunJob(job.id)}
                         disabled={actioning.has(job.id)}
-                        className="rounded border border-blue-300 px-1.5 py-0.5 text-[11px] text-blue-700 hover:bg-blue-50 disabled:opacity-50"
+                        className={OUTLINE_BUTTON_COMPACT}
                       >
                         Rerun
                       </button>
