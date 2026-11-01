@@ -53,7 +53,8 @@ describe("single source of truth", () => {
   const FRESHNESS_CONSUMERS = [
     "src/components/positions/PositionsToolbar.tsx",
     "src/components/positions/PositionCell.tsx",
-    "src/components/StrategiesPage.tsx",
+    "src/components/strategies/GroupPnlSummary.tsx",
+    "src/components/strategies/GroupPositionsTable.tsx",
     "src/lib/strategyPnl.ts",
   ];
 
