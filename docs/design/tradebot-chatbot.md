@@ -42,7 +42,8 @@ only `worker:jobs` talks to IBKR.
 Read tools:
 
 - `list_accounts`, `list_positions`, `list_jobs`, `list_orders`
-- `lookup_contract` — DB-first, falls back to an IBKR fetch on miss; supports
+- `lookup_contract` — DB-first; on a miss it queues a `contracts.sync` job and returns
+  `pending_job_id` (the user checks back, then repeats the lookup); supports
   `contract_expiry` (YYYY-MM-DD) for specific weekly option expiries
 - `list_watch_lists`, `get_watch_list`
 - `check_watchlist_job` — poll status of a queued watch-list job
@@ -60,6 +61,8 @@ Action tools:
 - `preview_order` — validates/normalizes an order request; no DB writes, no submit
 - `enqueue_positions_sync_job`, `enqueue_contracts_sync_job`, `enqueue_order_fetch_sync_job`
 - `create_watch_list`, `add_watch_list_instrument`, `remove_watch_list_instrument`
+  (`add_watch_list_instrument` returns `pending_job_id` and adds nothing when the contract is
+  not in the DB yet; the same two-step flow as `lookup_contract`)
 
 Guardrails: list/limit params are bounded; failed tool calls return a structured
 error payload to the model; the DB session rolls back on tool exceptions.

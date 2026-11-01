@@ -236,7 +236,7 @@
     "type": "function",
     "function": {
       "name": "lookup_contract",
-      "description": "Look up contract details. Checks the database first; if no contracts are found, automatically fetches from IBKR and stores them. Use this for informational queries like 'what is the front month for CL?' or 'what NQ contracts are available?'.",
+      "description": "Look up contract details. Checks the database first; if no contracts are found, it queues a contracts.sync job to fetch them from IBKR and returns pending_job_id with no contracts. Tell the user to check back shortly, then repeat the lookup. Use this for informational queries like 'what is the front month for CL?' or 'what NQ contracts are available?'.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -354,7 +354,7 @@
     "type": "function",
     "function": {
       "name": "add_watch_list_instrument",
-      "description": "Add an instrument to a watch list. Looks up the contract in the DB first (fetches from IBKR if not found), adds it to the watch list, and enqueues a market data job to fetch latest prices. Returns immediately with the result.",
+      "description": "Add an instrument to a watch list. Looks up the contract in the DB first. If it is not there yet, it queues a contracts.sync job to fetch it from IBKR and returns pending_job_id without adding anything: tell the user to check back shortly, then repeat the request. If it is found, adds it to the watch list and enqueues a market data job to fetch latest prices. Returns immediately with the result.",
       "parameters": {
         "type": "object",
         "properties": {

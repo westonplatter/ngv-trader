@@ -3,22 +3,20 @@
 from __future__ import annotations
 
 import logging
-import os
+from dataclasses import dataclass
 from typing import Any
 
-from ib_async import Contract
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from src.data.exchanges import resolve_exchange
-from src.db import get_engine
 from src.models import ContractRef
 from src.services.cl_contracts import (
     days_until_contract_expiry,
     display_contract_month,
     infer_contract_month_from_local_symbol,
 )
-from src.utils.env_vars import get_int_env
+from src.services.jobs import JOB_TYPE_CONTRACTS_SYNC, enqueue_job
 
 logger = logging.getLogger(__name__)
 
@@ -331,54 +329,27 @@ def _select_option(
     return _build_result(selected, dte, req_month, req_available, avail_months)
 
 
-def _fetch_from_ibkr(
-    symbol: str,
-    sec_type: str,
-    strike: float | None = None,
-    right: str | None = None,
-) -> int:
-    """Fetch contracts from IBKR and upsert into DB. Returns count of synced contracts."""
-    from src.services.contract_sync import sync_contracts
+@dataclass(frozen=True)
+class ContractLookup:
+    """Contracts found in the database, or the sync job queued because there were none.
 
-    port = get_int_env("BROKER_TWS_PORT")
-    if port is None:
-        logger.warning("BROKER_TWS_PORT not set, cannot fall back to IBKR lookup")
-        return 0
+    ``pending_job_id`` and ``message`` are set only when ``contracts`` is empty and a
+    ``contracts.sync`` job was queued to fetch them; the caller must commit the session
+    so the worker can see that job.
+    """
 
-    host = os.environ.get("BROKER_TWS_HOST", "127.0.0.1")
-    client_id = get_int_env("BROKER_TWS_CLIENT_ID", 10)
+    contracts: list[dict[str, Any]]
+    pending_job_id: int | None = None
+    message: str | None = None
 
+
+def _sync_spec(symbol: str, sec_type: str) -> dict[str, str]:
+    """The ``specs`` entry the contracts.sync worker handler expects for one symbol."""
     try:
         exchange = resolve_exchange(symbol, sec_type)
     except ValueError:
         exchange = "SMART"
-
-    spec = Contract(
-        symbol=symbol,
-        secType=sec_type,
-        exchange=exchange,
-        currency="USD",
-    )
-    if strike is not None:
-        spec.strike = strike
-    if right is not None:
-        spec.right = right.upper()
-
-    engine = get_engine()
-    try:
-        result = sync_contracts(
-            engine=engine,
-            host=host,
-            port=port,
-            client_id=client_id,
-            specs=[spec],
-        )
-        count = result.get("synced_count", 0)
-        logger.info("IBKR fallback fetched %d contracts for %s %s", count, symbol, sec_type)
-        return count
-    except Exception:
-        logger.exception("IBKR fallback failed for %s %s", symbol, sec_type)
-        return 0
+    return {"symbol": symbol, "sec_type": sec_type, "exchange": exchange}
 
 
 def find_contracts_with_fallback(
@@ -391,8 +362,13 @@ def find_contracts_with_fallback(
     strike: float | None = None,
     right: str | None = None,
     contract_expiry: str | None = None,
-) -> list[dict[str, Any]]:
-    """Query DB first; if no results, fetch from IBKR, upsert, and re-query."""
+) -> ContractLookup:
+    """Query the DB; if nothing matches, queue a contracts.sync job instead of calling the broker.
+
+    This runs on the API request path, so it never opens a TWS connection. A miss enqueues one
+    ``contracts.sync`` job for the symbol (the worker fetches and upserts it) and returns a pending
+    result; the contracts show up on a later lookup once the job has completed.
+    """
     results = find_contracts(
         session=session,
         symbol=symbol,
@@ -405,23 +381,21 @@ def find_contracts_with_fallback(
         contract_expiry=contract_expiry,
     )
     if results:
-        return results
+        return ContractLookup(contracts=results)
 
-    logger.info("No DB contracts for %s %s, trying IBKR fallback", symbol, sec_type)
-    fetched = _fetch_from_ibkr(symbol, sec_type, strike=strike, right=right)
-    if fetched == 0:
-        return []
-
-    # Re-query after upsert (expire session cache to see new rows)
-    session.expire_all()
-    return find_contracts(
+    job = enqueue_job(
         session=session,
-        symbol=symbol,
-        sec_type=sec_type,
-        is_active=is_active,
-        contract_month=contract_month,
-        min_days_to_expiry=min_days_to_expiry,
-        strike=strike,
-        right=right,
-        contract_expiry=contract_expiry,
+        job_type=JOB_TYPE_CONTRACTS_SYNC,
+        payload={"specs": [_sync_spec(symbol, sec_type)]},
+        source="tradebot",
+        request_text=f"fetch {symbol} {sec_type} contracts (no match in the database)",
+    )
+    logger.info("No DB contracts for %s %s, queued contracts.sync job %s", symbol, sec_type, job.id)
+    return ContractLookup(
+        contracts=[],
+        pending_job_id=job.id,
+        message=(
+            f"No {symbol} {sec_type} contracts in the database yet. Queued contracts.sync job #{job.id} to fetch them from IBKR. "
+            "Tell the user to check back shortly (the job's status is visible in list_jobs), then repeat this request."
+        ),
     )
