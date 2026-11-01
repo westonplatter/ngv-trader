@@ -5,6 +5,15 @@
 // plain data.
 
 import { formatMarkTime } from "./markTime";
+import {
+  ariaSort as tableAriaSort,
+  compareValues,
+  nextSortState as tableNextSortState,
+  sortIndicator as tableSortIndicator,
+  sortRows as tableSortRows,
+  type SortDirection as TableSortDirection,
+  type SortState as TableSortState,
+} from "./tableSort";
 import type { TradeGroupPnlRow } from "../types/tradeGroups";
 
 export type SortColumn =
@@ -13,12 +22,8 @@ export type SortColumn =
   | "realized"
   | "unrealized"
   | "total";
-export type SortDirection = "asc" | "desc" | "none";
-
-export interface SortState {
-  column: SortColumn | null;
-  direction: SortDirection;
-}
+export type SortDirection = TableSortDirection;
+export type SortState = TableSortState<SortColumn>;
 
 const TEXT_COLUMNS: readonly SortColumn[] = ["strategy", "group"];
 
@@ -45,25 +50,18 @@ export function nextSortState(
   current: SortState,
   column: SortColumn,
 ): SortState {
-  const first: SortDirection = TEXT_COLUMNS.includes(column) ? "asc" : "desc";
-  const second: SortDirection = first === "asc" ? "desc" : "asc";
-  if (current.column !== column) return { column, direction: first };
-  if (current.direction === first) return { column, direction: second };
-  if (current.direction === second) return NO_SORT;
-  return { column, direction: first };
+  return tableNextSortState(current, column, { ascendingFirst: TEXT_COLUMNS });
 }
 
 export function sortIndicator(state: SortState, column: SortColumn): string {
-  if (state.column !== column || state.direction === "none") return "↕";
-  return state.direction === "asc" ? "↑" : "↓";
+  return tableSortIndicator(state, column);
 }
 
 export function ariaSort(
   state: SortState,
   column: SortColumn,
 ): "ascending" | "descending" | "none" {
-  if (state.column !== column || state.direction === "none") return "none";
-  return state.direction === "asc" ? "ascending" : "descending";
+  return tableAriaSort(state, column);
 }
 
 /**
@@ -113,14 +111,6 @@ function sortValue(
   return resolved.total;
 }
 
-function compare(left: string | number, right: string | number): number {
-  if (typeof left === "number" && typeof right === "number")
-    return left - right;
-  return String(left).localeCompare(String(right), undefined, {
-    sensitivity: "base",
-  });
-}
-
 /**
  * Sort by one column, keeping rows with no value at the bottom either way.
  *
@@ -134,25 +124,10 @@ export function sortRows(
   rows: readonly TradeGroupPnlRow[],
   state: SortState,
 ): TradeGroupPnlRow[] {
-  const sorted = [...rows];
-  if (state.column === null || state.direction === "none") return sorted;
-  const column = state.column;
-  const factor = state.direction === "desc" ? -1 : 1;
-  sorted.sort((a, b) => {
-    const left = sortValue(a, column);
-    const right = sortValue(b, column);
-    if (left !== null && right !== null) {
-      const cmp = compare(left, right);
-      if (cmp !== 0) return cmp * factor;
-    } else if (left === null && right !== null) {
-      return 1;
-    } else if (right === null && left !== null) {
-      return -1;
-    }
-    const byName = compare(a.name, b.name) * factor;
+  return tableSortRows(rows, state, sortValue, (a, b, factor) => {
+    const byName = compareValues(a.name, b.name) * factor;
     return byName !== 0 ? byName : a.id - b.id;
   });
-  return sorted;
 }
 
 export interface StrategyPnlFilters {
