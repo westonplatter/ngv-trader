@@ -12,6 +12,8 @@ from __future__ import annotations
 from collections.abc import Iterable
 from typing import Any, NamedTuple
 
+from src.domain.enums import ExecRole
+
 
 class ExecutionPnlRow(NamedTuple):
     """The three columns the PnL and lifecycle rules read off a fill."""
@@ -61,12 +63,12 @@ def realized_pnl_total(executions: Iterable[Any]) -> float | None:
     trade group links to specific rows, so it passes exactly the linked ones.
     """
     rows = list(executions)
-    combo_totals = [r for ex in rows if ex.exec_role == "combo_summary" for r in [execution_realized_pnl(ex.raw)] if r is not None]
+    combo_totals = [r for ex in rows if ex.exec_role == ExecRole.COMBO_SUMMARY for r in [execution_realized_pnl(ex.raw)] if r is not None]
     if combo_totals:
-        standalone = [r for ex in rows if ex.exec_role not in {"combo_summary", "leg"} for r in [execution_realized_pnl(ex.raw)] if r is not None]
+        standalone = [r for ex in rows if ex.exec_role not in {ExecRole.COMBO_SUMMARY, ExecRole.LEG} for r in [execution_realized_pnl(ex.raw)] if r is not None]
         return sum(combo_totals) + sum(standalone)
 
-    values = [r for ex in rows if ex.exec_role != "combo_summary" for r in [execution_realized_pnl(ex.raw)] if r is not None]
+    values = [r for ex in rows if ex.exec_role != ExecRole.COMBO_SUMMARY for r in [execution_realized_pnl(ex.raw)] if r is not None]
     return sum(values) if values else None
 
 

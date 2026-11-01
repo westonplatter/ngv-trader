@@ -174,6 +174,7 @@ export default function AccountsTable() {
                         : "*".repeat(account.masked_account.length)}
                   </span>
                   <button
+                    type="button"
                     onClick={() => toggleReveal(account.id, "partial")}
                     className={
                       getRevealMode(account.id) === "partial"
@@ -189,6 +190,7 @@ export default function AccountsTable() {
                     <EyeSlashIcon />
                   </button>
                   <button
+                    type="button"
                     onClick={() => toggleReveal(account.id, "full")}
                     className={
                       getRevealMode(account.id) === "full"
@@ -204,6 +206,7 @@ export default function AccountsTable() {
                     <EyeIcon />
                   </button>
                   <button
+                    type="button"
                     onClick={() => copyAccount(account)}
                     className="text-gray-400 hover:text-gray-700"
                     title="Copy account ID"
@@ -249,6 +252,7 @@ export default function AccountsTable() {
                 {editingId === account.id ? (
                   <span className="space-x-2">
                     <button
+                      type="button"
                       onClick={() => saveAlias(account.id)}
                       disabled={saving}
                       className="text-sm text-green-700 hover:underline disabled:opacity-50"
@@ -256,6 +260,7 @@ export default function AccountsTable() {
                       Save
                     </button>
                     <button
+                      type="button"
                       onClick={cancelEdit}
                       disabled={saving}
                       className="text-sm text-gray-500 hover:underline disabled:opacity-50"
@@ -265,6 +270,7 @@ export default function AccountsTable() {
                   </span>
                 ) : (
                   <button
+                    type="button"
                     onClick={() => startEdit(account)}
                     className="text-sm text-blue-600 hover:underline"
                   >

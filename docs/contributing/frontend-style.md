@@ -126,8 +126,9 @@ Pick the store by who needs to see the value:
   never go through these helpers so they never gain thousands separators.
 - Expiries, dates, timestamps, durations: `utils/date.ts`. Missing values render
   as an em dash everywhere.
-- Privacy mode: read `usePrivacy()` and render dollar amounts through
-  `PRIVACY_MASK` or `formatRelativeReturn`. See
+- Privacy mode: render dollar amounts, quantities, and identifiers through
+  `useFormatters()` (`money`, `quantity`, `percent`, `pnl`, `masked`) instead of
+  branching on `privacyMode`; the mask string stays `PRIVACY_MASK`. See
   [user-preferences-privacy-mode.md](../design/user-preferences-privacy-mode.md).
 - Interaction patterns for destructive and mutating actions are in
   [ux-actions.md](../design/ux-actions.md).

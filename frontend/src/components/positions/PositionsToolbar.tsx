@@ -3,7 +3,7 @@
 
 import { formatMarkTime } from "../../lib/markTime";
 import type { PositionTotals } from "../../lib/positions/view";
-import { formatRelativeReturn } from "../../utils/privacy";
+import { makeFormatters } from "../../utils/maskedFormatters";
 import type { PositionSync } from "./usePositionSync";
 import { OUTLINE_BUTTON } from "../ui/buttonClasses";
 
@@ -19,12 +19,11 @@ function pnlText(
   costBasis: number | null,
   privacyMode: boolean,
 ): string {
-  if (privacyMode) return formatRelativeReturn(value, costBasis);
-  if (value == null) return "—";
-  return value.toLocaleString(undefined, {
-    style: "currency",
-    currency: "USD",
-  });
+  return makeFormatters(privacyMode).pnl(value, costBasis, (v) =>
+    v == null
+      ? "—"
+      : v.toLocaleString(undefined, { style: "currency", currency: "USD" }),
+  );
 }
 
 export default function PositionsToolbar({

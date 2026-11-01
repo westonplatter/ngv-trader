@@ -7,12 +7,13 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from src.domain.enums import JobStatus
 from src.models import Job
 
-JOB_STATUS_QUEUED = "queued"
-JOB_STATUS_RUNNING = "running"
-JOB_STATUS_COMPLETED = "completed"
-JOB_STATUS_FAILED = "failed"
+JOB_STATUS_QUEUED = JobStatus.QUEUED
+JOB_STATUS_RUNNING = JobStatus.RUNNING
+JOB_STATUS_COMPLETED = JobStatus.COMPLETED
+JOB_STATUS_FAILED = JobStatus.FAILED
 
 
 class JobDeferred(Exception):  # noqa: N818 — a control signal, not an error

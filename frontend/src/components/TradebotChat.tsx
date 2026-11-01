@@ -107,6 +107,7 @@ export default function TradebotChat() {
         <div className="min-w-0 min-h-0 lg:h-full flex flex-col">
           <div className="mb-3 flex flex-wrap gap-2">
             <button
+              type="button"
               onClick={() => void submit(POSITION_SYNC_PROMPT)}
               disabled={status === "submitted" || status === "streaming"}
               className="rounded bg-blue-600 px-3 py-1 text-xs text-white hover:bg-blue-700 disabled:opacity-50"
@@ -115,6 +116,7 @@ export default function TradebotChat() {
             </button>
             {QUICK_PROMPTS.map((prompt) => (
               <button
+                type="button"
                 key={prompt}
                 onClick={() => setInput(prompt)}
                 className="rounded border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:bg-gray-100"

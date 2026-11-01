@@ -6,10 +6,14 @@
 import type { Position } from "../../types/positions";
 import type { ItemRef } from "../../types/tags";
 import { formatExpiry } from "../../utils/date";
+import {
+  nextSortState,
+  sortRows,
+  type SortState as TableSortState,
+} from "../tableSort";
 
 // ─── Sorting ─────────────────────────────────────────────────────────────────
 
-export type SortDirection = "none" | "desc" | "asc";
 export type SortColumn =
   | "symbol"
   | "local_symbol"
@@ -27,20 +31,15 @@ export function isSortableColumn(key: keyof Position): key is SortColumn {
   return (SORTABLE_COLUMNS as readonly string[]).includes(key);
 }
 
-export interface SortState {
-  column: SortColumn | null;
-  direction: SortDirection;
-}
+export type SortState = TableSortState<SortColumn>;
 
 export const DEFAULT_SORT: SortState = { column: "symbol", direction: "asc" };
 
-// What a header click does. A click on a different column selects it without
-// ordering yet; further clicks cycle asc → desc → cleared.
+// What a header click does: the shared cycle (see lib/tableSort.ts). Every
+// sortable column here is a name or a date, so each starts ascending (nearest
+// expiry and lowest DTE first), then flips, then clears.
 export function nextSort(current: SortState, clicked: SortColumn): SortState {
-  if (current.column !== clicked) return { column: clicked, direction: "none" };
-  if (current.direction === "none") return { column: clicked, direction: "asc" };
-  if (current.direction === "asc") return { column: clicked, direction: "desc" };
-  return { column: null, direction: "none" };
+  return nextSortState(current, clicked, { ascendingFirst: SORTABLE_COLUMNS });
 }
 
 // Expiry as a sortable YYYYMMDD number; null when missing or not a date.
@@ -59,43 +58,10 @@ function sortValueFor(p: Position, column: SortColumn): string | number | null {
   return p.dte;
 }
 
-// Nulls sort last in either direction; numbers numerically, strings
-// case-insensitively.
-function compareValues(
-  left: string | number | null,
-  right: string | number | null,
-  direction: SortDirection,
-): number {
-  const leftNull = left === null;
-  const rightNull = right === null;
-  if (leftNull && rightNull) return 0;
-  if (leftNull) return 1;
-  if (rightNull) return -1;
-
-  let cmp: number;
-  if (typeof left === "number" && typeof right === "number") {
-    cmp = left - right;
-  } else {
-    cmp = String(left).localeCompare(String(right), undefined, {
-      sensitivity: "base",
-    });
-  }
-  return direction === "desc" ? -cmp : cmp;
-}
-
-// A sorted copy. Ties break on con_id so the order is stable across reloads.
+// A sorted copy. Ties break on con_id (in either direction) so the order is
+// stable across reloads.
 export function sortPositions(rows: Position[], sort: SortState): Position[] {
-  const { column, direction } = sort;
-  if (column === null || direction === "none") return rows.slice();
-  return rows.slice().sort((a, b) => {
-    const sortDiff = compareValues(
-      sortValueFor(a, column),
-      sortValueFor(b, column),
-      direction,
-    );
-    if (sortDiff !== 0) return sortDiff;
-    return a.con_id - b.con_id;
-  });
+  return sortRows(rows, sort, sortValueFor, (a, b) => a.con_id - b.con_id);
 }
 
 // ─── Filtering ───────────────────────────────────────────────────────────────

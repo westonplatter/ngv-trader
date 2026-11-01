@@ -28,6 +28,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, timezone
 from typing import Any
+
+from src.domain.enums import OverlaySource
 from zoneinfo import ZoneInfo
 
 # Reference timezone for the "prior calendar day" live-staleness boundary.
@@ -197,7 +199,7 @@ class PositionView:
     # Unified mark (live quote when available, else settled snapshot mark).
     mark: float | None
     mark_ts: datetime | None
-    source: str  # "live" | "settled"
+    source: OverlaySource
     # Live-computed unrealized (None for settled-source rows).
     live_unrealized: float | None
     # Settled snapshot carry-overs (None when the instrument was opened today).
@@ -403,9 +405,9 @@ def merge_positions(  # noqa: PLR0913
         # convention the live value already uses.
         stale = is_live_stale(live.fetched_at, flex.fetched_at if flex else None)
         if stale and flex is not None:
-            position, avg_cost, source = flex.position, normalize_settled_avg_cost(flex.avg_cost, flex.multiplier), "settled"
+            position, avg_cost, source = flex.position, normalize_settled_avg_cost(flex.avg_cost, flex.multiplier), OverlaySource.SETTLED
         else:
-            position, avg_cost, source = live.position, live.avg_cost, "live"
+            position, avg_cost, source = live.position, live.avg_cost, OverlaySource.LIVE
         views.append(
             PositionView(
                 account_id=live.account_id,
@@ -421,7 +423,7 @@ def merge_positions(  # noqa: PLR0913
                 mark=mark,
                 mark_ts=mark_ts,
                 source=source,
-                live_unrealized=compute_unrealized(position, avg_cost, mark, mult) if source == "live" else None,
+                live_unrealized=compute_unrealized(position, avg_cost, mark, mult) if source == OverlaySource.LIVE else None,
                 settled_mark_price=flex.mark_price if flex else None,
                 settled_unrealized=flex.fifo_pnl_unrealized if flex else None,
                 settled_position_value=flex.position_value if flex else None,
@@ -458,7 +460,7 @@ def merge_positions(  # noqa: PLR0913
                 avg_cost=normalize_settled_avg_cost(flex.avg_cost, flex.multiplier),
                 mark=flex.mark_price,
                 mark_ts=None,
-                source="settled",
+                source=OverlaySource.SETTLED,
                 live_unrealized=None,
                 settled_mark_price=flex.mark_price,
                 settled_unrealized=flex.fifo_pnl_unrealized,
@@ -483,7 +485,7 @@ def intraday_unrealized_total(views: list[PositionView]) -> float | None:
     With no live data this equals the settled-only total (graceful fallback).
     Returns None when no row contributes a number.
     """
-    contributions = [v.live_unrealized if v.source == "live" and v.live_unrealized is not None else v.settled_unrealized for v in views]
+    contributions = [v.live_unrealized if v.source == OverlaySource.LIVE and v.live_unrealized is not None else v.settled_unrealized for v in views]
     present = [c for c in contributions if c is not None]
     return sum(present) if present else None
 

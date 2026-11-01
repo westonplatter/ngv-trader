@@ -12,6 +12,7 @@ import {
   positionCostBasis,
   positionTotals,
   regexMatch,
+  SORTABLE_COLUMNS,
   sortPositions,
 } from "./view";
 
@@ -76,14 +77,21 @@ const ROWS: Position[] = [
 ];
 
 describe("nextSort", () => {
-  test("a new column is selected without ordering, then cycles", () => {
-    const first = nextSort(DEFAULT_SORT, "dte");
-    expect(first).toEqual({ column: "dte", direction: "none" });
-    const asc = nextSort(first, "dte");
+  test("a new column sorts ascending at once, then flips and clears", () => {
+    const asc = nextSort(DEFAULT_SORT, "dte");
     expect(asc).toEqual({ column: "dte", direction: "asc" });
     const desc = nextSort(asc, "dte");
     expect(desc).toEqual({ column: "dte", direction: "desc" });
     expect(nextSort(desc, "dte")).toEqual({ column: null, direction: "none" });
+  });
+
+  test("every sortable column starts ascending", () => {
+    for (const column of SORTABLE_COLUMNS) {
+      expect(nextSort({ column: null, direction: "none" }, column)).toEqual({
+        column,
+        direction: "asc",
+      });
+    }
   });
 });
 

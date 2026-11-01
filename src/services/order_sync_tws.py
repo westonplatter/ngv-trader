@@ -13,7 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
-from src.api.routers.orders import to_order_response
+from src.api.schemas import to_order_response
 from src.models import Account, ContractRef, Order
 from src.services.order_queue import (
     ORDER_STATUS_CANCELLED,

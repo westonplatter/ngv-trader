@@ -28,6 +28,7 @@ from src.services.jobs import (
     JOB_TYPE_TRADES_SYNC_TWS,
     enqueue_job,
 )
+from src.services.order_keys import order_group_key_from_live
 from src.services.trade_sync_flexquery import previous_business_day
 from src.utils.contract_display import contract_display_name
 
@@ -757,20 +758,6 @@ def _lifecycle_from_live_execution(le: LiveExecution, combo_lifecycle: str | Non
     return "Open"
 
 
-def _live_order_group_key(le: LiveExecution) -> tuple[str, int] | None:
-    """Key grouping a live combo's BAG summary with its legs.
-
-    Mirrors ``intraday_sync_tws._order_group_key`` — ``ib_perm_id`` preferred,
-    ``ib_order_id`` as fallback. ``None`` for fills carrying neither, which are
-    never grouped.
-    """
-    if le.ib_perm_id:
-        return ("perm", le.ib_perm_id)
-    if le.ib_order_id:
-        return ("order", le.ib_order_id)
-    return None
-
-
 def _live_combo_index(
     live_rows: Sequence[LiveExecution],
     group_by_exec_id: dict[str, int],
@@ -791,7 +778,7 @@ def _live_combo_index(
     combo_exec_id_by_order_key: dict[tuple[str, int], str] = {}
     group_by_order_key: dict[tuple[str, int], int] = {}
     for le in live_rows:
-        key = _live_order_group_key(le)
+        key = order_group_key_from_live(le)
         if key is None or le.exec_role not in {"combo_summary", "leg"}:
             continue
         if le.exec_role == "combo_summary":
@@ -842,7 +829,7 @@ def _unsettled_live_executions(
     combo_exec_id_by_order_key, group_by_order_key = _live_combo_index(live_rows, group_by_exec_id)
     leg_lifecycles_by_order_key: dict[tuple[str, int], list[str | None]] = {}
     for le in live_rows:
-        key = _live_order_group_key(le)
+        key = order_group_key_from_live(le)
         if key is not None and le.exec_role == "leg":
             leg_lifecycles_by_order_key.setdefault(key, []).append(_lifecycle_from_live_execution(le))
 
@@ -851,7 +838,7 @@ def _unsettled_live_executions(
         acct = account_by_id.get(le.account_id)
         alias = (acct.alias if acct.alias else acct.account) if acct else None
         display = _live_contract_display(le)
-        order_key = _live_order_group_key(le)
+        order_key = order_group_key_from_live(le)
         leg_lifecycles = leg_lifecycles_by_order_key.get(order_key, []) if order_key is not None else []
         items.append(
             TradeExecutionListItem(
@@ -872,7 +859,7 @@ def _unsettled_live_executions(
                 realized_pnl=le.realized_pnl,
                 is_canonical=True,
                 contract_display=display,
-                parent_ib_exec_id=(combo_exec_id_by_order_key.get(_live_order_group_key(le)) if le.exec_role == "leg" else None),
+                parent_ib_exec_id=(combo_exec_id_by_order_key.get(order_group_key_from_live(le)) if le.exec_role == "leg" else None),
                 data_source="tws-live",
                 trade_ib_perm_id=None,
                 trade_order_ref=None,
@@ -884,7 +871,7 @@ def _unsettled_live_executions(
                 trade_first_executed_at=None,
                 trade_last_executed_at=None,
                 settled=False,
-                live_trade_group_id=(group_by_exec_id.get(le.ib_exec_id) or group_by_order_key.get(_live_order_group_key(le))),
+                live_trade_group_id=(group_by_exec_id.get(le.ib_exec_id) or group_by_order_key.get(order_group_key_from_live(le))),
             )
         )
     return items

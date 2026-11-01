@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { usePrivacy } from "../contexts/usePrivacy";
-import { PRIVACY_MASK } from "../utils/privacy";
+import { useFormatters } from "../hooks/useFormatters";
 import { useSseList } from "../hooks/useSseList";
 import { api } from "../lib/api";
 import type { Order } from "../types/orders";
@@ -49,7 +48,7 @@ function computeTotalMs(order: Order, nowMs: number): number {
 }
 
 export default function OrdersSideTable() {
-  const { privacyMode } = usePrivacy();
+  const fmt = useFormatters();
   const [nowMs, setNowMs] = useState<number>(() => Date.now());
 
   const loadOrders = useCallback(() => api.get<Order[]>("/orders"), []);
@@ -101,18 +100,14 @@ export default function OrdersSideTable() {
                   {order.id}
                 </td>
                 <td className="px-2 py-1 text-gray-700">
-                  {order.side} {privacyMode ? PRIVACY_MASK : order.quantity}{" "}
+                  {order.side} {fmt.quantity(order.quantity)}{" "}
                   {order.symbol}
                   {order.contract_month ? ` ${order.contract_month}` : ""}
                 </td>
                 <td className="px-2 py-1">
                   <span
                     className={`rounded px-1.5 py-0.5 ${STATUS_CLASS[order.status] ?? "text-gray-700 bg-gray-100"}`}
-                    title={
-                      privacyMode
-                        ? `filled ${PRIVACY_MASK} avg ${PRIVACY_MASK}`
-                        : `filled ${order.filled_quantity} avg ${order.avg_fill_price ?? "n/a"}`
-                    }
+                    title={`filled ${fmt.quantity(order.filled_quantity)} avg ${fmt.masked(order.avg_fill_price ?? "n/a")}`}
                   >
                     {order.status}
                   </span>

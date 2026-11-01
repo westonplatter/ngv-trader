@@ -220,6 +220,7 @@ export default function JobsTable() {
                   <div className="flex gap-1">
                     {job.status === "failed" && (
                       <button
+                        type="button"
                         onClick={() => rerunJob(job.id)}
                         disabled={actioning.has(job.id)}
                         className={OUTLINE_BUTTON_COMPACT}
@@ -228,6 +229,7 @@ export default function JobsTable() {
                       </button>
                     )}
                     <button
+                      type="button"
                       onClick={() => archiveJob(job.id)}
                       disabled={actioning.has(job.id)}
                       className="rounded border border-gray-300 px-1.5 py-0.5 text-[11px] text-gray-700 hover:bg-gray-100 disabled:opacity-50"

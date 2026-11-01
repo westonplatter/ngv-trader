@@ -412,6 +412,7 @@ export default function WatchListsPage() {
             onKeyDown={(e) => e.key === "Enter" && handleCreate()}
           />
           <button
+            type="button"
             onClick={handleCreate}
             disabled={creating || !newName.trim()}
             className="bg-blue-600 text-white text-sm px-3 py-1 rounded hover:bg-blue-700 disabled:opacity-50"
@@ -455,6 +456,7 @@ export default function WatchListsPage() {
                 />
                 <div className="flex gap-2">
                   <button
+                    type="button"
                     onClick={() => handleEditSave(detail.id)}
                     disabled={!editName.trim()}
                     className={OUTLINE_BUTTON_COMPACT}
@@ -462,6 +464,7 @@ export default function WatchListsPage() {
                     Save
                   </button>
                   <button
+                    type="button"
                     onClick={() => setEditingId(null)}
                     className="rounded border border-gray-300 px-1.5 py-0.5 text-[11px] text-gray-700 hover:bg-gray-100"
                   >
@@ -479,6 +482,7 @@ export default function WatchListsPage() {
                 )}
                 <div className="flex gap-1">
                   <button
+                    type="button"
                     onClick={handleRefreshQuotes}
                     disabled={
                       refreshingQuotes || detail.instruments.length === 0
@@ -488,6 +492,7 @@ export default function WatchListsPage() {
                     {refreshingQuotes ? "Refreshing..." : "Refresh Quotes"}
                   </button>
                   <button
+                    type="button"
                     onClick={() =>
                       startEditing(detail.id, detail.name, detail.description)
                     }
@@ -496,6 +501,7 @@ export default function WatchListsPage() {
                     Edit
                   </button>
                   <button
+                    type="button"
                     onClick={() => handleDelete(detail.id)}
                     className="rounded border border-gray-300 px-1.5 py-0.5 text-[11px] text-gray-700 hover:bg-gray-100"
                   >
@@ -559,6 +565,7 @@ export default function WatchListsPage() {
                         <td className="px-3 py-2">
                           <div className="flex gap-1">
                             <button
+                              type="button"
                               onClick={() =>
                                 handleRemoveInstrumentRequest(inst.id)
                               }
@@ -568,6 +575,7 @@ export default function WatchListsPage() {
                             </button>
                             {removeConfirmId === inst.id && (
                               <button
+                                type="button"
                                 onClick={() =>
                                   handleRemoveInstrumentConfirm(inst.id)
                                 }

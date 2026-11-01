@@ -306,6 +306,7 @@ export default function TradeGroupSearchSelect({
             <div className="px-3 py-2 text-xs text-red-600">
               Search failed.
               <button
+                type="button"
                 onClick={openSearch}
                 className="ml-1 underline hover:text-red-800"
               >
@@ -317,6 +318,7 @@ export default function TradeGroupSearchSelect({
             <div className="px-3 py-2 text-xs text-gray-500">
               No trade groups found.
               <button
+                type="button"
                 onClick={() => {
                   const params = new URLSearchParams({
                     account_id: String(accountId),
@@ -337,6 +339,7 @@ export default function TradeGroupSearchSelect({
           {!loading &&
             results.map((group, index) => (
               <button
+                type="button"
                 key={group.id}
                 ref={(el) => {
                   itemRefs.current[index] = el;

@@ -12,7 +12,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../lib/api";
 import { enqueueSyncJob, useJobWatcher } from "../hooks/useJobWatcher";
-import { usePrivacy } from "../contexts/usePrivacy";
+import { useFormatters } from "../hooks/useFormatters";
 import {
   DEFAULT_SORT,
   EMPTY_CELL,
@@ -30,8 +30,6 @@ import {
 } from "../lib/strategyPnl";
 import type { Account } from "../types/accounts";
 import type { TradeGroupPnlRow } from "../types/tradeGroups";
-import { formatMoney } from "../utils/number";
-import { PRIVACY_MASK } from "../utils/privacy";
 
 const STATUS_OPTIONS = [
   { value: "open", label: "Open" },
@@ -53,7 +51,7 @@ function pnlClass(value: number | null): string {
 
 export default function StrategyPnlTable() {
   const navigate = useNavigate();
-  const { privacyMode } = usePrivacy();
+  const fmt = useFormatters();
   const { watch } = useJobWatcher();
 
   const [status, setStatus] = useState("open");
@@ -148,9 +146,6 @@ export default function StrategyPnlTable() {
   const sorted = useMemo(() => sortRows(rows, sort), [rows, sort]);
   const filtersActive =
     status !== "open" || accountId !== "all" || instrument.trim() !== "";
-
-  const money = (value: number | null) =>
-    privacyMode ? PRIVACY_MASK : formatMoney(value);
 
   const header = (
     column: SortColumn,
@@ -323,17 +318,17 @@ export default function StrategyPnlTable() {
                   <td
                     className={`px-3 py-2 text-right tabular-nums ${pnlClass(pnl.realized)}`}
                   >
-                    {money(pnl.realized)}
+                    {fmt.money(pnl.realized)}
                   </td>
                   <td
                     className={`px-3 py-2 text-right tabular-nums ${pnlClass(pnl.unrealized)}`}
                   >
-                    {money(pnl.unrealized)}
+                    {fmt.money(pnl.unrealized)}
                   </td>
                   <td
                     className={`px-3 py-2 text-right font-semibold tabular-nums ${pnlClass(pnl.total)}`}
                   >
-                    {money(pnl.total)}
+                    {fmt.money(pnl.total)}
                   </td>
                   <td className="px-3 py-2 text-gray-600">{group.status}</td>
                   <td

@@ -37,6 +37,7 @@ from src.services.group_link_carryover import (
 )
 from src.services.item_links import end_flat_position_tags, inherit_order_links
 from src.services.live_reconcile import reconcile_orphaned_live_executions
+from src.services.order_keys import order_group_key_from_execution
 from src.services.sync_common import get_or_create_accounts
 
 logger = logging.getLogger(__name__)
@@ -313,22 +314,6 @@ def _write_quotes(session: Session, tickers_by_con_id: dict[int, Any], now: date
     return written
 
 
-def _order_group_key(execution: Any) -> tuple[str, int] | None:
-    """Key grouping a combo's BAG summary fill with its leg fills.
-
-    Prefers ``permId`` (stable across the order lifecycle), falling back to
-    ``orderId``. ``None`` when the fill carries neither — such fills stay
-    ``standalone`` rather than being grouped by a weaker signal.
-    """
-    perm_id = _safe_int(getattr(execution, "permId", None))
-    if perm_id:
-        return ("perm", perm_id)
-    order_id = _safe_int(getattr(execution, "orderId", None))
-    if order_id:
-        return ("order", order_id)
-    return None
-
-
 def _exec_roles_by_exec_id(fills: list) -> dict[str, str]:
     """Resolve COMBO/LEG roles across one ``ib.fills()`` batch.
 
@@ -337,7 +322,7 @@ def _exec_roles_by_exec_id(fills: list) -> dict[str, str]:
     fill becomes ``combo_summary`` and its non-BAG siblings become ``leg``;
     everything else stays ``standalone``.
 
-    Mirrors the settled path (``trade_sync_tws._retag_combo_roles``) but computes
+    Mirrors the settled path (``fill_ingest._retag_combo_legs``) but computes
     the roles in-memory over the current batch, keeping the intraday sync
     self-contained and idempotent on ``ib_exec_id``. Like FlexQuery's
     ``_combo_groups``, a group must span at least 2 distinct leg conIds to
@@ -349,7 +334,7 @@ def _exec_roles_by_exec_id(fills: list) -> dict[str, str]:
         exec_id = getattr(execution, "execId", None) if execution else None
         if not exec_id:
             continue
-        key = _order_group_key(execution)
+        key = order_group_key_from_execution(execution)
         if key is None:
             continue
         groups.setdefault(key, []).append(fill)

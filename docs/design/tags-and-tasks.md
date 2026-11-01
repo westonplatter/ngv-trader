@@ -70,7 +70,8 @@ use the word "tag".
 ## Sync behavior
 
 All in `src/services/item_links.py`. (Item keys and validation are
-`src/services/item_refs.py`; the read-side lookups — tags per item, open-task
+`src/services/item_refs.py`, one `EntitySpec` per entity type in `ENTITY_SPECS`;
+adding an entity type is a spec there plus a describer. The read-side lookups — tags per item, open-task
 counts, display labels — are `src/services/item_descriptions.py`, with one
 describer per entity type.)
 

@@ -10,17 +10,18 @@ from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
+from src.domain.enums import OrderStatus
 from src.models import Order, OrderEvent
 
-ORDER_STATUS_QUEUED = "queued"
-ORDER_STATUS_SUBMITTING = "submitting"
-ORDER_STATUS_SUBMITTED = "submitted"
-ORDER_STATUS_PARTIALLY_FILLED = "partially_filled"
-ORDER_STATUS_FILLED = "filled"
-ORDER_STATUS_CANCELLED = "cancelled"
-ORDER_STATUS_REJECTED = "rejected"
-ORDER_STATUS_FAILED = "failed"
-ORDER_STATUS_RECONCILE_REQUIRED = "reconcile_required"
+ORDER_STATUS_QUEUED = OrderStatus.QUEUED
+ORDER_STATUS_SUBMITTING = OrderStatus.SUBMITTING
+ORDER_STATUS_SUBMITTED = OrderStatus.SUBMITTED
+ORDER_STATUS_PARTIALLY_FILLED = OrderStatus.PARTIALLY_FILLED
+ORDER_STATUS_FILLED = OrderStatus.FILLED
+ORDER_STATUS_CANCELLED = OrderStatus.CANCELLED
+ORDER_STATUS_REJECTED = OrderStatus.REJECTED
+ORDER_STATUS_FAILED = OrderStatus.FAILED
+ORDER_STATUS_RECONCILE_REQUIRED = OrderStatus.RECONCILE_REQUIRED
 
 ORDER_TERMINAL_STATUSES = {
     ORDER_STATUS_FILLED,
@@ -28,6 +29,8 @@ ORDER_TERMINAL_STATUSES = {
     ORDER_STATUS_REJECTED,
     ORDER_STATUS_FAILED,
 }
+
+FORCED_STATUS_CHANGE_EVENT_TYPE = "forced_status_change"
 
 ALLOWED_ORDER_STATUS_TRANSITIONS: dict[str, set[str]] = {
     ORDER_STATUS_QUEUED: {
@@ -117,16 +120,28 @@ def transition_order_status(
     *,
     message: str,
     event_type: str = "status_change",
+    force: bool = False,
 ) -> OrderEvent:
-    if not can_transition_order_status(order.status, next_status):
+    """Move ``order`` to ``next_status`` and record the event.
+
+    A transition the table does not allow raises ``ValueError``. With
+    ``force=True`` it is applied anyway, for callers that must follow the
+    broker's reported state (reconciliation); the event is then recorded as
+    ``forced_status_change`` with the from/to statuses and ``message``.
+    """
+    allowed = can_transition_order_status(order.status, next_status)
+    if not allowed and not force:
         raise ValueError(f"Invalid order status transition: {order.status} -> {next_status}")
+    if not allowed:
+        event_type = FORCED_STATUS_CHANGE_EVENT_TYPE
+        message = f"Forced status change {order.status} -> {next_status}: {message}"
 
     now = now_utc()
     order.status = next_status
     order.updated_at = now
     if next_status == ORDER_STATUS_SUBMITTED and order.submitted_at is None:
         order.submitted_at = now
-    if next_status in ORDER_TERMINAL_STATUSES:
+    if next_status in ORDER_TERMINAL_STATUSES and order.completed_at is None:
         order.completed_at = now
 
     session.flush()

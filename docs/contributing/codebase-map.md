@@ -25,6 +25,7 @@ For domain vocabulary, see [CONCEPTS.md](../../CONCEPTS.md).
 
 ## Primitives
 
+- `src/domain/enums.py`: `StrEnum` vocabularies for the string columns (`JobStatus`, `OrderStatus`, `ExecRole`, `OverlaySource`, `EntityType`, `DataSource`); members equal their DB strings, and the module constants (`JOB_STATUS_*`, `ORDER_STATUS_*`, `TAG_ENTITY_TYPES`) point at them.
 - `src/db.py`: DB URL and SQLAlchemy engine builders (`get_database_url`, `get_engine`).
 - `src/utils/ibkr_account.py`: account masking helper (`mask_ibkr_account`) for safer logs.
 - `src/utils/contract_display.py`: human-readable contract labels (`contract_display_name`).
@@ -32,6 +33,7 @@ For domain vocabulary, see [CONCEPTS.md](../../CONCEPTS.md).
 - `src/utils/sql.py`: `escape_like` for literal `LIKE` patterns.
 - `src/services/execution_display.py`: display name and IBKR trade codes from an execution's raw payload; `src/services/option_expiry.py`: expiry / DTE from a raw expiry string; `src/services/strategies.py`: strategy name matching and lookup. Shared by the trades, positions, strategies, and trade-groups routers so none imports from another.
 - `src/services/sync_common.py`: shared sync helpers (id parsing, account upsert, canonical flags, aggregates).
+- `src/services/fill_ingest.py`: the one settled-fill ingest (parent resolution, execution upsert, combo summaries) that the FlexQuery and TWS trade syncs adapt to.
 
 ## Components
 
@@ -47,7 +49,7 @@ For domain vocabulary, see [CONCEPTS.md](../../CONCEPTS.md).
 ## Services
 
 - `worker:jobs` (`scripts/work_jobs.py` shim → `src/workers/jobs.py`): background job handlers — FlexQuery trade/position sync, market data, contracts, watchlists, order fetch. Queue primitive `src/services/jobs.py`.
-- `worker:orders` (`scripts/work_order_queue.py`): order-lifecycle scaffold; **submission is disabled** (see [workers.md](../design/workers.md)).
+- `worker:orders` (`scripts/work_order_queue.py` loop → `src/services/order_worker.py` policy): order-lifecycle scaffold; **submission is disabled** (see [workers.md](../design/workers.md)).
 - Sync services: `src/services/{trade,position}_sync_flexquery.py` (active), `..._tws.py` (dormant), `contract_sync.py`, `market_data.py`.
 - `src/services/tradebot_agent.py`: LangGraph chat agent (DB reads + job enqueue; no `ib_async` import).
 - Operator utilities: `scripts/setup_db.py` (DB + migrations), `scripts/download_positions.py` (one-time TWS position bootstrap), `scripts/fetch_flex_trades.py`, `scripts/test_tws_connection.py`, `scripts/validate_env.py`.
@@ -67,7 +69,7 @@ For domain vocabulary, see [CONCEPTS.md](../../CONCEPTS.md).
 - Data model/storage: `src/models.py`, `src/db.py`, `alembic/versions/`
 - API surface: `src/api/main.py`, `src/api/routers/`
 - UI surface: `frontend/src/App.tsx`, `frontend/src/components/`
-- Workers/jobs: `src/workers/jobs.py`, `src/services/jobs.py`, `scripts/work_jobs.py`, `scripts/work_order_queue.py`
+- Workers/jobs: `src/workers/jobs.py`, `src/services/jobs.py`, `scripts/work_jobs.py`, `scripts/work_order_queue.py`, `src/services/order_worker.py`
 - Ops docs: [getting-started.md](../getting-started.md), [workers.md](../design/workers.md), [trades-and-executions-sync.md](../design/trades-and-executions-sync.md), [secrets-using-1password.md](../design/secrets-using-1password.md)
 
 ## Active architecture direction

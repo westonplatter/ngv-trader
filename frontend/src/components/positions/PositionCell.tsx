@@ -15,12 +15,11 @@ import { formatExpiry } from "../../utils/date";
 import {
   formatDelta,
   formatGreek,
-  formatMoney,
   formatMultiplier,
   formatPercent,
   formatStrike,
 } from "../../utils/number";
-import { PRIVACY_MASK, formatRelativeReturn } from "../../utils/privacy";
+import { makeFormatters } from "../../utils/maskedFormatters";
 import TagChips from "../TagChips";
 import TaskQuickAdd from "../TaskQuickAdd";
 import TradeGroupSearchSelect from "../TradeGroupSearchSelect";
@@ -142,8 +141,8 @@ function cellContent(
 ): [React.ReactNode, string] {
   const { pos, column, privacyMode, onAssign, onUnassign, onChanged } = props;
   const key = column.key;
-  const money = (value: number | null) =>
-    privacyMode ? PRIVACY_MASK : formatMoney(value);
+  const fmt = makeFormatters(privacyMode);
+  const money = fmt.money;
 
   if (pos.live_is_stale && LIVE_OVERLAY_VALUE_KEYS.has(key)) {
     // Stale live overlay: blank the value so old TWS marks/greeks aren't
@@ -177,7 +176,7 @@ function cellContent(
         "",
       ];
     case "position":
-      return [privacyMode ? PRIVACY_MASK : pos.position, ""];
+      return [fmt.quantity(pos.position), ""];
     case "last_trade_date":
       return [formatExpiry(pos.last_trade_date), ""];
     case "option_expiry_date":
@@ -194,18 +193,14 @@ function cellContent(
       return [money(pos.position_value), ""];
     case "fifo_pnl_unrealized":
       return [
-        privacyMode
-          ? formatRelativeReturn(pos.fifo_pnl_unrealized, positionCostBasis(pos))
-          : formatMoney(pos.fifo_pnl_unrealized),
+        fmt.pnl(pos.fifo_pnl_unrealized, positionCostBasis(pos)),
         pnlClass(pos.fifo_pnl_unrealized),
       ];
     case "mark":
       return [money(pos.mark), ""];
     case "live_unrealized":
       return [
-        privacyMode
-          ? formatRelativeReturn(pos.live_unrealized, positionCostBasis(pos))
-          : formatMoney(pos.live_unrealized),
+        fmt.pnl(pos.live_unrealized, positionCostBasis(pos)),
         pnlClass(pos.live_unrealized),
       ];
     case "iv":

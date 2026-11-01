@@ -7,6 +7,7 @@ import {
   type SortColumn,
   type SortState,
 } from "../../lib/positions/view";
+import { ariaSort, sortIndicator } from "../../lib/tableSort";
 import type { Position } from "../../types/positions";
 import {
   FILTER_TINT,
@@ -15,25 +16,6 @@ import {
   type PositionColumn,
 } from "./columns";
 import PositionCell from "./PositionCell";
-
-function sortIndicator(sort: SortState, column: SortColumn): string {
-  if (sort.column !== column || sort.direction === "none") return "↕";
-  if (sort.direction === "asc") return "↑";
-  return "↓";
-}
-
-function isSortedBy(sort: SortState, column: SortColumn): boolean {
-  return sort.column === column && sort.direction !== "none";
-}
-
-function ariaSort(
-  sort: SortState,
-  key: keyof Position,
-): "ascending" | "descending" | "none" | undefined {
-  if (!isSortableColumn(key)) return undefined;
-  if (!isSortedBy(sort, key)) return "none";
-  return sort.direction === "asc" ? "ascending" : "descending";
-}
 
 function TextFilter({
   value,
@@ -174,36 +156,39 @@ export default function PositionsTableBody({
       <table className="min-w-full border-collapse text-sm">
         <thead>
           <tr className="bg-gray-100 text-left">
-            {columns.map((col) => (
-              <th
-                key={col.key}
-                aria-sort={ariaSort(sort, col.key)}
-                className={`px-3 py-2 font-semibold text-gray-700 whitespace-nowrap ${HEADER_TINT[columnGroup(col.key)]}`}
-              >
-                {isSortableColumn(col.key) ? (
-                  <button
-                    type="button"
-                    onClick={() => onToggleSort(col.key as SortColumn)}
-                    className="inline-flex items-center gap-1 text-gray-700 hover:text-gray-900"
-                    title={`Cycle ${col.label} sort`}
-                  >
-                    <span>{col.label}</span>
-                    <span
-                      aria-hidden="true"
-                      className={
-                        isSortedBy(sort, col.key as SortColumn)
-                          ? "text-gray-900"
-                          : "text-gray-400"
-                      }
+            {columns.map((col) => {
+              const sortKey = isSortableColumn(col.key) ? col.key : null;
+              return (
+                <th
+                  key={col.key}
+                  aria-sort={sortKey ? ariaSort(sort, sortKey) : undefined}
+                  className={`px-3 py-2 font-semibold text-gray-700 whitespace-nowrap ${HEADER_TINT[columnGroup(col.key)]}`}
+                >
+                  {sortKey ? (
+                    <button
+                      type="button"
+                      onClick={() => onToggleSort(sortKey)}
+                      className="inline-flex items-center gap-1 text-gray-700 hover:text-gray-900"
+                      title={`Cycle ${col.label} sort`}
                     >
-                      {sortIndicator(sort, col.key as SortColumn)}
-                    </span>
-                  </button>
-                ) : (
-                  col.label
-                )}
-              </th>
-            ))}
+                      <span>{col.label}</span>
+                      <span
+                        aria-hidden="true"
+                        className={
+                          ariaSort(sort, sortKey) !== "none"
+                            ? "text-gray-900"
+                            : "text-gray-400"
+                        }
+                      >
+                        {sortIndicator(sort, sortKey)}
+                      </span>
+                    </button>
+                  ) : (
+                    col.label
+                  )}
+                </th>
+              );
+            })}
           </tr>
           <tr className="bg-gray-50 text-left">
             {columns.map((col) => (

@@ -1,12 +1,10 @@
 // Column catalog for the Positions table: order, labels, which columns the
 // greeks toggle hides, and the live/settled banding each column belongs to.
 
+import type { ColumnDef } from "../../lib/tableSort";
 import type { Position } from "../../types/positions";
 
-export interface PositionColumn {
-  key: keyof Position;
-  label: string;
-}
+export type PositionColumn = ColumnDef<keyof Position>;
 
 export const COLUMNS: readonly PositionColumn[] = [
   { key: "con_id", label: "Con ID" },

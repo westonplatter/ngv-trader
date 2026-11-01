@@ -1,7 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
-import { usePrivacy } from "../contexts/usePrivacy";
-import { PRIVACY_MASK } from "../utils/privacy";
 import { enqueueSyncJob, useJobWatcher } from "../hooks/useJobWatcher";
+import { useFormatters } from "../hooks/useFormatters";
 import { useSseList } from "../hooks/useSseList";
 import { api } from "../lib/api";
 import type { Order } from "../types/orders";
@@ -40,7 +39,7 @@ function getDisplayedSymbol(order: Order): string {
 }
 
 export default function OrdersTable() {
-  const { privacyMode } = usePrivacy();
+  const fmt = useFormatters();
   const [syncing, setSyncing] = useState(false);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
   const [syncError, setSyncError] = useState<string | null>(null);
@@ -174,6 +173,7 @@ export default function OrdersTable() {
         </div>
         <div className="flex items-center gap-3">
           <button
+            type="button"
             onClick={() => {
               void kickOffOrderSync();
             }}
@@ -188,6 +188,7 @@ export default function OrdersTable() {
       <div className="flex items-center gap-2">
         {(["all", "working", "closed"] as const).map((nextFilter) => (
           <button
+            type="button"
             key={nextFilter}
             onClick={() => setFilter(nextFilter)}
             className={`rounded px-2.5 py-1 text-xs font-medium uppercase tracking-wide ${
@@ -322,7 +323,7 @@ export default function OrdersTable() {
                   {getDisplayedSymbol(order) || "—"}
                 </td>
                 <td className="px-3 py-2 whitespace-nowrap text-gray-800">
-                  {privacyMode ? PRIVACY_MASK : (order.ib_perm_id ?? "—")}
+                  {fmt.masked(order.ib_perm_id ?? "—")}
                 </td>
                 <td className="px-3 py-2 whitespace-nowrap text-gray-800">
                   {order.account_alias ?? `Account ${order.account_id}`}
@@ -331,7 +332,7 @@ export default function OrdersTable() {
                   {order.side}
                 </td>
                 <td className="px-3 py-2 whitespace-nowrap text-gray-700">
-                  {privacyMode ? PRIVACY_MASK : order.quantity}
+                  {fmt.quantity(order.quantity)}
                 </td>
                 <td className="px-3 py-2 whitespace-nowrap text-gray-700">
                   <div>{order.order_type}</div>
@@ -340,7 +341,7 @@ export default function OrdersTable() {
                   {order.tif}
                 </td>
                 <td className="px-3 py-2 whitespace-nowrap text-gray-700">
-                  {privacyMode ? PRIVACY_MASK : (order.limit_price ?? "—")}
+                  {fmt.masked(order.limit_price ?? "—")}
                 </td>
                 <td className="px-3 py-2 whitespace-nowrap text-gray-700">
                   <div>{order.contract_display_name}</div>
@@ -363,14 +364,13 @@ export default function OrdersTable() {
                 </td>
                 <td className="px-3 py-2 whitespace-nowrap text-gray-700">
                   <div>
-                    {privacyMode
-                      ? PRIVACY_MASK
-                      : `${order.filled_quantity} / ${order.quantity}`}
+                    {fmt.masked(`${order.filled_quantity} / ${order.quantity}`)}
                   </div>
                 </td>
                 <td className="px-3 py-2 whitespace-nowrap">
                   {order.status === "queued" ? (
                     <button
+                      type="button"
                       onClick={() => {
                         void cancelQueuedOrder(order.id);
                       }}

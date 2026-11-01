@@ -15,7 +15,6 @@ from typing import Any
 import pandas as pd
 from defusedxml import ElementTree as ET
 from ngv_reports_ibkr.custom_flex_report import CustomFlexReport
-from ngv_reports_ibkr.flex_client import DateRange
 from sqlalchemy import Engine, delete, func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
@@ -29,23 +28,9 @@ from src.services.sync_common import (
     _safe_str,
     get_or_create_accounts,
 )
-from src.services.trade_sync_flexquery import FlexTokenExpiredError
+from src.services.flex_client_factory import fetch_flex_xml
 
 logger = logging.getLogger("flex_position_sync")
-
-
-def _fetch_flex_xml(token: str, query_id: str, start_date: date, end_date: date) -> str:
-    from src.services.flex_client_factory import make_flex_client
-
-    client = make_flex_client(span_days=(end_date - start_date).days)
-    date_range = DateRange(from_date=start_date, to_date=end_date)
-    try:
-        return client.fetch_flex_report(token=token, query_id=query_id, date_range=date_range)
-    except Exception as exc:
-        message = str(exc).lower()
-        if "expired" in message or "invalid" in message or "token" in message:
-            raise FlexTokenExpiredError(f"FlexQuery token rejected: {exc}") from exc
-        raise
 
 
 def _aggregate_lots(df: pd.DataFrame) -> list[dict[str, Any]]:
@@ -278,7 +263,7 @@ def sync_flex_positions(
     if report is None:
         if not (flex_token and query_id and start_date and end_date):
             raise ValueError("sync_flex_positions: provide either `report` or flex_token+query_id+start_date+end_date")
-        xml_data = _fetch_flex_xml(flex_token, query_id, start_date, end_date)
+        xml_data = fetch_flex_xml(flex_token, query_id, start_date, end_date)
         report = CustomFlexReport()
         report.root = ET.fromstring(xml_data)
 
