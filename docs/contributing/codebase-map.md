@@ -33,6 +33,7 @@ For domain vocabulary, see [CONCEPTS.md](../../CONCEPTS.md).
 - `src/utils/sql.py`: `escape_like` for literal `LIKE` patterns.
 - `src/services/execution_display.py`: display name and IBKR trade codes from an execution's raw payload; `src/services/option_expiry.py`: expiry / DTE from a raw expiry string; `src/services/strategies.py`: strategy name matching and lookup. Shared by the trades, positions, strategies, and trade-groups routers so none imports from another.
 - `src/services/sync_common.py`: shared sync helpers (id parsing, account upsert, canonical flags, aggregates).
+- `src/services/fill_ingest.py`: the one settled-fill ingest (parent resolution, execution upsert, combo summaries) that the FlexQuery and TWS trade syncs adapt to.
 
 ## Components
 
