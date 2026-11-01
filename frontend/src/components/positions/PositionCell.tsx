@@ -22,7 +22,7 @@ import {
 import { makeFormatters } from "../../utils/maskedFormatters";
 import TagChips from "../TagChips";
 import TaskQuickAdd from "../TaskQuickAdd";
-import TradeGroupSearchSelect from "../TradeGroupSearchSelect";
+import TradeGroupSearchSelect from "../tradeGroupSearch/TradeGroupSearchSelect";
 import {
   CELL_TINT,
   LIVE_OVERLAY_VALUE_KEYS,
@@ -42,7 +42,9 @@ export interface PositionCellProps {
 
 function pnlClass(value: number | null): string {
   if (value == null) return "";
-  return value >= 0 ? "text-emerald-700 font-medium" : "text-red-700 font-medium";
+  return value >= 0
+    ? "text-emerald-700 font-medium"
+    : "text-red-700 font-medium";
 }
 
 function FreshnessBadge({ pos }: { pos: Position }) {
@@ -136,9 +138,7 @@ function TradeGroupsCell({
 
 // The value for every column that is plain text or a formatted number.
 // Returns [content, extra class for the cell].
-function cellContent(
-  props: PositionCellProps,
-): [React.ReactNode, string] {
+function cellContent(props: PositionCellProps): [React.ReactNode, string] {
   const { pos, column, privacyMode, onAssign, onUnassign, onChanged } = props;
   const key = column.key;
   const fmt = makeFormatters(privacyMode);
@@ -153,7 +153,11 @@ function cellContent(
   switch (key) {
     case "trade_groups":
       return [
-        <TradeGroupsCell pos={pos} onAssign={onAssign} onUnassign={onUnassign} />,
+        <TradeGroupsCell
+          pos={pos}
+          onAssign={onAssign}
+          onUnassign={onUnassign}
+        />,
         "",
       ];
     case "tags":

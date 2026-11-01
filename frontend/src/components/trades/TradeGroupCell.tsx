@@ -7,7 +7,7 @@ import { Link } from "react-router-dom";
 import { api } from "../../lib/api";
 import { tradeGroupLabel } from "../../lib/tradeGroups";
 import type { TradeGroupResult } from "../../types/tradeGroups";
-import TradeGroupSearchSelect from "../TradeGroupSearchSelect";
+import TradeGroupSearchSelect from "../tradeGroupSearch/TradeGroupSearchSelect";
 
 export default function TradeGroupCell({
   tradeId,
