@@ -17,7 +17,7 @@ execution: code
 
 ## Working an item
 
-1. Read the item. Reproduce it with the verification steps it names (IDs like `A1`, `C2`, `E5` refer to the dynamic verification handoff (`docs/plans/2026-11-01-004-test-dynamic-verification-handoff-plan.md`, a sibling PR)).
+1. Read the item. Reproduce it with the verification steps it names (IDs like `A1`, `C2`, `E5` refer to [the dynamic verification handoff](2026-11-01-004-test-dynamic-verification-handoff-plan.md)).
 2. Write the failing test first. Prefer the narrowest level that shows the bug.
 3. Fix. Re-run the item's listed steps and the full suites (`task test`, `bun run typecheck && bun run lint && bun test && bun run build`).
 4. In the same PR, tick the item's **Status** box, link the PR in the [Resolution log](#resolution-log), and keep the doc's other items untouched.
