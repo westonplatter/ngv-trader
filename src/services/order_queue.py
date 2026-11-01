@@ -82,7 +82,7 @@ def can_transition_order_status(current_status: str, next_status: str) -> bool:
     return next_status in allowed
 
 
-def append_order_event(
+def append_order_event(  # noqa: PLR0913 — public event-append signature used by callers
     session: Session,
     order_id: int,
     event_type: str,

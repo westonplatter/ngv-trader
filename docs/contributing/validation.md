@@ -9,13 +9,13 @@ code_dirs_or_files:
     ".github/workflows/tests.yml",
     ".trunk/trunk.yaml",
   ]
-description: Every check a change must pass before it ships — import checks, pytest, frontend checks, doc checks, and the IBKR sensitive-data scan — with the commands and what each covers.
+description: Every check a change must pass before it ships — import checks, Ruff, pytest, frontend checks, doc checks, and the IBKR sensitive-data scan — with the commands and what each covers.
 ---
 
 # Validation
 
-Run the checks that match what you touched. CI runs the Python and frontend
-suites on every PR; the rest are local gates.
+Run the checks that match what you touched. CI runs the Python suite, Ruff, and
+the frontend suite on every PR; the rest are local gates.
 
 | Changed            | Run                                                              |
 | ------------------ | ---------------------------------------------------------------- |
@@ -37,6 +37,20 @@ Exits 1 on failure.
 
 Use Ruff for fast feedback during edits. Pyright must pass before declaring changes
 correct. Never run Python or shell to test code.
+
+## Ruff
+
+CI runs Ruff over `src`, `tests`, and `scripts` in the `lint` job of
+`.github/workflows/tests.yml`, and the PR fails if either command does:
+
+- Lint: `uv run ruff check src tests scripts`
+- Format: `uv run ruff format --check src tests scripts` (run `uv run ruff format <files>` to fix)
+
+The lint rules are the complexity limits configured in `pyproject.toml` (C901,
+PLR0911, PLR0912, PLR0913, PLR0915). Fix a finding by splitting the function into
+named helpers. When a function is one linear derivation, or a public signature
+cannot change, mark the `def` line with `# noqa: <codes> — <reason>`. Do not add
+`per-file-ignores` or raise the limits.
 
 ## Python tests
 

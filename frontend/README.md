@@ -24,7 +24,7 @@ Conventions (layout, data access, state, tests) are in
 | `/trades` | `trades/TradesPage` | Trade history and executions |
 | `/strategies` | `strategies/StrategiesPage` | Strategies and trade groups workspace |
 | `/strategies/table` | `strategyPnl/StrategyPnlPage` | Strategy P&L table across trade groups |
-| `/tags` | `TagsPage` | Free-form tags and tag search |
+| `/tags` | `tags/TagsPage` | Free-form tags and tag search |
 | `/tasks` | `TasksPage` | Task list linked to trades, positions, and groups |
 | `/watchlists` | `WatchListsPage` | Instrument watch lists with live quotes |
 | `/market-data` | `MarketDataPage` | Futures and options market data jobs |

@@ -99,9 +99,7 @@ def _resolve_as_of_date(df: pd.DataFrame) -> date | None:
     if series.empty:
         return None
     val = series.iloc[0]
-    if isinstance(val, pd.Timestamp):
-        return val.date()
-    if isinstance(val, datetime):
+    if isinstance(val, (pd.Timestamp, datetime)):
         return val.date()
     if isinstance(val, date):
         return val
@@ -242,7 +240,7 @@ def _sync_flat_account(engine: Engine, account_code: str, as_of: date, flex_quer
     return {"upserted_count": 0, "deleted_count": deleted, "live_purged": live_purged, "as_of_date": as_of}
 
 
-def sync_flex_positions(
+def sync_flex_positions(  # noqa: PLR0913 — public sync entry point used by callers
     engine: Engine,
     *,
     account_code: str,

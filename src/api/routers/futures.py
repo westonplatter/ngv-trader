@@ -155,7 +155,7 @@ def get_term_structure(
             ]
 
 
-def _build_options_query(
+def _build_options_query(  # noqa: PLR0913 — one parameter per optional query filter
     symbol: str,
     underlying_con_id: int | None,
     underlying_month: str | None,
@@ -243,7 +243,7 @@ def _format_option_row(c: ContractRef, lo: LatestFuturesOptions | None) -> dict:
 
 
 @router.get("/futures/{symbol}/chain")
-def get_chain(
+def get_chain(  # noqa: PLR0913 — FastAPI route; each query parameter is an argument
     symbol: str,
     underlying_con_id: int | None = Query(default=None),
     strike_gte: float | None = Query(default=None),
@@ -344,7 +344,7 @@ def get_chain(
 
 
 @router.get("/futures/{symbol}/options")
-def get_options(
+def get_options(  # noqa: PLR0913 — FastAPI route; each query parameter is an argument
     symbol: str,
     underlying_con_id: int | None = Query(default=None),
     underlying_month: str | None = Query(default=None),
@@ -439,7 +439,7 @@ def get_option_filter_params(symbol: str):
 
 
 @router.get("/futures/{symbol}/vol-surface")
-def get_vol_surface(
+def get_vol_surface(  # noqa: PLR0913 — FastAPI route; each query parameter is an argument
     symbol: str,
     underlying_con_id: int | None = Query(default=None),
     underlying_month: str | None = Query(default=None),

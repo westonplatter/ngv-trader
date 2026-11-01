@@ -6,7 +6,7 @@ import datetime as dt
 import re
 from dataclasses import dataclass
 
-from ib_async import IB, Contract, Future
+from ib_async import IB, Contract, ContractDetails, Future
 
 DEFAULT_CL_MIN_DAYS_TO_EXPIRY = 7
 _FUTURES_MONTH_CODE_TO_MONTH = {
@@ -90,6 +90,45 @@ def format_contract_month(contract: Contract) -> str | None:
     return None
 
 
+def _collect_future_candidates(
+    contract_details: list[ContractDetails],
+    min_days_to_expiry: int,
+) -> tuple[list[tuple[dt.date, Contract]], list[tuple[dt.date, Contract]]]:
+    """Split FUT details into (outside the near-expiry window, all non-expired)."""
+    candidates: list[tuple[dt.date, Contract]] = []
+    non_expired: list[tuple[dt.date, Contract]] = []
+    for detail in contract_details:
+        contract = detail.contract
+        if contract is None:
+            continue
+        expiry = parse_contract_expiry(contract.lastTradeDateOrContractMonth)
+        days_to_expiry = contract_days_to_expiry(contract)
+        if contract.secType != "FUT" or expiry is None or days_to_expiry is None or days_to_expiry < 0:
+            continue
+        non_expired.append((expiry, contract))
+        if days_to_expiry < min_days_to_expiry:
+            continue
+        candidates.append((expiry, contract))
+    return candidates, non_expired
+
+
+def _no_candidates_error(
+    normalized_symbol: str,
+    min_days_to_expiry: int,
+    non_expired: list[tuple[dt.date, Contract]],
+) -> RuntimeError:
+    if non_expired:
+        nearest_expiry, nearest_contract = min(non_expired, key=lambda item: item[0])
+        nearest_days = contract_days_to_expiry(nearest_contract)
+        return RuntimeError(
+            f"No {normalized_symbol} futures contracts found outside the near-expiry safety window "
+            f"(min_days_to_expiry={min_days_to_expiry}). "
+            f"Nearest non-expired contract: {nearest_contract.localSymbol or nearest_contract.symbol} "
+            f"expiring {nearest_expiry.isoformat()} ({nearest_days} days)."
+        )
+    return RuntimeError(f"No non-expired {normalized_symbol} futures contracts found")
+
+
 def select_front_month_future_contract(
     ib: IB,
     *,
@@ -109,32 +148,9 @@ def select_front_month_future_contract(
     if not contract_details:
         raise RuntimeError(f"No {normalized_symbol} futures contract details returned from IBKR")
 
-    candidates: list[tuple[dt.date, Contract]] = []
-    non_expired: list[tuple[dt.date, Contract]] = []
-    for detail in contract_details:
-        contract = detail.contract
-        if contract is None:
-            continue
-        expiry = parse_contract_expiry(contract.lastTradeDateOrContractMonth)
-        days_to_expiry = contract_days_to_expiry(contract)
-        if contract.secType != "FUT" or expiry is None or days_to_expiry is None or days_to_expiry < 0:
-            continue
-        non_expired.append((expiry, contract))
-        if days_to_expiry < min_days_to_expiry:
-            continue
-        candidates.append((expiry, contract))
-
+    candidates, non_expired = _collect_future_candidates(contract_details, min_days_to_expiry)
     if not candidates:
-        if non_expired:
-            nearest_expiry, nearest_contract = min(non_expired, key=lambda item: item[0])
-            nearest_days = contract_days_to_expiry(nearest_contract)
-            raise RuntimeError(
-                f"No {normalized_symbol} futures contracts found outside the near-expiry safety window "
-                f"(min_days_to_expiry={min_days_to_expiry}). "
-                f"Nearest non-expired contract: {nearest_contract.localSymbol or nearest_contract.symbol} "
-                f"expiring {nearest_expiry.isoformat()} ({nearest_days} days)."
-            )
-        raise RuntimeError(f"No non-expired {normalized_symbol} futures contracts found")
+        raise _no_candidates_error(normalized_symbol, min_days_to_expiry, non_expired)
 
     candidates.sort(key=lambda item: item[0])
     front_month_contract = candidates[0][1]
@@ -216,6 +232,35 @@ def infer_contract_month_from_local_symbol(
     return f"{year:04d}-{month:02d}"
 
 
+def _checked_year_month(year_digits: str, month_digits: str) -> str:
+    year = int(year_digits)
+    month = int(month_digits)
+    if 1 <= month <= 12:
+        return f"{year:04d}-{month:02d}"
+    raise ValueError("contract_month must use a valid month.")
+
+
+def _parse_numeric_contract_month(compact: str) -> str | None:
+    """Parse the digit-based shapes (YYYY-MM, YYYYMM, YYYYMMDD, YYYY-MM-DD); None if none match."""
+    if len(compact) == 7 and compact[4] == "-" and compact[:4].isdigit() and compact[5:7].isdigit():
+        return _checked_year_month(compact[:4], compact[5:7])
+
+    # YYYYMM, or a full date YYYYMMDD (extract YYYY-MM)
+    if len(compact) in {6, 8} and compact.isdigit():
+        return _checked_year_month(compact[:4], compact[4:6])
+
+    # Accept YYYY-MM-DD — extract YYYY-MM
+    if len(compact) == 10 and compact[4] == "-" and compact[7] == "-":
+        year_s, month_s, _ = compact.split("-")
+        if year_s.isdigit() and month_s.isdigit():
+            year = int(year_s)
+            month = int(month_s)
+            if 1 <= month <= 12:
+                return f"{year:04d}-{month:02d}"
+
+    return None
+
+
 def normalize_contract_month_input(contract_month: str | None) -> str | None:
     """Parse user-provided contract month into YYYY-MM format.
 
@@ -230,36 +275,9 @@ def normalize_contract_month_input(contract_month: str | None) -> str | None:
         return None
 
     compact = " ".join(raw.split())
-    if len(compact) == 7 and compact[4] == "-" and compact[:4].isdigit() and compact[5:7].isdigit():
-        year = int(compact[:4])
-        month = int(compact[5:7])
-        if 1 <= month <= 12:
-            return f"{year:04d}-{month:02d}"
-        raise ValueError("contract_month must use a valid month.")
-
-    if len(compact) == 6 and compact.isdigit():
-        year = int(compact[:4])
-        month = int(compact[4:6])
-        if 1 <= month <= 12:
-            return f"{year:04d}-{month:02d}"
-        raise ValueError("contract_month must use a valid month.")
-
-    # Accept full date YYYYMMDD — extract YYYY-MM
-    if len(compact) == 8 and compact.isdigit():
-        year = int(compact[:4])
-        month = int(compact[4:6])
-        if 1 <= month <= 12:
-            return f"{year:04d}-{month:02d}"
-        raise ValueError("contract_month must use a valid month.")
-
-    # Accept YYYY-MM-DD — extract YYYY-MM
-    if len(compact) == 10 and compact[4] == "-" and compact[7] == "-":
-        year_s, month_s, _ = compact.split("-")
-        if year_s.isdigit() and month_s.isdigit():
-            year = int(year_s)
-            month = int(month_s)
-            if 1 <= month <= 12:
-                return f"{year:04d}-{month:02d}"
+    numeric = _parse_numeric_contract_month(compact)
+    if numeric is not None:
+        return numeric
 
     for fmt in ("%B %Y", "%b %Y"):
         try:

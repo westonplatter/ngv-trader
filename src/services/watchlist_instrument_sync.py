@@ -24,7 +24,7 @@ def _now_utc() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def fetch_and_add_instrument(
+def fetch_and_add_instrument(  # noqa: PLR0913 — public signature used by callers
     engine: Engine,
     host: str,
     port: int,
@@ -64,7 +64,7 @@ def fetch_and_add_instrument(
             ib.disconnect()
 
 
-def fetch_and_add_instrument_with_ib(
+def fetch_and_add_instrument_with_ib(  # noqa: PLR0913 — public signature used by callers
     engine: Engine,
     *,
     ib: IB,

@@ -123,7 +123,7 @@ def claim_queued_order_for_submission(session: Session, order_id: int) -> Order 
     return order
 
 
-def connect_tws_with_retries(
+def connect_tws_with_retries(  # noqa: PLR0913 — retry knobs are explicit CLI-facing parameters
     ib: IB,
     *,
     engine: Engine,
@@ -160,7 +160,7 @@ def connect_tws_with_retries(
     raise RuntimeError(f"Unable to connect to TWS/Gateway after {max_attempts} attempt(s). Last error: {last_exc}") from last_exc
 
 
-def run_worker(args: argparse.Namespace) -> int:
+def run_worker(args: argparse.Namespace) -> int:  # noqa: C901, PLR0912 — worker loop; one linear connect, reconcile, poll, shutdown sequence
     port = args.port if args.port is not None else get_int_env("BROKER_TWS_PORT")
     if port is None:
         raise SystemExit("BROKER_TWS_PORT is not set. Pass --port or set BROKER_TWS_PORT.")

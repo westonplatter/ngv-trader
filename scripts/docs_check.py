@@ -159,7 +159,7 @@ DEFAULT_CHECKS = {"links", "scripts", "tasks", "specs"}
 # ── runner ────────────────────────────────────────────────────────────────────
 
 
-def main() -> None:
+def main() -> None:  # noqa: PLR0912 — CLI entry point; one linear dispatch over argv flags
     args = [a for a in sys.argv[1:] if not a.startswith("-")]
     flags = {a for a in sys.argv[1:] if a.startswith("-")}
     include_routes = "--routes" in flags

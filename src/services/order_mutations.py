@@ -44,6 +44,21 @@ class OrderCreateOutcome:
     created: bool
 
 
+def _validate_symbol(symbol: str, sec_type: str) -> None:
+    if not symbol:
+        raise ValueError("'symbol' must be a non-empty string.")
+    if symbol.startswith("/"):
+        if sec_type != "FUT":
+            raise ValueError("Slash-prefixed symbols are only supported for FUT orders.")
+        if len(symbol) == 1 or not symbol[1:].strip():
+            raise ValueError("Slash-prefixed symbols must include a root symbol, e.g. '/MCL'.")
+
+
+def _require_non_empty(name: str, value: str) -> None:
+    if not value:
+        raise ValueError(f"'{name}' must be a non-empty string.")
+
+
 def normalize_order_create_input(raw: OrderCreateInput) -> OrderCreateInput:
     symbol = raw.symbol.strip().upper()
     side = raw.side.strip().upper()
@@ -56,33 +71,22 @@ def normalize_order_create_input(raw: OrderCreateInput) -> OrderCreateInput:
     request_text = raw.request_text.strip() if raw.request_text else None
     limit_price = float(raw.limit_price) if raw.limit_price is not None else None
 
-    if not symbol:
-        raise ValueError("'symbol' must be a non-empty string.")
-    if symbol.startswith("/"):
-        if sec_type != "FUT":
-            raise ValueError("Slash-prefixed symbols are only supported for FUT orders.")
-        if len(symbol) == 1 or not symbol[1:].strip():
-            raise ValueError("Slash-prefixed symbols must include a root symbol, e.g. '/MCL'.")
+    _validate_symbol(symbol, sec_type)
     if side not in {"BUY", "SELL"}:
         raise ValueError("'side' must be BUY or SELL.")
     if raw.quantity < 1:
         raise ValueError("'quantity' must be >= 1.")
-    if not sec_type:
-        raise ValueError("'sec_type' must be a non-empty string.")
-    if not exchange:
-        raise ValueError("'exchange' must be a non-empty string.")
-    if not currency:
-        raise ValueError("'currency' must be a non-empty string.")
+    _require_non_empty("sec_type", sec_type)
+    _require_non_empty("exchange", exchange)
+    _require_non_empty("currency", currency)
     if order_type not in {"MKT", "LMT"}:
         raise ValueError("'order_type' must be MKT or LMT.")
     if order_type == "LMT" and (limit_price is None or limit_price <= 0):
         raise ValueError("'limit_price' must be > 0 for LMT orders.")
     if order_type == "MKT":
         limit_price = None
-    if not tif:
-        raise ValueError("'tif' must be a non-empty string.")
-    if not source:
-        raise ValueError("'source' must be a non-empty string.")
+    _require_non_empty("tif", tif)
+    _require_non_empty("source", source)
 
     return OrderCreateInput(
         account_id=raw.account_id,

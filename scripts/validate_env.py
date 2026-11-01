@@ -177,7 +177,7 @@ def check_tws() -> bool:
 # -- Main ---------------------------------------------------------------------
 
 
-def main() -> None:
+def main() -> None:  # noqa: PLR0912 — CLI entry point; one linear sequence of environment checks
     parser = argparse.ArgumentParser(description="Validate the ngtrader development environment")
     parser.add_argument("--env", choices=["dev", "prod"], default="dev")
     parser.add_argument(
