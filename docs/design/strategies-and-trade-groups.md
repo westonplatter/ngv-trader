@@ -6,7 +6,7 @@ code_dirs_or_files:
     "src/api/routers/strategies.py",
     "src/services/trade_group_instruments.py",
     "frontend/src/components/strategies/",
-    "frontend/src/components/StrategyPnlTable.tsx",
+    "frontend/src/components/strategyPnl/StrategyPnlPage.tsx",
   ]
 description: Strategies and trade groups — data model, execution assignment and history, trade-group and strategy APIs, position chips, the Strategy P&L table, and the Strategies workspace.
 ---
@@ -298,7 +298,7 @@ closed historical lots, not just the open ones.
 
 ### Strategy P&L table
 
-`/strategies/table` (`frontend/src/components/StrategyPnlTable.tsx`) is the
+`/strategies/table` (`frontend/src/components/strategyPnl/StrategyPnlPage.tsx`) is the
 book-wide sibling of the Strategies workspace: one row per trade group, with its
 strategy, account, instruments, and Realized / Unrealized / Total P&L, filterable
 by account, instrument pattern, and status. It is read-only — assignment,
@@ -387,6 +387,6 @@ Typical live workflow:
 3. `src/api/routers/strategies.py`, `src/api/routers/reports.py`
 4. `frontend/src/components/trades/`
 5. `frontend/src/components/positions/`
-6. `frontend/src/components/strategies/`, `frontend/src/components/StrategyPnlTable.tsx`, `frontend/src/lib/strategyPnl.ts`
+6. `frontend/src/components/strategies/`, `frontend/src/components/strategyPnl/StrategyPnlPage.tsx`, `frontend/src/lib/strategyPnl.ts`
 7. `src/services/trade_group_pnl.py` (batched per-group P&L), `src/services/trade_group_instruments.py` (instrument derivation and the pattern filter)
 8. `frontend/src/contexts/PrivacyContext.tsx`, `frontend/src/utils/privacy.ts` (privacy-mode masking used throughout the trade-group detail view)
