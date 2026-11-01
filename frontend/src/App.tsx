@@ -14,7 +14,7 @@ import PositionsPage from "./components/positions/PositionsPage";
 import StrategyPnlTable from "./components/StrategyPnlTable";
 import TradebotChat from "./components/TradebotChat";
 import StrategiesPage from "./components/strategies/StrategiesPage";
-import TagsPage from "./components/TagsPage";
+import TagsPage from "./components/tags/TagsPage";
 import TasksPage from "./components/TasksPage";
 import TradesPage from "./components/trades/TradesPage";
 import WatchListsPage from "./components/WatchListsPage";
