@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import {
   Navigate,
   NavLink,
@@ -9,7 +9,6 @@ import {
 import AccountsTable from "./components/AccountsTable";
 import FlexQueryTokensTable from "./components/FlexQueryTokensTable";
 import MarketDataPage from "./components/MarketDataPage";
-import PricingPage from "./components/pricing/PricingPage";
 import OrdersTable from "./components/OrdersTable";
 import PositionsPage from "./components/positions/PositionsPage";
 import StrategyPnlTable from "./components/StrategyPnlTable";
@@ -24,6 +23,10 @@ import { PrivacyProvider } from "./contexts/PrivacyContext";
 import { usePrivacy } from "./contexts/usePrivacy";
 import { isDemoMode } from "./lib/demoMode";
 import { NAV_ITEMS } from "./navItems";
+
+// Plotly makes the pricing page the heaviest route by far; load it on demand
+// so the other pages do not pay for it.
+const PricingPage = lazy(() => import("./components/pricing/PricingPage"));
 
 const DEMO_MODE = isDemoMode();
 
@@ -121,7 +124,14 @@ function App() {
           <Route path="/tasks" element={<TasksPage />} />
           <Route path="/watchlists" element={<WatchListsPage />} />
           <Route path="/market-data" element={<MarketDataPage />} />
-          <Route path="/structures" element={<PricingPage />} />
+          <Route
+            path="/structures"
+            element={
+              <Suspense fallback={<p className="text-gray-500">Loading...</p>}>
+                <PricingPage />
+              </Suspense>
+            }
+          />
           <Route path="/tradebot" element={<TradebotChat />} />
           <Route path="*" element={<Navigate to="/tradebot" replace />} />
         </Routes>
