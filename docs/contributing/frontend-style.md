@@ -54,8 +54,9 @@ frontend/src/
   `types/`, `utils/`. Nothing under `lib/`, `utils/`, or `types/` imports from
   `components/`. Shared types move down, not components up.
 - A page component is the component mounted by a route in `App.tsx`. Widgets
-  shared by several pages (`TagChips`, `ComboboxInput`, `TradeGroupSearchSelect`)
-  also live in `components/`.
+  shared by several pages (`TagChips`, `ComboboxInput`) also live in
+  `components/`; a shared widget with its own hook gets a folder like a page
+  (`components/tradeGroupSearch/`).
 - A page's own hooks and panes live in a folder named after it,
   `components/<page>/` (first: `components/strategies/`). Hooks own the data
   and return one object per concern; panes take data and callbacks as props and
