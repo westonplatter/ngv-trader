@@ -280,10 +280,16 @@ class FutureContractSelector(ContractSelector):
         return sorted(contracts, key=_contract_expiry_sort_key)
 
 
-class OptionContractSelector(ContractSelector):
-    sec_type = "OPT"
+class OptionLikeSelector(ContractSelector):
+    """Shared hooks for option selectors (OPT and FOP).
 
-    def build_spec(self, request: ContractSelectionRequest) -> Contract:
+    Subclasses set ``sec_type``. The spec, filter, sort and validate steps are
+    identical for both; they differ only in how the contract is resolved.
+    """
+
+    sec_type: str
+
+    def _option_spec(self, request: ContractSelectionRequest) -> Contract:
         normalized_right = _normalize_right(request.right)
         spec = Contract(
             symbol=request.symbol,
@@ -332,11 +338,35 @@ class OptionContractSelector(ContractSelector):
             )
 
 
-class FutureOptionContractSelector(ContractSelector):
+class OptionContractSelector(OptionLikeSelector):
+    sec_type = "OPT"
+
+    def build_spec(self, request: ContractSelectionRequest) -> Contract:
+        return self._option_spec(request)
+
+
+class FutureOptionContractSelector(OptionLikeSelector):
+    """Select a single future option (FOP) contract.
+
+    ``build_spec`` returns the plain FOP spec (symbol, expiry, strike, right,
+    exchange). ``select()`` is still overridden, because the base template cannot
+    express this flow with its four hooks:
+
+    * The spec needs the option chain's trading class and multiplier, and finding
+      them takes IB calls (qualify the underlying, ``reqSecDefOptParams``).
+      ``build_spec(request)`` has no ``ib`` handle.
+    * The result is resolved with ``qualifyContracts`` on that one fully specified
+      spec, not ``reqContractDetails`` plus filter/sort/validate, so the chain
+      checks (missing expiration or strike) surface as their own errors.
+
+    The inherited ``filter_matches`` / ``sort_matches`` / ``validate_matches`` hooks
+    are therefore not used by ``select()``.
+    """
+
     sec_type = "FOP"
 
     def build_spec(self, request: ContractSelectionRequest) -> Contract:
-        raise NotImplementedError("FutureOptionContractSelector uses select() with IB-dependent chain lookup.")
+        return self._option_spec(request)
 
     def select(self, ib: IB, request: ContractSelectionRequest) -> tuple[Contract, int]:
         spec = self._build_fop_spec(ib, request)
@@ -370,20 +400,7 @@ class FutureOptionContractSelector(ContractSelector):
         strikes = self._collect_strikes(candidate_chains)
         self._validate_chain(expirations, strikes, request)
 
-        normalized_right = _normalize_right(request.right)
-        spec = Contract(
-            symbol=request.symbol,
-            secType=self.sec_type,
-            exchange=request.exchange,
-            currency=request.currency,
-        )
-        ib_contract_month = _normalize_contract_month(request.contract_month)
-        if ib_contract_month is not None:
-            spec.lastTradeDateOrContractMonth = ib_contract_month
-        if request.strike is not None:
-            spec.strike = request.strike
-        if normalized_right is not None:
-            spec.right = normalized_right
+        spec = self.build_spec(request)
 
         trading_class = _chain_attr(selected_chain, "tradingClass")
         if isinstance(trading_class, str) and trading_class.strip():
@@ -393,37 +410,6 @@ class FutureOptionContractSelector(ContractSelector):
             spec.multiplier = str(multiplier).strip()
 
         return spec
-
-    def filter_matches(self, contracts: list[Contract], request: ContractSelectionRequest) -> list[Contract]:
-        normalized_right = _normalize_right(request.right)
-        return [
-            contract
-            for contract in contracts
-            if _contract_month_matches(contract, request.contract_month)
-            and _strike_matches(contract, request.strike)
-            and _option_right_matches(contract, normalized_right)
-        ]
-
-    def sort_matches(self, contracts: list[Contract], request: ContractSelectionRequest) -> list[Contract]:
-        return sorted(
-            contracts,
-            key=lambda contract: (
-                *_contract_expiry_sort_key(contract),
-                float(contract.strike or 0.0),
-                contract.right or "",
-            ),
-        )
-
-    def validate_matches(self, contracts: list[Contract], request: ContractSelectionRequest) -> None:
-        super().validate_matches(contracts, request)
-        if len(contracts) > 1:
-            context = _build_lookup_context(request)
-            candidates = "; ".join(_describe_contract(contract) for contract in contracts[:5])
-            raise RuntimeError(
-                f"Ambiguous option selection for {context}. "
-                f"Found {len(contracts)} matches. Top candidates: {candidates}. "
-                "Provide contract_month, strike, and right to select one contract."
-            )
 
     def _filter_chain_candidates(self, chains: list[Any], request: ContractSelectionRequest) -> list[Any]:
         exchange_key = request.exchange.upper()
