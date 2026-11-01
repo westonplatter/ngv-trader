@@ -498,7 +498,7 @@ class ContractSelectorFactory:
         return selector_type()
 
 
-def select_contract_for_watchlist(
+def select_contract_for_watchlist(  # noqa: PLR0913 — public selector signature used by callers
     ib: IB,
     symbol: str,
     sec_type: str,
