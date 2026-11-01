@@ -94,6 +94,10 @@ What it does today:
 - Polls `orders` for `queued` rows and would set a deterministic
   `orderRef=ngtrader-order-{id}` for dedup (submission blocked).
 - Status lifecycle: `queued → submitting → submitted → partially_filled/filled/cancelled/rejected/failed/reconcile_required`.
+- Every status write goes through `transition_order_status` in `order_queue.py`, which
+  checks the transition table. Reconciliation follows the broker's reported state even
+  when the table disallows the move (`force=True`); that is recorded as a
+  `forced_status_change` order event naming the from/to statuses.
 
 The Tradebot agent has **no** order-submit tool; it can only `preview_order` and
 enqueue `order.fetch_sync`. See [tradebot-chatbot.md](tradebot-chatbot.md).

@@ -16,6 +16,7 @@ from ib_async import IB, Contract, LimitOrder, MarketOrder, Trade
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from src.domain.enums import OrderStatus
 from src.models import Account, Order
 from src.services.cl_contracts import (
     DEFAULT_CL_MIN_DAYS_TO_EXPIRY,
@@ -24,10 +25,13 @@ from src.services.cl_contracts import (
     select_front_month_future_contract,
 )
 from src.services.order_queue import (
+    ORDER_STATUS_CANCELLED,
     ORDER_STATUS_FAILED,
+    ORDER_STATUS_FILLED,
     ORDER_STATUS_PARTIALLY_FILLED,
     ORDER_STATUS_QUEUED,
     ORDER_STATUS_RECONCILE_REQUIRED,
+    ORDER_STATUS_REJECTED,
     ORDER_STATUS_SUBMITTED,
     ORDER_STATUS_SUBMITTING,
     ORDER_TERMINAL_STATUSES,
@@ -73,14 +77,14 @@ def parse_order_ref(order_ref: str | None) -> int | None:
         return None
 
 
-def normalize_ib_status(ib_status: str | None, filled_qty: float) -> str:
+def normalize_ib_status(ib_status: str | None, filled_qty: float) -> OrderStatus:
     value = (ib_status or "").strip().lower()
     if value == "filled":
-        return "filled"
+        return ORDER_STATUS_FILLED
     if value in {"rejected"}:
-        return "rejected"
+        return ORDER_STATUS_REJECTED
     if value in {"cancelled", "apicancelled", "inactive"}:
-        return "cancelled"
+        return ORDER_STATUS_CANCELLED
     if value in {"submitted", "presubmitted", "pendingsubmit"}:
         if filled_qty > 0:
             return ORDER_STATUS_PARTIALLY_FILLED
@@ -215,19 +219,15 @@ def apply_trade_progress(
             )
             emitted_transition_event = True
         else:
-            order.status = normalized_status
-            if normalized_status in ORDER_TERMINAL_STATUSES and order.completed_at is None:
-                order.completed_at = now_utc()
-            session.flush()
-            append_order_event(
+            # The broker's state wins during reconciliation even when the table
+            # disallows the move; the forced event records it.
+            transition_order_status(
                 session=session,
-                order_id=order.id,
+                order=order,
+                next_status=normalized_status,
                 event_type=event_type,
-                message=(f"{message_prefix}: forced transition to {normalized_status} from ib_status={trade.orderStatus.status}"),
-                status=order.status,
-                filled_quantity=order.filled_quantity,
-                avg_fill_price=order.avg_fill_price,
-                ib_order_id=order.ib_order_id,
+                message=f"{message_prefix}: ib_status={trade.orderStatus.status}",
+                force=True,
             )
     else:
         session.flush()
@@ -274,20 +274,14 @@ def process_order(
 ) -> None:
     account = session.get(Account, order.account_id)
     if account is None:
-        order.status = ORDER_STATUS_FAILED
-        order.last_error = f"Missing account row for account_id={order.account_id}"
-        order.updated_at = now_utc()
-        if order.completed_at is None:
-            order.completed_at = now_utc()
-        append_order_event(
+        error = f"Missing account row for account_id={order.account_id}"
+        order.last_error = error
+        transition_order_status(
             session=session,
-            order_id=order.id,
+            order=order,
+            next_status=ORDER_STATUS_FAILED,
             event_type="order_error",
-            message=order.last_error or "Missing account row",
-            status=order.status,
-            filled_quantity=order.filled_quantity,
-            avg_fill_price=order.avg_fill_price,
-            ib_order_id=order.ib_order_id,
+            message=error,
         )
         return
 
@@ -389,20 +383,13 @@ def process_order(
                 ib_order_id=order.ib_order_id,
             )
     except Exception as exc:
-        order.status = ORDER_STATUS_FAILED
         order.last_error = str(exc)
-        order.updated_at = now_utc()
-        if order.completed_at is None:
-            order.completed_at = now_utc()
-        append_order_event(
+        transition_order_status(
             session=session,
-            order_id=order.id,
+            order=order,
+            next_status=ORDER_STATUS_FAILED,
             event_type="order_error",
             message=f"Worker error: {exc}",
-            status=order.status,
-            filled_quantity=order.filled_quantity,
-            avg_fill_price=order.avg_fill_price,
-            ib_order_id=order.ib_order_id,
         )
 
 
