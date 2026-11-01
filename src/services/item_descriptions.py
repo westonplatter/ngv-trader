@@ -9,20 +9,15 @@ from __future__ import annotations
 
 from collections import defaultdict
 from collections.abc import Callable, Iterable
-from typing import Any
+from typing import Any, cast
 
 from sqlalchemy import func, select, tuple_
 from sqlalchemy.orm import Session
 
+from src.domain.enums import EntityType
 from src.models import LiveExecution, LivePosition, Position, Strategy, Tag, TagLink, Task, TaskLink, Trade, TradeGroup
 from src.services.item_links import open_position_keys
-from src.services.item_refs import ENTITY_KEYS
-
-
-def _key_of(row: Any, entity_type: str) -> Any:
-    cols = ENTITY_KEYS[entity_type]
-    values = [getattr(row, col) for col in cols]
-    return tuple(values) if len(values) > 1 else values[0]
+from src.services.item_refs import ENTITY_SPECS, spec_for
 
 
 def tag_chip(tag: Tag, link: TagLink) -> dict[str, Any]:
@@ -41,16 +36,14 @@ def tags_by_item(session: Session, entity_type: str, keys: Iterable[Any], includ
     keys = list(dict.fromkeys(keys))
     if not keys:
         return {}
+    spec = spec_for(entity_type)
     stmt = select(TagLink, Tag).join(Tag, Tag.id == TagLink.tag_id).where(TagLink.entity_type == entity_type)
     if not include_ended:
         stmt = stmt.where(TagLink.ended_at.is_(None))
-    if entity_type == "position":
-        stmt = stmt.where(tuple_(TagLink.account_id, TagLink.con_id).in_(keys))
-    else:
-        stmt = stmt.where(getattr(TagLink, ENTITY_KEYS[entity_type][0]).in_(keys))
+    stmt = stmt.where(spec.key_in(TagLink, keys))
     out: dict[Any, list[dict[str, Any]]] = defaultdict(list)
     for link, tag in session.execute(stmt.order_by(Tag.normalized_value)).all():
-        out[_key_of(link, entity_type)].append(tag_chip(tag, link))
+        out[spec.row_key(link)].append(tag_chip(tag, link))
     return out
 
 
@@ -59,17 +52,15 @@ def open_task_counts(session: Session, entity_type: str, keys: Iterable[Any]) ->
     keys = list(dict.fromkeys(keys))
     if not keys:
         return {}
-    cols = [getattr(TaskLink, col) for col in ENTITY_KEYS[entity_type]]
+    spec = spec_for(entity_type)
+    cols = [getattr(TaskLink, col) for col in spec.key_columns]
     stmt = (
         select(*cols, func.count(func.distinct(TaskLink.task_id)))
         .join(Task, Task.id == TaskLink.task_id)
         .where(TaskLink.entity_type == entity_type, Task.status != "done")
         .group_by(*cols)
+        .where(spec.key_in(TaskLink, keys))
     )
-    if entity_type == "position":
-        stmt = stmt.where(tuple_(TaskLink.account_id, TaskLink.con_id).in_(keys))
-    else:
-        stmt = stmt.where(cols[0].in_(keys))
     out: dict[Any, int] = {}
     for row in session.execute(stmt).all():
         *key, count = row
@@ -154,16 +145,18 @@ def _describe_tasks(session: Session, keys: list[Any]) -> dict[Any, Description]
     return {task.id: {"label": task.title, "status": task.status} for task in session.execute(select(Task).where(Task.id.in_(keys))).scalars()}
 
 
-# Adding an entity type: add its key columns to ENTITY_KEYS and a describer here.
-DESCRIBERS: dict[str, Describer] = {
-    "trade": _describe_trades,
-    "live_execution": _describe_live_executions,
-    "position": _describe_positions,
-    "trade_group": _describe_trade_groups,
-    "strategy": _describe_strategies,
-    "task": _describe_tasks,
+# Adding an entity type: add its EntitySpec to ENTITY_SPECS and a describer here.
+# The describers live here rather than on the spec: they use ``item_links``, which
+# imports ``item_refs``, so the spec cannot hold them without an import cycle.
+DESCRIBERS: dict[EntityType, Describer] = {
+    EntityType.TRADE: _describe_trades,
+    EntityType.LIVE_EXECUTION: _describe_live_executions,
+    EntityType.POSITION: _describe_positions,
+    EntityType.TRADE_GROUP: _describe_trade_groups,
+    EntityType.STRATEGY: _describe_strategies,
+    EntityType.TASK: _describe_tasks,
 }
-assert set(DESCRIBERS) == set(ENTITY_KEYS), "every entity type needs a describer"
+assert set(DESCRIBERS) == set(ENTITY_SPECS), "every entity type needs a describer"
 
 
 def describe_items(session: Session, entity_type: str, keys: Iterable[Any]) -> dict[Any, Description]:
@@ -171,4 +164,4 @@ def describe_items(session: Session, entity_type: str, keys: Iterable[Any]) -> d
     keys = list(dict.fromkeys(keys))
     if not keys:
         return {}
-    return DESCRIBERS[entity_type](session, keys)
+    return DESCRIBERS[cast(EntityType, entity_type)](session, keys)
