@@ -1,0 +1,601 @@
+[
+  {
+    "type": "function",
+    "function": {
+      "name": "list_accounts",
+      "description": "List available brokerage accounts for order routing.",
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "list_positions",
+      "description": "Read current positions from the database.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "default": 25
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "list_jobs",
+      "description": "Read latest job queue records.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "default": 20
+          },
+          "include_archived": {
+            "type": "boolean",
+            "default": false
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "list_orders",
+      "description": "Read latest order records and optional recent events.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "default": 20
+          },
+          "status": {
+            "type": "string"
+          },
+          "include_events": {
+            "type": "boolean",
+            "default": true
+          },
+          "events_per_order": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 20,
+            "default": 3
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "preview_order",
+      "description": "Validate and normalize an order request without writing to the database.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "account_id": {
+            "type": "integer"
+          },
+          "account": {
+            "type": "string",
+            "description": "Account alias or account number when account_id is not provided."
+          },
+          "symbol": {
+            "type": "string"
+          },
+          "side": {
+            "type": "string",
+            "enum": [
+              "BUY",
+              "SELL",
+              "buy",
+              "sell"
+            ]
+          },
+          "quantity": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "sec_type": {
+            "type": "string",
+            "default": "FUT"
+          },
+          "exchange": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string",
+            "default": "USD"
+          },
+          "order_type": {
+            "type": "string",
+            "default": "MKT"
+          },
+          "limit_price": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          },
+          "tif": {
+            "type": "string",
+            "default": "DAY"
+          },
+          "request_text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "symbol",
+          "side",
+          "quantity"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "enqueue_positions_sync_job",
+      "description": "Enqueue a positions.sync job for worker:jobs to process.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "request_text": {
+            "type": "string"
+          },
+          "max_attempts": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10,
+            "default": 3
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "enqueue_order_fetch_sync_job",
+      "description": "Enqueue an order.fetch_sync job for worker:jobs to pull broker orders into the database.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "request_text": {
+            "type": "string"
+          },
+          "max_attempts": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10,
+            "default": 3
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "enqueue_contracts_sync_job",
+      "description": "Enqueue a contracts.sync job to fetch available contracts from IBKR into the database. Pass symbol and sec_type to sync a specific instrument (e.g. NQ FUT, AAPL STK). Defaults to CL FUT if not specified.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "description": "Ticker symbol, e.g. CL, ES, NQ, AAPL"
+          },
+          "sec_type": {
+            "type": "string",
+            "enum": [
+              "FUT",
+              "OPT",
+              "FOP",
+              "STK"
+            ],
+            "description": "Security type to sync"
+          },
+          "request_text": {
+            "type": "string"
+          },
+          "max_attempts": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10,
+            "default": 3
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "lookup_contract",
+      "description": "Look up contract details. Checks the database first; if no contracts are found, automatically fetches from IBKR and stores them. Use this for informational queries like 'what is the front month for CL?' or 'what NQ contracts are available?'.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "description": "Ticker symbol, e.g. CL, ES, NQ, AAPL"
+          },
+          "sec_type": {
+            "type": "string",
+            "enum": [
+              "FUT",
+              "OPT",
+              "FOP",
+              "STK"
+            ]
+          },
+          "contract_month": {
+            "type": "string",
+            "description": "YYYY-MM or month name like 'March 2026'"
+          },
+          "contract_expiry": {
+            "type": "string",
+            "description": "Specific expiry date YYYY-MM-DD (e.g. '2026-03-16'). Use this for weekly options instead of contract_month."
+          },
+          "strike": {
+            "type": "number",
+            "description": "Strike price for OPT/FOP"
+          },
+          "right": {
+            "type": "string",
+            "enum": [
+              "C",
+              "P"
+            ],
+            "description": "Call or Put for OPT/FOP"
+          }
+        },
+        "required": [
+          "symbol",
+          "sec_type"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "list_activated_products",
+      "description": "List the futures products actively maintained in the security master (e.g. CL, NG, ZB, ZN, ES, NQ), with their discovered exchange, discovery status, and how many active contracts are in the database. Use this to see the tradable universe before looking up specific contract months.",
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "list_watch_lists",
+      "description": "List all watch lists with instrument counts.",
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "create_watch_list",
+      "description": "Create a new watch list.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Name of the watch list"
+          },
+          "description": {
+            "type": "string",
+            "description": "Optional description"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "get_watch_list",
+      "description": "Get a watch list with all its instruments.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "watch_list_id": {
+            "type": "integer",
+            "description": "ID of the watch list"
+          }
+        },
+        "required": [
+          "watch_list_id"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "add_watch_list_instrument",
+      "description": "Add an instrument to a watch list. Looks up the contract in the DB first (fetches from IBKR if not found), adds it to the watch list, and enqueues a market data job to fetch latest prices. Returns immediately with the result.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "watch_list_id": {
+            "type": "integer",
+            "description": "ID of the watch list to add to"
+          },
+          "symbol": {
+            "type": "string",
+            "description": "Ticker symbol, e.g. CL, ES, AAPL"
+          },
+          "sec_type": {
+            "type": "string",
+            "enum": [
+              "STK",
+              "FUT",
+              "OPT",
+              "FOP"
+            ],
+            "description": "Security type"
+          },
+          "contract_month": {
+            "type": "string",
+            "description": "YYYY-MM or month name like 'April 2026'"
+          },
+          "contract_expiry": {
+            "type": "string",
+            "description": "Specific expiry date YYYY-MM-DD (e.g. '2026-03-16'). Use this for weekly options instead of contract_month."
+          },
+          "strike": {
+            "type": "number",
+            "description": "Strike price for OPT/FOP"
+          },
+          "right": {
+            "type": "string",
+            "enum": [
+              "C",
+              "P"
+            ],
+            "description": "Call or Put for OPT/FOP"
+          }
+        },
+        "required": [
+          "watch_list_id",
+          "symbol",
+          "sec_type"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "remove_watch_list_instrument",
+      "description": "Remove an instrument from a watch list.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "watch_list_id": {
+            "type": "integer",
+            "description": "ID of the watch list"
+          },
+          "instrument_id": {
+            "type": "integer",
+            "description": "ID of the instrument to remove"
+          }
+        },
+        "required": [
+          "watch_list_id",
+          "instrument_id"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "check_watchlist_job",
+      "description": "Poll a watchlist.add_instrument job for its result. Returns instrument details when completed, error when failed, or a 'still running' message if not yet done. Call again if still running.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "job_id": {
+            "type": "integer",
+            "description": "The job ID returned by add_watch_list_instrument"
+          }
+        },
+        "required": [
+          "job_id"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "trade_group_pnl",
+      "description": "Realized + unrealized PnL for ONE trade group, matching the trade group detail view. Returns realized_pnl (settled), settled_unrealized_pnl, and the live-overlay figures intraday_unrealized_pnl / intraday_realized_pnl / intraday_total_pnl plus marks_as_of. Intraday figures are 'as of the last live TWS refresh', not tick-live, and are a per-group attribution (not additive across groups). For analytics across many groups use query_metric (e.g. realized_pnl grouped by trade_group).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "group": {
+            "type": [
+              "string",
+              "integer"
+            ],
+            "description": "Trade group name or numeric id."
+          }
+        },
+        "required": [
+          "group"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "query_metric",
+      "description": "Run a business-analyst metric query over the trade database using the OSI semantic model. You pick a metric and dimensions by name; the server compiles them into read-only SQL. You cannot and need not write SQL. Not all dimensions apply to all metrics \u2014 if one is out of grain the tool returns an error naming the valid options; retry with those. Metrics \u2014 realized_pnl [grain: execution_facts] \u2014 Net realized PnL summed across executions (USD).; total_commissions [grain: execution_facts] \u2014 Total commissions paid (USD). Excludes synthetic combo summaries.; fill_count [grain: execution_facts] \u2014 Number of real fills (excludes synthetic combo summaries).; trade_count [grain: trade_facts] \u2014 Number of trades.; gross_premium [grain: execution_facts] \u2014 Net cash flow across fills (USD): premium/credits received minus premium/debits paid (SUM of signed proceeds). Positive = net credit collected, negative = net cash outlay. For a covered-call group this is weekly-call credits minus the long option (and stock) purchase cost.; premium_collected [grain: execution_facts] \u2014 Total premium/cash received from SELL fills (credits only), as a positive USD amount. E.g. covered-call premium sold to finance a long option. Filter sec_type='OPT' (and 'FOP') to exclude stock proceeds.; premium_paid [grain: execution_facts] \u2014 Total premium/cash paid on BUY fills (debits only), as a positive USD amount. E.g. the cost basis paid to open a long-dated option, or to buy-to-close short options. Filter sec_type='OPT'/'FOP' to exclude the stock leg.; open_position_count [grain: position_facts] \u2014 Number of open positions (position <> 0).; net_quantity [grain: position_facts] \u2014 Net signed quantity across open positions (long minus short).; position_market_value [grain: position_facts] \u2014 Total market value of open positions (USD, as of last sync).; settled_unrealized_pnl [grain: position_facts] \u2014 Settled (end-of-day snapshot) unrealized PnL across open positions (USD). Sliced/filtered by `trade_group` it is the per-trade-group figure from the detail view \u2014 NOT additive across groups (a shared position counts in each), so query one group at a time. This is the settled figure; the intraday/live unrealized is only in the `trade_group_pnl` tool.; win_rate [grain: trade_facts] \u2014 Fraction of trades with positive realized PnL, among trades that have a realized PnL value (i.e. that realized something). 0..1; breakeven (0) counts as a non-win; trades with no realized PnL are excluded.. Group-by / filter dimensions \u2014 account, contract_month, days_to_expiration, exchange, exec_role, executed_at, expiration, right, sec_type, side, status, strike, symbol, trade_group.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "metric": {
+            "type": "string",
+            "enum": [
+              "realized_pnl",
+              "total_commissions",
+              "fill_count",
+              "trade_count",
+              "gross_premium",
+              "premium_collected",
+              "premium_paid",
+              "open_position_count",
+              "net_quantity",
+              "position_market_value",
+              "settled_unrealized_pnl",
+              "win_rate"
+            ]
+          },
+          "group_by": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "account",
+                "contract_month",
+                "days_to_expiration",
+                "exchange",
+                "exec_role",
+                "executed_at",
+                "expiration",
+                "right",
+                "sec_type",
+                "side",
+                "status",
+                "strike",
+                "symbol",
+                "trade_group"
+              ]
+            },
+            "description": "Dimensions to group the metric by."
+          },
+          "filters": {
+            "type": "object",
+            "properties": {
+              "account": {
+                "type": "string"
+              },
+              "contract_month": {
+                "type": "string"
+              },
+              "days_to_expiration": {
+                "type": "string"
+              },
+              "exchange": {
+                "type": "string"
+              },
+              "exec_role": {
+                "type": "string"
+              },
+              "right": {
+                "type": "string"
+              },
+              "sec_type": {
+                "type": "string"
+              },
+              "side": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              },
+              "strike": {
+                "type": "number"
+              },
+              "symbol": {
+                "type": "string"
+              },
+              "trade_group": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false,
+            "description": "Equality filters keyed by dimension name."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "ISO lower bound (inclusive) on executed_at, e.g. '2026-01-01'."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "ISO upper bound (inclusive) on executed_at."
+          },
+          "time_grain": {
+            "type": "string",
+            "enum": [
+              "day",
+              "week",
+              "month",
+              "quarter",
+              "year"
+            ],
+            "description": "Bucket the executed_at time dimension when grouping by it."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "default": 50
+          }
+        },
+        "required": [
+          "metric"
+        ],
+        "additionalProperties": false
+      }
+    }
+  }
+]
