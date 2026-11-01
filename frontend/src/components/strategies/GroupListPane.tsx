@@ -15,7 +15,7 @@ import {
 import type { Strategy } from "../../types/strategies";
 import type { TradeGroup } from "../../types/tradeGroups";
 import { formatDateTime } from "../../utils/date";
-import { PRIVACY_MASK } from "../../utils/privacy";
+import { makeFormatters } from "../../utils/maskedFormatters";
 import { TagChipView } from "../TagChips";
 import { statusClassName, statusHeaderClassName } from "./statusStyles";
 
@@ -53,6 +53,7 @@ export default function GroupListPane({
   privacyMode: boolean;
   onError: (message: string) => void;
 }) {
+  const fmt = makeFormatters(privacyMode);
   const [showNew, setShowNew] = useState(false);
   const [newName, setNewName] = useState("");
   const [newNotes, setNewNotes] = useState("");
@@ -226,12 +227,12 @@ export default function GroupListPane({
                                 : "text-red-700"
                             }`}
                           >
-                            {privacyMode
-                              ? PRIVACY_MASK
-                              : group.total_pnl.toLocaleString(undefined, {
-                                  style: "currency",
-                                  currency: "USD",
-                                })}
+                            {fmt.masked(
+                              group.total_pnl.toLocaleString(undefined, {
+                                style: "currency",
+                                currency: "USD",
+                              }),
+                            )}
                           </span>
                         )}
                       </div>

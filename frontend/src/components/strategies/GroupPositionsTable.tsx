@@ -10,21 +10,19 @@ import {
   type SumCount,
 } from "../../lib/strategies/groupPositions";
 import type { GroupOpenPosition } from "../../types/tradeGroups";
-import { formatGreek, formatMoney, formatPercent } from "../../utils/number";
-import { PRIVACY_MASK, formatRelativeReturn } from "../../utils/privacy";
+import { makeFormatters } from "../../utils/maskedFormatters";
 
 const TH_RIGHT = "px-2 py-1 text-right font-medium";
 const TD_MONO = "px-2 py-1 text-right font-mono text-gray-700";
 
 function TotalCell({
   total,
-  privacyMode,
   format,
   colorize = false,
 }: {
   total: SumCount;
-  privacyMode: boolean;
-  format: (value: number) => string;
+  // A masked formatter (fmt.money / fmt.greek); null renders as the dash.
+  format: (value: number | null) => string;
   colorize?: boolean;
 }) {
   const className = colorize
@@ -38,7 +36,7 @@ function TotalCell({
     : TD_MONO;
   return (
     <td className={className}>
-      {privacyMode ? PRIVACY_MASK : total.count === 0 ? "—" : format(total.sum)}
+      {format(total.count === 0 ? null : total.sum)}
     </td>
   );
 }
@@ -105,7 +103,7 @@ function PositionRow({
   // quantity × the contract multiplier (see positionGreeks).
   const { delta, gamma } = positionGreeks(pos);
   const basis = Math.abs(pos.avg_cost * pos.position);
-  const mask = (text: string) => (privacyMode ? PRIVACY_MASK : text);
+  const fmt = makeFormatters(privacyMode);
   return (
     <tr
       className={`border-t border-gray-100 ${band === 1 ? "bg-gray-50" : "bg-white"}`}
@@ -115,39 +113,21 @@ function PositionRow({
       <td className={TD_MONO}>{pos.dte ?? "—"}</td>
       <td className={TD_MONO}>{pos.strike ?? "—"}</td>
       <td className={`px-2 py-1 text-right font-mono ${qtyClass}`}>
-        {privacyMode ? PRIVACY_MASK : pos.position}
+        {fmt.quantity(pos.position)}
       </td>
-      <td className={TD_MONO}>{mask(formatGreek(delta))}</td>
-      <td className={TD_MONO}>{mask(formatGreek(gamma))}</td>
-      <td className={TD_MONO}>{mask(formatPercent(liveStale ? null : pos.iv))}</td>
-      <td className={TD_MONO}>{mask(formatMoney(pos.avg_cost))}</td>
-      <td className={TD_MONO}>{mask(formatMoney(pos.avg_cost * pos.position))}</td>
-      <td className={TD_MONO}>
-        {mask(pos.mark_price == null ? "—" : formatMoney(pos.mark_price))}
-      </td>
-      <td className={TD_MONO}>
-        {mask(liveStale || pos.mark == null ? "—" : formatMoney(pos.mark))}
-      </td>
-      <td className={TD_MONO}>
-        {mask(
-          pos.position_value == null ? "—" : formatMoney(pos.position_value),
-        )}
-      </td>
+      <td className={TD_MONO}>{fmt.greek(delta)}</td>
+      <td className={TD_MONO}>{fmt.greek(gamma)}</td>
+      <td className={TD_MONO}>{fmt.percent(liveStale ? null : pos.iv)}</td>
+      <td className={TD_MONO}>{fmt.money(pos.avg_cost)}</td>
+      <td className={TD_MONO}>{fmt.money(pos.avg_cost * pos.position)}</td>
+      <td className={TD_MONO}>{fmt.money(pos.mark_price)}</td>
+      <td className={TD_MONO}>{fmt.money(liveStale ? null : pos.mark)}</td>
+      <td className={TD_MONO}>{fmt.money(pos.position_value)}</td>
       <td className={`px-2 py-1 text-right font-mono ${pnlClass}`}>
-        {privacyMode
-          ? formatRelativeReturn(pos.fifo_pnl_unrealized, basis)
-          : pos.fifo_pnl_unrealized == null
-            ? "—"
-            : formatMoney(pos.fifo_pnl_unrealized)}
+        {fmt.pnl(pos.fifo_pnl_unrealized, basis)}
       </td>
       <td className={`px-2 py-1 text-right font-mono ${livePnlClass}`}>
-        {privacyMode
-          ? liveStale
-            ? PRIVACY_MASK
-            : formatRelativeReturn(pos.live_unrealized, basis)
-          : liveStale || pos.live_unrealized == null
-            ? "—"
-            : formatMoney(pos.live_unrealized)}
+        {fmt.pnl(liveStale ? null : pos.live_unrealized, basis)}
       </td>
       <td className="px-2 py-1 text-gray-500">{pos.as_of_date ?? "—"}</td>
       <td className="px-2 py-1">
@@ -170,6 +150,7 @@ export default function GroupPositionsTable({
   accountFiltered: boolean;
   privacyMode: boolean;
 }) {
+  const fmt = makeFormatters(privacyMode);
   const totals = positionTotals(positions);
   const bands = accountBands(positions);
   return (
@@ -231,16 +212,16 @@ export default function GroupPositionsTable({
                 <td className="px-2 py-1 text-right"></td>
                 <td className="px-2 py-1 text-right"></td>
                 <td className="px-2 py-1 text-right"></td>
-                <TotalCell total={totals.delta} privacyMode={privacyMode} format={formatGreek} />
-                <TotalCell total={totals.gamma} privacyMode={privacyMode} format={formatGreek} />
+                <TotalCell total={totals.delta} format={fmt.greek} />
+                <TotalCell total={totals.gamma} format={fmt.greek} />
                 <td className="px-2 py-1 text-right"></td>
-                <TotalCell total={totals.avgCost} privacyMode={privacyMode} format={formatMoney} />
-                <TotalCell total={totals.costBasis} privacyMode={privacyMode} format={formatMoney} />
+                <TotalCell total={totals.avgCost} format={fmt.money} />
+                <TotalCell total={totals.costBasis} format={fmt.money} />
                 <td className="px-2 py-1 text-right"></td>
                 <td className="px-2 py-1 text-right"></td>
-                <TotalCell total={totals.value} privacyMode={privacyMode} format={formatMoney} />
-                <TotalCell total={totals.unrealized} privacyMode={privacyMode} format={formatMoney} colorize />
-                <TotalCell total={totals.liveUnrealized} privacyMode={privacyMode} format={formatMoney} colorize />
+                <TotalCell total={totals.value} format={fmt.money} />
+                <TotalCell total={totals.unrealized} format={fmt.money} colorize />
+                <TotalCell total={totals.liveUnrealized} format={fmt.money} colorize />
                 <td className="px-2 py-1"></td>
                 <td className="px-2 py-1"></td>
               </tr>

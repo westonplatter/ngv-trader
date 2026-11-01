@@ -5,8 +5,7 @@ import { ibCodesTitle, parseIbCodes } from "../../lib/ibCodes";
 import { runningRealized } from "../../lib/strategies/groupPositions";
 import type { GroupExecution } from "../../types/tradeGroups";
 import { formatDateTime } from "../../utils/date";
-import { formatMoney } from "../../utils/number";
-import { PRIVACY_MASK } from "../../utils/privacy";
+import { makeFormatters } from "../../utils/maskedFormatters";
 
 const TH_RIGHT = "px-2 py-1 text-right font-medium";
 
@@ -43,6 +42,7 @@ export default function GroupTradesTable({
   accountFiltered: boolean;
   privacyMode: boolean;
 }) {
+  const fmt = makeFormatters(privacyMode);
   return (
     <div>
       <div className="mb-2 flex items-baseline justify-between">
@@ -123,27 +123,23 @@ export default function GroupTradesTable({
                         {ex.side ?? "—"}
                       </td>
                       <td className="px-2 py-1 text-right font-mono text-gray-800">
-                        {privacyMode ? PRIVACY_MASK : ex.quantity}
+                        {fmt.quantity(ex.quantity)}
                       </td>
                       <td className="px-2 py-1 text-right font-mono text-gray-800">
-                        {privacyMode ? PRIVACY_MASK : Number(ex.price.toFixed(4))}
+                        {fmt.masked(Number(ex.price.toFixed(4)))}
                       </td>
                       <td className="px-2 py-1 text-right font-mono text-gray-800">
-                        {privacyMode
-                          ? PRIVACY_MASK
-                          : ex.cost_basis == null
-                            ? "—"
-                            : formatMoney(ex.cost_basis)}
+                        {fmt.money(ex.cost_basis)}
                       </td>
                       <td className={`px-2 py-1 text-right font-mono ${pnlClass}`}>
-                        {privacyMode
-                          ? PRIVACY_MASK
-                          : ex.realized_pnl == null
+                        {fmt.masked(
+                          ex.realized_pnl == null
                             ? "—"
-                            : ex.realized_pnl.toFixed(2)}
+                            : ex.realized_pnl.toFixed(2),
+                        )}
                       </td>
                       <td className="px-2 py-1 text-right font-mono text-gray-700">
-                        {privacyMode ? PRIVACY_MASK : counted ? running.toFixed(2) : "—"}
+                        {fmt.masked(counted ? running.toFixed(2) : "—")}
                       </td>
                     </tr>
                   );
