@@ -5,7 +5,7 @@ from __future__ import annotations
 import datetime as dt
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Any
 
 from ib_async import IB, Contract, Future
@@ -20,6 +20,7 @@ from src.models import (
     PRODUCT_DISCOVERY_UNKNOWN_SYMBOL,
     ActivatedProduct,
     ContractRef,
+    OptionChainMeta,
 )
 from src.services.cl_contracts import (
     format_contract_month_from_expiry,
@@ -157,7 +158,7 @@ def sync_contracts_with_ib(
     }
 
 
-def _upsert_contract(
+def _upsert_contract(  # noqa: PLR0913 — also imported by intraday_sync_tws; spec fields are explicit
     session: Session,
     detail: Any,
     spec_symbol: str,
@@ -222,6 +223,11 @@ def _upsert_contract(
 BATCH_SIZE = 100
 
 
+def _outside_bounds(value: float, lower: float | None, upper: float | None) -> bool:
+    """True when value is below an enabled lower bound or above an enabled upper bound."""
+    return (lower is not None and value < lower) or (upper is not None and value > upper)
+
+
 def _passes_strike_filter(
     strike: float,
     fut_price: float | None,
@@ -229,21 +235,13 @@ def _passes_strike_filter(
 ) -> bool:
     """Check if a strike passes the filter config (moneyness, absolute bounds, modulus)."""
     # Absolute strike bounds
-    strike_gte = filt.get("strike_gte")
-    strike_lte = filt.get("strike_lte")
-    if strike_gte is not None and strike < strike_gte:
-        return False
-    if strike_lte is not None and strike > strike_lte:
+    if _outside_bounds(strike, filt.get("strike_gte"), filt.get("strike_lte")):
         return False
 
     # Moneyness bounds (percentage of underlying price)
     if fut_price and fut_price > 0:
         moneyness = (strike / fut_price) * 100.0
-        moneyness_gte = filt.get("moneyness_gte")
-        moneyness_lte = filt.get("moneyness_lte")
-        if moneyness_gte is not None and moneyness < moneyness_gte:
-            return False
-        if moneyness_lte is not None and moneyness > moneyness_lte:
+        if _outside_bounds(moneyness, filt.get("moneyness_gte"), filt.get("moneyness_lte")):
             return False
 
     # Modulus filter (e.g., only strikes at 0.5 increments)
@@ -256,7 +254,230 @@ def _passes_strike_filter(
     return True
 
 
-def sync_futures_chain(
+@dataclass(frozen=True)
+class _ChainSyncRun:
+    """Connection and spec shared by the steps of one sync_futures_chain call."""
+
+    engine: Engine
+    ib: IB
+    symbol: str
+    exchange: str
+    currency: str
+    now: datetime
+
+
+def _sync_index_contract(run: _ChainSyncRun) -> tuple[int, int]:
+    """Step 1: qualify and upsert the Index. Returns (index con_id, rows upserted)."""
+    index = IbIndex(run.symbol, run.exchange, currency=run.currency)
+    qualified = run.ib.qualifyContracts(index)
+    if not qualified:
+        raise RuntimeError(f"Could not qualify Index contract for {run.symbol} on {run.exchange}")
+    index = qualified[0]
+    index_con_id = index.conId
+
+    # Upsert the Index contract
+    synced = 0
+    index_details = run.ib.reqContractDetails(index)
+    with Session(run.engine) as session:
+        for detail in index_details:
+            cid = _upsert_contract(
+                session,
+                detail,
+                run.symbol,
+                "IND",
+                run.exchange,
+                run.currency,
+                underlying_con_id=None,
+                now=run.now,
+            )
+            if cid:
+                synced += 1
+        session.commit()
+
+    logger.info("Synced Index %s con_id=%d", run.symbol, index_con_id)
+    return index_con_id, synced
+
+
+def _collect_chain_info(chains: list) -> tuple[set[int], list[dict]]:
+    """Collect unique FUT con_ids and per-chain metadata from reqSecDefOptParams results."""
+    # Note: ib_async returns underlyingConId as str, not int
+    fut_con_ids: set[int] = set()
+    chain_info: list[dict] = []
+    for chain in chains:
+        fut_cid_raw = getattr(chain, "underlyingConId", None)
+        try:
+            fut_cid = int(fut_cid_raw) if fut_cid_raw else 0
+        except (ValueError, TypeError):
+            fut_cid = 0
+        if fut_cid != 0:
+            fut_con_ids.add(fut_cid)
+            chain_info.append(
+                {
+                    "fut_con_id": fut_cid,
+                    "trading_class": getattr(chain, "tradingClass", None),
+                    "expirations": set(getattr(chain, "expirations", set())),
+                    "strikes": set(getattr(chain, "strikes", set())),
+                }
+            )
+    return fut_con_ids, chain_info
+
+
+def _front_future_contracts(ib: IB, fut_con_ids: set[int], front_n: int) -> list[Contract]:
+    """Qualify the FUT con_ids and keep the front_n by expiry."""
+    fut_contracts = [Contract(conId=cid) for cid in fut_con_ids]
+    # Qualify in batches
+    qualified_futs: list[Contract] = []
+    for i in range(0, len(fut_contracts), BATCH_SIZE):
+        batch = fut_contracts[i : i + BATCH_SIZE]
+        qualified_futs.extend(ib.qualifyContracts(*batch))
+
+    # Sort by expiry and limit to front_n
+    fut_with_expiry: list[tuple[str, Contract]] = []
+    for c in qualified_futs:
+        expiry = (c.lastTradeDateOrContractMonth or "").strip()
+        if c.conId and c.conId != 0:
+            fut_with_expiry.append((expiry, c))
+    fut_with_expiry.sort(key=lambda x: x[0])
+    return [fut for _expiry, fut in fut_with_expiry[:front_n]]
+
+
+def _sync_front_futures(run: _ChainSyncRun, fut_con_ids: set[int], front_n: int, index_con_id: int) -> tuple[set[int], int]:
+    """Step 3: upsert the front FUT contracts and deactivate the rest. Returns (con_ids, rows upserted)."""
+    front_futs = _front_future_contracts(run.ib, fut_con_ids, front_n)
+
+    synced = 0
+    front_fut_con_ids: set[int] = set()
+    with Session(run.engine) as session:
+        for fut in front_futs:
+            details = run.ib.reqContractDetails(fut)
+            for detail in details:
+                cid = _upsert_contract(
+                    session,
+                    detail,
+                    run.symbol,
+                    "FUT",
+                    run.exchange,
+                    run.currency,
+                    underlying_con_id=index_con_id,
+                    now=run.now,
+                )
+                if cid:
+                    front_fut_con_ids.add(cid)
+                    synced += 1
+
+        # Deactivate FUT contracts not in this sync
+        if front_fut_con_ids:
+            session.execute(
+                update(ContractRef)
+                .where(
+                    ContractRef.symbol == run.symbol,
+                    ContractRef.sec_type == "FUT",
+                    ContractRef.is_active.is_(True),
+                    ContractRef.con_id.not_in(front_fut_con_ids),
+                )
+                .values(is_active=False, updated_at=run.now)
+            )
+        session.commit()
+    return front_fut_con_ids, synced
+
+
+def _unexpired_expirations(expirations: list[str], today: date) -> list[str]:
+    """Drop expirations that are already past (and ones that do not parse as YYYYMMDD)."""
+    valid_expirations = []
+    for exp in expirations:
+        try:
+            exp_date = date(int(exp[:4]), int(exp[4:6]), int(exp[6:8]))
+            if (exp_date - today).days >= 0:
+                valid_expirations.append(exp)
+        except (ValueError, IndexError):
+            continue
+    return valid_expirations
+
+
+def _build_chain_meta_rows(run: _ChainSyncRun, chain_info: list[dict], front_fut_con_ids: set[int]) -> list[dict]:
+    """Step 4a: expand each front-FUT chain into one option_chain_meta row per expiration, right and strike."""
+    today = date.today()
+
+    meta_rows: list[dict] = []
+    for info in chain_info:
+        fut_cid = info["fut_con_id"]
+        if fut_cid not in front_fut_con_ids:
+            continue
+
+        trading_class = info["trading_class"] or ""
+        expirations = sorted(info["expirations"])
+        strikes = sorted(info["strikes"])
+
+        if not expirations or not strikes:
+            continue
+
+        # Filter out already-expired expirations
+        valid_expirations = _unexpired_expirations(expirations, today)
+        if not valid_expirations:
+            continue
+
+        logger.info(
+            "FUT con_id=%d tc=%s: %d expirations, %d strikes [%.2f–%.2f]",
+            fut_cid,
+            trading_class,
+            len(valid_expirations),
+            len(strikes),
+            min(strikes),
+            max(strikes),
+        )
+
+        for exp in valid_expirations:
+            for right_val in ("C", "P"):
+                for strike in strikes:
+                    meta_rows.append(
+                        {
+                            "symbol": run.symbol,
+                            "sec_type": "FOP",
+                            "exchange": run.exchange,
+                            "trading_class": trading_class,
+                            "underlying_con_id": fut_cid,
+                            "expiration": exp,
+                            "strike": strike,
+                            "right": right_val,
+                            "synced_at": run.now,
+                        }
+                    )
+    return meta_rows
+
+
+def _store_chain_meta(engine: Engine, meta_rows: list[dict]) -> None:
+    """Step 4b: upsert the chain metadata rows in chunks."""
+    if not meta_rows:
+        return
+    meta_insert = insert(OptionChainMeta).values(meta_rows)
+    meta_insert.on_conflict_do_update(
+        constraint="uq_option_chain_meta_spec",
+        set_={
+            "underlying_con_id": meta_insert.excluded.underlying_con_id,
+            "exchange": meta_insert.excluded.exchange,
+            "sec_type": meta_insert.excluded.sec_type,
+            "synced_at": meta_insert.excluded.synced_at,
+        },
+    )
+    with Session(engine) as session:
+        # Batch insert in chunks to avoid oversized SQL
+        for i in range(0, len(meta_rows), 1000):
+            chunk = meta_rows[i : i + 1000]
+            chunk_insert = insert(OptionChainMeta).values(chunk)
+            chunk_upsert = chunk_insert.on_conflict_do_update(
+                constraint="uq_option_chain_meta_spec",
+                set_={
+                    "underlying_con_id": chunk_insert.excluded.underlying_con_id,
+                    "exchange": chunk_insert.excluded.exchange,
+                    "sec_type": chunk_insert.excluded.sec_type,
+                    "synced_at": chunk_insert.excluded.synced_at,
+                },
+            )
+            session.execute(chunk_upsert)
+        session.commit()
+
+
+def sync_futures_chain(  # noqa: PLR0913 — public job entry point; connection and spec fields are explicit
     engine: Engine,
     host: str,
     port: int,
@@ -288,36 +509,11 @@ def sync_futures_chain(
             except TimeoutError as exc:
                 raise RuntimeError(f"Timed out connecting to TWS/Gateway (host={host}, port={port}, client_id={client_id}).") from exc
 
-        now = _now_utc()
+        run = _ChainSyncRun(engine=engine, ib=ib, symbol=symbol, exchange=exchange, currency=currency, now=_now_utc())
         counts = {"ind": 0, "fut": 0, "fop": 0}
 
         # Step 1: Qualify the Index
-        index = IbIndex(symbol, exchange, currency=currency)
-        qualified = ib.qualifyContracts(index)
-        if not qualified:
-            raise RuntimeError(f"Could not qualify Index contract for {symbol} on {exchange}")
-        index = qualified[0]
-        index_con_id = index.conId
-
-        # Upsert the Index contract
-        index_details = ib.reqContractDetails(index)
-        with Session(engine) as session:
-            for detail in index_details:
-                cid = _upsert_contract(
-                    session,
-                    detail,
-                    symbol,
-                    "IND",
-                    exchange,
-                    currency,
-                    underlying_con_id=None,
-                    now=now,
-                )
-                if cid:
-                    counts["ind"] += 1
-            session.commit()
-
-        logger.info("Synced Index %s con_id=%d", symbol, index_con_id)
+        index_con_id, counts["ind"] = _sync_index_contract(run)
 
         # Step 2: Discover the option chain
         chains = ib.reqSecDefOptParams(
@@ -331,80 +527,13 @@ def sync_futures_chain(
             return {"symbol": symbol, **counts}
 
         # Collect unique FUT con_ids from chain results
-        # Note: ib_async returns underlyingConId as str, not int
-        fut_con_ids: set[int] = set()
-        chain_info: list[dict] = []
-        for chain in chains:
-            fut_cid_raw = getattr(chain, "underlyingConId", None)
-            try:
-                fut_cid = int(fut_cid_raw) if fut_cid_raw else 0
-            except (ValueError, TypeError):
-                fut_cid = 0
-            if fut_cid != 0:
-                fut_con_ids.add(fut_cid)
-                chain_info.append(
-                    {
-                        "fut_con_id": fut_cid,
-                        "trading_class": getattr(chain, "tradingClass", None),
-                        "expirations": set(getattr(chain, "expirations", set())),
-                        "strikes": set(getattr(chain, "strikes", set())),
-                    }
-                )
+        fut_con_ids, chain_info = _collect_chain_info(chains)
 
         logger.info("Chain discovery found %d FUT underlyings for %s", len(fut_con_ids), symbol)
 
         # Step 3: Sync FUT contracts
         # Fetch details for each FUT con_id, limited to front_n by expiry
-        fut_contracts = [Contract(conId=cid) for cid in fut_con_ids]
-        # Qualify in batches
-        qualified_futs: list[Contract] = []
-        for i in range(0, len(fut_contracts), BATCH_SIZE):
-            batch = fut_contracts[i : i + BATCH_SIZE]
-            qualified_futs.extend(ib.qualifyContracts(*batch))
-
-        # Sort by expiry and limit to front_n
-        fut_with_expiry: list[tuple[str, Contract]] = []
-        for c in qualified_futs:
-            expiry = (c.lastTradeDateOrContractMonth or "").strip()
-            if c.conId and c.conId != 0:
-                fut_with_expiry.append((expiry, c))
-        fut_with_expiry.sort(key=lambda x: x[0])
-        front_futs = fut_with_expiry[:front_n]
-
-        front_fut_con_ids: set[int] = set()
-        with Session(engine) as session:
-            for _expiry, fut in front_futs:
-                details = ib.reqContractDetails(fut)
-                for detail in details:
-                    cid = _upsert_contract(
-                        session,
-                        detail,
-                        symbol,
-                        "FUT",
-                        exchange,
-                        currency,
-                        underlying_con_id=index_con_id,
-                        now=now,
-                    )
-                    if cid:
-                        front_fut_con_ids.add(cid)
-                        counts["fut"] += 1
-
-            # Deactivate FUT contracts not in this sync
-            if front_fut_con_ids:
-                from sqlalchemy import update
-
-                session.execute(
-                    update(ContractRef)
-                    .where(
-                        ContractRef.symbol == symbol,
-                        ContractRef.sec_type == "FUT",
-                        ContractRef.is_active.is_(True),
-                        ContractRef.con_id.not_in(front_fut_con_ids),
-                    )
-                    .values(is_active=False, updated_at=now)
-                )
-            session.commit()
+        front_fut_con_ids, counts["fut"] = _sync_front_futures(run, fut_con_ids, front_n, index_con_id)
 
         logger.info("Synced %d FUT contracts for %s", counts["fut"], symbol)
 
@@ -412,94 +541,10 @@ def sync_futures_chain(
         # This is a fast DB-only operation — no IBKR qualification needed.
         # The full chain catalog lets the UI show all available options.
         # Actual contract qualification happens on-demand when a user selects one.
-        from datetime import date
-
-        from src.models import OptionChainMeta
-
-        today = date.today()
-
         logger.info("Storing chain metadata for %s", symbol)
 
-        meta_rows: list[dict] = []
-        for info in chain_info:
-            fut_cid = info["fut_con_id"]
-            if fut_cid not in front_fut_con_ids:
-                continue
-
-            trading_class = info["trading_class"] or ""
-            expirations = sorted(info["expirations"])
-            strikes = sorted(info["strikes"])
-
-            if not expirations or not strikes:
-                continue
-
-            # Filter out already-expired expirations
-            valid_expirations = []
-            for exp in expirations:
-                try:
-                    exp_date = date(int(exp[:4]), int(exp[4:6]), int(exp[6:8]))
-                    if (exp_date - today).days >= 0:
-                        valid_expirations.append(exp)
-                except (ValueError, IndexError):
-                    continue
-
-            if not valid_expirations:
-                continue
-
-            logger.info(
-                "FUT con_id=%d tc=%s: %d expirations, %d strikes [%.2f–%.2f]",
-                fut_cid,
-                trading_class,
-                len(valid_expirations),
-                len(strikes),
-                min(strikes),
-                max(strikes),
-            )
-
-            for exp in valid_expirations:
-                for right_val in ("C", "P"):
-                    for strike in strikes:
-                        meta_rows.append(
-                            {
-                                "symbol": symbol,
-                                "sec_type": "FOP",
-                                "exchange": exchange,
-                                "trading_class": trading_class,
-                                "underlying_con_id": fut_cid,
-                                "expiration": exp,
-                                "strike": strike,
-                                "right": right_val,
-                                "synced_at": now,
-                            }
-                        )
-
-        if meta_rows:
-            meta_insert = insert(OptionChainMeta).values(meta_rows)
-            meta_insert.on_conflict_do_update(
-                constraint="uq_option_chain_meta_spec",
-                set_={
-                    "underlying_con_id": meta_insert.excluded.underlying_con_id,
-                    "exchange": meta_insert.excluded.exchange,
-                    "sec_type": meta_insert.excluded.sec_type,
-                    "synced_at": meta_insert.excluded.synced_at,
-                },
-            )
-            with Session(engine) as session:
-                # Batch insert in chunks to avoid oversized SQL
-                for i in range(0, len(meta_rows), 1000):
-                    chunk = meta_rows[i : i + 1000]
-                    chunk_insert = insert(OptionChainMeta).values(chunk)
-                    chunk_upsert = chunk_insert.on_conflict_do_update(
-                        constraint="uq_option_chain_meta_spec",
-                        set_={
-                            "underlying_con_id": chunk_insert.excluded.underlying_con_id,
-                            "exchange": chunk_insert.excluded.exchange,
-                            "sec_type": chunk_insert.excluded.sec_type,
-                            "synced_at": chunk_insert.excluded.synced_at,
-                        },
-                    )
-                    session.execute(chunk_upsert)
-                session.commit()
+        meta_rows = _build_chain_meta_rows(run, chain_info, front_fut_con_ids)
+        _store_chain_meta(engine, meta_rows)
 
         counts["chain_meta"] = len(meta_rows)
         logger.info("Stored %d option chain meta rows for %s", len(meta_rows), symbol)

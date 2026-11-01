@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import Any
 
-from ib_async import IB
+from ib_async import IB, Contract, Future
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
@@ -159,9 +159,33 @@ def handle_positions_sync_tws(job: Job, engine: Engine, ib_pool: IBSessionPool) 
     }
 
 
-def handle_contracts_sync(job: Job, engine: Engine, ib_pool: IBSessionPool) -> dict:
-    from ib_async import Contract, Future
+def _contract_spec_from_payload(raw: dict) -> Contract:
+    sec_type = raw.get("sec_type", "FUT").upper()
+    symbol = raw.get("symbol", "CL")
+    exchange = raw.get("exchange", "")
+    currency = raw.get("currency", "USD")
 
+    if not exchange:
+        raise RuntimeError(f"No exchange specified for {symbol} {sec_type}. The job payload must include an exchange.")
+
+    if sec_type == "FUT":
+        return Future(symbol=symbol, exchange=exchange, currency=currency)
+    if sec_type in ("STK", "OPT"):
+        return Contract(
+            symbol=symbol,
+            secType=sec_type,
+            exchange="SMART",
+            currency=currency,
+        )
+    return Contract(
+        symbol=symbol,
+        secType=sec_type,
+        exchange=exchange,
+        currency=currency,
+    )
+
+
+def handle_contracts_sync(job: Job, engine: Engine, ib_pool: IBSessionPool) -> dict:
     from src.services.contract_sync import sync_contracts_with_ib
 
     payload = job.payload or {}
@@ -169,43 +193,10 @@ def handle_contracts_sync(job: Job, engine: Engine, ib_pool: IBSessionPool) -> d
 
     # Build contract specs from payload, default to CL futures
     raw_specs = payload.get("specs")
-    specs: list[Contract]
+    specs: list[Contract] = []
     if isinstance(raw_specs, list) and raw_specs:
-        specs = []
-        for raw in raw_specs:
-            if not isinstance(raw, dict):
-                continue
-            sec_type = raw.get("sec_type", "FUT").upper()
-            symbol = raw.get("symbol", "CL")
-            exchange = raw.get("exchange", "")
-            currency = raw.get("currency", "USD")
-
-            if not exchange:
-                raise RuntimeError(f"No exchange specified for {symbol} {sec_type}. The job payload must include an exchange.")
-
-            if sec_type == "FUT":
-                specs.append(Future(symbol=symbol, exchange=exchange, currency=currency))
-            elif sec_type in ("STK", "OPT"):
-                specs.append(
-                    Contract(
-                        symbol=symbol,
-                        secType=sec_type,
-                        exchange="SMART",
-                        currency=currency,
-                    )
-                )
-            else:
-                specs.append(
-                    Contract(
-                        symbol=symbol,
-                        secType=sec_type,
-                        exchange=exchange,
-                        currency=currency,
-                    )
-                )
-        if not specs:
-            specs = [Future("CL", exchange="NYMEX", currency="USD")]
-    else:
+        specs = [_contract_spec_from_payload(raw) for raw in raw_specs if isinstance(raw, dict)]
+    if not specs:
         specs = [Future("CL", exchange="NYMEX", currency="USD")]
 
     ib = ib_pool.get(host=host, port=port, client_id=client_id, connect_timeout_seconds=connect_timeout_seconds)
@@ -263,14 +254,7 @@ def handle_watchlist_add_instrument(job: Job, engine: Engine, ib_pool: IBSession
     )
 
 
-def handle_watchlist_quotes_refresh(job: Job, engine: Engine, ib_pool: IBSessionPool) -> dict:
-    from src.services.watchlist_quotes import refresh_watch_list_quotes_with_ib
-
-    payload = job.payload or {}
-    watch_list_id = payload.get("watch_list_id")
-    if not isinstance(watch_list_id, int):
-        raise ValueError("watchlist.quotes_refresh job requires integer 'watch_list_id' in payload.")
-
+def _resolve_quotes_connection(payload: dict) -> tuple[str, int, int, float]:
     host = str(payload.get("host") or "127.0.0.1")
     port_raw = payload.get("port")
     client_id_raw = payload.get("client_id")
@@ -294,6 +278,19 @@ def handle_watchlist_quotes_refresh(job: Job, engine: Engine, ib_pool: IBSession
         connect_timeout_seconds = float(connect_timeout_raw)
     else:
         connect_timeout_seconds = 10.0
+
+    return host, port, client_id, connect_timeout_seconds
+
+
+def handle_watchlist_quotes_refresh(job: Job, engine: Engine, ib_pool: IBSessionPool) -> dict:
+    from src.services.watchlist_quotes import refresh_watch_list_quotes_with_ib
+
+    payload = job.payload or {}
+    watch_list_id = payload.get("watch_list_id")
+    if not isinstance(watch_list_id, int):
+        raise ValueError("watchlist.quotes_refresh job requires integer 'watch_list_id' in payload.")
+
+    host, port, client_id, connect_timeout_seconds = _resolve_quotes_connection(payload)
 
     ib = ib_pool.get(host=host, port=port, client_id=client_id, connect_timeout_seconds=connect_timeout_seconds)
     return refresh_watch_list_quotes_with_ib(

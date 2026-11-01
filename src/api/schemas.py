@@ -118,6 +118,15 @@ class OrderResponse(BaseModel):
     updated_at: datetime
 
 
+# (pattern, right group, strike group) tried in order against a local symbol, e.g.
+# "WA4G6 C0707" or "CL   MAY 26 70.5 C".
+_OPTION_LOCAL_SYMBOL_PATTERNS: tuple[tuple[re.Pattern[str], int, int], ...] = (
+    (re.compile(r"\b([CP])([0-9]{3,6})\b"), 1, 2),
+    (re.compile(r"\b([CP])\s*([0-9]+(?:\.[0-9]+)?)\b"), 1, 2),
+    (re.compile(r"\b([0-9]+(?:\.[0-9]+)?)\s*([CP])\b"), 2, 1),
+)
+
+
 def _derive_option_fields(order: Order) -> tuple[str | None, str | None]:
     if order.sec_type not in {"FOP", "OPT", "BAG"}:
         return None, None
@@ -125,20 +134,10 @@ def _derive_option_fields(order: Order) -> tuple[str | None, str | None]:
     if not local_symbol:
         return None, None
 
-    # Examples:
-    # - "WA4G6 C0707"
-    # - "CL   MAY 26 70.5 C"
-    compact_match = re.search(r"\b([CP])([0-9]{3,6})\b", local_symbol)
-    if compact_match:
-        return compact_match.group(1), compact_match.group(2)
-
-    spaced_match = re.search(r"\b([CP])\s*([0-9]+(?:\.[0-9]+)?)\b", local_symbol)
-    if spaced_match:
-        return spaced_match.group(1), spaced_match.group(2)
-
-    suffix_match = re.search(r"\b([0-9]+(?:\.[0-9]+)?)\s*([CP])\b", local_symbol)
-    if suffix_match:
-        return suffix_match.group(2), suffix_match.group(1)
+    for pattern, right_group, strike_group in _OPTION_LOCAL_SYMBOL_PATTERNS:
+        match = pattern.search(local_symbol)
+        if match:
+            return match.group(right_group), match.group(strike_group)
 
     return None, None
 
