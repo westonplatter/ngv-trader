@@ -8,54 +8,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from src.api.deps import get_db
+from src.api.schemas import JobResponse, to_job_response
 from src.models import Job
 from src.services.jobs import enqueue_job, now_utc
 from src.services.ui_events import TOPIC_JOBS, broadcaster, make_event
 
 router = APIRouter()
 DB_SESSION_DEPENDENCY = Depends(get_db)
-
-
-class JobResponse(BaseModel):
-    model_config = {"from_attributes": True}
-
-    id: int
-    job_type: str
-    status: str
-    payload: dict
-    result: dict | None
-    source: str
-    request_text: str | None
-    attempts: int
-    max_attempts: int
-    available_at: datetime
-    started_at: datetime | None
-    completed_at: datetime | None
-    archived_at: datetime | None
-    last_error: str | None
-    created_at: datetime
-    updated_at: datetime
-
-
-def to_job_response(job: Job) -> JobResponse:
-    return JobResponse(
-        id=job.id,
-        job_type=job.job_type,
-        status=job.status,
-        payload=job.payload,
-        result=job.result,
-        source=job.source,
-        request_text=job.request_text,
-        attempts=job.attempts,
-        max_attempts=job.max_attempts,
-        available_at=job.available_at,
-        started_at=job.started_at,
-        completed_at=job.completed_at,
-        archived_at=job.archived_at,
-        last_error=job.last_error,
-        created_at=job.created_at,
-        updated_at=job.updated_at,
-    )
 
 
 @router.get("/jobs", response_model=list[JobResponse])

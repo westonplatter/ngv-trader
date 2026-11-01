@@ -12,9 +12,6 @@ from sqlalchemy.orm import Session
 from src.api.annotations import annotate_items
 from src.api.deps import get_db
 from src.api.schemas import TagChip
-from src.api.routers.trades import (
-    _execution_realized_pnl,
-)
 from src.models import (
     Account,
     ContractRef,
@@ -30,6 +27,7 @@ from src.models import (
 )
 from src.services.cl_contracts import infer_contract_month_from_local_symbol
 from src.services.execution_display import contract_display_from_raw, execution_ib_codes
+from src.services.execution_pnl import execution_realized_pnl
 from src.services.option_expiry import option_expiry_and_dte
 from src.services.strategies import normalize_strategy_name, require_strategy
 from src.utils.sql import escape_like
@@ -1402,7 +1400,7 @@ def trade_group_executions(trade_group_id: int, db: Session = DB_SESSION_DEPENDE
                 quantity=execution.quantity,
                 price=execution.price,
                 commission=execution.commission,
-                realized_pnl=_execution_realized_pnl(execution.raw),
+                realized_pnl=execution_realized_pnl(execution.raw),
                 exec_role=execution.exec_role,
                 sec_type=execution.sec_type,
                 contract_display=contract_display_from_raw(execution.raw, contract_ref),
