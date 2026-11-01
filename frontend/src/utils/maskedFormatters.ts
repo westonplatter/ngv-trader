@@ -26,7 +26,7 @@ export interface Formatters {
   pnl: (
     value: number | null | undefined,
     costBasis: number | null | undefined,
-    format?: (value: number | null | undefined) => string,
+    format?: (value: number | null) => string,
   ) => string;
   /** Any value that is hidden as-is in privacy mode (ids, raw prices, text). */
   masked: <T>(value: T) => T | string;
@@ -42,7 +42,9 @@ export function makeFormatters(privacyMode: boolean): Formatters {
     percent: (value, fallback) =>
       privacyMode ? PRIVACY_MASK : formatPercent(value, fallback),
     pnl: (value, costBasis, format = formatMoney) =>
-      privacyMode ? formatRelativeReturn(value, costBasis) : format(value),
+      privacyMode
+        ? formatRelativeReturn(value, costBasis)
+        : format(value ?? null),
     masked: (value) => (privacyMode ? PRIVACY_MASK : value),
   };
 }

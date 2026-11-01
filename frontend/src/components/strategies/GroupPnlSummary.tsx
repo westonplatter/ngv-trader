@@ -13,7 +13,7 @@ import {
   totalPnl,
 } from "../../lib/strategies/groupPositions";
 import type { GroupExecutionsResponse } from "../../types/tradeGroups";
-import { PRIVACY_MASK, formatRelativeReturn } from "../../utils/privacy";
+import { makeFormatters } from "../../utils/maskedFormatters";
 import { formatUsd, pnlClassName } from "./statusStyles";
 
 export function GroupPnlSummary({
@@ -30,7 +30,8 @@ export function GroupPnlSummary({
   );
   const { capital, optionsCapital, equityCapital } =
     groupCapital(openPositions);
-  const fmt = (v: number | null) => (privacyMode ? PRIVACY_MASK : formatUsd(v));
+  const fmt = makeFormatters(privacyMode);
+  const usd = (v: number | null) => fmt.masked(formatUsd(v));
   const pct = (v: number | null) =>
     v == null || capital == null ? "—" : `${((v / capital) * 100).toFixed(2)}%`;
   const row = (
@@ -44,7 +45,7 @@ export function GroupPnlSummary({
       <span
         className={`text-right ${colorize ? pnlClassName(v) : "font-semibold text-gray-800"}`}
       >
-        {fmt(v)}
+        {usd(v)}
       </span>
       <span
         className={`text-right ${showPct ? pnlClassName(v) : "text-gray-400"}`}
@@ -56,7 +57,7 @@ export function GroupPnlSummary({
   const subRow = (label: string, v: number | null) => (
     <div className="grid grid-cols-[7rem_6rem_5rem] items-baseline">
       <span className="pl-3 text-gray-400">{label}:</span>
-      <span className="text-right font-medium text-gray-600">{fmt(v)}</span>
+      <span className="text-right font-medium text-gray-600">{usd(v)}</span>
       <span />
     </div>
   );
@@ -99,6 +100,7 @@ export function GroupAccountBreakdown({
 }) {
   const { by_account: byAccount, open_positions: openPositions } = executions;
   if (byAccount.length <= 1) return null;
+  const fmt = makeFormatters(privacyMode);
   const gridCols =
     "grid grid-cols-[6rem_1fr_1fr_1fr_1fr] items-baseline gap-x-2";
   return (
@@ -124,24 +126,18 @@ export function GroupAccountBreakdown({
               {acct.account_alias ?? acct.account_id}
             </span>
             <span className="text-right text-gray-500">
-              {privacyMode ? PRIVACY_MASK : formatUsd(capital)}
+              {fmt.masked(formatUsd(capital))}
             </span>
             <span className={`text-right ${pnlClassName(total)}`}>
-              {privacyMode
-                ? formatRelativeReturn(total, capital)
-                : formatUsd(total)}
+              {fmt.pnl(total, capital, formatUsd)}
             </span>
             <span className={`text-right ${pnlClassName(acct.realized_pnl)}`}>
-              {privacyMode
-                ? formatRelativeReturn(acct.realized_pnl, capital)
-                : formatUsd(acct.realized_pnl)}
+              {fmt.pnl(acct.realized_pnl, capital, formatUsd)}
             </span>
             <span
               className={`text-right ${pnlClassName(acct.unrealized_pnl)}`}
             >
-              {privacyMode
-                ? formatRelativeReturn(acct.unrealized_pnl, capital)
-                : formatUsd(acct.unrealized_pnl)}
+              {fmt.pnl(acct.unrealized_pnl, capital, formatUsd)}
             </span>
           </div>
         );
