@@ -172,6 +172,7 @@ export default function OrdersTable() {
         </div>
         <div className="flex items-center gap-3">
           <button
+            type="button"
             onClick={() => {
               void kickOffOrderSync();
             }}
@@ -186,6 +187,7 @@ export default function OrdersTable() {
       <div className="flex items-center gap-2">
         {(["all", "working", "closed"] as const).map((nextFilter) => (
           <button
+            type="button"
             key={nextFilter}
             onClick={() => setFilter(nextFilter)}
             className={`rounded px-2.5 py-1 text-xs font-medium uppercase tracking-wide ${
@@ -367,6 +369,7 @@ export default function OrdersTable() {
                 <td className="px-3 py-2 whitespace-nowrap">
                   {order.status === "queued" ? (
                     <button
+                      type="button"
                       onClick={() => {
                         void cancelQueuedOrder(order.id);
                       }}

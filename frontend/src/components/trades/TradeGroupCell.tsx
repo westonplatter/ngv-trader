@@ -204,6 +204,7 @@ export default function TradeGroupCell({
             </span>
           ) : (
             <button
+              type="button"
               onClick={(e) => {
                 e.stopPropagation();
                 open();
@@ -217,6 +218,7 @@ export default function TradeGroupCell({
       />
       {effectiveGroupId && (
         <button
+          type="button"
           onClick={(e) => {
             e.stopPropagation();
             if (window.confirm(`Unassign from group #${effectiveGroupId}?`)) {
