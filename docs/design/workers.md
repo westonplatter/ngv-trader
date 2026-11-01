@@ -6,6 +6,7 @@ code_dirs_or_files:
     "src/workers/jobs.py",
     "src/services/jobs.py",
     "scripts/work_order_queue.py",
+    "src/services/order_worker.py",
     "src/services/worker_heartbeat.py",
   ]
 description: Background workers and the job queue — jobs worker handler registry, dormant TWS handlers, disabled order submission, and heartbeat health.
@@ -74,8 +75,8 @@ Job-type constants live in `src/services/jobs.py`. The
 
 ## Orders worker (`worker:orders`)
 
-> **Order submission is currently disabled.** `scripts/work_order_queue.py`
-> raises `RuntimeError("Order execution is not supported at this time.")` before
+> **Order submission is currently disabled.** `process_order` in
+> `src/services/order_worker.py` raises `RuntimeError("Order execution is not supported at this time.")` before
 > the `placeOrder` call. The worker reconciles and tracks existing orders but
 > never places new ones. See
 > [the worker order recovery plan](../plans/2026-02-24-001-feat-worker-order-recovery-plan.md) for the plan to
@@ -84,6 +85,10 @@ Job-type constants live in `src/services/jobs.py`. The
 What it does today:
 
 - Queue primitive: `src/services/order_queue.py`; mutations: `src/services/order_mutations.py`.
+- Worker policy (IB status normalization, contract qualification, trade progress,
+  startup reconciliation): `src/services/order_worker.py`. `scripts/work_order_queue.py`
+  is the loop only (env, argparse, TWS connect, claim/poll), the same split as
+  `scripts/work_jobs.py` and `src/workers/jobs.py`.
 - Runs startup reconciliation against TWS before claiming work, to avoid duplicate
   broker submissions after a restart.
 - Polls `orders` for `queued` rows and would set a deterministic
@@ -103,7 +108,7 @@ enqueue `order.fetch_sync`. See [tradebot-chatbot.md](tradebot-chatbot.md).
 ## Key files
 
 - `scripts/work_jobs.py`, `src/workers/jobs.py`, `src/services/jobs.py`
-- `scripts/work_order_queue.py`, `src/services/order_queue.py`, `src/services/order_mutations.py`
+- `scripts/work_order_queue.py`, `src/services/order_worker.py`, `src/services/order_queue.py`, `src/services/order_mutations.py`
 - `src/services/worker_heartbeat.py`, `src/api/routers/workers.py`
 - Sync services: `src/services/{trade,position}_sync_flexquery.py`,
   `src/services/contract_sync.py`, `src/services/watchlist_quotes.py`,
