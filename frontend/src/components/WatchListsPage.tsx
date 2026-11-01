@@ -18,6 +18,7 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { api, errorMessage } from "../lib/api";
 import { formatExpiry } from "../utils/date";
+import { OUTLINE_BUTTON_COMPACT } from "./ui/buttonClasses";
 
 interface WatchListSummary {
   id: number;
@@ -458,7 +459,7 @@ export default function WatchListsPage() {
                     type="button"
                     onClick={() => handleEditSave(detail.id)}
                     disabled={!editName.trim()}
-                    className="rounded border border-blue-300 px-1.5 py-0.5 text-[11px] text-blue-700 hover:bg-blue-50 disabled:opacity-50"
+                    className={OUTLINE_BUTTON_COMPACT}
                   >
                     Save
                   </button>

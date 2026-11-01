@@ -4,6 +4,7 @@ import { useFormatters } from "../hooks/useFormatters";
 import { useSseList } from "../hooks/useSseList";
 import { api } from "../lib/api";
 import type { Order } from "../types/orders";
+import { OUTLINE_BUTTON } from "./ui/buttonClasses";
 import { formatDate, formatExpiry } from "../utils/date";
 
 type OrderFilter = "all" | "working" | "closed";
@@ -177,7 +178,7 @@ export default function OrdersTable() {
               void kickOffOrderSync();
             }}
             disabled={syncing}
-            className="rounded border border-blue-300 px-3 py-1 text-sm text-blue-700 hover:bg-blue-50 disabled:opacity-50"
+            className={OUTLINE_BUTTON}
           >
             {syncing ? "Queueing..." : "Pull Broker Orders"}
           </button>
