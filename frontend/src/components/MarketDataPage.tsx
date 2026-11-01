@@ -131,6 +131,7 @@ function StepperField({
     <div className="flex items-center gap-1">
       <span className="mr-1 text-xs font-medium text-blue-800">{label}</span>
       <button
+        type="button"
         onClick={() =>
           onChange(value != null ? +(value - step).toFixed(10) : 0)
         }
@@ -148,6 +149,7 @@ function StepperField({
         className="w-20 rounded border border-blue-300 bg-white px-1.5 py-0.5 text-center font-mono text-xs text-gray-800"
       />
       <button
+        type="button"
         onClick={() =>
           onChange(value != null ? +(value + step).toFixed(10) : 0)
         }
@@ -353,6 +355,7 @@ export default function MarketDataPage() {
         <div className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
           {shownError}
           <button
+            type="button"
             onClick={() => setError(null)}
             className="ml-2 text-xs underline"
           >
@@ -374,6 +377,7 @@ export default function MarketDataPage() {
         <div className="flex flex-wrap gap-2 items-center">
           {/* Activated products security-master sync */}
           <button
+            type="button"
             onClick={() => enqueueJob("contracts.sync_activated", {})}
             disabled={submitting !== null || pendingFilter !== null}
             className="rounded border border-indigo-300 bg-indigo-50 px-3 py-1.5 text-xs font-medium text-indigo-700 hover:bg-indigo-100 disabled:opacity-50"
@@ -383,6 +387,7 @@ export default function MarketDataPage() {
           {/* Chain sync */}
           {CHAIN_SYNC_PRESETS.map((preset) => (
             <button
+              type="button"
               key={preset.symbol}
               onClick={() =>
                 enqueueJob("contracts.chain_sync", {
@@ -399,6 +404,7 @@ export default function MarketDataPage() {
           {/* Other presets */}
           {PRESETS.map((preset) => (
             <button
+              type="button"
               key={preset.label}
               onClick={() => handlePreset(preset)}
               disabled={submitting !== null || pendingFilter !== null}
@@ -417,6 +423,7 @@ export default function MarketDataPage() {
             Active Products
           </h2>
           <button
+            type="button"
             onClick={loadProducts}
             className="text-xs text-gray-500 underline hover:text-gray-700"
           >
@@ -527,6 +534,7 @@ export default function MarketDataPage() {
           </div>
           <div className="flex gap-2">
             <button
+              type="button"
               onClick={handleConfirmFilter}
               disabled={submitting !== null}
               className="rounded border border-blue-600 bg-blue-600 px-4 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
@@ -534,6 +542,7 @@ export default function MarketDataPage() {
               Enqueue
             </button>
             <button
+              type="button"
               onClick={handleCancelFilter}
               className="rounded border border-gray-300 px-4 py-1.5 text-xs text-gray-700 hover:bg-gray-50"
             >
@@ -573,6 +582,7 @@ export default function MarketDataPage() {
             />
           </div>
           <button
+            type="button"
             onClick={handleCustomSubmit}
             disabled={submitting !== null}
             className="rounded border border-blue-300 px-3 py-1.5 text-xs text-blue-700 hover:bg-blue-50 disabled:opacity-50"
@@ -650,6 +660,7 @@ export default function MarketDataPage() {
                   <td className="px-2 py-1">
                     <div className="flex gap-1">
                       <button
+                        type="button"
                         onClick={() => rerunJob(job.id)}
                         disabled={submitting !== null}
                         className="rounded border border-blue-300 px-1.5 py-0.5 text-xs text-blue-700 hover:bg-blue-50 disabled:opacity-50"
@@ -658,6 +669,7 @@ export default function MarketDataPage() {
                         Rerun
                       </button>
                       <button
+                        type="button"
                         onClick={() => archiveJob(job.id)}
                         disabled={submitting !== null}
                         className="rounded border border-gray-300 px-1.5 py-0.5 text-xs text-gray-500 hover:bg-gray-50 hover:text-red-600 disabled:opacity-50"

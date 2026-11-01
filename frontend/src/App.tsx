@@ -31,6 +31,7 @@ function PrivacyToggle() {
   const { privacyMode, togglePrivacy } = usePrivacy();
   return (
     <button
+      type="button"
       onClick={togglePrivacy}
       className={`flex items-center gap-1.5 rounded px-2.5 py-1 text-xs font-medium transition-colors ${
         privacyMode

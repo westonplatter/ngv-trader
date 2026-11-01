@@ -128,7 +128,11 @@ export default function FlexQueryTokensTable() {
           IBKR FlexQuery Tokens
         </h2>
         {!adding && (
-          <button onClick={() => setAdding(true)} className={ACTION_BUTTON}>
+          <button
+            type="button"
+            onClick={() => setAdding(true)}
+            className={ACTION_BUTTON}
+          >
             Add token
           </button>
         )}
@@ -183,6 +187,7 @@ export default function FlexQueryTokensTable() {
             />
           </label>
           <button
+            type="button"
             onClick={createToken}
             disabled={saving || !canCreate}
             className={PRIMARY_ACTION_BUTTON}
@@ -190,6 +195,7 @@ export default function FlexQueryTokensTable() {
             Save
           </button>
           <button
+            type="button"
             onClick={() => {
               setAdding(false);
               setNewToken(EMPTY_EDIT);
@@ -313,6 +319,7 @@ export default function FlexQueryTokensTable() {
                       {editingId === token.id ? (
                         <>
                           <button
+                            type="button"
                             onClick={() => saveEdit(token.id)}
                             disabled={saving}
                             className={PRIMARY_ACTION_BUTTON}
@@ -320,6 +327,7 @@ export default function FlexQueryTokensTable() {
                             Save
                           </button>
                           <button
+                            type="button"
                             onClick={() => {
                               setEditingId(null);
                               setEdit(EMPTY_EDIT);
@@ -333,12 +341,14 @@ export default function FlexQueryTokensTable() {
                       ) : (
                         <>
                           <button
+                            type="button"
                             onClick={() => startEdit(token)}
                             className={ACTION_BUTTON}
                           >
                             Edit
                           </button>
                           <button
+                            type="button"
                             onClick={() => togglePause(token)}
                             disabled={saving}
                             className={ACTION_BUTTON}
@@ -353,6 +363,7 @@ export default function FlexQueryTokensTable() {
                               : "Pause"}
                           </button>
                           <button
+                            type="button"
                             onClick={() => toggleActive(token)}
                             disabled={saving}
                             className={ACTION_BUTTON}
