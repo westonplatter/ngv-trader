@@ -1,6 +1,5 @@
 """Orders API router."""
 
-import re
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
@@ -9,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from src.api.deps import get_db
-from src.api.routers.jobs import to_job_response
+from src.api.schemas import OrderResponse, to_job_response, to_order_response
 from src.models import Account, ContractRef, Order, OrderEvent
 from src.services.jobs import JOB_TYPE_ORDER_FETCH_SYNC, enqueue_job
 from src.services.order_mutations import OrderCreateInput, create_queued_order
@@ -20,7 +19,6 @@ from src.services.order_queue import (
     transition_order_status,
 )
 from src.services.ui_events import TOPIC_JOBS, TOPIC_ORDERS, broadcaster, make_event
-from src.utils.contract_display import contract_display_name
 
 router = APIRouter()
 DB_SESSION_DEPENDENCY = Depends(get_db)
@@ -44,43 +42,6 @@ class OrderCreateRequest(BaseModel):
 class OrderCancelRequest(BaseModel):
     source: str = Field(default="manual", min_length=1)
     request_text: str | None = None
-
-
-class OrderResponse(BaseModel):
-    model_config = {"from_attributes": True}
-
-    id: int
-    account_id: int
-    account_alias: str | None
-    symbol: str
-    sec_type: str
-    exchange: str
-    currency: str
-    side: str
-    quantity: int
-    order_type: str
-    limit_price: float | None
-    tif: str
-    status: str
-    source: str
-    con_id: int | None
-    local_symbol: str | None
-    trading_class: str | None
-    contract_month: str | None
-    contract_expiry: str | None
-    option_right: str | None
-    option_strike: str | None
-    contract_display_name: str
-    ib_order_id: int | None
-    ib_perm_id: int | None
-    filled_quantity: float
-    avg_fill_price: float | None
-    last_error: str | None
-    request_text: str | None
-    submitted_at: datetime | None
-    completed_at: datetime | None
-    created_at: datetime
-    updated_at: datetime
 
 
 class OrderEventResponse(BaseModel):
@@ -112,99 +73,6 @@ class OrderSyncResponse(BaseModel):
     job_type: str
     status: str
     max_attempts: int
-
-
-def _derive_option_fields(order: Order) -> tuple[str | None, str | None]:
-    if order.sec_type not in {"FOP", "OPT", "BAG"}:
-        return None, None
-    local_symbol = (order.local_symbol or "").strip().upper()
-    if not local_symbol:
-        return None, None
-
-    # Examples:
-    # - "WA4G6 C0707"
-    # - "CL   MAY 26 70.5 C"
-    compact_match = re.search(r"\b([CP])([0-9]{3,6})\b", local_symbol)
-    if compact_match:
-        return compact_match.group(1), compact_match.group(2)
-
-    spaced_match = re.search(r"\b([CP])\s*([0-9]+(?:\.[0-9]+)?)\b", local_symbol)
-    if spaced_match:
-        return spaced_match.group(1), spaced_match.group(2)
-
-    suffix_match = re.search(r"\b([0-9]+(?:\.[0-9]+)?)\s*([CP])\b", local_symbol)
-    if suffix_match:
-        return suffix_match.group(2), suffix_match.group(1)
-
-    return None, None
-
-
-def to_order_response(
-    order: Order,
-    account: Account | None,
-    contract_ref: ContractRef | None = None,
-) -> OrderResponse:
-    alias = account.alias if account and account.alias else None
-    effective_symbol = contract_ref.symbol if contract_ref and contract_ref.symbol else order.symbol
-    effective_sec_type = contract_ref.sec_type if contract_ref and contract_ref.sec_type else order.sec_type
-    effective_exchange = contract_ref.exchange if contract_ref and contract_ref.exchange else order.exchange
-    effective_local_symbol = contract_ref.local_symbol if contract_ref and contract_ref.local_symbol else order.local_symbol
-    effective_trading_class = contract_ref.trading_class if contract_ref and contract_ref.trading_class else order.trading_class
-    effective_contract_month = contract_ref.contract_month if contract_ref and contract_ref.contract_month else order.contract_month
-    effective_contract_expiry = contract_ref.contract_expiry if contract_ref and contract_ref.contract_expiry else order.contract_expiry
-    effective_right = contract_ref.right if contract_ref and contract_ref.right else None
-    effective_strike = contract_ref.strike if contract_ref and contract_ref.strike is not None else None
-
-    option_right, option_strike = _derive_option_fields(order)
-    if effective_right is not None:
-        option_right = effective_right
-    if effective_strike is not None:
-        option_strike = f"{effective_strike:g}"
-
-    return OrderResponse(
-        id=order.id,
-        account_id=order.account_id,
-        account_alias=alias,
-        symbol=effective_symbol,
-        sec_type=effective_sec_type,
-        exchange=effective_exchange,
-        currency=order.currency,
-        side=order.side,
-        quantity=order.quantity,
-        order_type=order.order_type,
-        limit_price=order.limit_price,
-        tif=order.tif,
-        status=order.status,
-        source=order.source,
-        con_id=order.con_id,
-        local_symbol=effective_local_symbol,
-        trading_class=effective_trading_class,
-        contract_month=effective_contract_month,
-        contract_expiry=effective_contract_expiry,
-        option_right=option_right,
-        option_strike=option_strike,
-        contract_display_name=contract_display_name(
-            symbol=effective_symbol,
-            sec_type=effective_sec_type,
-            local_symbol=effective_local_symbol,
-            right=option_right,
-            strike=(float(option_strike) if option_strike is not None else None),
-            contract_expiry=effective_contract_expiry,
-            contract_month=effective_contract_month,
-            exchange=effective_exchange,
-            trading_class=effective_trading_class,
-        ),
-        ib_order_id=order.ib_order_id,
-        ib_perm_id=order.ib_perm_id,
-        filled_quantity=order.filled_quantity,
-        avg_fill_price=order.avg_fill_price,
-        last_error=order.last_error,
-        request_text=order.request_text,
-        submitted_at=order.submitted_at,
-        completed_at=order.completed_at,
-        created_at=order.created_at,
-        updated_at=order.updated_at,
-    )
 
 
 def to_order_event_response(event: OrderEvent) -> OrderEventResponse:

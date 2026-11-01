@@ -59,6 +59,7 @@ from src.services.group_link_carryover import (
     carry_over_link_to_execution,
     carry_over_link_to_executions,
 )
+from src.services.order_keys import order_group_key_from_live
 
 logger = logging.getLogger(__name__)
 
@@ -182,20 +183,6 @@ def _bag_summary_clause():
     )
 
 
-def _order_group_key(live: LiveExecution) -> tuple[str, int] | None:
-    """Key grouping a live BAG summary with its live legs.
-
-    Mirrors ``intraday_sync_tws._order_group_key`` — prefers ``permId``, falls
-    back to ``orderId`` — so the two stay in step. ``None`` when the row carries
-    neither, in which case its legs cannot be identified and it is left alone.
-    """
-    if live.ib_perm_id:
-        return ("perm", live.ib_perm_id)
-    if live.ib_order_id:
-        return ("order", live.ib_order_id)
-    return None
-
-
 def _has_live_siblings(session: Session, live: LiveExecution) -> bool:
     """True while any unsettled **leg** still shares this row's order key.
 
@@ -212,7 +199,7 @@ def _has_live_siblings(session: Session, live: LiveExecution) -> bool:
     though every leg had settled. A peer summary is never evidence that a leg is
     outstanding, so only non-summary rows gate the purge.
     """
-    key = _order_group_key(live)
+    key = order_group_key_from_live(live)
     if key is None:
         return True
     kind, value = key
@@ -254,7 +241,7 @@ def _match_bag_summary(session: Session, live: LiveExecution) -> list[TradeExecu
     """
     if not _is_bag_summary(live):
         return None
-    if _order_group_key(live) is None:
+    if order_group_key_from_live(live) is None:
         return None
     if _has_live_siblings(session, live):
         return None

@@ -13,8 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from src.api.deps import get_db
-from src.api.routers.jobs import to_job_response
-from src.api.routers.orders import to_order_response
+from src.api.schemas import to_job_response, to_order_response
 from src.models import Account, ContractRef, Job, Order, WorkerHeartbeat
 from src.services.ui_events import (
     TOPIC_JOBS,
