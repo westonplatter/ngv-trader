@@ -12,8 +12,7 @@ import {
   rowSymbol,
 } from "../../lib/trades/view";
 import type { TradeExecutionRow } from "../../types/trades";
-import { formatMoney } from "../../utils/number";
-import { PRIVACY_MASK } from "../../utils/privacy";
+import { makeFormatters } from "../../utils/maskedFormatters";
 import TagChips from "../TagChips";
 import TaskQuickAdd from "../TaskQuickAdd";
 import TradeGroupCell from "./TradeGroupCell";
@@ -71,6 +70,7 @@ function ParentExecCell({
   TradeRowProps,
   "row" | "isHighlighted" | "privacyMode" | "onToggleHighlight"
 > & { groupKey: string }) {
+  const fmt = makeFormatters(privacyMode);
   const isParentRow = row.exec_role === "combo_summary";
   const parentId =
     row.parent_ib_exec_id ?? (isParentRow ? row.ib_exec_id : null);
@@ -96,7 +96,7 @@ function ParentExecCell({
           ⤴
         </span>
       )}
-      {privacyMode ? PRIVACY_MASK : parentId}
+      {fmt.masked(parentId)}
     </button>
   );
 }
@@ -138,6 +138,7 @@ export default function TradeRow(props: TradeRowProps) {
     onAssigned,
     onChanged,
   } = props;
+  const fmt = makeFormatters(privacyMode);
   const groupKey = rowGroupKey(row);
   const symbol = rowSymbol(row);
   const role = execRoleBadge(row.exec_role);
@@ -197,13 +198,13 @@ export default function TradeRow(props: TradeRowProps) {
         {row.side ?? "-"}
       </td>
       <td className="whitespace-nowrap px-2 py-2 text-xs text-gray-700">
-        {privacyMode ? PRIVACY_MASK : row.quantity}
+        {fmt.quantity(row.quantity)}
       </td>
       <td className="whitespace-nowrap px-3 py-2 text-gray-700">
-        {privacyMode ? PRIVACY_MASK : formatMoney(row.price, "-")}
+        {fmt.money(row.price, "-")}
       </td>
       <td className="whitespace-nowrap px-3 py-2 text-gray-700">
-        {privacyMode ? PRIVACY_MASK : formatMoney(row.realized_pnl, "-")}
+        {fmt.money(row.realized_pnl, "-")}
       </td>
       <td className="whitespace-nowrap px-3 py-2">
         <span
@@ -260,7 +261,7 @@ export default function TradeRow(props: TradeRowProps) {
       {showDetails && (
         <>
           <td className="max-w-[200px] truncate whitespace-nowrap px-3 py-2 font-mono text-xs text-gray-600">
-            {privacyMode ? PRIVACY_MASK : row.ib_exec_id}
+            {fmt.masked(row.ib_exec_id)}
           </td>
           <td className="whitespace-nowrap px-3 py-2 font-mono text-xs text-gray-600">
             {row.con_id ? (

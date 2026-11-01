@@ -2,6 +2,7 @@ import type { CSSProperties } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { api } from "../lib/api";
+import { useFormatters } from "../hooks/useFormatters";
 import { enqueueSyncJob, useJobWatcher } from "../hooks/useJobWatcher";
 import { usePrivacy } from "../contexts/usePrivacy";
 import { useResizableColumn } from "../hooks/useResizableColumn";
@@ -157,6 +158,7 @@ const NO_ACCOUNT_PNL: GroupAccountPnl[] = [];
 
 export default function StrategiesPage() {
   const { privacyMode } = usePrivacy();
+  const fmt = useFormatters();
   const [searchParams, setSearchParams] = useSearchParams();
   const { watch } = useJobWatcher();
 
@@ -1910,7 +1912,7 @@ export default function StrategiesPage() {
                                   <td
                                     className={`px-2 py-1 text-right font-mono ${qtyClass}`}
                                   >
-                                    {privacyMode ? PRIVACY_MASK : pos.position}
+                                    {fmt.quantity(pos.position)}
                                   </td>
                                   <td className="px-2 py-1 text-right font-mono text-gray-700">
                                     {privacyMode

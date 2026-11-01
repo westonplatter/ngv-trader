@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { usePrivacy } from "../contexts/usePrivacy";
 import { PRIVACY_MASK } from "../utils/privacy";
+import { useFormatters } from "../hooks/useFormatters";
 import { useSseList } from "../hooks/useSseList";
 import { api } from "../lib/api";
 import type { Order } from "../types/orders";
@@ -50,6 +51,7 @@ function computeTotalMs(order: Order, nowMs: number): number {
 
 export default function OrdersSideTable() {
   const { privacyMode } = usePrivacy();
+  const fmt = useFormatters();
   const [nowMs, setNowMs] = useState<number>(() => Date.now());
 
   const loadOrders = useCallback(() => api.get<Order[]>("/orders"), []);
@@ -101,7 +103,7 @@ export default function OrdersSideTable() {
                   {order.id}
                 </td>
                 <td className="px-2 py-1 text-gray-700">
-                  {order.side} {privacyMode ? PRIVACY_MASK : order.quantity}{" "}
+                  {order.side} {fmt.quantity(order.quantity)}{" "}
                   {order.symbol}
                   {order.contract_month ? ` ${order.contract_month}` : ""}
                 </td>

@@ -33,6 +33,7 @@ A generic key-value user preferences system backed by a `user_preferences` table
   - **Dollar amounts** — avg cost, mark / live mark price, position value, trade execution price, order limit price, order avg fill price.
   - **Quantities** — position size, trade/order quantity, filled quantity.
   - **Identifiers** — perm IDs, exec IDs.
+- **Formatters**: Components do not branch on `privacyMode` for money, quantities, percents, or identifiers. `useFormatters()` (`frontend/src/hooks/useFormatters.ts`) returns `money`, `quantity`, `percent`, `pnl`, and `masked`, already masked; components that receive `privacyMode` as a prop call `makeFormatters(privacyMode)` from `frontend/src/utils/maskedFormatters.ts`. `PRIVACY_MASK` stays the single source of the mask string.
 - **Relative returns**: P&L is _not_ masked — it is re-expressed as a percentage return (`formatRelativeReturn` in `privacy.ts`): `P&L ÷ |cost basis|`. Positions derive cost basis as `position_value − fifo_pnl_unrealized`, so no dollar figure leaks; the Unrealized / Live PnL header totals use the aggregate basis. Where a reliable per-row basis isn't available (e.g. individual trade executions), the P&L stays masked rather than showing a misleading percentage.
 - **Kept visible**: position _type_ fields — symbol, sec type, contract, side, call/put, strike, expiry — since they describe the position, not its size or value.
 - **Affected components**: `OrdersTable`, `OrdersSideTable`, `TradesPage`, `PositionsPage`, `StrategiesPage`.
