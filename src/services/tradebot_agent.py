@@ -34,7 +34,7 @@ from src.services.cl_contracts import (
     display_contract_month,
     normalize_contract_month_input,
 )
-from src.services.contract_lookup import find_contracts_with_fallback
+from src.services.contract_lookup import ContractLookup, find_contracts_with_fallback
 from src.services.jobs import (
     JOB_TYPE_CONTRACTS_SYNC,
     JOB_TYPE_MARKET_DATA_SNAPSHOT,
@@ -64,14 +64,17 @@ _SYSTEM_PROMPT = (
     "You can enqueue positions sync jobs, contracts sync jobs, and order fetch/sync jobs. "
     "For informational queries about contracts (front month, available months, contract details), use lookup_contract. "
     "To see which products are actively maintained in the security master and their exchanges, use list_activated_products. "
-    "lookup_contract checks the database first; if no contracts exist, it automatically fetches from IBKR and stores them. "
+    "lookup_contract checks the database first; if no contracts exist, it queues a contracts sync job and returns pending_job_id "
+    "instead of contracts, so tell the user to check back shortly and repeat the lookup. "
     "For options (FOP/OPT), use contract_expiry (YYYY-MM-DD) to find a specific weekly expiry rather than contract_month. "
     "When the user says 'next Friday' or a specific date, convert it to contract_expiry format. "
     "You can preview orders via preview_order. "
     "There is no cancel tool in chat; advise using the Orders API/UI cancel action when needed. "
     "You can also manage watch lists: create watch lists, add instruments to them, list them, and remove instruments. "
-    "add_watch_list_instrument finds the contract in the DB (or fetches from IBKR), adds it to the watch list, "
+    "add_watch_list_instrument finds the contract in the DB, adds it to the watch list, "
     "and enqueues a market data job for latest prices. It returns immediately — no need to poll. "
+    "If the contract is not in the DB yet it queues a contracts sync job and returns pending_job_id without adding anything; "
+    "tell the user to check back shortly and repeat the request. "
     "For analytics questions about realized PnL, win rate, or trade counts (e.g. 'PnL by symbol this quarter', "
     "'win rate last month'), use query_metric: it runs business-analyst metric definitions from the semantic "
     "model as read-only SQL. Pick a metric and dimensions by name — do not ask for raw SQL. "
@@ -665,11 +668,18 @@ class LookupContractArgs(_ContractQueryArgs):
     contract_month: OptStr = Field(None, description="YYYY-MM or month name like 'March 2026'")
 
 
+def _pending_lookup_result(session: Session, lookup: ContractLookup, **context: Any) -> dict[str, Any]:
+    """Commit the contracts.sync job queued by a lookup miss and report it to the model."""
+    session.commit()
+    return {**context, "pending_job_id": lookup.pending_job_id, "message": lookup.message}
+
+
 @tool(
     "lookup_contract",
     (
         "Look up contract details. Checks the database first; if no contracts are found, "
-        "automatically fetches from IBKR and stores them. "
+        "it queues a contracts.sync job to fetch them from IBKR and returns pending_job_id "
+        "with no contracts. Tell the user to check back shortly, then repeat the lookup. "
         "Use this for informational queries like 'what is the front month for CL?' "
         "or 'what NQ contracts are available?'."
     ),
@@ -685,7 +695,7 @@ def _tool_lookup_contract(session: Session, _: str, args: LookupContractArgs) ->
 
     min_days_to_expiry = get_int_env("BROKER_CL_MIN_DAYS_TO_EXPIRY", DEFAULT_CL_MIN_DAYS_TO_EXPIRY)
 
-    contracts = find_contracts_with_fallback(
+    lookup = find_contracts_with_fallback(
         session=session,
         symbol=symbol,
         sec_type=sec_type,
@@ -695,6 +705,9 @@ def _tool_lookup_contract(session: Session, _: str, args: LookupContractArgs) ->
         right=right,
         contract_expiry=contract_expiry,
     )
+    if lookup.pending_job_id is not None:
+        return _pending_lookup_result(session, lookup, symbol=symbol, sec_type=sec_type, total_contracts=0)
+    contracts = lookup.contracts
 
     # For FOP/OPT, include individual contracts so the agent can see available expiry dates
     if sec_type in ("FOP", "OPT"):
@@ -892,9 +905,10 @@ class AddWatchListInstrumentArgs(_ContractQueryArgs):
 @tool(
     "add_watch_list_instrument",
     (
-        "Add an instrument to a watch list. Looks up the contract in the DB first "
-        "(fetches from IBKR if not found), adds it to the watch list, and enqueues "
-        "a market data job to fetch latest prices. Returns immediately with the result."
+        "Add an instrument to a watch list. Looks up the contract in the DB first. If it is not there yet, "
+        "it queues a contracts.sync job to fetch it from IBKR and returns pending_job_id without adding "
+        "anything: tell the user to check back shortly, then repeat the request. If it is found, adds it "
+        "to the watch list and enqueues a market data job to fetch latest prices. Returns immediately with the result."
     ),
     AddWatchListInstrumentArgs,
 )
@@ -914,8 +928,8 @@ def _tool_add_watch_list_instrument(session: Session, latest_user_text: str, arg
     strike = args.strike
     right = args.right.upper() if args.right is not None else None
 
-    # 1. Find contract in DB (or fetch from IBKR if not found)
-    contracts = find_contracts_with_fallback(
+    # 1. Find contract in DB; on a miss a contracts.sync job is queued and nothing is added yet
+    lookup = find_contracts_with_fallback(
         session=session,
         symbol=symbol,
         sec_type=sec_type,
@@ -924,18 +938,11 @@ def _tool_add_watch_list_instrument(session: Session, latest_user_text: str, arg
         right=right,
         contract_expiry=contract_expiry,
     )
-
-    if not contracts:
-        raise ValueError(
-            f"No {symbol} {sec_type} contract found"
-            + (f" with expiry={contract_expiry}" if contract_expiry else "")
-            + (f" strike={strike}" if strike is not None else "")
-            + (f" {right}" if right else "")
-            + ". Check contract details or run a contracts sync first."
-        )
+    if lookup.pending_job_id is not None:
+        return _pending_lookup_result(session, lookup, watch_list_id=wl_id, symbol=symbol, sec_type=sec_type)
 
     # Pick the first (front) contract
-    contract = contracts[0]
+    contract = lookup.contracts[0]
     con_id = contract["con_id"]
 
     # 2. Check for duplicate in watch list

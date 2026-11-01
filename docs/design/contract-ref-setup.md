@@ -7,7 +7,7 @@ code_dirs_or_files:
     "src/services/contract_lookup.py",
     "src/services/tradebot_agent.py",
   ]
-description: Local cache of IBKR contract details — contracts table schema, the contracts.sync job, and DB-first agent lookup with its synchronous IBKR fallback.
+description: Local cache of IBKR contract details — contracts table schema, the contracts.sync job, and DB-first agent lookup that queues a contracts.sync job on a miss.
 ---
 
 # Contract Reference (SecRef) Setup
@@ -16,7 +16,7 @@ description: Local cache of IBKR contract details — contracts table schema, th
 
 The `contracts` table acts as a local cache of IB contract details (a "SecRef" or security reference). It stores qualified contract metadata so that the tradebot agent and other services can look up contracts from the database without connecting to IBKR directly.
 
-This enforces the **agent-IB boundary** for the common case: the LLM agent reads contracts from DB and enqueues jobs; only workers talk to IBKR. The one exception is `lookup_contract`'s synchronous fallback — see "How the Agent Uses Contracts" below.
+This enforces the **agent-IB boundary**: the LLM agent reads contracts from DB and enqueues jobs; only workers talk to IBKR. A lookup that misses the DB queues a `contracts.sync` job rather than connecting to TWS — see "How the Agent Uses Contracts" below.
 
 ## Table: `contracts`
 
@@ -96,14 +96,20 @@ ENV=dev task worker:jobs
 1. User asks for contract info (for example front month or available expiries).
 2. Agent calls `lookup_contract`, which reads active contracts from the `contracts`
    table via `find_contracts_with_fallback()` (`src/services/contract_lookup.py`).
-   If the DB has no matching rows, that function calls `_fetch_from_ibkr()`, which
-   connects to TWS/Gateway synchronously and calls `sync_contracts()` mid-turn —
-   this is a live IBKR fetch, not a queued job.
-3. If the user asks to track an instrument, agent can enqueue `watchlist.add_instrument` with resolved contract data.
+   If the DB has no matching rows, that function enqueues one `contracts.sync` job
+   (payload `{"specs": [{symbol, sec_type, exchange}]}`) and returns a pending result
+   (`pending_job_id` plus a message) instead of contracts. The tool tells the user to
+   check back shortly; once `worker:jobs` has completed the job, repeating the lookup
+   finds the rows. This takes two steps; the API process never opens a TWS connection.
+   The worker handler builds its contract from symbol, sec type, and exchange only, so
+   a `strike`/`right` on the lookup is not passed through to the fetch.
+3. `add_watch_list_instrument` behaves the same on a miss: it queues the sync job and
+   adds nothing until the request is repeated.
+4. If the user asks to track an instrument, agent can enqueue `watchlist.add_instrument` with resolved contract data.
 
-`src/services/tradebot_agent.py` itself never imports `ib_async`, but `lookup_contract`
-can trigger a synchronous IBKR connection one call deeper via `contract_lookup.py`'s
-fallback. Everything else (positions/trades/orders sync) goes through `worker:jobs`.
+Neither `src/services/tradebot_agent.py` nor `src/services/contract_lookup.py` imports
+`ib_async`. All broker access (contracts, positions, trades, orders) goes through
+`worker:jobs`.
 
 ## Key Files
 
