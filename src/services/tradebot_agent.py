@@ -8,14 +8,18 @@ from __future__ import annotations
 import json
 import logging
 import os
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Sequence, TypedDict
+from typing import Annotated, Any, Sequence, TypedDict, TypeVar
 from urllib import error, parse, request
 
 from langgraph.graph import END, START, StateGraph
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, ValidationError, ValidationInfo, field_validator
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
+from src.data.exchanges import resolve_exchange as _resolve_exchange
+from src.domain.enums import JobStatus
 from src.models import (
     Account,
     Job,
@@ -82,406 +86,147 @@ _DEFAULT_LLM_BASE_URL = os.getenv("TRADEBOT_LLM_BASE_URL") or "https://api.opena
 _DEFAULT_TIMEOUT_SECONDS = 45
 _TOOL_SOURCE = "tradebot-llm"
 
-_TOOL_SPECS: list[dict[str, Any]] = [
-    {
-        "type": "function",
-        "function": {
-            "name": "list_accounts",
-            "description": "List available brokerage accounts for order routing.",
-            "parameters": {
-                "type": "object",
-                "properties": {},
-                "additionalProperties": False,
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "list_positions",
-            "description": "Read current positions from the database.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "limit": {
-                        "type": "integer",
-                        "minimum": 1,
-                        "maximum": 200,
-                        "default": 25,
-                    }
-                },
-                "additionalProperties": False,
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "list_jobs",
-            "description": "Read latest job queue records.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "limit": {
-                        "type": "integer",
-                        "minimum": 1,
-                        "maximum": 200,
-                        "default": 20,
-                    },
-                    "include_archived": {
-                        "type": "boolean",
-                        "default": False,
-                    },
-                },
-                "additionalProperties": False,
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "list_orders",
-            "description": "Read latest order records and optional recent events.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "limit": {
-                        "type": "integer",
-                        "minimum": 1,
-                        "maximum": 200,
-                        "default": 20,
-                    },
-                    "status": {"type": "string"},
-                    "include_events": {
-                        "type": "boolean",
-                        "default": True,
-                    },
-                    "events_per_order": {
-                        "type": "integer",
-                        "minimum": 1,
-                        "maximum": 20,
-                        "default": 3,
-                    },
-                },
-                "additionalProperties": False,
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "preview_order",
-            "description": "Validate and normalize an order request without writing to the database.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "account_id": {"type": "integer"},
-                    "account": {
-                        "type": "string",
-                        "description": "Account alias or account number when account_id is not provided.",
-                    },
-                    "symbol": {"type": "string"},
-                    "side": {"type": "string", "enum": ["BUY", "SELL", "buy", "sell"]},
-                    "quantity": {"type": "integer", "minimum": 1},
-                    "sec_type": {"type": "string", "default": "FUT"},
-                    "exchange": {"type": "string"},
-                    "currency": {"type": "string", "default": "USD"},
-                    "order_type": {"type": "string", "default": "MKT"},
-                    "limit_price": {"type": "number", "exclusiveMinimum": 0},
-                    "tif": {"type": "string", "default": "DAY"},
-                    "request_text": {"type": "string"},
-                },
-                "required": ["symbol", "side", "quantity"],
-                "additionalProperties": False,
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "enqueue_positions_sync_job",
-            "description": "Enqueue a positions.sync job for worker:jobs to process.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "request_text": {"type": "string"},
-                    "max_attempts": {
-                        "type": "integer",
-                        "minimum": 1,
-                        "maximum": 10,
-                        "default": 3,
-                    },
-                },
-                "additionalProperties": False,
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "enqueue_order_fetch_sync_job",
-            "description": "Enqueue an order.fetch_sync job for worker:jobs to pull broker orders into the database.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "request_text": {"type": "string"},
-                    "max_attempts": {
-                        "type": "integer",
-                        "minimum": 1,
-                        "maximum": 10,
-                        "default": 3,
-                    },
-                },
-                "additionalProperties": False,
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "enqueue_contracts_sync_job",
-            "description": (
-                "Enqueue a contracts.sync job to fetch available contracts from IBKR into the database. "
-                "Pass symbol and sec_type to sync a specific instrument (e.g. NQ FUT, AAPL STK). "
-                "Defaults to CL FUT if not specified."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "symbol": {
-                        "type": "string",
-                        "description": "Ticker symbol, e.g. CL, ES, NQ, AAPL",
-                    },
-                    "sec_type": {
-                        "type": "string",
-                        "enum": ["FUT", "OPT", "FOP", "STK"],
-                        "description": "Security type to sync",
-                    },
-                    "request_text": {"type": "string"},
-                    "max_attempts": {
-                        "type": "integer",
-                        "minimum": 1,
-                        "maximum": 10,
-                        "default": 3,
-                    },
-                },
-                "additionalProperties": False,
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "lookup_contract",
-            "description": (
-                "Look up contract details. Checks the database first; if no contracts are found, "
-                "automatically fetches from IBKR and stores them. "
-                "Use this for informational queries like 'what is the front month for CL?' "
-                "or 'what NQ contracts are available?'."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "symbol": {
-                        "type": "string",
-                        "description": "Ticker symbol, e.g. CL, ES, NQ, AAPL",
-                    },
-                    "sec_type": {
-                        "type": "string",
-                        "enum": ["FUT", "OPT", "FOP", "STK"],
-                    },
-                    "contract_month": {
-                        "type": "string",
-                        "description": "YYYY-MM or month name like 'March 2026'",
-                    },
-                    "contract_expiry": {
-                        "type": "string",
-                        "description": "Specific expiry date YYYY-MM-DD (e.g. '2026-03-16'). Use this for weekly options instead of contract_month.",
-                    },
-                    "strike": {
-                        "type": "number",
-                        "description": "Strike price for OPT/FOP",
-                    },
-                    "right": {
-                        "type": "string",
-                        "enum": ["C", "P"],
-                        "description": "Call or Put for OPT/FOP",
-                    },
-                },
-                "required": ["symbol", "sec_type"],
-                "additionalProperties": False,
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "list_activated_products",
-            "description": (
-                "List the futures products actively maintained in the security master "
-                "(e.g. CL, NG, ZB, ZN, ES, NQ), with their discovered exchange, discovery "
-                "status, and how many active contracts are in the database. Use this to see "
-                "the tradable universe before looking up specific contract months."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {},
-                "additionalProperties": False,
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "list_watch_lists",
-            "description": "List all watch lists with instrument counts.",
-            "parameters": {
-                "type": "object",
-                "properties": {},
-                "additionalProperties": False,
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "create_watch_list",
-            "description": "Create a new watch list.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "name": {
-                        "type": "string",
-                        "description": "Name of the watch list",
-                    },
-                    "description": {
-                        "type": "string",
-                        "description": "Optional description",
-                    },
-                },
-                "required": ["name"],
-                "additionalProperties": False,
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "get_watch_list",
-            "description": "Get a watch list with all its instruments.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "watch_list_id": {
-                        "type": "integer",
-                        "description": "ID of the watch list",
-                    },
-                },
-                "required": ["watch_list_id"],
-                "additionalProperties": False,
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "add_watch_list_instrument",
-            "description": (
-                "Add an instrument to a watch list. Looks up the contract in the DB first "
-                "(fetches from IBKR if not found), adds it to the watch list, and enqueues "
-                "a market data job to fetch latest prices. Returns immediately with the result."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "watch_list_id": {
-                        "type": "integer",
-                        "description": "ID of the watch list to add to",
-                    },
-                    "symbol": {
-                        "type": "string",
-                        "description": "Ticker symbol, e.g. CL, ES, AAPL",
-                    },
-                    "sec_type": {
-                        "type": "string",
-                        "enum": ["STK", "FUT", "OPT", "FOP"],
-                        "description": "Security type",
-                    },
-                    "contract_month": {
-                        "type": "string",
-                        "description": "YYYY-MM or month name like 'April 2026'",
-                    },
-                    "contract_expiry": {
-                        "type": "string",
-                        "description": "Specific expiry date YYYY-MM-DD (e.g. '2026-03-16'). Use this for weekly options instead of contract_month.",
-                    },
-                    "strike": {
-                        "type": "number",
-                        "description": "Strike price for OPT/FOP",
-                    },
-                    "right": {
-                        "type": "string",
-                        "enum": ["C", "P"],
-                        "description": "Call or Put for OPT/FOP",
-                    },
-                },
-                "required": ["watch_list_id", "symbol", "sec_type"],
-                "additionalProperties": False,
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "remove_watch_list_instrument",
-            "description": "Remove an instrument from a watch list.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "watch_list_id": {
-                        "type": "integer",
-                        "description": "ID of the watch list",
-                    },
-                    "instrument_id": {
-                        "type": "integer",
-                        "description": "ID of the instrument to remove",
-                    },
-                },
-                "required": ["watch_list_id", "instrument_id"],
-                "additionalProperties": False,
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "check_watchlist_job",
-            "description": (
-                "Poll a watchlist.add_instrument job for its result. "
-                "Returns instrument details when completed, error when failed, "
-                "or a 'still running' message if not yet done. Call again if still running."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "job_id": {
-                        "type": "integer",
-                        "description": "The job ID returned by add_watch_list_instrument",
-                    },
-                },
-                "required": ["job_id"],
-                "additionalProperties": False,
-            },
-        },
-    },
-]
+# --- Tool registry -------------------------------------------------------------------------------
+# A ``Tool`` is one LLM-callable function: its name, description, a Pydantic ``Args`` model (the
+# validator and the source of the JSON schema), and the function that runs it. ``TOOLS`` is the only
+# list; ``_TOOL_SPECS`` (sent to the LLM) and ``_TOOL_HANDLERS`` (used to dispatch) are both derived
+# from it at the bottom of the tool section, so they cannot drift.
+
+# The third argument is the validated ``Args`` instance; ``Any`` because each tool has its own model.
+ToolRun = Callable[[Session, str, Any], dict[str, Any]]
+_ArgsT = TypeVar("_ArgsT", bound=BaseModel)
+
+
+@dataclass(frozen=True)
+class Tool:
+    name: str
+    description: str
+    args: type[BaseModel]
+    run: ToolRun
+    # Explicit JSON schema for ``parameters``; only for a tool whose enums come from data at import time.
+    parameters: dict[str, Any] | None = None
+
+    def spec(self) -> dict[str, Any]:
+        parameters = self.parameters if self.parameters is not None else _parameters_schema(self.args)
+        return {
+            "type": "function",
+            "function": {"name": self.name, "description": self.description, "parameters": parameters},
+        }
+
+
+TOOLS: list[Tool] = []
+
+
+def _register_tool(new_tool: Tool) -> None:
+    if any(existing.name == new_tool.name for existing in TOOLS):
+        raise ValueError(f"Duplicate tradebot tool '{new_tool.name}'.")
+    TOOLS.append(new_tool)
+
+
+def tool(
+    name: str,
+    description: str,
+    args: type[_ArgsT],
+) -> Callable[[Callable[[Session, str, _ArgsT], dict[str, Any]]], Callable[[Session, str, _ArgsT], dict[str, Any]]]:
+    """Register the decorated function as the handler of tool ``name``, validated through ``args``."""
+
+    def register(run: Callable[[Session, str, _ArgsT], dict[str, Any]]) -> Callable[[Session, str, _ArgsT], dict[str, Any]]:
+        _register_tool(Tool(name=name, description=description, args=args, run=run))
+        return run
+
+    return register
+
+
+def _fold_any_of(node: dict[str, Any]) -> dict[str, Any]:
+    """``X | None`` becomes ``X``; ``str | int`` becomes ``type: [string, integer]``."""
+    rest = {key: value for key, value in node.items() if key != "anyOf"}
+    non_null = [member for member in node["anyOf"] if member != {"type": "null"}]
+    if len(non_null) == 1:
+        return {**non_null[0], **rest}
+    return {**rest, "type": [member["type"] for member in non_null]}
+
+
+def _clean_schema(node: Any) -> Any:
+    """Reduce a Pydantic JSON schema to the plain shape the tool specs have always had.
+
+    Drops generated ``title``s and ``default: null``, and folds ``anyOf`` unions into a plain schema.
+    """
+    if isinstance(node, list):
+        return [_clean_schema(item) for item in node]
+    if not isinstance(node, dict):
+        return node
+
+    cleaned: dict[str, Any] = {}
+    for key, value in node.items():
+        if (key == "title" and isinstance(value, str)) or (key == "default" and value is None):
+            continue
+        # Keys under "properties" are argument names, not schema keywords.
+        cleaned[key] = {name: _clean_schema(sub) for name, sub in value.items()} if key == "properties" else _clean_schema(value)
+    return _fold_any_of(cleaned) if "anyOf" in cleaned else cleaned
+
+
+def _parameters_schema(args: type[BaseModel]) -> dict[str, Any]:
+    schema: dict[str, Any] = _clean_schema(args.model_json_schema())
+    schema.pop("description", None)  # the model's docstring, not part of the tool's parameters
+    return schema
+
+
+class _ToolArgs(BaseModel):
+    """Base for tool arguments.
+
+    Types are strict (the string ``"5"`` is not an integer). Unknown keys are ignored, as the old
+    hand-rolled parsing did, while the published schema keeps ``additionalProperties: false``.
+    """
+
+    model_config = ConfigDict(strict=True, extra="ignore", json_schema_extra={"additionalProperties": False})
+
+
+class _NoArgs(_ToolArgs):
+    """A tool that takes no arguments and rejects any it is given."""
+
+    model_config = ConfigDict(extra="forbid")
+
+
+def _strip_or_none(value: str | None) -> str | None:
+    if value is None:
+        return None
+    return value.strip() or None
+
+
+def _require_non_blank(value: str) -> str:
+    if not value.strip():
+        raise ValueError("must be a non-empty string.")
+    return value
+
+
+def _strip_non_blank(value: str) -> str:
+    return _require_non_blank(value).strip()
+
+
+def _group_not_blank(value: str | int) -> str | int:
+    if isinstance(value, str):
+        _require_non_blank(value)
+    return value
+
+
+OptStr = Annotated[str | None, AfterValidator(_strip_or_none)]  # surrounding whitespace removed, blank means absent
+NonBlankStr = Annotated[str, AfterValidator(_strip_non_blank)]  # required, stripped
+
+
+def _format_validation_error(tool_name: str, exc: ValidationError) -> str:
+    problems = []
+    for err in exc.errors():
+        where = ".".join(str(part) for part in err["loc"])
+        message = err["msg"].removeprefix("Value error, ")
+        problems.append(f"'{where}': {message}" if where else message)
+    return f"Invalid arguments for tool '{tool_name}': " + "; ".join(problems)
 
 
 _NUMERIC_FILTER_DIMS = {"strike"}
 
 
-def _build_query_metric_spec() -> dict[str, Any]:
-    """Build the query_metric tool spec from the OSI semantic model.
+def _build_query_metric_schema() -> tuple[str, dict[str, Any]]:
+    """Build the query_metric description and JSON schema from the OSI semantic model.
 
     The metric/dimension enums come straight from the model so the LLM can only
     reference defined names — this is the safety boundary that replaces free-form
@@ -497,88 +242,48 @@ def _build_query_metric_spec() -> dict[str, Any]:
 
     metric_blurb = "; ".join((f"{m.name} [grain: {m.fact}]" + (f" — {m.description.strip()}" if m.description else "")) for m in model.metrics.values())
 
-    return {
-        "type": "function",
-        "function": {
-            "name": "query_metric",
-            "description": (
-                "Run a business-analyst metric query over the trade database using the OSI semantic model. "
-                "You pick a metric and dimensions by name; the server compiles them into read-only SQL. "
-                "You cannot and need not write SQL. Not all dimensions apply to all metrics — if one is "
-                "out of grain the tool returns an error naming the valid options; retry with those. "
-                f"Metrics — {metric_blurb}. "
-                f"Group-by / filter dimensions — {', '.join(dim_names)}."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "metric": {"type": "string", "enum": metric_names},
-                    "group_by": {
-                        "type": "array",
-                        "items": {"type": "string", "enum": dim_names},
-                        "description": "Dimensions to group the metric by.",
-                    },
-                    "filters": {
-                        "type": "object",
-                        "properties": filter_props,
-                        "additionalProperties": False,
-                        "description": "Equality filters keyed by dimension name.",
-                    },
-                    "start_date": {
-                        "type": "string",
-                        "description": "ISO lower bound (inclusive) on executed_at, e.g. '2026-01-01'.",
-                    },
-                    "end_date": {
-                        "type": "string",
-                        "description": "ISO upper bound (inclusive) on executed_at.",
-                    },
-                    "time_grain": {
-                        "type": "string",
-                        "enum": list(ALLOWED_TIME_GRAINS),
-                        "description": "Bucket the executed_at time dimension when grouping by it.",
-                    },
-                    "limit": {"type": "integer", "minimum": 1, "maximum": 500, "default": 50},
-                },
-                "required": ["metric"],
-                "additionalProperties": False,
+    description = (
+        "Run a business-analyst metric query over the trade database using the OSI semantic model. "
+        "You pick a metric and dimensions by name; the server compiles them into read-only SQL. "
+        "You cannot and need not write SQL. Not all dimensions apply to all metrics — if one is "
+        "out of grain the tool returns an error naming the valid options; retry with those. "
+        f"Metrics — {metric_blurb}. "
+        f"Group-by / filter dimensions — {', '.join(dim_names)}."
+    )
+    parameters = {
+        "type": "object",
+        "properties": {
+            "metric": {"type": "string", "enum": metric_names},
+            "group_by": {
+                "type": "array",
+                "items": {"type": "string", "enum": dim_names},
+                "description": "Dimensions to group the metric by.",
             },
-        },
-    }
-
-
-_TOOL_SPECS.append(
-    {
-        "type": "function",
-        "function": {
-            "name": "trade_group_pnl",
-            "description": (
-                "Realized + unrealized PnL for ONE trade group, matching the trade group detail view. "
-                "Returns realized_pnl (settled), settled_unrealized_pnl, and the live-overlay figures "
-                "intraday_unrealized_pnl / intraday_realized_pnl / intraday_total_pnl plus marks_as_of. "
-                "Intraday figures are 'as of the last live TWS refresh', not tick-live, and are a per-group "
-                "attribution (not additive across groups). For analytics across many groups use query_metric "
-                "(e.g. realized_pnl grouped by trade_group)."
-            ),
-            "parameters": {
+            "filters": {
                 "type": "object",
-                "properties": {
-                    "group": {
-                        "type": ["string", "integer"],
-                        "description": "Trade group name or numeric id.",
-                    },
-                },
-                "required": ["group"],
+                "properties": filter_props,
                 "additionalProperties": False,
+                "description": "Equality filters keyed by dimension name.",
             },
+            "start_date": {
+                "type": "string",
+                "description": "ISO lower bound (inclusive) on executed_at, e.g. '2026-01-01'.",
+            },
+            "end_date": {
+                "type": "string",
+                "description": "ISO upper bound (inclusive) on executed_at.",
+            },
+            "time_grain": {
+                "type": "string",
+                "enum": list(ALLOWED_TIME_GRAINS),
+                "description": "Bucket the executed_at time dimension when grouping by it.",
+            },
+            "limit": {"type": "integer", "minimum": 1, "maximum": 500, "default": 50},
         },
+        "required": ["metric"],
+        "additionalProperties": False,
     }
-)
-
-
-try:
-    _TOOL_SPECS.append(_build_query_metric_spec())
-except Exception as exc:  # noqa: BLE001 — a bad model file must not break the whole agent
-    logger.error("query_metric tool disabled: failed to load semantic model: %s", exc)
+    return description, parameters
 
 
 @dataclass(frozen=True)
@@ -627,41 +332,8 @@ def _normalize_chat_role(role: str) -> str:
     return "user"
 
 
-def _coerce_int_arg(
-    args: dict[str, Any],
-    key: str,
-    default: int,
-    minimum: int,
-    maximum: int,
-) -> int:
-    raw = args.get(key, default)
-    if not isinstance(raw, int):
-        raise ValueError(f"'{key}' must be an integer.")
-    if raw < minimum or raw > maximum:
-        raise ValueError(f"'{key}' must be between {minimum} and {maximum}.")
-    return raw
-
-
-def _coerce_bool_arg(args: dict[str, Any], key: str, default: bool) -> bool:
-    raw = args.get(key, default)
-    if not isinstance(raw, bool):
-        raise ValueError(f"'{key}' must be a boolean.")
-    return raw
-
-
-def _coerce_optional_str_arg(args: dict[str, Any], key: str) -> str | None:
-    raw = args.get(key)
-    if raw is None:
-        return None
-    if not isinstance(raw, str):
-        raise ValueError(f"'{key}' must be a string.")
-    value = raw.strip()
-    return value or None
-
-
-def _tool_list_accounts(session: Session, _: str, args: dict[str, Any]) -> dict[str, Any]:
-    if args:
-        raise ValueError("list_accounts does not take arguments.")
+@tool("list_accounts", "List available brokerage accounts for order routing.", _NoArgs)
+def _tool_list_accounts(session: Session, _: str, args: _NoArgs) -> dict[str, Any]:
     rows = session.execute(select(Account).order_by(Account.id)).scalars().all()
     return {
         "accounts": [
@@ -675,9 +347,13 @@ def _tool_list_accounts(session: Session, _: str, args: dict[str, Any]) -> dict[
     }
 
 
-def _tool_list_positions(session: Session, _: str, args: dict[str, Any]) -> dict[str, Any]:
-    limit = _coerce_int_arg(args, "limit", 25, 1, 200)
-    stmt = select(Position, Account).outerjoin(Account, Position.account_id == Account.id).order_by(func.abs(Position.position).desc()).limit(limit)
+class ListPositionsArgs(_ToolArgs):
+    limit: int = Field(25, ge=1, le=200)
+
+
+@tool("list_positions", "Read current positions from the database.", ListPositionsArgs)
+def _tool_list_positions(session: Session, _: str, args: ListPositionsArgs) -> dict[str, Any]:
+    stmt = select(Position, Account).outerjoin(Account, Position.account_id == Account.id).order_by(func.abs(Position.position).desc()).limit(args.limit)
     rows = session.execute(stmt).all()
     positions = []
     for position, account in rows:
@@ -698,13 +374,17 @@ def _tool_list_positions(session: Session, _: str, args: dict[str, Any]) -> dict
     return {"positions": positions, "count": len(positions)}
 
 
-def _tool_list_jobs(session: Session, _: str, args: dict[str, Any]) -> dict[str, Any]:
-    limit = _coerce_int_arg(args, "limit", 20, 1, 200)
-    include_archived = _coerce_bool_arg(args, "include_archived", False)
+class ListJobsArgs(_ToolArgs):
+    limit: int = Field(20, ge=1, le=200)
+    include_archived: bool = False
+
+
+@tool("list_jobs", "Read latest job queue records.", ListJobsArgs)
+def _tool_list_jobs(session: Session, _: str, args: ListJobsArgs) -> dict[str, Any]:
     stmt = select(Job)
-    if not include_archived:
+    if not args.include_archived:
         stmt = stmt.where(Job.archived_at.is_(None))
-    rows = session.execute(stmt.order_by(Job.created_at.desc()).limit(limit)).scalars().all()
+    rows = session.execute(stmt.order_by(Job.created_at.desc()).limit(args.limit)).scalars().all()
     jobs = [
         {
             "id": job.id,
@@ -724,16 +404,19 @@ def _tool_list_jobs(session: Session, _: str, args: dict[str, Any]) -> dict[str,
     return {"jobs": jobs, "count": len(jobs)}
 
 
-def _tool_list_orders(session: Session, _: str, args: dict[str, Any]) -> dict[str, Any]:
-    limit = _coerce_int_arg(args, "limit", 20, 1, 200)
-    include_events = _coerce_bool_arg(args, "include_events", True)
-    events_per_order = _coerce_int_arg(args, "events_per_order", 3, 1, 20)
-    status = _coerce_optional_str_arg(args, "status")
+class ListOrdersArgs(_ToolArgs):
+    limit: int = Field(20, ge=1, le=200)
+    status: OptStr = None
+    include_events: bool = True
+    events_per_order: int = Field(3, ge=1, le=20)
 
+
+@tool("list_orders", "Read latest order records and optional recent events.", ListOrdersArgs)
+def _tool_list_orders(session: Session, _: str, args: ListOrdersArgs) -> dict[str, Any]:
     stmt = select(Order, Account).outerjoin(Account, Order.account_id == Account.id).order_by(Order.created_at.desc())
-    if status is not None:
-        stmt = stmt.where(func.lower(Order.status) == status.lower())
-    rows = session.execute(stmt.limit(limit)).all()
+    if args.status is not None:
+        stmt = stmt.where(func.lower(Order.status) == args.status.lower())
+    rows = session.execute(stmt.limit(args.limit)).all()
 
     orders: list[dict[str, Any]] = []
     for order, account in rows:
@@ -760,9 +443,9 @@ def _tool_list_orders(session: Session, _: str, args: dict[str, Any]) -> dict[st
             "completed_at": _iso(order.completed_at),
             "updated_at": _iso(order.updated_at),
         }
-        if include_events:
+        if args.include_events:
             events = (
-                session.execute(select(OrderEvent).where(OrderEvent.order_id == order.id).order_by(OrderEvent.created_at.desc()).limit(events_per_order))
+                session.execute(select(OrderEvent).where(OrderEvent.order_id == order.id).order_by(OrderEvent.created_at.desc()).limit(args.events_per_order))
                 .scalars()
                 .all()
             )
@@ -782,22 +465,39 @@ def _tool_list_orders(session: Session, _: str, args: dict[str, Any]) -> dict[st
     return {"orders": orders, "count": len(orders)}
 
 
-def _resolve_order_tool_account(session: Session, args: dict[str, Any]) -> Account:
-    account_id_raw = args.get("account_id")
-    account_label = _coerce_optional_str_arg(args, "account")
+class PreviewOrderArgs(_ToolArgs):
+    account_id: int | None = None
+    account: OptStr = Field(None, description="Account alias or account number when account_id is not provided.")
+    symbol: str
+    # The schema advertises the allowed values; normalize_order_create_input stays the one place that accepts or rejects a side.
+    side: str = Field(json_schema_extra={"enum": ["BUY", "SELL", "buy", "sell"]})
+    quantity: int = Field(ge=1)
+    sec_type: str = "FUT"
+    exchange: OptStr = None
+    currency: str = "USD"
+    order_type: str = "MKT"
+    # Advertised as > 0 but not enforced here: a MKT order has always ignored its limit price, and LMT is checked in normalize_order_create_input.
+    limit_price: float | None = Field(None, json_schema_extra={"exclusiveMinimum": 0})
+    tif: str = "DAY"
+    request_text: OptStr = None
 
-    if account_id_raw is not None:
-        if not isinstance(account_id_raw, int):
-            raise ValueError("'account_id' must be an integer when provided.")
-        account = session.get(Account, account_id_raw)
+    @field_validator("sec_type", "currency", "order_type", "tif")
+    @classmethod
+    def _blank_means_default(cls, value: str, info: ValidationInfo) -> str:
+        return value.strip() or cls.model_fields[str(info.field_name)].default
+
+
+def _resolve_order_tool_account(session: Session, args: PreviewOrderArgs) -> Account:
+    if args.account_id is not None:
+        account = session.get(Account, args.account_id)
         if account is None:
-            raise ValueError(f"Account id {account_id_raw} not found.")
+            raise ValueError(f"Account id {args.account_id} not found.")
         return account
 
-    if account_label is None:
+    if args.account is None:
         raise ValueError("Provide 'account_id' or 'account' (alias/account number).")
 
-    lowered = account_label.lower()
+    lowered = args.account.lower()
     stmt = select(Account).where(
         or_(
             func.lower(Account.alias) == lowered,
@@ -806,60 +506,33 @@ def _resolve_order_tool_account(session: Session, args: dict[str, Any]) -> Accou
     )
     account = session.execute(stmt).scalars().first()
     if account is None:
-        raise ValueError(f"Account '{account_label}' not found.")
+        raise ValueError(f"Account '{args.account}' not found.")
     return account
 
 
 def _build_order_input_from_tool_args(
     session: Session,
-    args: dict[str, Any],
+    args: PreviewOrderArgs,
     *,
     latest_user_text: str,
 ) -> tuple[Account, OrderCreateInput]:
     account = _resolve_order_tool_account(session, args)
-
-    symbol_raw = args.get("symbol")
-    if not isinstance(symbol_raw, str):
-        raise ValueError("'symbol' must be a string.")
-
-    side_raw = args.get("side")
-    if not isinstance(side_raw, str):
-        raise ValueError("'side' must be a string.")
-
-    quantity_raw = args.get("quantity")
-    if not isinstance(quantity_raw, int):
-        raise ValueError("'quantity' must be an integer.")
-
-    sec_type = _coerce_optional_str_arg(args, "sec_type") or "FUT"
-    exchange = _coerce_optional_str_arg(args, "exchange")
-    if exchange is None:
-        exchange = _resolve_exchange(symbol_raw.strip().upper(), sec_type.strip().upper())
-    currency = _coerce_optional_str_arg(args, "currency") or "USD"
-    order_type = _coerce_optional_str_arg(args, "order_type") or "MKT"
-    tif = _coerce_optional_str_arg(args, "tif") or "DAY"
-    request_text = _coerce_optional_str_arg(args, "request_text") or latest_user_text
-
-    limit_price_raw = args.get("limit_price")
-    limit_price: float | None = None
-    if limit_price_raw is not None:
-        if not isinstance(limit_price_raw, (int, float)):
-            raise ValueError("'limit_price' must be a number.")
-        limit_price = float(limit_price_raw)
+    exchange = args.exchange or _resolve_exchange(args.symbol.strip().upper(), args.sec_type.strip().upper())
 
     normalized = normalize_order_create_input(
         OrderCreateInput(
             account_id=account.id,
-            symbol=symbol_raw,
-            side=side_raw,
-            quantity=quantity_raw,
-            sec_type=sec_type,
+            symbol=args.symbol,
+            side=args.side,
+            quantity=args.quantity,
+            sec_type=args.sec_type,
             exchange=exchange,
-            currency=currency,
-            order_type=order_type,
-            limit_price=limit_price,
-            tif=tif,
+            currency=args.currency,
+            order_type=args.order_type,
+            limit_price=args.limit_price,
+            tif=args.tif,
             source=_TOOL_SOURCE,
-            request_text=request_text,
+            request_text=args.request_text or latest_user_text,
         )
     )
     return account, normalized
@@ -882,7 +555,8 @@ def _order_summary_payload(order_input: OrderCreateInput) -> dict[str, Any]:
     }
 
 
-def _tool_preview_order(session: Session, latest_user_text: str, args: dict[str, Any]) -> dict[str, Any]:
+@tool("preview_order", "Validate and normalize an order request without writing to the database.", PreviewOrderArgs)
+def _tool_preview_order(session: Session, latest_user_text: str, args: PreviewOrderArgs) -> dict[str, Any]:
     account, order_input = _build_order_input_from_tool_args(
         session,
         args,
@@ -899,100 +573,115 @@ def _tool_preview_order(session: Session, latest_user_text: str, args: dict[str,
     }
 
 
-def _tool_enqueue_positions_sync_job(session: Session, latest_user_text: str, args: dict[str, Any]) -> dict[str, Any]:
-    max_attempts = _coerce_int_arg(args, "max_attempts", 3, 1, 10)
-    request_text = _coerce_optional_str_arg(args, "request_text") or latest_user_text
-    job = enqueue_job(
-        session=session,
-        job_type=JOB_TYPE_POSITIONS_SYNC_FLEXQUERY,
-        payload={},
-        source=_TOOL_SOURCE,
-        request_text=request_text,
-        max_attempts=max_attempts,
+class EnqueueJobArgs(_ToolArgs):
+    request_text: OptStr = None
+    max_attempts: int = Field(3, ge=1, le=10)
+
+
+class EnqueueContractsSyncArgs(EnqueueJobArgs):
+    symbol: OptStr = Field(None, description="Ticker symbol, e.g. CL, ES, NQ, AAPL")
+    sec_type: OptStr = Field(None, description="Security type to sync", json_schema_extra={"enum": ["FUT", "OPT", "FOP", "STK"]})
+
+
+def _no_payload(_: Any) -> dict[str, Any]:
+    return {}
+
+
+def _contracts_sync_payload(args: EnqueueContractsSyncArgs) -> dict[str, Any]:
+    if args.symbol is None and args.sec_type is None:
+        return {}
+    sym = (args.symbol or "CL").upper()
+    st = (args.sec_type or "FUT").upper()
+    return {"specs": [{"symbol": sym, "sec_type": st, "exchange": _resolve_exchange(sym, st)}]}
+
+
+def _enqueue_job_tool(
+    name: str,
+    description: str,
+    job_type: str,
+    args: type[EnqueueJobArgs] = EnqueueJobArgs,
+    build_payload: Callable[[Any], dict[str, Any]] = _no_payload,
+) -> None:
+    """Register a tool that enqueues one ``job_type`` job for the worker and reports the queued job."""
+
+    def run(session: Session, latest_user_text: str, tool_args: EnqueueJobArgs) -> dict[str, Any]:
+        job = enqueue_job(
+            session=session,
+            job_type=job_type,
+            payload=build_payload(tool_args),
+            source=_TOOL_SOURCE,
+            request_text=tool_args.request_text or latest_user_text,
+            max_attempts=tool_args.max_attempts,
+        )
+        session.commit()
+        return {
+            "job_id": job.id,
+            "job_type": job.job_type,
+            "status": job.status,
+            "max_attempts": job.max_attempts,
+        }
+
+    _register_tool(Tool(name=name, description=description, args=args, run=run))
+
+
+_enqueue_job_tool(
+    "enqueue_positions_sync_job",
+    "Enqueue a positions.sync job for worker:jobs to process.",
+    JOB_TYPE_POSITIONS_SYNC_FLEXQUERY,
+)
+_enqueue_job_tool(
+    "enqueue_order_fetch_sync_job",
+    "Enqueue an order.fetch_sync job for worker:jobs to pull broker orders into the database.",
+    JOB_TYPE_ORDER_FETCH_SYNC,
+)
+_enqueue_job_tool(
+    "enqueue_contracts_sync_job",
+    (
+        "Enqueue a contracts.sync job to fetch available contracts from IBKR into the database. "
+        "Pass symbol and sec_type to sync a specific instrument (e.g. NQ FUT, AAPL STK). "
+        "Defaults to CL FUT if not specified."
+    ),
+    JOB_TYPE_CONTRACTS_SYNC,
+    args=EnqueueContractsSyncArgs,
+    build_payload=_contracts_sync_payload,
+)
+
+
+class _ContractQueryArgs(_ToolArgs):
+    """The contract-selecting arguments shared by lookup_contract and add_watch_list_instrument."""
+
+    contract_expiry: OptStr = Field(
+        None,
+        description="Specific expiry date YYYY-MM-DD (e.g. '2026-03-16'). Use this for weekly options instead of contract_month.",
     )
-    session.commit()
-    return {
-        "job_id": job.id,
-        "job_type": job.job_type,
-        "status": job.status,
-        "max_attempts": job.max_attempts,
-    }
+    strike: float | None = Field(None, description="Strike price for OPT/FOP")
+    # The schema advertises C/P; the handler upper-cases whatever it gets, as it always has.
+    right: OptStr = Field(None, description="Call or Put for OPT/FOP", json_schema_extra={"enum": ["C", "P"]})
 
 
-def _tool_enqueue_order_fetch_sync_job(session: Session, latest_user_text: str, args: dict[str, Any]) -> dict[str, Any]:
-    max_attempts = _coerce_int_arg(args, "max_attempts", 3, 1, 10)
-    request_text = _coerce_optional_str_arg(args, "request_text") or latest_user_text
-    job = enqueue_job(
-        session=session,
-        job_type=JOB_TYPE_ORDER_FETCH_SYNC,
-        payload={},
-        source=_TOOL_SOURCE,
-        request_text=request_text,
-        max_attempts=max_attempts,
-    )
-    session.commit()
-    return {
-        "job_id": job.id,
-        "job_type": job.job_type,
-        "status": job.status,
-        "max_attempts": job.max_attempts,
-    }
+class LookupContractArgs(_ContractQueryArgs):
+    symbol: NonBlankStr = Field(description="Ticker symbol, e.g. CL, ES, NQ, AAPL")
+    sec_type: NonBlankStr = Field(json_schema_extra={"enum": ["FUT", "OPT", "FOP", "STK"]})
+    contract_month: OptStr = Field(None, description="YYYY-MM or month name like 'March 2026'")
 
 
-from src.data.exchanges import resolve_exchange as _resolve_exchange  # noqa: E402
-
-
-def _tool_enqueue_contracts_sync_job(session: Session, latest_user_text: str, args: dict[str, Any]) -> dict[str, Any]:
-    max_attempts = _coerce_int_arg(args, "max_attempts", 3, 1, 10)
-    request_text = _coerce_optional_str_arg(args, "request_text") or latest_user_text
-
-    symbol = _coerce_optional_str_arg(args, "symbol")
-    sec_type = _coerce_optional_str_arg(args, "sec_type")
-
-    payload: dict[str, Any] = {}
-    if symbol is not None or sec_type is not None:
-        sym = (symbol or "CL").upper()
-        st = (sec_type or "FUT").upper()
-        exchange = _resolve_exchange(sym, st)
-        payload["specs"] = [{"symbol": sym, "sec_type": st, "exchange": exchange}]
-
-    job = enqueue_job(
-        session=session,
-        job_type=JOB_TYPE_CONTRACTS_SYNC,
-        payload=payload,
-        source=_TOOL_SOURCE,
-        request_text=request_text,
-        max_attempts=max_attempts,
-    )
-    session.commit()
-    return {
-        "job_id": job.id,
-        "job_type": job.job_type,
-        "status": job.status,
-        "max_attempts": job.max_attempts,
-    }
-
-
-def _tool_lookup_contract(session: Session, _: str, args: dict[str, Any]) -> dict[str, Any]:
-    symbol_raw = args.get("symbol")
-    if not isinstance(symbol_raw, str) or not symbol_raw.strip():
-        raise ValueError("'symbol' must be a non-empty string.")
-    symbol = symbol_raw.strip().upper()
-
-    sec_type_raw = args.get("sec_type")
-    if not isinstance(sec_type_raw, str) or not sec_type_raw.strip():
-        raise ValueError("'sec_type' must be a non-empty string.")
-    sec_type = sec_type_raw.strip().upper()
-
-    requested_contract_month_raw = _coerce_optional_str_arg(args, "contract_month")
-    requested_contract_month = normalize_contract_month_input(requested_contract_month_raw)
-    contract_expiry = _coerce_optional_str_arg(args, "contract_expiry")
-
-    strike_raw = args.get("strike")
-    strike = float(strike_raw) if strike_raw is not None else None
-    right = _coerce_optional_str_arg(args, "right")
-    if right is not None:
-        right = right.upper()
+@tool(
+    "lookup_contract",
+    (
+        "Look up contract details. Checks the database first; if no contracts are found, "
+        "automatically fetches from IBKR and stores them. "
+        "Use this for informational queries like 'what is the front month for CL?' "
+        "or 'what NQ contracts are available?'."
+    ),
+    LookupContractArgs,
+)
+def _tool_lookup_contract(session: Session, _: str, args: LookupContractArgs) -> dict[str, Any]:
+    symbol = args.symbol.upper()
+    sec_type = args.sec_type.upper()
+    requested_contract_month = normalize_contract_month_input(args.contract_month)
+    contract_expiry = args.contract_expiry
+    strike = args.strike
+    right = args.right.upper() if args.right is not None else None
 
     min_days_to_expiry = get_int_env("BROKER_CL_MIN_DAYS_TO_EXPIRY", DEFAULT_CL_MIN_DAYS_TO_EXPIRY)
 
@@ -1082,9 +771,17 @@ def _tool_lookup_contract(session: Session, _: str, args: dict[str, Any]) -> dic
     }
 
 
-def _tool_list_activated_products(session: Session, _: str, args: dict[str, Any]) -> dict[str, Any]:
-    if args:
-        raise ValueError("list_activated_products does not take arguments.")
+@tool(
+    "list_activated_products",
+    (
+        "List the futures products actively maintained in the security master "
+        "(e.g. CL, NG, ZB, ZN, ES, NQ), with their discovered exchange, discovery "
+        "status, and how many active contracts are in the database. Use this to see "
+        "the tradable universe before looking up specific contract months."
+    ),
+    _NoArgs,
+)
+def _tool_list_activated_products(session: Session, _: str, args: _NoArgs) -> dict[str, Any]:
     from src.models import ActivatedProduct, ContractRef
 
     products = session.execute(select(ActivatedProduct).order_by(ActivatedProduct.symbol.asc())).scalars().all()
@@ -1113,7 +810,8 @@ def _tool_list_activated_products(session: Session, _: str, args: dict[str, Any]
     }
 
 
-def _tool_list_watch_lists(session: Session, _: str, args: dict[str, Any]) -> dict[str, Any]:
+@tool("list_watch_lists", "List all watch lists with instrument counts.", _NoArgs)
+def _tool_list_watch_lists(session: Session, _: str, args: _NoArgs) -> dict[str, Any]:
     count_subq = select(func.count(WatchListInstrument.id)).where(WatchListInstrument.watch_list_id == WatchList.id).correlate(WatchList).scalar_subquery()
     stmt = select(WatchList, count_subq).order_by(WatchList.created_at.desc())
     rows = session.execute(stmt).all()
@@ -1130,24 +828,29 @@ def _tool_list_watch_lists(session: Session, _: str, args: dict[str, Any]) -> di
     }
 
 
-def _tool_create_watch_list(session: Session, _: str, args: dict[str, Any]) -> dict[str, Any]:
-    name = args.get("name")
-    if not isinstance(name, str) or not name.strip():
-        raise ValueError("'name' must be a non-empty string.")
-    description = _coerce_optional_str_arg(args, "description")
-    wl = WatchList(name=name.strip(), description=description)
+class CreateWatchListArgs(_ToolArgs):
+    name: NonBlankStr = Field(description="Name of the watch list")
+    description: OptStr = Field(None, description="Optional description")
+
+
+@tool("create_watch_list", "Create a new watch list.", CreateWatchListArgs)
+def _tool_create_watch_list(session: Session, _: str, args: CreateWatchListArgs) -> dict[str, Any]:
+    wl = WatchList(name=args.name, description=args.description)
     session.add(wl)
     session.commit()
     session.refresh(wl)
     return {"id": wl.id, "name": wl.name, "description": wl.description}
 
 
-def _tool_get_watch_list(session: Session, _: str, args: dict[str, Any]) -> dict[str, Any]:
+class GetWatchListArgs(_ToolArgs):
+    watch_list_id: int = Field(description="ID of the watch list")
+
+
+@tool("get_watch_list", "Get a watch list with all its instruments.", GetWatchListArgs)
+def _tool_get_watch_list(session: Session, _: str, args: GetWatchListArgs) -> dict[str, Any]:
     from src.models import ContractRef
 
-    wl_id = args.get("watch_list_id")
-    if not isinstance(wl_id, int):
-        raise ValueError("'watch_list_id' must be an integer.")
+    wl_id = args.watch_list_id
     wl = session.get(WatchList, wl_id)
     if wl is None:
         raise ValueError(f"Watch list #{wl_id} not found.")
@@ -1179,35 +882,37 @@ def _tool_get_watch_list(session: Session, _: str, args: dict[str, Any]) -> dict
     }
 
 
-def _tool_add_watch_list_instrument(session: Session, latest_user_text: str, args: dict[str, Any]) -> dict[str, Any]:
-    wl_id = args.get("watch_list_id")
-    if not isinstance(wl_id, int):
-        raise ValueError("'watch_list_id' must be an integer.")
+class AddWatchListInstrumentArgs(_ContractQueryArgs):
+    watch_list_id: int = Field(description="ID of the watch list to add to")
+    symbol: NonBlankStr = Field(description="Ticker symbol, e.g. CL, ES, AAPL")
+    sec_type: NonBlankStr = Field(description="Security type", json_schema_extra={"enum": ["STK", "FUT", "OPT", "FOP"]})
+    contract_month: OptStr = Field(None, description="YYYY-MM or month name like 'April 2026'")
+
+
+@tool(
+    "add_watch_list_instrument",
+    (
+        "Add an instrument to a watch list. Looks up the contract in the DB first "
+        "(fetches from IBKR if not found), adds it to the watch list, and enqueues "
+        "a market data job to fetch latest prices. Returns immediately with the result."
+    ),
+    AddWatchListInstrumentArgs,
+)
+def _tool_add_watch_list_instrument(session: Session, latest_user_text: str, args: AddWatchListInstrumentArgs) -> dict[str, Any]:
+    wl_id = args.watch_list_id
     wl = session.get(WatchList, wl_id)
     if wl is None:
         raise ValueError(f"Watch list #{wl_id} not found.")
 
-    symbol_raw = args.get("symbol")
-    if not isinstance(symbol_raw, str) or not symbol_raw.strip():
-        raise ValueError("'symbol' must be a non-empty string.")
-    symbol = symbol_raw.strip().upper()
-
-    sec_type_raw = args.get("sec_type")
-    if not isinstance(sec_type_raw, str) or not sec_type_raw.strip():
-        raise ValueError("'sec_type' must be a non-empty string.")
-    sec_type = sec_type_raw.strip().upper()
+    symbol = args.symbol.upper()
+    sec_type = args.sec_type.upper()
     if sec_type not in {"STK", "FUT", "OPT", "FOP"}:
         raise ValueError("'sec_type' must be one of STK, FUT, OPT, FOP.")
 
-    requested_contract_month_raw = _coerce_optional_str_arg(args, "contract_month")
-    requested_contract_month = normalize_contract_month_input(requested_contract_month_raw)
-    contract_expiry = _coerce_optional_str_arg(args, "contract_expiry")
-
-    strike_raw = args.get("strike")
-    strike = float(strike_raw) if strike_raw is not None else None
-    right = _coerce_optional_str_arg(args, "right")
-    if right is not None:
-        right = right.upper()
+    requested_contract_month = normalize_contract_month_input(args.contract_month)
+    contract_expiry = args.contract_expiry
+    strike = args.strike
+    right = args.right.upper() if args.right is not None else None
 
     # 1. Find contract in DB (or fetch from IBKR if not found)
     contracts = find_contracts_with_fallback(
@@ -1287,41 +992,15 @@ def _tool_add_watch_list_instrument(session: Session, latest_user_text: str, arg
     return result
 
 
-def _tool_check_watchlist_job(session: Session, _: str, args: dict[str, Any]) -> dict[str, Any]:
-    job_id = args.get("job_id")
-    if not isinstance(job_id, int):
-        raise ValueError("'job_id' must be an integer.")
-
-    job = session.get(Job, job_id)
-    if job is None:
-        raise ValueError(f"Job #{job_id} not found.")
-    if job.job_type != JOB_TYPE_WATCHLIST_ADD_INSTRUMENT:
-        raise ValueError(f"Job #{job_id} is not a watchlist.add_instrument job (it is '{job.job_type}').")
-
-    if job.status == "completed":
-        return {
-            "status": "completed",
-            "result": job.result,
-        }
-    elif job.status == "failed":
-        return {
-            "status": "failed",
-            "error": job.last_error,
-        }
-    else:
-        return {
-            "status": job.status,
-            "message": "Job is still running. Call check_watchlist_job again shortly.",
-        }
+class RemoveWatchListInstrumentArgs(_ToolArgs):
+    watch_list_id: int = Field(description="ID of the watch list")
+    instrument_id: int = Field(description="ID of the instrument to remove")
 
 
-def _tool_remove_watch_list_instrument(session: Session, _: str, args: dict[str, Any]) -> dict[str, Any]:
-    wl_id = args.get("watch_list_id")
-    if not isinstance(wl_id, int):
-        raise ValueError("'watch_list_id' must be an integer.")
-    inst_id = args.get("instrument_id")
-    if not isinstance(inst_id, int):
-        raise ValueError("'instrument_id' must be an integer.")
+@tool("remove_watch_list_instrument", "Remove an instrument from a watch list.", RemoveWatchListInstrumentArgs)
+def _tool_remove_watch_list_instrument(session: Session, _: str, args: RemoveWatchListInstrumentArgs) -> dict[str, Any]:
+    wl_id = args.watch_list_id
+    inst_id = args.instrument_id
 
     inst = (
         session.execute(
@@ -1340,35 +1019,89 @@ def _tool_remove_watch_list_instrument(session: Session, _: str, args: dict[str,
     return {"ok": True}
 
 
-def _tool_query_metric(session: Session, _: str, args: dict[str, Any]) -> dict[str, Any]:
+class CheckWatchlistJobArgs(_ToolArgs):
+    job_id: int = Field(description="The job ID returned by add_watch_list_instrument")
+
+
+@tool(
+    "check_watchlist_job",
+    (
+        "Poll a watchlist.add_instrument job for its result. "
+        "Returns instrument details when completed, error when failed, "
+        "or a 'still running' message if not yet done. Call again if still running."
+    ),
+    CheckWatchlistJobArgs,
+)
+def _tool_check_watchlist_job(session: Session, _: str, args: CheckWatchlistJobArgs) -> dict[str, Any]:
+    job_id = args.job_id
+
+    job = session.get(Job, job_id)
+    if job is None:
+        raise ValueError(f"Job #{job_id} not found.")
+    if job.job_type != JOB_TYPE_WATCHLIST_ADD_INSTRUMENT:
+        raise ValueError(f"Job #{job_id} is not a watchlist.add_instrument job (it is '{job.job_type}').")
+
+    if job.status == JobStatus.COMPLETED:
+        return {
+            "status": JobStatus.COMPLETED,
+            "result": job.result,
+        }
+    elif job.status == JobStatus.FAILED:
+        return {
+            "status": JobStatus.FAILED,
+            "error": job.last_error,
+        }
+    else:
+        return {
+            "status": job.status,
+            "message": "Job is still running. Call check_watchlist_job again shortly.",
+        }
+
+
+class TradeGroupPnlArgs(_ToolArgs):
+    group: Annotated[str | int, AfterValidator(_group_not_blank)] = Field(description="Trade group name or numeric id.")
+
+
+@tool(
+    "trade_group_pnl",
+    (
+        "Realized + unrealized PnL for ONE trade group, matching the trade group detail view. "
+        "Returns realized_pnl (settled), settled_unrealized_pnl, and the live-overlay figures "
+        "intraday_unrealized_pnl / intraday_realized_pnl / intraday_total_pnl plus marks_as_of. "
+        "Intraday figures are 'as of the last live TWS refresh', not tick-live, and are a per-group "
+        "attribution (not additive across groups). For analytics across many groups use query_metric "
+        "(e.g. realized_pnl grouped by trade_group)."
+    ),
+    TradeGroupPnlArgs,
+)
+def _tool_trade_group_pnl(session: Session, _: str, args: TradeGroupPnlArgs) -> dict[str, Any]:
+    group = resolve_trade_group(session, args.group)
+    return compute_trade_group_pnl(session, group.id).as_dict()
+
+
+class QueryMetricArgs(_ToolArgs):
+    """Validation only; the published schema is built from the semantic model (see ``_register_query_metric_tool``)."""
+
+    metric: Annotated[str, AfterValidator(_require_non_blank)]
+    group_by: list[str] | None = None
+    filters: dict[str, Any] | None = None
+    start_date: OptStr = None
+    end_date: OptStr = None
+    time_grain: OptStr = None
+    limit: int = Field(50, ge=1, le=500)
+
+
+def _tool_query_metric(session: Session, _: str, args: QueryMetricArgs) -> dict[str, Any]:
     model = get_model()
-
-    metric = args.get("metric")
-    if not isinstance(metric, str) or not metric.strip():
-        raise ValueError("'metric' is required.")
-
-    group_by = args.get("group_by") or []
-    if not isinstance(group_by, list) or not all(isinstance(item, str) for item in group_by):
-        raise ValueError("'group_by' must be a list of dimension names.")
-
-    filters_in = args.get("filters") or {}
-    if not isinstance(filters_in, dict):
-        raise ValueError("'filters' must be an object keyed by dimension name.")
-
-    date_start = _coerce_optional_str_arg(args, "start_date")
-    date_end = _coerce_optional_str_arg(args, "end_date")
-    time_grain = _coerce_optional_str_arg(args, "time_grain")
-    limit = _coerce_int_arg(args, "limit", 50, 1, 500)
-
     query = build_metric_query(
         model,
-        metric=metric,
-        group_by=group_by,
-        equality_filters=filters_in,
-        date_start=date_start,
-        date_end=date_end,
-        time_grain=time_grain,
-        limit=limit,
+        metric=args.metric,
+        group_by=args.group_by or [],
+        equality_filters=args.filters or {},
+        date_start=args.start_date,
+        date_end=args.end_date,
+        time_grain=args.time_grain,
+        limit=args.limit,
     )
     rows = run_metric_query(session.get_bind(), query)
     return {
@@ -1380,36 +1113,25 @@ def _tool_query_metric(session: Session, _: str, args: dict[str, Any]) -> dict[s
     }
 
 
-def _tool_trade_group_pnl(session: Session, _: str, args: dict[str, Any]) -> dict[str, Any]:
-    group_raw = args.get("group")
-    if isinstance(group_raw, bool) or not isinstance(group_raw, (str, int)):
-        raise ValueError("'group' must be a trade group name (string) or numeric id (integer).")
-    if isinstance(group_raw, str) and not group_raw.strip():
-        raise ValueError("'group' (trade group name or id) is required.")
-    group = resolve_trade_group(session, group_raw)
-    return compute_trade_group_pnl(session, group.id).as_dict()
+def _register_query_metric_tool() -> None:
+    """Register query_metric, or skip it entirely if the semantic model cannot load.
+
+    The spec and the handler enter ``TOOLS`` together here, so a model failure removes the tool from
+    both ``_TOOL_SPECS`` and ``_TOOL_HANDLERS`` and the agent never advertises a tool it cannot run.
+    """
+    try:
+        description, parameters = _build_query_metric_schema()
+    except Exception as exc:  # noqa: BLE001 — a bad model file must not break the whole agent
+        logger.error("query_metric tool disabled: failed to load semantic model: %s", exc)
+        return
+    _register_tool(Tool(name="query_metric", description=description, args=QueryMetricArgs, run=_tool_query_metric, parameters=parameters))
 
 
-_TOOL_HANDLERS = {
-    "list_accounts": _tool_list_accounts,
-    "query_metric": _tool_query_metric,
-    "trade_group_pnl": _tool_trade_group_pnl,
-    "list_positions": _tool_list_positions,
-    "list_jobs": _tool_list_jobs,
-    "list_orders": _tool_list_orders,
-    "preview_order": _tool_preview_order,
-    "enqueue_positions_sync_job": _tool_enqueue_positions_sync_job,
-    "enqueue_order_fetch_sync_job": _tool_enqueue_order_fetch_sync_job,
-    "enqueue_contracts_sync_job": _tool_enqueue_contracts_sync_job,
-    "lookup_contract": _tool_lookup_contract,
-    "list_activated_products": _tool_list_activated_products,
-    "list_watch_lists": _tool_list_watch_lists,
-    "create_watch_list": _tool_create_watch_list,
-    "get_watch_list": _tool_get_watch_list,
-    "add_watch_list_instrument": _tool_add_watch_list_instrument,
-    "remove_watch_list_instrument": _tool_remove_watch_list_instrument,
-    "check_watchlist_job": _tool_check_watchlist_job,
-}
+_register_query_metric_tool()
+
+_TOOL_SPECS: list[dict[str, Any]] = [registered.spec() for registered in TOOLS]
+# Name -> Tool; ``_execute_tool_call`` validates through ``Tool.args`` and then calls ``Tool.run``.
+_TOOL_HANDLERS: dict[str, Tool] = {registered.name: registered for registered in TOOLS}
 
 
 def _load_model_config() -> _TradebotModelConfig:
@@ -1472,32 +1194,42 @@ def _call_llm(
     return parsed
 
 
+class _ToolArgsError(ValueError):
+    """The model's arguments for a tool could not be parsed or failed validation."""
+
+
+def _parse_tool_args(tool_to_run: Tool, arguments_json: str) -> BaseModel:
+    try:
+        args_obj = json.loads(arguments_json) if arguments_json.strip() else {}
+    except json.JSONDecodeError as exc:
+        raise _ToolArgsError(f"Arguments for tool '{tool_to_run.name}' were not valid JSON.") from exc
+
+    if not isinstance(args_obj, dict):
+        raise _ToolArgsError(f"Arguments for tool '{tool_to_run.name}' must be an object.")
+
+    try:
+        return tool_to_run.args.model_validate(args_obj)
+    except ValidationError as exc:
+        raise _ToolArgsError(_format_validation_error(tool_to_run.name, exc)) from exc
+
+
 def _execute_tool_call(
     session: Session,
     latest_user_text: str,
     tool_name: str,
     arguments_json: str,
 ) -> dict[str, Any]:
-    handler = _TOOL_HANDLERS.get(tool_name)
-    if handler is None:
+    tool_to_run = _TOOL_HANDLERS.get(tool_name)
+    if tool_to_run is None:
         return {"ok": False, "error": f"Unknown tool '{tool_name}'."}
 
     try:
-        args_obj = json.loads(arguments_json) if arguments_json.strip() else {}
-    except json.JSONDecodeError:
-        return {
-            "ok": False,
-            "error": f"Arguments for tool '{tool_name}' were not valid JSON.",
-        }
-
-    if not isinstance(args_obj, dict):
-        return {
-            "ok": False,
-            "error": f"Arguments for tool '{tool_name}' must be an object.",
-        }
+        args = _parse_tool_args(tool_to_run, arguments_json)
+    except _ToolArgsError as exc:
+        return {"ok": False, "error": str(exc)}
 
     try:
-        return {"ok": True, "result": handler(session, latest_user_text, args_obj)}
+        return {"ok": True, "result": tool_to_run.run(session, latest_user_text, args)}
     except Exception as exc:  # noqa: BLE001
         session.rollback()
         return {"ok": False, "error": str(exc)}
