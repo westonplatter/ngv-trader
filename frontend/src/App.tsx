@@ -11,13 +11,13 @@ import FlexQueryTokensTable from "./components/FlexQueryTokensTable";
 import MarketDataPage from "./components/MarketDataPage";
 import PricingPage from "./components/PricingPage";
 import OrdersTable from "./components/OrdersTable";
-import PositionsTable from "./components/PositionsTable";
+import PositionsPage from "./components/positions/PositionsPage";
 import StrategyPnlTable from "./components/StrategyPnlTable";
 import TradebotChat from "./components/TradebotChat";
 import StrategiesPage from "./components/StrategiesPage";
 import TagsPage from "./components/TagsPage";
 import TasksPage from "./components/TasksPage";
-import TradesTable from "./components/TradesTable";
+import TradesPage from "./components/trades/TradesPage";
 import WatchListsPage from "./components/WatchListsPage";
 import WorkerStatusLights from "./components/WorkerStatusLights";
 import { PrivacyProvider } from "./contexts/PrivacyContext";
@@ -100,7 +100,7 @@ function App() {
       <div className={contentClass}>
         <Routes>
           <Route path="/" element={<Navigate to="/tradebot" replace />} />
-          <Route path="/positions" element={<PositionsTable />} />
+          <Route path="/positions" element={<PositionsPage />} />
           <Route
             path="/accounts"
             element={
@@ -114,7 +114,7 @@ function App() {
             }
           />
           <Route path="/orders" element={<OrdersTable />} />
-          <Route path="/trades" element={<TradesTable />} />
+          <Route path="/trades" element={<TradesPage />} />
           <Route path="/strategies" element={<StrategiesPage />} />
           <Route path="/strategies/table" element={<StrategyPnlTable />} />
           <Route path="/tags" element={<TagsPage />} />

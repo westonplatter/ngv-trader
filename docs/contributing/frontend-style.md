@@ -56,6 +56,11 @@ frontend/src/
 - A page component is the component mounted by a route in `App.tsx`. Widgets
   shared by several pages (`TagChips`, `ComboboxInput`, `TradeGroupSearchSelect`)
   also live in `components/`.
+- A page's own hooks and panes live in a folder named after it,
+  `components/<page>/` (first: `components/strategies/`). Hooks own the data
+  and return one object per concern; panes take data and callbacks as props and
+  never fetch. The page file is the composition root and should stay under a
+  few hundred lines.
 - No per-component CSS files. Styling is Tailwind utility classes inline.
 
 ## Data access

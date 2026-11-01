@@ -217,8 +217,8 @@ connected, so there are no fixed refresh timers.
 | `OrdersSideTable`    | `orders`                                    | 2.5s polling |
 | `MarketDataPage`     | `jobs` (filtered to market data job types)  | 3s polling   |
 | `WorkerStatusLights` | `worker_status`                             | 4s polling   |
-| `PositionsTable`     | `positions` (coarse — triggers re-fetch)    | —            |
-| `TradesTable`        | `trades` (coarse — triggers re-fetch)       | —            |
+| `PositionsPage`      | `positions` (coarse — triggers re-fetch)    | —            |
+| `TradesPage`         | `trades` (coarse — triggers re-fetch)       | —            |
 | `PricingPage`        | `jobs` (filtered to qualify/snapshot types) | —            |
 
 ### Merge rules
