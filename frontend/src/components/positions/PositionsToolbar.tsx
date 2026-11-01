@@ -5,6 +5,7 @@ import { formatMarkTime } from "../../lib/markTime";
 import type { PositionTotals } from "../../lib/positions/view";
 import { formatRelativeReturn } from "../../utils/privacy";
 import type { PositionSync } from "./usePositionSync";
+import { OUTLINE_BUTTON } from "../ui/buttonClasses";
 
 function pnlClass(value: number | null): string {
   if (value == null) return "text-gray-500";
@@ -20,7 +21,10 @@ function pnlText(
 ): string {
   if (privacyMode) return formatRelativeReturn(value, costBasis);
   if (value == null) return "—";
-  return value.toLocaleString(undefined, { style: "currency", currency: "USD" });
+  return value.toLocaleString(undefined, {
+    style: "currency",
+    currency: "USD",
+  });
 }
 
 export default function PositionsToolbar({
@@ -83,7 +87,7 @@ export default function PositionsToolbar({
               void sync.kickOff("flex");
             }}
             disabled={sync.busy.flex}
-            className="rounded border border-blue-300 px-3 py-1 text-sm text-blue-700 hover:bg-blue-50 disabled:opacity-50"
+            className={OUTLINE_BUTTON}
           >
             {sync.busy.flex ? "Queueing..." : "Kick Off Position Sync"}
           </button>

@@ -4,9 +4,9 @@
 
 import { useState } from "react";
 import type { TradeSync } from "./useTradeSync";
+import { OUTLINE_BUTTON } from "../ui/buttonClasses";
 
-const SYNC_BUTTON =
-  "whitespace-nowrap rounded border border-blue-300 px-3 py-1 text-sm text-blue-700 hover:bg-blue-50 disabled:opacity-50";
+const SYNC_BUTTON = `whitespace-nowrap ${OUTLINE_BUTTON}`;
 
 export default function TradesSyncControls({ sync }: { sync: TradeSync }) {
   const [rangeStart, setRangeStart] = useState("");
