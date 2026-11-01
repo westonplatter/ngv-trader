@@ -30,6 +30,8 @@ ORDER_TERMINAL_STATUSES = {
     ORDER_STATUS_FAILED,
 }
 
+FORCED_STATUS_CHANGE_EVENT_TYPE = "forced_status_change"
+
 ALLOWED_ORDER_STATUS_TRANSITIONS: dict[str, set[str]] = {
     ORDER_STATUS_QUEUED: {
         ORDER_STATUS_SUBMITTING,
@@ -118,16 +120,28 @@ def transition_order_status(
     *,
     message: str,
     event_type: str = "status_change",
+    force: bool = False,
 ) -> OrderEvent:
-    if not can_transition_order_status(order.status, next_status):
+    """Move ``order`` to ``next_status`` and record the event.
+
+    A transition the table does not allow raises ``ValueError``. With
+    ``force=True`` it is applied anyway, for callers that must follow the
+    broker's reported state (reconciliation); the event is then recorded as
+    ``forced_status_change`` with the from/to statuses and ``message``.
+    """
+    allowed = can_transition_order_status(order.status, next_status)
+    if not allowed and not force:
         raise ValueError(f"Invalid order status transition: {order.status} -> {next_status}")
+    if not allowed:
+        event_type = FORCED_STATUS_CHANGE_EVENT_TYPE
+        message = f"Forced status change {order.status} -> {next_status}: {message}"
 
     now = now_utc()
     order.status = next_status
     order.updated_at = now
     if next_status == ORDER_STATUS_SUBMITTED and order.submitted_at is None:
         order.submitted_at = now
-    if next_status in ORDER_TERMINAL_STATUSES:
+    if next_status in ORDER_TERMINAL_STATUSES and order.completed_at is None:
         order.completed_at = now
 
     session.flush()
