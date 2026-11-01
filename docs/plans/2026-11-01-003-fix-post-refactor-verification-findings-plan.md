@@ -27,6 +27,7 @@ execution: code
 
 - Verified: `main` at `e05611d` against baseline `67e99f8` (the tree before tags/tasks), on one Postgres database, fake data only.
 - Method: head and baseline APIs side by side; Playwright against the real API; separate fresh databases for the ingest comparison. Raw scripts and results were kept by the verifier, not committed.
+- The full record of the run (verdict, everything compared, measured numbers, what could not be verified) is [the first-run report](2026-11-01-005-test-dynamic-verification-report.md).
 - Results that matched the baseline are not repeated here: 17 read endpoints byte-identical, trade-group P&L service identical, Flex and TWS ingest identical in every column, semantic-layer numbers identical, 46 API checks and 32 UI flows passing.
 - Automated suites at that commit: pytest 541, frontend 202, Pyright 80 errors (all pre-existing, same as baseline).
 
