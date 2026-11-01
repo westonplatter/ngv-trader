@@ -31,6 +31,7 @@ For domain vocabulary, see [CONCEPTS.md](../../CONCEPTS.md).
 - `src/utils/contract_display.py`: human-readable contract labels (`contract_display_name`).
 - `src/utils/env_vars.py`: typed env-var helpers.
 - `src/utils/sql.py`: `escape_like` for literal `LIKE` patterns.
+- `src/utils/time.py`: `now_utc()`, the one clock helper; services re-export it for their callers.
 - `src/services/execution_display.py`: display name and IBKR trade codes from an execution's raw payload; `src/services/option_expiry.py`: expiry / DTE from a raw expiry string; `src/services/strategies.py`: strategy name matching and lookup. Shared by the trades, positions, strategies, and trade-groups routers so none imports from another.
 - `src/services/sync_common.py`: shared sync helpers (id parsing, account upsert, canonical flags, aggregates).
 - `src/services/fill_ingest.py`: the one settled-fill ingest (parent resolution, execution upsert, combo summaries) that the FlexQuery and TWS trade syncs adapt to.

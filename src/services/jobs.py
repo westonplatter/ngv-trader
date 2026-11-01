@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from src.domain.enums import JobStatus
 from src.models import Job
+from src.utils.time import now_utc
 
 JOB_STATUS_QUEUED = JobStatus.QUEUED
 JOB_STATUS_RUNNING = JobStatus.RUNNING
@@ -57,10 +58,6 @@ JOB_TYPE_CONTRACTS_QUALIFY_AND_SNAPSHOT = "contracts.qualify_and_snapshot"
 JOB_TYPE_INTRADAY_SYNC_TWS = "intraday.sync.tws"
 JOB_TYPE_OPTION_METRICS_SYNC_TWS = "option_metrics.sync.tws"
 JOB_TYPE_CONTRACTS_SYNC_ACTIVATED = "contracts.sync_activated"
-
-
-def now_utc() -> datetime:
-    return datetime.now(timezone.utc)
 
 
 def enqueue_job(

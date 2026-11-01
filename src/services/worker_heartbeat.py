@@ -6,7 +6,7 @@ import json
 import logging
 import os
 import urllib.request
-from datetime import datetime, timezone
+from datetime import datetime
 
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -14,6 +14,7 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
 from src.models import WorkerHeartbeat
+from src.utils.time import now_utc
 
 logger = logging.getLogger(__name__)
 
@@ -40,10 +41,6 @@ class WorkerStatusPayload(BaseModel):
     heartbeat_at: datetime | None
     seconds_since_heartbeat: float | None
     details: str | None
-
-
-def now_utc() -> datetime:
-    return datetime.now(timezone.utc)
 
 
 def _classify_light(status: str, seconds_since: float | None) -> str:
