@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.2.1](https://github.com/westonplatter/ngv-trader/compare/v0.2.0...v0.2.1) (2026-11-02)
+
+
+### Documentation
+
+* add the post-refactor verification findings, report, and handoff ([#363](https://github.com/westonplatter/ngv-trader/issues/363)) ([0acb1c8](https://github.com/westonplatter/ngv-trader/commit/0acb1c830c263830e28feff9ecf7b871d482f484))
+
+
+### Miscellaneous Chores
+
+* **release:** remove the 0.2.0 release-as pin ([#361](https://github.com/westonplatter/ngv-trader/issues/361)) ([4fba0e5](https://github.com/westonplatter/ngv-trader/commit/4fba0e592a9e263ae2c412a8a97400005e51e46b))
+
+
+### Continuous Integration
+
+* **deps:** bump astral-sh/setup-uv from 10.2.0 to 10.3.0 ([#308](https://github.com/westonplatter/ngv-trader/issues/308)) ([0223b54](https://github.com/westonplatter/ngv-trader/commit/0223b5470d52ec7189801f15eddaa7eaea4a6331))
+* **tests:** pin python to 3.12 in the workflow ([#366](https://github.com/westonplatter/ngv-trader/issues/366)) ([e529f3f](https://github.com/westonplatter/ngv-trader/commit/e529f3fd0deb12f79d313ac8aa67f26724f03e84))
+
 ## [0.2.0](https://github.com/westonplatter/ngv-trader/compare/v0.1.18...v0.2.0) (2026-11-01)
 
 
