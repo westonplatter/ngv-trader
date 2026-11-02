@@ -52,6 +52,7 @@ jobs:
         uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           enable-cache: true
+          python-version: "3.12"
 
       # --extra mcp so src/mcp/semantic_server.py is importable; the import
       # canary in tests/test_imports.py covers every module under src/.
@@ -111,6 +112,7 @@ jobs:
         uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           enable-cache: true
+          python-version: "3.12"
 
       - name: Install dependencies
         run: uv sync --group dev
