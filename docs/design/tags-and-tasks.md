@@ -10,7 +10,8 @@ code_dirs_or_files:
     "src/api/routers/tasks.py",
     "src/services/group_link_carryover.py",
     "src/mcp/semantic_server.py",
-    "frontend/src/components/TagsPage.tsx",
+    "frontend/src/components/tags/TagsPage.tsx",
+    "frontend/src/lib/tagBrowser.ts",
     "frontend/src/components/TasksPage.tsx",
     "frontend/src/components/TagChips.tsx",
   ]

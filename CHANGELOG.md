@@ -1,5 +1,92 @@
 # Changelog
 
+## [0.2.0](https://github.com/westonplatter/ngv-trader/compare/v0.1.18...v0.2.0) (2026-11-01)
+
+
+### Features
+
+* add free-form tags and tasks ([#313](https://github.com/westonplatter/ngv-trader/issues/313)) ([6e3c3a5](https://github.com/westonplatter/ngv-trader/commit/6e3c3a5c1ddd30aea18497811d9debfa5a8c146a))
+* **frontend:** change a trade group's strategy ([#319](https://github.com/westonplatter/ngv-trader/issues/319)) ([d3d05cb](https://github.com/westonplatter/ngv-trader/commit/d3d05cb708bf5c0fd86d871ba275cf26e65e0edb))
+* **frontend:** show tags and tasks in demo mode ([#314](https://github.com/westonplatter/ngv-trader/issues/314)) ([67e99f8](https://github.com/westonplatter/ngv-trader/commit/67e99f8cab278f0c4e45af8296d23d710850d8fe))
+
+
+### Bug Fixes
+
+* **frontend:** give every remaining button an explicit type ([#345](https://github.com/westonplatter/ngv-trader/issues/345)) ([62a54ea](https://github.com/westonplatter/ngv-trader/commit/62a54ea8c961e6b5c40b0c8d704683c1da263e8b))
+* **frontend:** poll jobs slowly while SSE is up; handle a failed structure delete ([#331](https://github.com/westonplatter/ngv-trader/issues/331)) ([5c41417](https://github.com/westonplatter/ngv-trader/commit/5c4141706a3c90c500a1ac15a7efaad299b184e8))
+* **positions:** clear a fully flat account on the Flex position sync ([#320](https://github.com/westonplatter/ngv-trader/issues/320)) ([1ec314b](https://github.com/westonplatter/ngv-trader/commit/1ec314b71104eeb66a8d61f98460421177a03df4))
+
+
+### Documentation
+
+* add tags-and-tasks spec and rename trade-tagging doc ([#311](https://github.com/westonplatter/ngv-trader/issues/311)) ([eeaa9f2](https://github.com/westonplatter/ngv-trader/commit/eeaa9f2a26904cba66babe2ef2f996b8768b7436))
+* plan tests for the IB-facing chain and market-data jobs ([#360](https://github.com/westonplatter/ngv-trader/issues/360)) ([42cd4d4](https://github.com/westonplatter/ngv-trader/commit/42cd4d4a27db9864cf8299457d873cf1d6009c93))
+* plan to trim overlapping backend tests ([#352](https://github.com/westonplatter/ngv-trader/issues/352)) ([4610873](https://github.com/westonplatter/ngv-trader/commit/4610873caa3b6449051830b156226aceb13f1526))
+* **readme:** add trades page screenshot ([#297](https://github.com/westonplatter/ngv-trader/issues/297)) ([bb75eaf](https://github.com/westonplatter/ngv-trader/commit/bb75eafd968b78eb6c9259872628ac956eb81c63))
+
+
+### Code Refactoring
+
+* **api:** build tag links in one place; end router-to-router imports ([#327](https://github.com/westonplatter/ngv-trader/issues/327)) ([efda110](https://github.com/westonplatter/ngv-trader/commit/efda110f4b38917343583a31dc5e3420ab02de20))
+* **api:** share tag schemas and catalog logic across routers ([#321](https://github.com/westonplatter/ngv-trader/issues/321)) ([7cc02b0](https://github.com/westonplatter/ngv-trader/commit/7cc02b042d9d087c21b24c40b2b2df9f552dcbf6))
+* **contracts:** enqueue the IBKR lookup instead of calling TWS from the API ([#348](https://github.com/westonplatter/ngv-trader/issues/348)) ([24d59a8](https://github.com/westonplatter/ngv-trader/commit/24d59a8412b9691a18504534cd5eeba2f979ed22))
+* **contracts:** share the option selector hooks and give FOP a real spec ([#340](https://github.com/westonplatter/ngv-trader/issues/340)) ([d5ac84e](https://github.com/westonplatter/ngv-trader/commit/d5ac84ec4cac1e965f464856b4a3e183a477d173))
+* **db:** move strategies out of the tag tables ([#312](https://github.com/westonplatter/ngv-trader/issues/312)) ([3b92eb5](https://github.com/westonplatter/ngv-trader/commit/3b92eb5901e541f540723032789799c5daddd952))
+* **domain:** add StrEnum vocabularies for statuses, roles, sources, and entity types ([#339](https://github.com/westonplatter/ngv-trader/issues/339)) ([357c0b5](https://github.com/westonplatter/ngv-trader/commit/357c0b5f561c298a8acea96c374ac92c3c071267))
+* **frontend:** drive the trade-group picker search from state ([#357](https://github.com/westonplatter/ngv-trader/issues/357)) ([5ded5e3](https://github.com/westonplatter/ngv-trader/commit/5ded5e359e5b22094838402e9502b08afd0587af))
+* **frontend:** hoist the repeated bordered-button classes ([#350](https://github.com/westonplatter/ngv-trader/issues/350)) ([23fffba](https://github.com/westonplatter/ngv-trader/commit/23fffba4dea98b76ddfc8229c9535aa66dcfd755))
+* **frontend:** mask money and quantity through one formatters hook ([#349](https://github.com/westonplatter/ngv-trader/issues/349)) ([17105d5](https://github.com/westonplatter/ngv-trader/commit/17105d5ccbc9af4cf55644adcb230576d1e0538b))
+* **frontend:** one api client plus sse-list and job-watcher hooks ([#325](https://github.com/westonplatter/ngv-trader/issues/325)) ([bda848c](https://github.com/westonplatter/ngv-trader/commit/bda848c0af21b5ca8c3b9e14f4f69cb8acdc13dc))
+* **frontend:** share one table sort across positions and strategies ([#342](https://github.com/westonplatter/ngv-trader/issues/342)) ([5e6effa](https://github.com/westonplatter/ngv-trader/commit/5e6effacedd5bc997cbed8b7797888ef1a2ba5e5))
+* **frontend:** share the API client, async-action hook, and tag atoms ([#324](https://github.com/westonplatter/ngv-trader/issues/324)) ([78b05cf](https://github.com/westonplatter/ngv-trader/commit/78b05cfd12327d80e0b75a1c99d262c453d08309))
+* **frontend:** shared API client, types folder, and style guide ([#326](https://github.com/westonplatter/ngv-trader/issues/326)) ([e6686a8](https://github.com/westonplatter/ngv-trader/commit/e6686a83686fea46b079823e9c0cd1e1c77657fb))
+* **orders:** enforce the order state machine and move the worker policy into a service ([#344](https://github.com/westonplatter/ngv-trader/issues/344)) ([f586643](https://github.com/westonplatter/ngv-trader/commit/f586643995397c7a921088f94adb4b4e8acd1e2e))
+* **pnl:** one overlay facade and one realized-pnl rule for trade groups ([#328](https://github.com/westonplatter/ngv-trader/issues/328)) ([b54dd0a](https://github.com/westonplatter/ngv-trader/commit/b54dd0a5c404ae1b97758aacfa242f0640273f90))
+* **pricing:** split the page into hooks, lib, and panes ([#336](https://github.com/westonplatter/ngv-trader/issues/336)) ([7449853](https://github.com/westonplatter/ngv-trader/commit/7449853c37af22357d465e22096b370636d0539d))
+* **semantic:** rename the tag dimension to trade_group ([#318](https://github.com/westonplatter/ngv-trader/issues/318)) ([7dd4905](https://github.com/westonplatter/ngv-trader/commit/7dd4905b5585354672871cccae41c4c5a5816d86))
+* **services:** define now_utc once in src/utils/time ([#351](https://github.com/westonplatter/ngv-trader/issues/351)) ([b241da6](https://github.com/westonplatter/ngv-trader/commit/b241da6fa05e718034432ba782fa1bb8376f84fb))
+* **services:** look up item entity types through one registry ([#343](https://github.com/westonplatter/ngv-trader/issues/343)) ([91cd64d](https://github.com/westonplatter/ngv-trader/commit/91cd64d9dbcc56533bf35b9bd5b3c689f50e90f1))
+* **services:** share the order group key and move response schemas out of routers ([#341](https://github.com/westonplatter/ngv-trader/issues/341)) ([3388d7c](https://github.com/westonplatter/ngv-trader/commit/3388d7c6bc0496975777402c7e4b3a00b82ef80b))
+* **services:** split item_links into refs, links, and descriptions ([#322](https://github.com/westonplatter/ngv-trader/issues/322)) ([800b894](https://github.com/westonplatter/ngv-trader/commit/800b8945d1ee9a11e55ac768d4be084133513fb4))
+* **strategies:** derive trade-group detail from one hook ([#329](https://github.com/westonplatter/ngv-trader/issues/329)) ([5184299](https://github.com/westonplatter/ngv-trader/commit/518429947cdbe3cd8d7a3fa97c2d017af5bb5e92))
+* **strategies:** split the Strategy P&L table into hooks and panes ([#356](https://github.com/westonplatter/ngv-trader/issues/356)) ([b43babe](https://github.com/westonplatter/ngv-trader/commit/b43babe015a1047c6fad609a53f8beddb6eadc1d))
+* **strategies:** split the workspace into hooks, lib, and panes ([#335](https://github.com/westonplatter/ngv-trader/issues/335)) ([78e28e0](https://github.com/westonplatter/ngv-trader/commit/78e28e0ad2dd709948c44c1e0b07175fcb3b2ff9))
+* **sync:** one fill ingest behind the FlexQuery and TWS trade syncs ([#338](https://github.com/westonplatter/ngv-trader/issues/338)) ([90eae34](https://github.com/westonplatter/ngv-trader/commit/90eae34d1f39a8f7e56929e3c499621a20cd1876))
+* **tags:** split the Tags page into hooks, lib, and panes ([#355](https://github.com/westonplatter/ngv-trader/issues/355)) ([b3897da](https://github.com/westonplatter/ngv-trader/commit/b3897dad2a7758db0c50dbd8e24d3d7df2194654))
+* **tradebot:** derive tool specs and handlers from one registry ([#347](https://github.com/westonplatter/ngv-trader/issues/347)) ([726f4fa](https://github.com/westonplatter/ngv-trader/commit/726f4fa52518991264b38c903f3040c0d1e870b4))
+* **trades:** split the page into hooks, lib, and panes ([#332](https://github.com/westonplatter/ngv-trader/issues/332)) ([ea8da7f](https://github.com/westonplatter/ngv-trader/commit/ea8da7f272c79cf5fafee1f4bccceac39e07f456))
+
+
+### Miscellaneous Chores
+
+* **deps-dev:** bump eslint from 10.11.0 to 10.12.0 in /frontend ([#304](https://github.com/westonplatter/ngv-trader/issues/304)) ([3e73a8f](https://github.com/westonplatter/ngv-trader/commit/3e73a8fea4ef8f06fcb074127568d0112305b33b))
+* **deps-dev:** bump globals from 17.12.0 to 17.13.0 in /frontend ([#305](https://github.com/westonplatter/ngv-trader/issues/305)) ([f0bfee1](https://github.com/westonplatter/ngv-trader/commit/f0bfee1559506663650e6ccf5629ae593ab667bf))
+* **deps-dev:** bump ruff from 0.16.5 to 0.17.0 ([#309](https://github.com/westonplatter/ngv-trader/issues/309)) ([bc8cd37](https://github.com/westonplatter/ngv-trader/commit/bc8cd372eefa73df5f8c20767d6c9a0e25408529))
+* **deps-dev:** bump typescript-eslint from 8.70.1 to 8.71.1 in /frontend ([#302](https://github.com/westonplatter/ngv-trader/issues/302)) ([b4a2a0d](https://github.com/westonplatter/ngv-trader/commit/b4a2a0dc2f51d364038cbbf381f667df6a14226d))
+* **deps-dev:** bump typescript-eslint in /frontend ([b4a2a0d](https://github.com/westonplatter/ngv-trader/commit/b4a2a0dc2f51d364038cbbf381f667df6a14226d))
+* **deps:** bump certifi from 2026.1.4 to 2026.10.19 ([#306](https://github.com/westonplatter/ngv-trader/issues/306)) ([46e103b](https://github.com/westonplatter/ngv-trader/commit/46e103b1c97ca2615bfabc33296611cfb281ea32))
+* **deps:** bump fastapi from 0.141.1 to 0.142.2 ([#300](https://github.com/westonplatter/ngv-trader/issues/300)) ([f037846](https://github.com/westonplatter/ngv-trader/commit/f0378460dfcca4265c3ef3e1b13bd83b56cf3069))
+* **deps:** bump fastapi from 0.142.2 to 0.143.0 ([#310](https://github.com/westonplatter/ngv-trader/issues/310)) ([208389a](https://github.com/westonplatter/ngv-trader/commit/208389ae8e90dbd6dd1216e596d147d1618f80f1))
+* **deps:** bump langgraph from 1.2.11 to 1.2.14 ([#315](https://github.com/westonplatter/ngv-trader/issues/315)) ([cff0e4a](https://github.com/westonplatter/ngv-trader/commit/cff0e4a4d14037cca05f1ec1a569444786fb87a7))
+* **deps:** bump mcp from 2.2.0 to 2.3.0 ([#303](https://github.com/westonplatter/ngv-trader/issues/303)) ([34c8c13](https://github.com/westonplatter/ngv-trader/commit/34c8c13f3a5cc05deb23b047220ed21f0849d512))
+* **deps:** bump opentelemetry-api from 1.44.0 to 1.45.1 ([#307](https://github.com/westonplatter/ngv-trader/issues/307)) ([2642032](https://github.com/westonplatter/ngv-trader/commit/2642032f354106384225bb713224e1fc6be8e636))
+* **docs:** move screenshots to the media branch and fix screenshot.mjs ([#317](https://github.com/westonplatter/ngv-trader/issues/317)) ([7d4fb24](https://github.com/westonplatter/ngv-trader/commit/7d4fb241ba6dcfa316d083e492167314d56acaec))
+* **frontend:** remove unused Vite template files ([#346](https://github.com/westonplatter/ngv-trader/issues/346)) ([e05611d](https://github.com/westonplatter/ngv-trader/commit/e05611d00b897df5a161ba56330ae42e1a707e43))
+* **lint:** clear the Ruff complexity findings and run Ruff in CI ([#353](https://github.com/westonplatter/ngv-trader/issues/353)) ([333c99b](https://github.com/westonplatter/ngv-trader/commit/333c99bb430bf502ea8cec3628aeedd04ae25494))
+* **python:** pin the Ruff line length and format to it ([#323](https://github.com/westonplatter/ngv-trader/issues/323)) ([b780567](https://github.com/westonplatter/ngv-trader/commit/b7805675ba6393daebca146f36af3378be3aec84))
+* **release:** pin the next release to 0.2.0 ([#359](https://github.com/westonplatter/ngv-trader/issues/359)) ([f588b06](https://github.com/westonplatter/ngv-trader/commit/f588b06638dff65c08e895c94d009a04d5233812))
+* **release:** set the next release to 0.2.0 ([#358](https://github.com/westonplatter/ngv-trader/issues/358)) ([a8ba91d](https://github.com/westonplatter/ngv-trader/commit/a8ba91d73281e7403e02ee7db41b4539cf86f05f))
+
+
+### Performance Improvements
+
+* **frontend:** lazy-load the pricing page ([#337](https://github.com/westonplatter/ngv-trader/issues/337)) ([2aac20f](https://github.com/westonplatter/ngv-trader/commit/2aac20fdefd38f228440b6671ac2054d8429bfa4))
+
+
+### Continuous Integration
+
+* record GitHub repo settings in .github/settings ([#301](https://github.com/westonplatter/ngv-trader/issues/301)) ([68bb6d4](https://github.com/westonplatter/ngv-trader/commit/68bb6d41bce6e9a40f3bd710788cc03b367087ab))
+
 ## [0.1.18](https://github.com/westonplatter/ngv-trader/compare/v0.1.17...v0.1.18) (2026-10-10)
 
 
