@@ -1,0 +1,7 @@
+# Gitignored files Claude Code copies into each new git worktree
+# (.gitignore syntax; see docs/contributing/worktrees.md).
+# These hold op:// references, not secret values.
+# .env.prod is left out on purpose: a worktree is an edit seat and never
+# needs the prod connection.
+.env.dev
+.envrc
