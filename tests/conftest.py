@@ -15,6 +15,8 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
+from src.utils.worktree import resolve_test_db_name
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -23,9 +25,8 @@ def _configure_test_env() -> str:
     env_file = os.environ.get("TEST_ENV_FILE", ".env.dev")
     load_dotenv(REPO_ROOT / env_file, override=True)
 
-    db_name = os.environ.get("TEST_DB_NAME", "ngv_trader_test")
-    if not db_name.endswith("_test"):
-        raise RuntimeError(f"refusing to run tests against non-test database {db_name!r}")
+    # A linked git worktree gets its own database so parallel agents do not collide.
+    db_name = resolve_test_db_name(REPO_ROOT)
 
     os.environ["DB_NAME"] = db_name
     # alembic/env.py and src/api/main.py call load_dotenv(f".env.{ENV}"); point
