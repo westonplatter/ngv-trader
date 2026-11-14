@@ -62,6 +62,8 @@ from `.env.dev` (override with `TEST_ENV_FILE`), then forces `DB_NAME` to
 **`ngv_trader_test`** (override with `TEST_DB_NAME`) and aborts if the name does not
 end in `_test`. The database is created if missing and migrated with
 `alembic upgrade head`; each test runs in a transaction that is rolled back.
+A linked git worktree gets its own test database instead of the shared one, so
+parallel agents do not collide; see [worktrees.md](worktrees.md).
 
 The suite is a dependency-bump canary (see `.github/dependabot.yml`): every `src/`
 module imports, migrations reach head and cover every model table, an ORM round-trip
