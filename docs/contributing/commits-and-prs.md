@@ -55,6 +55,15 @@ Include the following in the PR body:
 - **Documentation** (required if behavior changed).
 - **Additional notes** (when applicable). Link issue(s) or external resources.
 
+## Code review (CodeRabbit)
+
+CodeRabbit does not review pull requests automatically; `.coderabbit.yaml` sets
+`reviews.auto_review.enabled: false` to save the PR review limit. Ask for a review
+by commenting on the PR:
+
+- `@coderabbitai review` — incremental review of changes since its last review.
+- `@coderabbitai full review` — review the whole PR from scratch.
+
 ## UI change screenshots (optional)
 
 A PR that changes the frontend UI may include a screenshot of the net result,
