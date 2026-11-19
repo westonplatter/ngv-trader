@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.2](https://github.com/westonplatter/ngv-trader/compare/v0.2.1...v0.2.2) (2026-11-19)
+
+
+### Documentation
+
+* plan the ib_async v3 upgrade ([#381](https://github.com/westonplatter/ngv-trader/issues/381)) ([216f6d5](https://github.com/westonplatter/ngv-trader/commit/216f6d57f9e886b078e0a4b95da5e57809250d68))
+
 ## [0.2.1](https://github.com/westonplatter/ngv-trader/compare/v0.2.0...v0.2.1) (2026-11-19)
 
 
