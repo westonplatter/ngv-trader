@@ -1,5 +1,40 @@
 # Changelog
 
+## [0.2.1](https://github.com/westonplatter/ngv-trader/compare/v0.2.0...v0.2.1) (2026-11-19)
+
+
+### Features
+
+* **dev:** add git worktree workflow for parallel agents ([#373](https://github.com/westonplatter/ngv-trader/issues/373)) ([544225a](https://github.com/westonplatter/ngv-trader/commit/544225a824cd904e863ae3df1c6e8b7a6d923eba))
+
+
+### Documentation
+
+* add the post-refactor verification findings, report, and handoff ([#363](https://github.com/westonplatter/ngv-trader/issues/363)) ([0acb1c8](https://github.com/westonplatter/ngv-trader/commit/0acb1c830c263830e28feff9ecf7b871d482f484))
+* **contributing:** explain how to request a CodeRabbit review ([#375](https://github.com/westonplatter/ngv-trader/issues/375)) ([b62860e](https://github.com/westonplatter/ngv-trader/commit/b62860e1b89de427b3f49e6f346fd506168e5778))
+
+
+### Miscellaneous Chores
+
+* **deps-dev:** bump @vitejs/plugin-react from 6.1.1 to 6.2.1 in /frontend ([#378](https://github.com/westonplatter/ngv-trader/issues/378)) ([1deab34](https://github.com/westonplatter/ngv-trader/commit/1deab3465856a3a112b3f1fe85ccf9108669b36e))
+* **deps-dev:** bump @vitejs/plugin-react in /frontend ([1deab34](https://github.com/westonplatter/ngv-trader/commit/1deab3465856a3a112b3f1fe85ccf9108669b36e))
+* **deps-dev:** bump eslint from 10.12.0 to 10.13.0 in /frontend ([#367](https://github.com/westonplatter/ngv-trader/issues/367)) ([8d22795](https://github.com/westonplatter/ngv-trader/commit/8d2279579edb0ed2b188c93995c82c3b87627822))
+* **deps-dev:** bump eslint from 10.13.0 to 10.14.0 in /frontend ([#379](https://github.com/westonplatter/ngv-trader/issues/379)) ([4ec4a87](https://github.com/westonplatter/ngv-trader/commit/4ec4a8742982259c3b38c872150b4b5d2c258977))
+* **deps-dev:** bump globals from 17.13.0 to 17.14.0 in /frontend ([#376](https://github.com/westonplatter/ngv-trader/issues/376)) ([ddf0a4f](https://github.com/westonplatter/ngv-trader/commit/ddf0a4f1852591d40446f993849bcf898a9497a0))
+* **deps-dev:** bump pytest from 9.1.1 to 9.2.0 ([#371](https://github.com/westonplatter/ngv-trader/issues/371)) ([5ba6d17](https://github.com/westonplatter/ngv-trader/commit/5ba6d1729e0f6314b4236d99b68ffa82e38c71b7))
+* **deps-dev:** bump typescript-eslint from 8.71.1 to 8.72.1 in /frontend ([#370](https://github.com/westonplatter/ngv-trader/issues/370)) ([5601e63](https://github.com/westonplatter/ngv-trader/commit/5601e63d099dd79140328feb41010ffd52edf837))
+* **deps-dev:** bump typescript-eslint in /frontend ([5601e63](https://github.com/westonplatter/ngv-trader/commit/5601e63d099dd79140328feb41010ffd52edf837))
+* **deps:** bump fastapi from 0.143.0 to 0.162.0 ([#372](https://github.com/westonplatter/ngv-trader/issues/372)) ([fd81aff](https://github.com/westonplatter/ngv-trader/commit/fd81aff4a6d6838ba9164be92b79b5ab7644a606))
+* **deps:** bump opentelemetry-api from 1.45.1 to 1.45.2 ([#374](https://github.com/westonplatter/ngv-trader/issues/374)) ([c8c678f](https://github.com/westonplatter/ngv-trader/commit/c8c678fe2bf28a13bffaf80f8a8eaf9a47471240))
+* **deps:** bump plotly.js from 4.1.1 to 4.2.0 in /frontend ([#377](https://github.com/westonplatter/ngv-trader/issues/377)) ([049fd77](https://github.com/westonplatter/ngv-trader/commit/049fd7753fd1ded7fea485bf945376ab1a1e09b2))
+* **release:** remove the 0.2.0 release-as pin ([#361](https://github.com/westonplatter/ngv-trader/issues/361)) ([4fba0e5](https://github.com/westonplatter/ngv-trader/commit/4fba0e592a9e263ae2c412a8a97400005e51e46b))
+
+
+### Continuous Integration
+
+* **deps:** bump astral-sh/setup-uv from 10.2.0 to 10.3.0 ([#308](https://github.com/westonplatter/ngv-trader/issues/308)) ([0223b54](https://github.com/westonplatter/ngv-trader/commit/0223b5470d52ec7189801f15eddaa7eaea4a6331))
+* **tests:** pin python to 3.12 in the workflow ([#366](https://github.com/westonplatter/ngv-trader/issues/366)) ([e529f3f](https://github.com/westonplatter/ngv-trader/commit/e529f3fd0deb12f79d313ac8aa67f26724f03e84))
+
 ## [0.2.0](https://github.com/westonplatter/ngv-trader/compare/v0.1.18...v0.2.0) (2026-11-01)
 
 
