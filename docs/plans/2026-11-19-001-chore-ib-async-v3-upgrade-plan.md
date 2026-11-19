@@ -38,12 +38,16 @@ This is the active trade path.
 - That breaks `src/services/trade_sync_flexquery.py`,
   `src/services/position_sync_flexquery.py`, and the FlexQuery job in
   `src/workers/jobs.py`.
-- Fix it in `ngv-reports-ibkr`: convert at the boundary with
-  `self.df(name).to_pandas()` (pyarrow is already a dependency), or port the package
-  to polars. Then release it and bump it here.
-- Check the dtypes after the switch. Flex numbers come back as polars `Decimal`
-  columns, and a `.to_pandas()` conversion can give `object` columns that the
-  pandera schemas reject.
+- The fix lives in `ngv-reports-ibkr`, and its own
+  [upgrade plan](https://github.com/westonplatter/ngv_reports_ibkr/blob/main/docs/plans/2026-11-19-ib-async-v3-upgrade-plan.md)
+  covers it (westonplatter/ngv_reports_ibkr#56). In short:
+  - Override `CustomFlexReport.df` to use v3's `util.pandasDf`, falling back to
+    `util.df` on v2. The methods stay pandas.
+  - Flex column dtypes do not change, because `extract()` still parses values to
+    `float`/`int`.
+  - Supporting v3 raises that package's minimum Python to 3.11, so it ships as a
+    major release.
+- Once it is released, bump `ngv-reports-ibkr` here.
 - `FlexReport.load()` now raises `FlexError` for a file that is not XML.
 
 ## 2. `Decimal` values dropped without an error (data correctness)
@@ -148,7 +152,9 @@ every value:
 ## Order of work
 
 1. Pin `ib-async<3` here.
-2. Port `ngv-reports-ibkr` (section 1) and release it with a v3-compatible range.
+2. Work through the `ngv-reports-ibkr`
+   [upgrade plan](https://github.com/westonplatter/ngv_reports_ibkr/blob/main/docs/plans/2026-11-19-ib-async-v3-upgrade-plan.md)
+   (section 1) and release it with a v3-compatible range.
 3. Here: sections 2, 4 and 5 and the test fixtures (section 7). These also work
    on v2.
 4. Lift the pin, bump to v3, and do the `commissionAndFees` switch (section 3).
