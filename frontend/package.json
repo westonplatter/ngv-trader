@@ -17,7 +17,7 @@
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
     "ai": "^7.0.68",
-    "plotly.js": "^4.1.1",
+    "plotly.js": "^4.2.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "react-plotly.js": "^4.1.0",
