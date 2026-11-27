@@ -5,10 +5,14 @@ code_dirs_or_files:
     "src/api/routers/trade_groups.py",
     "src/api/routers/strategies.py",
     "src/services/trade_group_instruments.py",
+    "src/services/trade_group_pnl.py",
+    "src/services/tags.py",
+    "frontend/src/components/strategies/GroupPnlSummary.tsx",
+    "frontend/src/lib/strategies/groupPositions.ts",
     "frontend/src/components/strategies/",
     "frontend/src/components/strategyPnl/StrategyPnlPage.tsx",
   ]
-description: Strategies and trade groups — data model, execution assignment and history, trade-group and strategy APIs, position chips, the Strategy P&L table, and the Strategies workspace.
+description: Strategies and trade groups — data model, execution assignment and history, trade-group and strategy APIs, position chips, the Strategy P&L table, the group P&L card's core vs incremental split, and the Strategies workspace.
 ---
 
 # Strategies and Trade Groups
@@ -326,6 +330,144 @@ Both are the underlying root, not the OCC/local symbol (the sync writes that to
 `contract.localSymbol`). Where the security master holds a specific contract
 symbol rather than a root, the derived list carries that too, which is why a
 group can list both `CL` and `CLZ6`.
+
+### Group P&L card: core vs incremental
+
+The group detail card splits a long-term position from the trades that finance
+or hedge it. It answers: what did the core cost, how much have the other trades
+paid back, and where does P&L stand against the core cost. Trade side
+(BUY/SELL) cannot tell core from incremental, so the user marks it with the
+reserved `core` tag ([tags-and-tasks.md](tags-and-tasks.md)). It works for any
+mix: a LEAP call with short calls against it, stock with covered calls, a
+rolled /ES put hedge financed by short puts, a future with options against it.
+
+#### Rules
+
+1. **Reserved tag `core`.** The user tags the orders that open the core
+   position. All other trades in the group are **incremental** by default.
+   `core` cannot be renamed, archived, or merged, and no other tag can be
+   renamed or merged into it (`CORE_TAG`, `reject_reserved_tag` in
+   `src/services/tags.py`; the API answers 400). Color changes are allowed.
+2. **Role is per contract, within the group.** A contract
+   (`account_id`, `con_id`) is core if any of the group's orders on it carries
+   an open `core` link. Every fill on that contract counts as core, so the
+   order that closes a core position (a roll's buy-back, an expiry) needs no
+   tag.
+3. **No lot splitting.** One contract has one role. To add exposure that is
+   not core, trade a different contract (another strike or expiry).
+4. **A combo is one order.** Tagging a combo `core` makes every leg core. A
+   calendar opened as one order (long Dec'28 call, short Dec'26 call) puts the
+   short leg in the core, so its premium lowers core cost instead of counting
+   as financing. Later rolls of that short call are untagged, so the new
+   contracts are incremental.
+5. **Tags on orders only.** Open `core` links on trades (settled fills) and on
+   live executions (unsettled fills) assign the role (`load_core_pairs()`).
+   Tags on positions and groups never do: a position tag ends when the position
+   goes flat, which would erase roll history.
+6. **Scoped to the group.** The split only divides a group's existing figures.
+   It never sums across groups and no other tag feeds a figure.
+7. **Cost basis is IBKR's** (`avg_cost × position`, multiplier-inclusive). A
+   core future's cost is its notional; no margin or allocated-capital input. An
+   open **incremental** future adds nothing to incremental net: it costs no cash
+   to open, so only its realized PnL counts and its open PnL stays in
+   Unrealized.
+8. **When the split shows.**
+   - No `core` contract, or core cost = 0 → the card is unchanged.
+   - Core cost > 0 (a debit core) → the full split.
+   - Core cost < 0 (a short or credit core, e.g. a short future) → the split
+     without **% financed** and **Net cost**, which assume an outlay.
+9. **No wrong figures.** If per-contract realized P&L does not reconcile to
+   the overlay's intraday realized within one cent, there is no split.
+
+#### Figures
+
+`core_split()` in `src/services/trade_group_pnl.py` computes them over the
+group's apportioned positions and its fills, settled plus today's unsettled
+ones. The group detail endpoint (`trade_group_executions` in
+`src/api/routers/trade_groups.py`) returns `core_cost` and `incremental_net`,
+both null when rule 8 or 9 says the split does not apply. Only the detail card
+reads them. On the frontend, `cardCapital()`
+(`frontend/src/lib/strategies/groupPositions.ts`) picks the base and
+`GroupPnlSummary.tsx` renders the rows.
+
+| Figure                    | Definition                                                                                   |
+| ------------------------- | -------------------------------------------------------------------------------------------- |
+| Core cost                 | Σ open cost basis of core contracts − Σ realized PnL of core fills                           |
+| Incremental net           | Σ realized PnL of incremental fills − Σ open cost basis of incremental non-futures contracts |
+| % financed                | incremental net ÷ core cost (debit core only)                                                |
+| Net cost                  | core cost − incremental net (debit core only)                                                |
+| Total PnL                 | unchanged (realized + unrealized)                                                            |
+| Total / Unr. / Realized % | figure ÷ \|core cost\| (replaces ÷ capital)                                                  |
+
+Core cost is the net cash spent on the core over the position's life, so a
+roll keeps it one continuous position. Incremental net is the net cash the
+other trades brought in: credits positive, debits (a bought hedge) negative.
+The intraday block uses the same base.
+
+#### Examples
+
+Illustrative figures.
+
+**LEAP financed by short calls.** Long 1× 550C, avg cost 12,190.78 (`core`).
+Closed short calls realized 327.15; one short call open at −79.95.
+
+| Figure          | Value                      |
+| --------------- | -------------------------- |
+| Core cost       | 12,190.78                  |
+| Incremental net | 327.15 + 79.95 = 407.10    |
+| % financed      | 3.34%                      |
+| Net cost        | 11,783.68                  |
+| Total PnL       | −2,645.63, −21.70% of core |
+
+**Calendar opened as one order (rule 4).** Buy Dec'28 550C for 12,190.78 and
+sell Dec'26 550C for 800 in one combo tagged `core`. Later, an untagged roll
+buys back Dec'26 for 300 and sells Jan'27 for 900.
+
+| Figure          | Value                       |
+| --------------- | --------------------------- |
+| Core cost       | 12,190.78 − 500 = 11,690.78 |
+| Incremental net | 900 (7.7% financed)         |
+
+Opening the LEAP as its own order instead gives core cost 12,190.78 and
+incremental net 1,400. Net cost and Total PnL are the same either way.
+
+**Rolled /ES put hedge.**
+
+| When | Order                                  | Role          | Core cost             |
+| ---- | -------------------------------------- | ------------- | --------------------- |
+| Q1   | Buy Mar 80% put, 3,000                 | core (tagged) | 3,000                 |
+| Q1   | Sell puts, keep 1,200                  | incremental   | 3,000                 |
+| Q2   | Sell Mar put for 500 (realized −2,500) | core (rule 2) | 0 + 2,500 = 2,500     |
+| Q2   | Buy Jun put, 3,200                     | core (tagged) | 3,200 + 2,500 = 5,700 |
+
+Core cost 5,700 = 3,000 + 3,200 − 500. % financed = 1,200 ÷ 5,700 = 21%.
+
+**Short future core.** Short 1× /ES at 6,000 (`core`), short puts sold against
+it for 3,000. Core cost −300,000; incremental net 3,000; Total PnL % is taken
+against 300,000. % financed and Net cost are not shown.
+
+#### Card
+
+Shown when the split applies (rule 8); replaces the Capital invested rows.
+
+```
+Core cost:          12,190.78
+Incremental net:       407.10    3.34% financed
+Net cost:           11,783.68
+Total PnL:          −2,645.63   −21.70%
+Unrealized PnL:     −2,972.78   −24.39%
+Realized PnL:          327.15     2.68%
+```
+
+#### Out of scope
+
+- Lot-level splitting of one contract between roles.
+- Per-leg roles inside one combo order.
+- Margin or allocated-capital bases.
+- Risk reversals and other cores that cost about zero.
+- Tag-based figures outside a single group.
+- The Strategy P&L list, the `trade_group_pnl` tool, and the per-account
+  breakdown's Capital column, which keep the old capital base.
 
 ### Strategies workspace
 

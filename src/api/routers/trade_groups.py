@@ -28,10 +28,9 @@ from src.models import (
 from src.services.cl_contracts import infer_contract_month_from_local_symbol
 from src.services.execution_display import contract_display_from_raw, execution_ib_codes
 from src.services.execution_pnl import execution_realized_pnl
+from src.services.intraday_overlay import is_live_stale, parse_multiplier
 from src.services.option_expiry import option_expiry_and_dte
 from src.services.strategies import normalize_strategy_name, require_strategy
-from src.utils.sql import escape_like
-from src.services.intraday_overlay import is_live_stale, parse_multiplier
 from src.services.trade_group_instruments import (
     InstrumentPatternError,
     instrument_filter_condition,
@@ -42,6 +41,8 @@ from src.services.trade_group_pnl import (
     GroupLedger,
     GroupOverlay,
     TradeGroupBatchPnl,
+    core_split,
+    load_core_pairs,
     overlay_for_ledgers,
     trade_group_batch_pnls,
 )
@@ -52,6 +53,7 @@ from src.services.ui_events import (
     make_coarse_event,
 )
 from src.utils.contract_display import contract_display_name
+from src.utils.sql import escape_like
 
 router = APIRouter()
 DB_SESSION_DEPENDENCY = Depends(get_db)
@@ -1161,6 +1163,7 @@ class TradeGroupExecutionItem(BaseModel):
     realized_pnl: float | None
     exec_role: str
     sec_type: str | None
+    con_id: int | None = None
     contract_display: str | None
     data_source: str
     # IBKR FlexQuery trade codes (the `notes` attribute): A=assigned,
@@ -1175,6 +1178,9 @@ class TradeGroupExecutionItem(BaseModel):
     # negative = credit received (matches the open positions' Cost Basis).
     # Null for combo_summary rows so their legs are not double-counted.
     cost_basis: float | None = None
+    # Tags on the trade (settled) or on this live fill (unsettled).
+    tags: list[TagChip] = Field(default_factory=list)
+    open_task_count: int = 0
 
 
 def _execution_cost_basis(
@@ -1272,6 +1278,9 @@ class TradeGroupExecutionsResponse(BaseModel):
     marks_as_of: datetime | None = None
     # Per-account breakdown (additive): empty when the group has no executions.
     by_account: list[TradeGroupAccountPnl] = []
+    # Core vs incremental split (additive): null when the group has no core contract.
+    core_cost: float | None = None
+    incremental_net: float | None = None
 
 
 def _open_position_items(db: Session, overlay: GroupOverlay) -> list[TradeGroupOpenPositionItem]:
@@ -1403,6 +1412,7 @@ def trade_group_executions(trade_group_id: int, db: Session = DB_SESSION_DEPENDE
                 realized_pnl=execution_realized_pnl(execution.raw),
                 exec_role=execution.exec_role,
                 sec_type=execution.sec_type,
+                con_id=execution.con_id,
                 contract_display=contract_display_from_raw(execution.raw, contract_ref),
                 data_source=execution.data_source,
                 ib_codes=execution_ib_codes(execution.raw),
@@ -1449,6 +1459,7 @@ def trade_group_executions(trade_group_id: int, db: Session = DB_SESSION_DEPENDE
                 realized_pnl=live_exec.realized_pnl,
                 exec_role=live_exec.exec_role,
                 sec_type=live_exec.sec_type,
+                con_id=live_exec.con_id,
                 contract_display=contract_display_name(
                     symbol=live_exec.symbol,
                     sec_type=live_exec.sec_type,
@@ -1475,6 +1486,9 @@ def trade_group_executions(trade_group_id: int, db: Session = DB_SESSION_DEPENDE
             )
         )
 
+    annotate_items(db, "trade", [item for item in items if item.settled and item.trade_id is not None], key=lambda item: item.trade_id)
+    annotate_items(db, "live_execution", [item for item in items if not item.settled], key=lambda item: item.ib_exec_id)
+
     # The group's ledger is what this endpoint already loaded: the settled rows
     # above and the tagged unsettled fills. The overlay facade (shared with the
     # list endpoint and the trade_group_pnl tool) turns it into the open
@@ -1485,6 +1499,7 @@ def trade_group_executions(trade_group_id: int, db: Session = DB_SESSION_DEPENDE
     )
     overlay = overlay_for_ledgers(db, {trade_group_id: ledger})[trade_group_id]
     realized_by_account = ledger.realized_pnl_by_account()
+    split = core_split(overlay, ledger, load_core_pairs(db, ledger))
 
     by_account = [
         TradeGroupAccountPnl(
@@ -1510,4 +1525,6 @@ def trade_group_executions(trade_group_id: int, db: Session = DB_SESSION_DEPENDE
         intraday_total_pnl=overlay.totals.intraday_total,
         marks_as_of=overlay.totals.marks_as_of,
         by_account=by_account,
+        core_cost=split.core_cost if split else None,
+        incremental_net=split.incremental_net if split else None,
     )

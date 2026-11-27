@@ -1045,6 +1045,8 @@ export function demoGroupExecutions(
     // shows "live as of …"; settled-only groups keep the snapshot date.
     marks_as_of: hasLive ? LIVE_MARK_TS : AS_OF,
     by_account: [],
+    core_cost: null,
+    incremental_net: null,
   };
 }
 

@@ -1,5 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { itemKey, itemRoute, nextTaskStatus, normalizeTagValue } from "./tags";
+import {
+  itemKey,
+  itemRoute,
+  nextTaskStatus,
+  normalizeTagValue,
+  tradeRowItem,
+} from "./tags";
 
 describe("tag helpers", () => {
   test("normalization folds case, spaces, dashes, and underscores", () => {
@@ -45,5 +51,22 @@ describe("tag helpers", () => {
     expect(itemRoute({ entity_type: "live_execution", ib_exec_id: "x" })).toBe(
       "/trades",
     );
+  });
+});
+
+describe("group trades table helpers", () => {
+  test("tradeRowItem keys settled rows by trade and live fills by exec id", () => {
+    expect(
+      tradeRowItem({ settled: true, trade_id: 5, ib_exec_id: "0000a.1" }),
+    ).toEqual({ entity_type: "trade", id: 5 });
+    expect(tradeRowItem({ trade_id: 5 })).toEqual({
+      entity_type: "trade",
+      id: 5,
+    });
+    expect(
+      tradeRowItem({ settled: false, trade_id: null, ib_exec_id: "0000a.2" }),
+    ).toEqual({ entity_type: "live_execution", ib_exec_id: "0000a.2" });
+    expect(tradeRowItem({ settled: false, trade_id: null })).toBeNull();
+    expect(tradeRowItem({ settled: true, trade_id: null })).toBeNull();
   });
 });

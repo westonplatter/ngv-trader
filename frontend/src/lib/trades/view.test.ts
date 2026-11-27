@@ -4,6 +4,7 @@ import {
   accountOptions,
   compileSymbolRegex,
   filterExecutions,
+  parseActionFilter,
   formatExecutedAt,
   groupCellOwners,
   parseConId,
@@ -118,9 +119,15 @@ describe("filterExecutions", () => {
       trade_assigned_trade_group_id: 5,
     }),
     row({ id: 3, executed_at: hoursAgo(0.5), contract_display: "CL Jul'26" }),
-    row({ id: 4, executed_at: "not a date" }),
+    row({ id: 4, executed_at: "not a date", trade_lifecycle: "Close" }),
   ];
-  const all = { account: "all", symbol: "", timeRange: "all", groupStatus: "all" as const };
+  const all = {
+    account: "all",
+    symbol: "",
+    timeRange: "all",
+    groupStatus: "all" as const,
+    action: "all" as const,
+  };
 
   test("no filters: newest first, unparseable dates last", () => {
     expect(filterExecutions(rows, all, NOW).map((r) => r.id)).toEqual([
@@ -140,12 +147,16 @@ describe("filterExecutions", () => {
         (r) => r.id,
       ),
     ).toEqual([3, 2]);
-    expect(filterExecutions(rows, { ...all, symbol: "(" }, NOW)).toHaveLength(4);
+    expect(filterExecutions(rows, { ...all, symbol: "(" }, NOW)).toHaveLength(
+      4,
+    );
   });
 
   test("time range measures against the given clock and drops unparseable dates", () => {
     expect(
-      filterExecutions(rows, { ...all, timeRange: "24h" }, NOW).map((r) => r.id),
+      filterExecutions(rows, { ...all, timeRange: "24h" }, NOW).map(
+        (r) => r.id,
+      ),
     ).toEqual([3, 1]);
     expect(
       filterExecutions(rows, { ...all, timeRange: "3d" }, NOW).map((r) => r.id),
@@ -166,6 +177,29 @@ describe("filterExecutions", () => {
         (r) => r.id,
       ),
     ).toEqual([3, 1, 4]);
+  });
+
+  test("action keeps only fills with the matching lifecycle", () => {
+    const opened = rows.map((r) =>
+      r.id === 4 ? r : { ...r, trade_lifecycle: "Open" },
+    );
+    expect(
+      filterExecutions(opened, { ...all, action: "open" }, NOW).map(
+        (r) => r.id,
+      ),
+    ).toEqual([3, 1, 2]);
+    expect(
+      filterExecutions(opened, { ...all, action: "close" }, NOW).map(
+        (r) => r.id,
+      ),
+    ).toEqual([4]);
+  });
+
+  test("parseActionFilter falls back to all", () => {
+    expect(parseActionFilter("open")).toBe("open");
+    expect(parseActionFilter("close")).toBe("close");
+    expect(parseActionFilter("bogus")).toBe("all");
+    expect(parseActionFilter(null)).toBe("all");
   });
 });
 
