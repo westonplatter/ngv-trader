@@ -142,4 +142,7 @@ export type GroupExecutionsResponse = {
   marks_as_of: string | null;
   // Per-account breakdown (additive).
   by_account: GroupAccountPnl[];
+  // Core vs incremental split: both null or both set.
+  core_cost: number | null;
+  incremental_net: number | null;
 };
