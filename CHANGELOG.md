@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.3](https://github.com/westonplatter/ngv-trader/compare/v0.2.2...v0.2.3) (2026-11-27)
+
+
+### Build System
+
+* require python 3.13 ([#386](https://github.com/westonplatter/ngv-trader/issues/386)) ([2742139](https://github.com/westonplatter/ngv-trader/commit/2742139450d91af67759e632d7286675b435dd2e))
+
 ## [0.2.2](https://github.com/westonplatter/ngv-trader/compare/v0.2.1...v0.2.2) (2026-11-27)
 
 
