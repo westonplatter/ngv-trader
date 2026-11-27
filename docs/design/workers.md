@@ -6,6 +6,8 @@ code_dirs_or_files:
     "src/workers/jobs.py",
     "src/services/jobs.py",
     "scripts/work_order_queue.py",
+    "scripts/work_order_stream.py",
+    "src/services/order_stream_tws.py",
     "src/services/order_worker.py",
     "src/services/worker_heartbeat.py",
   ]
@@ -15,18 +17,20 @@ description: Background workers and the job queue — jobs worker handler regist
 # Workers
 
 Background processes that run separately from the API and consume DB-backed
-queues. Two workers exist.
+queues. Two workers consume queues; a third streams from TWS.
 
-| Worker          | Entrypoint                    | Queue          | Status                                     |
-| --------------- | ----------------------------- | -------------- | ------------------------------------------ |
-| `worker:jobs`   | `scripts/work_jobs.py`        | `jobs` table   | Active                                     |
-| `worker:orders` | `scripts/work_order_queue.py` | `orders` table | Scaffold only — **submission is disabled** |
+| Worker                | Entrypoint                     | Queue           | Status                                               |
+| --------------------- | ------------------------------ | --------------- | ---------------------------------------------------- |
+| `worker:jobs`         | `scripts/work_jobs.py`         | `jobs` table    | Active                                               |
+| `worker:orders`       | `scripts/work_order_queue.py`  | `orders` table  | Scaffold only — **submission is disabled**           |
+| `worker:order-stream` | `scripts/work_order_stream.py` | TWS push events | Off unless `ORDER_STREAM_ENABLED` is set (prod only) |
 
 Start commands:
 
 ```bash
 task worker:jobs
 task worker:orders
+task worker:order-stream
 ```
 
 `ENV` defaults to `prod` (see `Taskfile.yaml`) — pass `ENV=dev` to target your local/dev environment instead: `ENV=dev task worker:jobs`.
@@ -68,7 +72,7 @@ hold its own. A job's `client_id` payload field overrides its default.
 
 | Client ID | Holder                                                                                                                        |
 | --------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| 0         | Reserved for the order push stream (hand-entered orders report client 0)                                                      |
+| 0         | `worker:order-stream` (`ORDER_STREAM_CLIENT_ID`, default 0; hand-entered orders report client 0)                              |
 | 30        | `worker:orders` (order submission)                                                                                            |
 | 31        | `positions.sync.tws`                                                                                                          |
 | 32        | `contracts.sync`, `contracts.chain_sync`                                                                                      |
@@ -124,6 +128,23 @@ What it does today:
 The Tradebot agent has **no** order-submit tool; it can only `preview_order` and
 enqueue `order.fetch_sync`. See [tradebot-chatbot.md](tradebot-chatbot.md).
 
+## Order stream (`worker:order-stream`)
+
+Holds client 0 with `reqAutoOpenOrders(True)`, so orders entered in TWS reach
+`/orders` within seconds without Sync. It writes orders only; fills stay with
+`intraday.sync.tws`, which it queues on each `execDetails` (one follow-up run if
+one was already running). It never places, changes, or cancels a broker order.
+
+- **Prod only.** Set `ORDER_STREAM_ENABLED=true` in `.env.prod` only. Dev and prod
+  share a TWS port, and one process may hold the push ID. A refused ID is retried
+  after a back-off; no other ID is tried.
+- **Run:** `task worker:order-stream` (exits at once if the flag is unset).
+- **Reconnect:** after any disconnect it fetches the full book, sweeps orders TWS
+  no longer shows to `reconcile_required` (only if every fetch succeeded), and then
+  applies events queued meanwhile.
+- **Health:** heartbeat `order_stream`; `details` is JSON with `state` and
+  `last_event_at`. The polled `order.fetch_sync` stays the fallback.
+
 ## Heartbeats and health
 
 - Heartbeats are stored in `worker_heartbeats`; helper `src/services/worker_heartbeat.py`.
@@ -134,6 +155,7 @@ enqueue `order.fetch_sync`. See [tradebot-chatbot.md](tradebot-chatbot.md).
 ## Key files
 
 - `scripts/work_jobs.py`, `src/workers/jobs.py`, `src/services/jobs.py`
+- `scripts/work_order_stream.py`, `src/services/order_stream_tws.py`
 - `scripts/work_order_queue.py`, `src/services/order_worker.py`, `src/services/order_queue.py`, `src/services/order_mutations.py`
 - `src/services/worker_heartbeat.py`, `src/api/routers/workers.py`
 - Sync services: `src/services/{trade,position}_sync_flexquery.py`,

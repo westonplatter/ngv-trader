@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session
 
 from src.db import get_engine
 from src.models import Job
+from src.services.api_notify import post_to_api
 from src.services.jobs import (
     JOB_TYPE_ORDER_FETCH_SYNC,
     JOB_TYPE_POSITIONS_FLEXQUERY_FETCH_REPORT,
@@ -44,25 +45,10 @@ logger = logging.getLogger("worker:jobs")
 # job state transitions reach SSE subscribers in real time.
 # ---------------------------------------------------------------------------
 
-_API_BASE_URL = os.environ.get("API_BASE_URL", "http://localhost:8000/api/v1")
-
 
 def _notify_api(path: str, payload: dict) -> None:
     """Fire-and-forget POST to an API notification endpoint."""
-    import json
-    import urllib.request
-
-    url = f"{_API_BASE_URL}{path}"
-    if not url.startswith(("http://", "https://")):
-        return
-    data = json.dumps(payload).encode()
-    req = urllib.request.Request(
-        url,
-        data=data,
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-    urllib.request.urlopen(req, timeout=2)  # nosec B310
+    post_to_api(path, payload)
 
 
 def _notify_job_event(job_id: int, event: str = "job.updated") -> None:

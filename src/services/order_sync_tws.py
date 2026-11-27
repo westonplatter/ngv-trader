@@ -6,7 +6,7 @@ Fetches open/recent broker orders and reconciles them into local `orders` and
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
@@ -14,6 +14,7 @@ from typing import Any
 from ib_async import IB, Trade
 from sqlalchemy import or_, select
 from sqlalchemy.engine import Engine
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from src.models import Account, Order
@@ -119,22 +120,44 @@ def _fetch_open_trades(ib: IB) -> list[Trade]:
     return list(ib.openTrades())
 
 
+def _merge_trades(*groups: list[Trade]) -> list[Trade]:
+    merged: list[Trade] = []
+    seen: set[tuple[int | None, int | None, str]] = set()
+    for trade in [trade for group in groups for trade in group]:
+        key = _trade_key(trade)
+        if key in seen:
+            continue
+        seen.add(key)
+        merged.append(trade)
+    return merged
+
+
 def _collect_recent_trades(ib: IB) -> TradeFetch:
     # This client's open orders, every API client's open orders, then completed orders.
     open_trades, open_ok = _trades_from(lambda: _fetch_open_trades(ib))
     all_open_trades, all_open_ok = _trades_from(ib.reqAllOpenOrders)
     completed, completed_ok = _trades_from(lambda: ib.reqCompletedOrders(apiOnly=False))
     ok = open_ok and all_open_ok and completed_ok
+    return TradeFetch(trades=_merge_trades(open_trades, all_open_trades, completed), ok=ok)
 
-    merged: list[Trade] = []
-    seen: set[tuple[int | None, int | None, str]] = set()
-    for trade in [*open_trades, *all_open_trades, *completed]:
-        key = _trade_key(trade)
-        if key in seen:
-            continue
-        seen.add(key)
-        merged.append(trade)
-    return TradeFetch(trades=merged, ok=ok)
+
+async def _trades_from_async(fetch: Callable[[], Awaitable[Any]]) -> tuple[list[Trade], bool]:
+    try:
+        result = await fetch()
+    except Exception:
+        return [], False
+    if not isinstance(result, list):
+        return [], False
+    return [trade for trade in result if isinstance(trade, Trade)], True
+
+
+async def collect_recent_trades_async(ib: IB) -> TradeFetch:
+    """Same fetches and merge as `_collect_recent_trades`, for use on the event loop."""
+    open_trades, open_ok = await _trades_from_async(ib.reqOpenOrdersAsync)
+    all_open_trades, all_open_ok = await _trades_from_async(ib.reqAllOpenOrdersAsync)
+    completed, completed_ok = await _trades_from_async(lambda: ib.reqCompletedOrdersAsync(apiOnly=False))
+    ok = open_ok and all_open_ok and completed_ok
+    return TradeFetch(trades=_merge_trades(open_trades, all_open_trades, completed), ok=ok)
 
 
 def _ensure_account(session: Session, account_code: str) -> Account:
@@ -402,13 +425,34 @@ class OrderApplyResult:
     changed: bool
 
 
+def find_order_for_trade(session: Session, trade: Trade) -> Order | None:
+    return _find_matching_order(session, trade)
+
+
+def is_unworked_inactive(trade: Trade) -> bool:
+    """True for TWS's transient `Inactive` report with nothing filled, sent before a new order turns `Submitted`."""
+    status = str(getattr(trade.orderStatus, "status", "") or "").strip().lower()
+    return status == "inactive" and float(trade.filled() or 0.0) <= 0.0
+
+
 def apply_trade_to_order(session: Session, trade: Trade) -> OrderApplyResult:
     """Match a broker trade to a local order, then create or update it. Does not commit."""
     order = _find_matching_order(session, trade)
     if order is None:
-        order = _create_order_from_trade(session, trade)
-        order.last_seen_at = now_utc()
-        return OrderApplyResult(order=order, created=True, changed=True)
+        try:
+            with session.begin_nested():
+                order = _create_order_from_trade(session, trade)
+        except IntegrityError:
+            # Another writer inserted this permId first; update its row instead.
+            perm_id = _known_perm_id(trade)
+            if perm_id is None:
+                raise
+            order = session.execute(select(Order).where(Order.ib_perm_id == perm_id)).scalars().first()
+            if order is None:
+                raise
+        else:
+            order.last_seen_at = now_utc()
+            return OrderApplyResult(order=order, created=True, changed=True)
     changed = _sync_trade_onto_order(session, order, trade)
     order.last_seen_at = now_utc()
     return OrderApplyResult(order=order, created=False, changed=changed)
@@ -461,18 +505,12 @@ def sync_orders_once(
             ib.disconnect()
 
 
-def sync_orders_with_ib(
-    engine: Engine,
-    *,
-    ib: IB,
-) -> dict[str, Any]:
-    fetch_started_at = now_utc()
-    fetch = _collect_recent_trades(ib)
-    trades = fetch.trades
+def reconcile_fetch(engine: Engine, fetch: TradeFetch, fetch_started_at: datetime) -> dict[str, Any]:
+    """Apply a full broker fetch, sweep working orders it no longer shows (only if every fetch succeeded), and commit."""
     created_ids: list[int] = []
     updated_ids: list[int] = []
     with Session(engine) as session:
-        for trade in trades:
+        for trade in fetch.trades:
             result = apply_trade_to_order(session, trade)
             if result.created:
                 created_ids.append(result.order.id)
@@ -484,9 +522,18 @@ def sync_orders_with_ib(
         session.commit()
 
     return {
-        "fetched_trades_count": len(trades),
+        "fetched_trades_count": len(fetch.trades),
         "created_orders_count": len(created_ids),
         "updated_orders_count": len(updated_ids),
         "created_order_ids": created_ids,
         "updated_order_ids": updated_ids,
     }
+
+
+def sync_orders_with_ib(
+    engine: Engine,
+    *,
+    ib: IB,
+) -> dict[str, Any]:
+    fetch_started_at = now_utc()
+    return reconcile_fetch(engine, _collect_recent_trades(ib), fetch_started_at)
