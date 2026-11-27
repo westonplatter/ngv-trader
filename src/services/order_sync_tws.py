@@ -6,12 +6,13 @@ Fetches open/recent broker orders and reconciles them into local `orders` and
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
 from ib_async import IB, Trade
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
@@ -21,6 +22,7 @@ from src.services.order_queue import (
     ORDER_STATUS_FILLED,
     ORDER_STATUS_PARTIALLY_FILLED,
     ORDER_STATUS_QUEUED,
+    ORDER_STATUS_RECONCILE_REQUIRED,
     ORDER_STATUS_REJECTED,
     ORDER_STATUS_SUBMITTED,
     ORDER_TERMINAL_STATUSES,
@@ -31,6 +33,7 @@ from src.services.order_queue import (
 )
 
 DEFAULT_ORDER_SYNC_SOURCE = "broker_sync"
+SWEEPABLE_STATUSES = (ORDER_STATUS_SUBMITTED, ORDER_STATUS_PARTIALLY_FILLED)
 
 
 def parse_float(value: Any) -> float | None:
@@ -93,28 +96,35 @@ def _trade_key(trade: Trade) -> tuple[int | None, int | None, str]:
     return perm_id, order_id, order_ref
 
 
-def _collect_recent_trades(ib: IB) -> list[Trade]:
-    # Pull open orders from this client scope.
+@dataclass(frozen=True)
+class TradeFetch:
+    trades: list[Trade]
+    ok: bool
+
+
+def _trades_from(fetch: Callable[[], Any]) -> tuple[list[Trade], bool]:
+    """Run one broker fetch. The flag is False when it raised or returned something other than a list."""
+    try:
+        result = fetch()
+    except Exception:
+        return [], False
+    if not isinstance(result, list):
+        return [], False
+    return [trade for trade in result if isinstance(trade, Trade)], True
+
+
+def _fetch_open_trades(ib: IB) -> list[Trade]:
     ib.reqOpenOrders()
     ib.waitOnUpdate(timeout=1.0)
-    open_trades = list(ib.openTrades())
+    return list(ib.openTrades())
 
-    # Pull open orders across all API clients.
-    all_open_trades: list[Trade] = []
-    try:
-        maybe_all_open = ib.reqAllOpenOrders()
-        if isinstance(maybe_all_open, list):
-            all_open_trades = [trade for trade in maybe_all_open if isinstance(trade, Trade)]
-    except Exception:
-        all_open_trades = []
 
-    completed: list[Trade] = []
-    try:
-        maybe_completed = ib.reqCompletedOrders(apiOnly=False)
-        if isinstance(maybe_completed, list):
-            completed = [trade for trade in maybe_completed if isinstance(trade, Trade)]
-    except Exception:
-        completed = []
+def _collect_recent_trades(ib: IB) -> TradeFetch:
+    # This client's open orders, every API client's open orders, then completed orders.
+    open_trades, open_ok = _trades_from(lambda: _fetch_open_trades(ib))
+    all_open_trades, all_open_ok = _trades_from(ib.reqAllOpenOrders)
+    completed, completed_ok = _trades_from(lambda: ib.reqCompletedOrders(apiOnly=False))
+    ok = open_ok and all_open_ok and completed_ok
 
     merged: list[Trade] = []
     seen: set[tuple[int | None, int | None, str]] = set()
@@ -124,7 +134,7 @@ def _collect_recent_trades(ib: IB) -> list[Trade]:
             continue
         seen.add(key)
         merged.append(trade)
-    return merged
+    return TradeFetch(trades=merged, ok=ok)
 
 
 def _ensure_account(session: Session, account_code: str) -> Account:
@@ -396,8 +406,36 @@ def apply_trade_to_order(session: Session, trade: Trade) -> OrderApplyResult:
     """Match a broker trade to a local order, then create or update it. Does not commit."""
     order = _find_matching_order(session, trade)
     if order is None:
-        return OrderApplyResult(order=_create_order_from_trade(session, trade), created=True, changed=True)
-    return OrderApplyResult(order=order, created=False, changed=_sync_trade_onto_order(session, order, trade))
+        order = _create_order_from_trade(session, trade)
+        order.last_seen_at = now_utc()
+        return OrderApplyResult(order=order, created=True, changed=True)
+    changed = _sync_trade_onto_order(session, order, trade)
+    order.last_seen_at = now_utc()
+    return OrderApplyResult(order=order, created=False, changed=changed)
+
+
+def sweep_unseen_working_orders(session: Session, fetch_started_at: datetime) -> list[int]:
+    """Move working orders the broker no longer reports to reconcile_required. Does not commit."""
+    stale = (
+        session.execute(
+            select(Order).where(
+                Order.status.in_(SWEEPABLE_STATUSES),
+                or_(Order.last_seen_at.is_(None), Order.last_seen_at < fetch_started_at),
+                Order.updated_at < fetch_started_at,
+            )
+        )
+        .scalars()
+        .all()
+    )
+    for order in stale:
+        transition_order_status(
+            session=session,
+            order=order,
+            next_status=ORDER_STATUS_RECONCILE_REQUIRED,
+            event_type="broker_order_missing",
+            message="Order missing from a successful broker fetch; needs reconcile.",
+        )
+    return [order.id for order in stale]
 
 
 def sync_orders_once(
@@ -428,7 +466,9 @@ def sync_orders_with_ib(
     *,
     ib: IB,
 ) -> dict[str, Any]:
-    trades = _collect_recent_trades(ib)
+    fetch_started_at = now_utc()
+    fetch = _collect_recent_trades(ib)
+    trades = fetch.trades
     created_ids: list[int] = []
     updated_ids: list[int] = []
     with Session(engine) as session:
@@ -438,6 +478,9 @@ def sync_orders_with_ib(
                 created_ids.append(result.order.id)
             elif result.changed:
                 updated_ids.append(result.order.id)
+        if fetch.ok:
+            swept_ids = sweep_unseen_working_orders(session, fetch_started_at)
+            updated_ids.extend(order_id for order_id in swept_ids if order_id not in updated_ids)
         session.commit()
 
     return {

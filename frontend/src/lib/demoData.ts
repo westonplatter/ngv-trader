@@ -1382,8 +1382,8 @@ function demoOrder(overrides: Partial<Order> & Pick<Order, "id">): Order {
 }
 
 // Orders pulled from TWS: a resting hand-entered future limit, a resting
-// option limit, one fill, and one cancel, so every status badge and the
-// working/closed filters have something to show.
+// option limit, one fill, one cancel, and one order needing reconcile, so every
+// status badge and the filters have something to show.
 export const DEMO_ORDERS: Order[] = [
   demoOrder({
     id: 4,
@@ -1445,5 +1445,18 @@ export const DEMO_ORDERS: Order[] = [
     ib_perm_id: 7777771,
     completed_at: "2026-06-19T20:00:00Z",
     created_at: "2026-06-19T15:30:00Z",
+  }),
+  demoOrder({
+    id: 5,
+    symbol: "CL",
+    side: "BUY",
+    limit_price: 71.5,
+    status: "reconcile_required",
+    con_id: 400000005,
+    contract_display_name: "CL Dec 2026",
+    contract_expiry: "20261120",
+    ib_order_id: 13,
+    ib_perm_id: 7777775,
+    created_at: "2026-06-21T12:00:00Z",
   }),
 ];

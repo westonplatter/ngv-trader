@@ -12,7 +12,7 @@ import type { Order } from "../types/orders";
 import { OUTLINE_BUTTON } from "./ui/buttonClasses";
 import { formatAgo, formatDate, formatExpiry } from "../utils/date";
 
-type OrderFilter = "all" | "working" | "closed";
+type OrderFilter = "all" | "working" | "needs reconcile" | "closed";
 
 const STATUS_CLASS: Record<string, string> = {
   queued: "bg-amber-100 text-amber-800",
@@ -30,7 +30,6 @@ const WORKING_STATUSES = new Set([
   "submitting",
   "submitted",
   "partially_filled",
-  "reconcile_required",
 ]);
 const TERMINAL_STATUSES = new Set([
   "filled",
@@ -103,6 +102,8 @@ export default function OrdersTable() {
     let next = orders;
     if (filter === "working") {
       next = next.filter((order) => WORKING_STATUSES.has(order.status));
+    } else if (filter === "needs reconcile") {
+      next = next.filter((order) => order.status === "reconcile_required");
     } else if (filter === "closed") {
       next = next.filter((order) => TERMINAL_STATUSES.has(order.status));
     }
@@ -116,6 +117,12 @@ export default function OrdersTable() {
 
   const workingCount = useMemo(
     () => orders.filter((order) => WORKING_STATUSES.has(order.status)).length,
+    [orders],
+  );
+
+  const reconcileCount = useMemo(
+    () =>
+      orders.filter((order) => order.status === "reconcile_required").length,
     [orders],
   );
 
@@ -192,7 +199,8 @@ export default function OrdersTable() {
         <div>
           <h2 className="text-lg font-semibold text-gray-900">Orders</h2>
           <p className="text-xs text-gray-500">
-            Working {workingCount} · Terminal {terminalCount}
+            Working {workingCount} · Needs reconcile {reconcileCount} · Terminal{" "}
+            {terminalCount}
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -215,20 +223,22 @@ export default function OrdersTable() {
       </div>
 
       <div className="flex items-center gap-2">
-        {(["all", "working", "closed"] as const).map((nextFilter) => (
-          <button
-            type="button"
-            key={nextFilter}
-            onClick={() => setFilter(nextFilter)}
-            className={`rounded px-2.5 py-1 text-xs font-medium uppercase tracking-wide ${
-              filter === nextFilter
-                ? "bg-gray-900 text-white"
-                : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-            }`}
-          >
-            {nextFilter}
-          </button>
-        ))}
+        {(["all", "working", "needs reconcile", "closed"] as const).map(
+          (nextFilter) => (
+            <button
+              type="button"
+              key={nextFilter}
+              onClick={() => setFilter(nextFilter)}
+              className={`rounded px-2.5 py-1 text-xs font-medium uppercase tracking-wide ${
+                filter === nextFilter
+                  ? "bg-gray-900 text-white"
+                  : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+              }`}
+            >
+              {nextFilter}
+            </button>
+          ),
+        )}
       </div>
 
       {loading && <p className="text-gray-500">Loading orders...</p>}
@@ -326,9 +336,11 @@ export default function OrdersTable() {
                 >
                   {filter === "working"
                     ? "No working orders right now."
-                    : filter === "closed"
-                      ? "No closed orders right now."
-                      : "No orders found."}
+                    : filter === "needs reconcile"
+                      ? "No orders need reconcile right now."
+                      : filter === "closed"
+                        ? "No closed orders right now."
+                        : "No orders found."}
                 </td>
               </tr>
             )}

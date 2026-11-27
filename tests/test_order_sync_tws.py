@@ -11,7 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
-from src.models import Order
+from src.models import Order, OrderEvent
 from src.services import order_sync_tws
 from src.services.intraday_sync_tws import _live_execution_values
 
@@ -169,7 +169,7 @@ def test_live_fill_with_perm_id_zero_stores_null() -> None:
 
 
 def _sync(db_session: Session, monkeypatch: pytest.MonkeyPatch, trades: list[Any]) -> dict[str, Any]:
-    monkeypatch.setattr(order_sync_tws, "_collect_recent_trades", lambda ib: trades)
+    monkeypatch.setattr(order_sync_tws, "_collect_recent_trades", lambda ib: order_sync_tws.TradeFetch(trades=trades, ok=True))
     engine = cast(Engine, db_session.get_bind())
     return order_sync_tws.sync_orders_with_ib(engine, ib=cast(IB, SimpleNamespace()))
 
@@ -206,3 +206,123 @@ def test_sync_with_no_changes_returns_empty_id_lists(db_session: Session, monkey
 
 def test_sync_does_not_publish_in_the_worker_process() -> None:
     assert not hasattr(order_sync_tws, "broadcaster")
+
+
+def _working_order(db_session: Session, *, perm_id: int, status: str = "submitted") -> Order:
+    order = _apply(db_session, _trade(perm_id=perm_id, order_id=90000000 + perm_id % 1000))
+    order.status = status
+    db_session.flush()
+    return order
+
+
+def test_successful_fetch_omitting_a_working_order_marks_it_reconcile_required(db_session: Session, monkeypatch: pytest.MonkeyPatch) -> None:
+    gone = _working_order(db_session, perm_id=7777781)
+    kept = _working_order(db_session, perm_id=7777782)
+
+    result = _sync(db_session, monkeypatch, [_trade(perm_id=7777782, order_id=90000782)])
+
+    db_session.refresh(gone)
+    db_session.refresh(kept)
+    assert gone.status == "reconcile_required"
+    assert kept.status == "submitted"
+    assert result["updated_order_ids"] == [gone.id]
+    events = db_session.execute(select(OrderEvent).where(OrderEvent.order_id == gone.id)).scalars().all()
+    assert any(event.status == "reconcile_required" for event in events)
+
+
+def test_partially_filled_order_missing_from_fetch_is_swept(db_session: Session, monkeypatch: pytest.MonkeyPatch) -> None:
+    order = _working_order(db_session, perm_id=7777783, status="partially_filled")
+
+    _sync(db_session, monkeypatch, [])
+
+    db_session.refresh(order)
+    assert order.status == "reconcile_required"
+
+
+def test_empty_book_sweeps_every_working_order(db_session: Session, monkeypatch: pytest.MonkeyPatch) -> None:
+    orders = [_working_order(db_session, perm_id=7777784), _working_order(db_session, perm_id=7777785)]
+
+    result = _sync(db_session, monkeypatch, [])
+
+    for order in orders:
+        db_session.refresh(order)
+        assert order.status == "reconcile_required"
+    assert sorted(result["updated_order_ids"]) == sorted(order.id for order in orders)
+
+
+def test_failed_fetch_leaves_every_order_unchanged(db_session: Session) -> None:
+    order = _working_order(db_session, perm_id=7777786)
+
+    def fail() -> list[Any]:
+        raise RuntimeError("TWS refused")
+
+    fake_ib = SimpleNamespace(
+        reqOpenOrders=lambda: None,
+        waitOnUpdate=lambda timeout=None: None,
+        openTrades=lambda: [],
+        reqAllOpenOrders=fail,
+        reqCompletedOrders=lambda apiOnly=False: [],
+    )
+    result = order_sync_tws.sync_orders_with_ib(cast(Engine, db_session.get_bind()), ib=cast(IB, fake_ib))
+
+    db_session.refresh(order)
+    assert order.status == "submitted"
+    assert result["updated_order_ids"] == []
+
+
+def test_failed_fetch_still_applies_the_trades_it_gathered(db_session: Session, monkeypatch: pytest.MonkeyPatch) -> None:
+    order = _working_order(db_session, perm_id=7777787)
+    monkeypatch.setattr(
+        order_sync_tws,
+        "_collect_recent_trades",
+        lambda ib: order_sync_tws.TradeFetch(trades=[_trade(perm_id=7777787, order_id=90000787, status="Cancelled")], ok=False),
+    )
+
+    order_sync_tws.sync_orders_with_ib(cast(Engine, db_session.get_bind()), ib=cast(IB, SimpleNamespace()))
+
+    db_session.refresh(order)
+    assert order.status == "cancelled"
+
+
+def test_swept_order_seen_again_returns_to_submitted(db_session: Session, monkeypatch: pytest.MonkeyPatch) -> None:
+    order = _working_order(db_session, perm_id=7777788)
+    _sync(db_session, monkeypatch, [])
+    db_session.refresh(order)
+    assert order.status == "reconcile_required"
+
+    result = _sync(db_session, monkeypatch, [_trade(perm_id=7777788, order_id=90000788)])
+
+    db_session.refresh(order)
+    assert order.status == "submitted"
+    assert result["updated_order_ids"] == [order.id]
+
+
+def test_queued_order_is_never_swept(db_session: Session, monkeypatch: pytest.MonkeyPatch) -> None:
+    order = _app_order(db_session)
+    order.status = "queued"
+    db_session.flush()
+
+    _sync(db_session, monkeypatch, [])
+
+    db_session.refresh(order)
+    assert order.status == "queued"
+
+
+def test_order_written_during_the_fetch_is_not_swept(db_session: Session, monkeypatch: pytest.MonkeyPatch) -> None:
+    created: list[Order] = []
+
+    def fetch(ib: Any) -> order_sync_tws.TradeFetch:
+        created.append(_app_order(db_session))
+        return order_sync_tws.TradeFetch(trades=[], ok=True)
+
+    monkeypatch.setattr(order_sync_tws, "_collect_recent_trades", fetch)
+    order_sync_tws.sync_orders_with_ib(cast(Engine, db_session.get_bind()), ib=cast(IB, SimpleNamespace()))
+
+    db_session.refresh(created[0])
+    assert created[0].status == "submitted"
+
+
+def test_observed_order_records_last_seen_at(db_session: Session) -> None:
+    order = _apply(db_session, _trade(perm_id=7777789, order_id=90000789))
+
+    assert order.last_seen_at is not None
