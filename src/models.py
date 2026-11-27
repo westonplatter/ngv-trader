@@ -5,8 +5,8 @@ from datetime import date, datetime, timezone
 from sqlalchemy import (
     JSON,
     BigInteger,
-    CheckConstraint,
     Boolean,
+    CheckConstraint,
     Date,
     DateTime,
     Float,
@@ -257,6 +257,7 @@ class Position(Base):
 
 class Order(Base):
     __tablename__ = "orders"
+    __table_args__ = (Index("uq_orders_ib_perm_id", "ib_perm_id", unique=True, postgresql_where=text("ib_perm_id IS NOT NULL")),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     account_id: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -265,7 +266,9 @@ class Order(Base):
     exchange: Mapped[str] = mapped_column(String, nullable=False, default="NYMEX")
     currency: Mapped[str] = mapped_column(String, nullable=False, default="USD")
     side: Mapped[str] = mapped_column(String, nullable=False)
-    quantity: Mapped[int] = mapped_column(Integer, nullable=False)
+    quantity: Mapped[float] = mapped_column(Float, nullable=False)
+    remaining_quantity: Mapped[float | None] = mapped_column(Float, nullable=True)
+    exec_role: Mapped[str] = mapped_column(String, nullable=False, default="standalone", server_default="standalone")
     order_type: Mapped[str] = mapped_column(String, nullable=False, default="MKT")
     limit_price: Mapped[float | None] = mapped_column(Float, nullable=True)
     tif: Mapped[str] = mapped_column(String, nullable=False, default="DAY")
@@ -277,13 +280,15 @@ class Order(Base):
     contract_month: Mapped[str | None] = mapped_column(String, nullable=True)
     contract_expiry: Mapped[str | None] = mapped_column(String, nullable=True)
     ib_order_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    ib_perm_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    ib_client_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    ib_perm_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     filled_quantity: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     avg_fill_price: Mapped[float | None] = mapped_column(Float, nullable=True)
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     request_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
@@ -294,6 +299,27 @@ class Order(Base):
         nullable=False,
         default=lambda: datetime.now(timezone.utc),
     )
+
+
+class OrderLeg(Base):
+    __tablename__ = "order_legs"
+    __table_args__ = (UniqueConstraint("order_id", "leg_index", name="uq_order_legs_order_id_leg_index"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    order_id: Mapped[int] = mapped_column(Integer, ForeignKey("orders.id", ondelete="CASCADE"), nullable=False)
+    leg_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    con_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    ratio: Mapped[int] = mapped_column(Integer, nullable=False)
+    action: Mapped[str] = mapped_column(String, nullable=False)
+    exchange: Mapped[str | None] = mapped_column(String, nullable=True)
+    open_close: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    quantity: Mapped[float] = mapped_column(Float, nullable=False)
+    symbol: Mapped[str | None] = mapped_column(String, nullable=True)
+    sec_type: Mapped[str | None] = mapped_column(String, nullable=True)
+    local_symbol: Mapped[str | None] = mapped_column(String, nullable=True)
+    strike: Mapped[float | None] = mapped_column(Float, nullable=True)
+    right: Mapped[str | None] = mapped_column(String, nullable=True)
+    contract_expiry: Mapped[str | None] = mapped_column(String, nullable=True)
 
 
 class OrderEvent(Base):
@@ -1084,7 +1110,7 @@ class LiveExecution(Base):
     # Broker order identity, used to group a combo's BAG summary fill with its
     # leg fills within a sync batch. ``ib_perm_id`` is stable across the order
     # lifecycle; ``ib_order_id`` is the fallback when permId is absent.
-    ib_perm_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    ib_perm_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     ib_order_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # "combo_summary" (the BAG fill), "leg" (a constituent of a combo), or
     # "standalone". Mirrors TradeExecution.exec_role on the settled path.

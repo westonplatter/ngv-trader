@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.2.2](https://github.com/westonplatter/ngv-trader/compare/v0.2.1...v0.2.2) (2026-11-27)
+
+
+### Features
+
+* **orders:** sync working orders live from TWS ([#388](https://github.com/westonplatter/ngv-trader/issues/388)) ([04b1b3a](https://github.com/westonplatter/ngv-trader/commit/04b1b3a034f06a79096c65e86420a2f6ff67fb9a))
+* **trade-groups:** split p&l card into core and incremental ([#387](https://github.com/westonplatter/ngv-trader/issues/387)) ([5305dbf](https://github.com/westonplatter/ngv-trader/commit/5305dbffd8c38a9ab3ddc743b5b81dca62f74169))
+
+
+### Documentation
+
+* plan the ib_async v3 upgrade ([#381](https://github.com/westonplatter/ngv-trader/issues/381)) ([216f6d5](https://github.com/westonplatter/ngv-trader/commit/216f6d57f9e886b078e0a4b95da5e57809250d68))
+
+
+### Miscellaneous Chores
+
+* **deps-dev:** bump @vitejs/plugin-react from 6.2.1 to 6.3.0 in /frontend ([#384](https://github.com/westonplatter/ngv-trader/issues/384)) ([54a7649](https://github.com/westonplatter/ngv-trader/commit/54a764923c03d0f6c588c28afa89e25301a0eab2))
+* **deps-dev:** bump @vitejs/plugin-react in /frontend ([54a7649](https://github.com/westonplatter/ngv-trader/commit/54a764923c03d0f6c588c28afa89e25301a0eab2))
+* **deps-dev:** bump typer from 0.27.2 to 0.29.0 ([#385](https://github.com/westonplatter/ngv-trader/issues/385)) ([a42d7eb](https://github.com/westonplatter/ngv-trader/commit/a42d7eb31251a013cdc0cf2a4cd06346aeb7dd4e))
+* **deps:** bump plotly.js from 4.2.0 to 4.3.0 in /frontend ([#383](https://github.com/westonplatter/ngv-trader/issues/383)) ([47a0b5b](https://github.com/westonplatter/ngv-trader/commit/47a0b5bd6c2a110331a1c24838997aee3c912aac))
+
 ## [0.2.1](https://github.com/westonplatter/ngv-trader/compare/v0.2.0...v0.2.1) (2026-11-19)
 
 

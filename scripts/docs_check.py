@@ -103,10 +103,10 @@ def check_script_paths(doc_files: list[Path]) -> list[Issue]:
 def check_task_commands(doc_files: list[Path]) -> list[Issue]:
     """Every `task <name>` cited in docs must exist in Taskfile.yaml."""
     taskfile_text = TASKFILE.read_text()
-    defined_tasks = set(re.findall(r"^  ([\w:]+):", taskfile_text, re.MULTILINE))
+    defined_tasks = set(re.findall(r"^  ([\w:-]+):", taskfile_text, re.MULTILINE))
 
     issues: list[Issue] = []
-    task_re = re.compile(r"`task\s+([\w:]+)")
+    task_re = re.compile(r"`task\s+([\w:-]+)")
     for doc in doc_files:
         for m in task_re.finditer(doc.read_text()):
             name = m.group(1)

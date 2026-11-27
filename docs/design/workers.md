@@ -6,6 +6,8 @@ code_dirs_or_files:
     "src/workers/jobs.py",
     "src/services/jobs.py",
     "scripts/work_order_queue.py",
+    "scripts/work_order_stream.py",
+    "src/services/order_stream_tws.py",
     "src/services/order_worker.py",
     "src/services/worker_heartbeat.py",
   ]
@@ -15,18 +17,20 @@ description: Background workers and the job queue — jobs worker handler regist
 # Workers
 
 Background processes that run separately from the API and consume DB-backed
-queues. Two workers exist.
+queues. Two workers consume queues; a third streams from TWS.
 
-| Worker          | Entrypoint                    | Queue          | Status                                     |
-| --------------- | ----------------------------- | -------------- | ------------------------------------------ |
-| `worker:jobs`   | `scripts/work_jobs.py`        | `jobs` table   | Active                                     |
-| `worker:orders` | `scripts/work_order_queue.py` | `orders` table | Scaffold only — **submission is disabled** |
+| Worker                | Entrypoint                     | Queue           | Status                                               |
+| --------------------- | ------------------------------ | --------------- | ---------------------------------------------------- |
+| `worker:jobs`         | `scripts/work_jobs.py`         | `jobs` table    | Active                                               |
+| `worker:orders`       | `scripts/work_order_queue.py`  | `orders` table  | Scaffold only — **submission is disabled**           |
+| `worker:order-stream` | `scripts/work_order_stream.py` | TWS push events | Off unless `ORDER_STREAM_ENABLED` is set (prod only) |
 
 Start commands:
 
 ```bash
 task worker:jobs
 task worker:orders
+task worker:order-stream
 ```
 
 `ENV` defaults to `prod` (see `Taskfile.yaml`) — pass `ENV=dev` to target your local/dev environment instead: `ENV=dev task worker:jobs`.
@@ -60,6 +64,28 @@ retries up to `max_attempts`. Queue primitive: `src/services/jobs.py`.
 | `intraday.sync.tws`                    | `handle_intraday_sync_tws`                    | Live intraday overlay: `ib.positions()` + marks + today's fills → `live_positions`/`latest_quote`/`live_executions` (read-time merge in the TradeGroup view). Requires a TWS/Gateway session during market hours; if unavailable, the overlay simply shows no live data and the view degrades to settled FlexQuery values. |
 | `contracts.sync_activated`             | `handle_contracts_sync_activated`             | Discover exchange/metadata + sync next-12-calendar-month FUT contracts for each row in `activated_products`. See [activated products plan](../plans/2026-06-20-001-feat-activated-products-security-master-plan.md).                                                                                                       |
 | `option_metrics.sync.tws`              | `handle_option_metrics_sync_tws`              | Live option metrics overlay. See [option-metrics-overlay.md](option-metrics-overlay.md).                                                                                                                                                                                                                                   |
+
+### TWS client IDs
+
+TWS allows one connection per client ID, so every process that connects must
+hold its own. A job's `client_id` payload field overrides its default.
+
+| Client ID | Holder                                                                                                                        |
+| --------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| 0         | `worker:order-stream` (`ORDER_STREAM_CLIENT_ID`, default 0; hand-entered orders report client 0)                              |
+| 30        | `worker:orders` (order submission)                                                                                            |
+| 31        | `positions.sync.tws`                                                                                                          |
+| 32        | `contracts.sync`, `contracts.chain_sync`                                                                                      |
+| 33        | `trades.sync.tws`                                                                                                             |
+| 34        | `watchlist.add_instrument`                                                                                                    |
+| 35-41     | `market_data.*`, `contracts.qualify_and_snapshot`, `contracts.sync_activated`, `intraday.sync.tws`, `option_metrics.sync.tws` |
+| 42        | `order.fetch_sync`                                                                                                            |
+| 141       | `watchlist.quotes_refresh` (`BROKER_TWS_QUOTES_CLIENT_ID`)                                                                    |
+
+`order.fetch_sync` does not need client 0: `reqAllOpenOrders` returns orders
+entered by hand in TWS on any client ID. After each sync the worker POSTs
+`/events/notify-order` per created or updated order, so open browsers update
+without a refresh.
 
 ### Defined but NOT registered (dormant)
 
@@ -102,6 +128,26 @@ What it does today:
 The Tradebot agent has **no** order-submit tool; it can only `preview_order` and
 enqueue `order.fetch_sync`. See [tradebot-chatbot.md](tradebot-chatbot.md).
 
+## Order stream (`worker:order-stream`)
+
+Holds client 0 with `reqAutoOpenOrders(True)`, so orders entered in TWS reach
+`/orders` within seconds without Sync. It writes orders only; fills stay with
+`intraday.sync.tws`, which it queues on each `execDetails` (one follow-up run if
+one was already running). It never places, changes, or cancels a broker order.
+
+- **Prod only.** Set `ORDER_STREAM_ENABLED=true` in `.env.prod` only. Dev and prod
+  share a TWS port, and one process may hold the push ID. A refused ID is retried
+  after a back-off; no other ID is tried.
+- **Run:** `task worker:order-stream` (exits at once if the flag is unset).
+- **Reconnect:** after any disconnect it fetches the full book, sweeps orders TWS
+  no longer shows to `reconcile_required` (only if every fetch succeeded), and then
+  applies events queued meanwhile.
+- **Health:** heartbeat `order_stream`; `details` is JSON with `state` and
+  `last_event_at`. The polled `order.fetch_sync` stays the fallback.
+  `GET /api/v1/orders/stream-status` reads it: `live` (running, fresh within 30 s,
+  state `live`), `not_live`, or `disabled` (no heartbeat row). `/orders` shows it
+  beside Sync.
+
 ## Heartbeats and health
 
 - Heartbeats are stored in `worker_heartbeats`; helper `src/services/worker_heartbeat.py`.
@@ -112,6 +158,7 @@ enqueue `order.fetch_sync`. See [tradebot-chatbot.md](tradebot-chatbot.md).
 ## Key files
 
 - `scripts/work_jobs.py`, `src/workers/jobs.py`, `src/services/jobs.py`
+- `scripts/work_order_stream.py`, `src/services/order_stream_tws.py`
 - `scripts/work_order_queue.py`, `src/services/order_worker.py`, `src/services/order_queue.py`, `src/services/order_mutations.py`
 - `src/services/worker_heartbeat.py`, `src/api/routers/workers.py`
 - Sync services: `src/services/{trade,position}_sync_flexquery.py`,

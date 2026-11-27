@@ -16,6 +16,7 @@ import GroupEditForm from "./GroupEditForm";
 import { GroupAccountBreakdown, GroupPnlSummary } from "./GroupPnlSummary";
 import GroupPositionsTable from "./GroupPositionsTable";
 import GroupTradesTable from "./GroupTradesTable";
+import GroupWorkingOrdersTable from "./GroupWorkingOrdersTable";
 import type { GroupLiveSync } from "./useGroupLiveSync";
 import type { GroupPatch } from "./useTradeGroups";
 
@@ -155,6 +156,11 @@ export default function GroupDetailPane({
         positions={visiblePositions}
         totalCount={openPositions.length}
         accountFiltered={accountFilter != null}
+        privacyMode={privacyMode}
+      />
+      <GroupWorkingOrdersTable
+        groupId={detail.id}
+        accountFilter={accountFilter}
         privacyMode={privacyMode}
       />
       <GroupTradesTable

@@ -16,10 +16,12 @@ import { setApiFetch, type ApiFetch } from "./api";
 import {
   DEMO_ACCOUNTS,
   DEMO_FLEXQUERY_TOKENS,
+  DEMO_ORDERS,
   DEMO_POSITIONS,
   DEMO_STRATEGIES,
   DEMO_TRADE_EXECUTIONS,
   demoGroupExecutions,
+  demoGroupWorkingOrders,
   demoTradeGroupDetail,
   demoTradeGroupRows,
 } from "./demoData";
@@ -64,6 +66,16 @@ function demoWorkerStatuses(): Json {
 function routeGet(path: string, params: URLSearchParams): Json | undefined {
   if (path === "/positions") return withPositionTags(DEMO_POSITIONS);
   if (path === "/accounts") return DEMO_ACCOUNTS;
+  if (path === "/orders") return DEMO_ORDERS;
+  if (path === "/orders/stream-status") {
+    return {
+      state: "live",
+      stream_state: "live",
+      last_event_at: "2026-06-21T14:29:48Z",
+      heartbeat_at: "2026-06-21T14:30:00Z",
+      seconds_since_heartbeat: 3,
+    };
+  }
   if (path === "/flexquery-tokens") return DEMO_FLEXQUERY_TOKENS;
   if (path === "/workers/status") return demoWorkerStatuses();
   if (path === "/strategies") return DEMO_STRATEGIES;
@@ -96,6 +108,9 @@ function routeGet(path: string, params: URLSearchParams): Json | undefined {
     };
   }
 
+  const workingMatch = path.match(/^\/trade-groups\/(\d+)\/working-orders$/);
+  if (workingMatch) return demoGroupWorkingOrders(Number(workingMatch[1]));
+
   const execMatch = path.match(/^\/trade-groups\/(\d+)\/executions$/);
   if (execMatch) return demoGroupExecutions(Number(execMatch[1])) ?? undefined;
 
@@ -123,6 +138,9 @@ function handle(
 
   // Writes have no backend in demo mode. The sync trigger returns a job-shaped
   // payload so its UI flow stays intact; everything else gets a benign 200.
+  if (path === "/orders/sync") {
+    return jsonResponse({ job_id: 0, status: "demo (no backend)" });
+  }
   if (path.startsWith("/positions/sync/")) {
     return jsonResponse({ job_id: 0, status: "demo (no backend)" });
   }

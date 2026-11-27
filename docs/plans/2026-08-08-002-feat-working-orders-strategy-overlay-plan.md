@@ -10,6 +10,8 @@ execution: code
 
 # Working-Orders Strategy Overlay - Plan
 
+> **Superseded** by [2026-11-26-0818-feat-working-orders-live-sync-plan.md](2026-11-26-0818-feat-working-orders-live-sync-plan.md). Kept for history; do not implement from this file.
+
 ## Goal Capsule
 
 - **Objective:** A strategy (trade group) shows not just where it _has been_ (settled trades) and where it _is_ (positions + intraday overlay), but where it **will be** once resting orders fill — so a resting far-from-market limit reads as "rebalance pending", not as invisible intent.

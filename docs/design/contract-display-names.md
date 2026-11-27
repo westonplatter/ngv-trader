@@ -136,6 +136,10 @@ contract_display_name(
 `orders.local_symbol`, `orders.contract_expiry`, `orders.trading_class`,
 `orders.exchange`, plus `contracts.*` via con_id join for richer metadata.
 
+A combo (BAG) order gets no derived strike or right. Each of its `order_legs`
+rows is named from `contracts.*` by the leg's con_id, falling back to the leg's
+stored display fields, then `"<symbol> (con <con_id>)"`.
+
 ### Watch Lists (`src/api/routers/watch_lists.py`)
 
 `WatchListInstrument` only stores `con_id` (no display columns of its own).

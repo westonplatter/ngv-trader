@@ -1,13 +1,18 @@
-import { useCallback, useMemo, useState } from "react";
-import { enqueueSyncJob, useJobWatcher } from "../hooks/useJobWatcher";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import {
+  enqueueSyncJob,
+  useJobWatcher,
+  type WatchedJob,
+} from "../hooks/useJobWatcher";
 import { useFormatters } from "../hooks/useFormatters";
 import { useSseList } from "../hooks/useSseList";
 import { api } from "../lib/api";
-import type { Order } from "../types/orders";
+import { useSSE } from "../lib/events";
+import type { Order, OrderStreamStatus } from "../types/orders";
 import { OUTLINE_BUTTON } from "./ui/buttonClasses";
-import { formatDate, formatExpiry } from "../utils/date";
+import { formatAgo, formatDate, formatExpiry } from "../utils/date";
 
-type OrderFilter = "all" | "working" | "closed";
+type OrderFilter = "all" | "working" | "needs reconcile" | "closed";
 
 const STATUS_CLASS: Record<string, string> = {
   queued: "bg-amber-100 text-amber-800",
@@ -25,7 +30,6 @@ const WORKING_STATUSES = new Set([
   "submitting",
   "submitted",
   "partially_filled",
-  "reconcile_required",
 ]);
 const TERMINAL_STATUSES = new Set([
   "filled",
@@ -33,6 +37,26 @@ const TERMINAL_STATUSES = new Set([
   "rejected",
   "failed",
 ]);
+
+const ORDER_SYNC_JOB_TYPE = "order.fetch_sync";
+const AGO_REFRESH_MS = 15_000;
+
+const STREAM_LABEL: Record<OrderStreamStatus["state"], string> = {
+  live: "Live",
+  not_live: "Not live",
+  disabled: "Stream off",
+};
+const STREAM_DOT: Record<OrderStreamStatus["state"], string> = {
+  live: "bg-green-500",
+  not_live: "bg-red-500",
+  disabled: "bg-gray-400",
+};
+const STREAM_TITLE: Record<OrderStreamStatus["state"], string> = {
+  live: "TWS order changes arrive as they happen.",
+  not_live:
+    "The order stream is down or reconnecting. Orders update on sync only.",
+  disabled: "The order stream is not running. Orders update on sync only.",
+};
 
 function getDisplayedSymbol(order: Order): string {
   return (order.symbol || "").trim().toUpperCase();
@@ -50,6 +74,16 @@ export default function OrdersTable() {
     new Set(),
   );
   const [symbolRegexFilter, setSymbolRegexFilter] = useState("");
+  const [expandedOrderIds, setExpandedOrderIds] = useState<Set<number>>(
+    new Set(),
+  );
+  const toggleExpanded = (orderId: number) =>
+    setExpandedOrderIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(orderId)) next.delete(orderId);
+      else next.add(orderId);
+      return next;
+    });
 
   const loadOrders = useCallback(() => api.get<Order[]>("/orders"), []);
 
@@ -65,6 +99,37 @@ export default function OrdersTable() {
     key: (order) => order.id,
   });
   const { watch } = useJobWatcher();
+
+  // The jobs stream carries every order sync, including ones queued elsewhere.
+  const [lastSyncAt, setLastSyncAt] = useState<number | null>(null);
+  const [now, setNow] = useState(() => Date.now());
+  useSSE<WatchedJob>("jobs", (job) => {
+    if (job.job_type !== ORDER_SYNC_JOB_TYPE || job.status !== "completed")
+      return;
+    setLastSyncAt(Date.now());
+  });
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), AGO_REFRESH_MS);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const [streamStatus, setStreamStatus] = useState<OrderStreamStatus | null>(
+    null,
+  );
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .get<OrderStreamStatus>("/orders/stream-status")
+      .then((next) => {
+        if (!cancelled) setStreamStatus(next);
+      })
+      .catch(() => {
+        if (!cancelled) setStreamStatus(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [now]);
 
   const symbolFilter = useMemo(() => {
     const raw = symbolRegexFilter.trim();
@@ -82,6 +147,8 @@ export default function OrdersTable() {
     let next = orders;
     if (filter === "working") {
       next = next.filter((order) => WORKING_STATUSES.has(order.status));
+    } else if (filter === "needs reconcile") {
+      next = next.filter((order) => order.status === "reconcile_required");
     } else if (filter === "closed") {
       next = next.filter((order) => TERMINAL_STATUSES.has(order.status));
     }
@@ -95,6 +162,12 @@ export default function OrdersTable() {
 
   const workingCount = useMemo(
     () => orders.filter((order) => WORKING_STATUSES.has(order.status)).length,
+    [orders],
+  );
+
+  const reconcileCount = useMemo(
+    () =>
+      orders.filter((order) => order.status === "reconcile_required").length,
     [orders],
   );
 
@@ -124,7 +197,10 @@ export default function OrdersTable() {
         "Manual order fetch/sync from Orders page.",
       );
       setSyncMessage(`Queued order sync job #${data.job_id} (${data.status}).`);
-      watch(data.job_id, () => reload());
+      watch(data.job_id, (job) => {
+        if (job.status === "completed") setLastSyncAt(Date.now());
+        reload();
+      });
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unknown sync error";
       setSyncError(message);
@@ -168,10 +244,30 @@ export default function OrdersTable() {
         <div>
           <h2 className="text-lg font-semibold text-gray-900">Orders</h2>
           <p className="text-xs text-gray-500">
-            Working {workingCount} · Terminal {terminalCount}
+            Working {workingCount} · Needs reconcile {reconcileCount} · Terminal{" "}
+            {terminalCount}
           </p>
         </div>
         <div className="flex items-center gap-3">
+          {streamStatus !== null && (
+            <span
+              className="inline-flex items-center gap-1.5 text-xs text-gray-500"
+              title={STREAM_TITLE[streamStatus.state]}
+            >
+              <span
+                className={`inline-block h-2 w-2 rounded-full ${STREAM_DOT[streamStatus.state]}`}
+              />
+              {STREAM_LABEL[streamStatus.state]}
+              {streamStatus.state === "live" &&
+                streamStatus.last_event_at !== null &&
+                ` · last event ${formatAgo(now - Date.parse(streamStatus.last_event_at))}`}
+            </span>
+          )}
+          {lastSyncAt !== null && (
+            <span className="text-xs text-gray-500">
+              Last sync {formatAgo(now - lastSyncAt)}
+            </span>
+          )}
           <button
             type="button"
             onClick={() => {
@@ -186,20 +282,22 @@ export default function OrdersTable() {
       </div>
 
       <div className="flex items-center gap-2">
-        {(["all", "working", "closed"] as const).map((nextFilter) => (
-          <button
-            type="button"
-            key={nextFilter}
-            onClick={() => setFilter(nextFilter)}
-            className={`rounded px-2.5 py-1 text-xs font-medium uppercase tracking-wide ${
-              filter === nextFilter
-                ? "bg-gray-900 text-white"
-                : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-            }`}
-          >
-            {nextFilter}
-          </button>
-        ))}
+        {(["all", "working", "needs reconcile", "closed"] as const).map(
+          (nextFilter) => (
+            <button
+              type="button"
+              key={nextFilter}
+              onClick={() => setFilter(nextFilter)}
+              className={`rounded px-2.5 py-1 text-xs font-medium uppercase tracking-wide ${
+                filter === nextFilter
+                  ? "bg-gray-900 text-white"
+                  : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+              }`}
+            >
+              {nextFilter}
+            </button>
+          ),
+        )}
       </div>
 
       {loading && <p className="text-gray-500">Loading orders...</p>}
@@ -297,95 +395,131 @@ export default function OrdersTable() {
                 >
                   {filter === "working"
                     ? "No working orders right now."
-                    : filter === "closed"
-                      ? "No closed orders right now."
-                      : "No orders found."}
+                    : filter === "needs reconcile"
+                      ? "No orders need reconcile right now."
+                      : filter === "closed"
+                        ? "No closed orders right now."
+                        : "No orders found."}
                 </td>
               </tr>
             )}
             {sortedOrders.map((order) => (
-              <tr
-                key={order.id}
-                className={`border-b border-gray-200 hover:bg-gray-50 ${
-                  WORKING_STATUSES.has(order.status) ? "bg-blue-50/40" : ""
-                }`}
-              >
-                <td className="px-3 py-2 whitespace-nowrap text-gray-700">
-                  {formatDate(order.created_at)}
-                </td>
-                <td className="px-3 py-2 whitespace-nowrap text-gray-800">
-                  {order.ib_order_id ?? "—"}
-                </td>
-                <td className="px-3 py-2 whitespace-nowrap text-gray-800">
-                  {order.con_id ?? "—"}
-                </td>
-                <td className="px-3 py-2 whitespace-nowrap text-gray-800">
-                  {getDisplayedSymbol(order) || "—"}
-                </td>
-                <td className="px-3 py-2 whitespace-nowrap text-gray-800">
-                  {fmt.masked(order.ib_perm_id ?? "—")}
-                </td>
-                <td className="px-3 py-2 whitespace-nowrap text-gray-800">
-                  {order.account_alias ?? `Account ${order.account_id}`}
-                </td>
-                <td className="px-3 py-2 whitespace-nowrap text-gray-700">
-                  {order.side}
-                </td>
-                <td className="px-3 py-2 whitespace-nowrap text-gray-700">
-                  {fmt.quantity(order.quantity)}
-                </td>
-                <td className="px-3 py-2 whitespace-nowrap text-gray-700">
-                  <div>{order.order_type}</div>
-                </td>
-                <td className="px-3 py-2 whitespace-nowrap text-gray-700">
-                  {order.tif}
-                </td>
-                <td className="px-3 py-2 whitespace-nowrap text-gray-700">
-                  {fmt.masked(order.limit_price ?? "—")}
-                </td>
-                <td className="px-3 py-2 whitespace-nowrap text-gray-700">
-                  <div>{order.contract_display_name}</div>
-                </td>
-                <td className="px-3 py-2 whitespace-nowrap text-gray-700">
-                  {order.option_right ?? "—"}
-                </td>
-                <td className="px-3 py-2 whitespace-nowrap text-gray-700">
-                  {order.option_strike ?? "—"}
-                </td>
-                <td className="px-3 py-2 whitespace-nowrap text-gray-700">
-                  {formatExpiry(order.contract_expiry)}
-                </td>
-                <td className="px-3 py-2 whitespace-nowrap">
-                  <span
-                    className={`rounded px-2 py-0.5 text-xs font-medium ${STATUS_CLASS[order.status] ?? "bg-gray-100 text-gray-800"}`}
-                  >
-                    {order.status}
-                  </span>
-                </td>
-                <td className="px-3 py-2 whitespace-nowrap text-gray-700">
-                  <div>
-                    {fmt.masked(`${order.filled_quantity} / ${order.quantity}`)}
-                  </div>
-                </td>
-                <td className="px-3 py-2 whitespace-nowrap">
-                  {order.status === "queued" ? (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        void cancelQueuedOrder(order.id);
-                      }}
-                      disabled={cancelingOrderIds.has(order.id)}
-                      className="rounded border border-red-300 px-2 py-0.5 text-xs text-red-700 hover:bg-red-50 disabled:opacity-50"
+              <Fragment key={order.id}>
+                <tr
+                  className={`border-b border-gray-200 hover:bg-gray-50 ${
+                    WORKING_STATUSES.has(order.status) ? "bg-blue-50/40" : ""
+                  }`}
+                >
+                  <td className="px-3 py-2 whitespace-nowrap text-gray-700">
+                    {order.legs.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => toggleExpanded(order.id)}
+                        aria-expanded={expandedOrderIds.has(order.id)}
+                        aria-label={`Toggle legs of order ${order.id}`}
+                        className="mr-1 text-xs text-gray-500 hover:text-gray-800"
+                      >
+                        {expandedOrderIds.has(order.id) ? "▾" : "▸"}
+                      </button>
+                    )}
+                    {formatDate(order.created_at)}
+                  </td>
+                  <td className="px-3 py-2 whitespace-nowrap text-gray-800">
+                    {order.ib_order_id ?? "—"}
+                  </td>
+                  <td className="px-3 py-2 whitespace-nowrap text-gray-800">
+                    {order.con_id ?? "—"}
+                  </td>
+                  <td className="px-3 py-2 whitespace-nowrap text-gray-800">
+                    {getDisplayedSymbol(order) || "—"}
+                  </td>
+                  <td className="px-3 py-2 whitespace-nowrap text-gray-800">
+                    {fmt.masked(order.ib_perm_id ?? "—")}
+                  </td>
+                  <td className="px-3 py-2 whitespace-nowrap text-gray-800">
+                    {order.account_alias ?? `Account ${order.account_id}`}
+                  </td>
+                  <td className="px-3 py-2 whitespace-nowrap text-gray-700">
+                    {order.side}
+                  </td>
+                  <td className="px-3 py-2 whitespace-nowrap text-gray-700">
+                    {fmt.quantity(order.quantity)}
+                  </td>
+                  <td className="px-3 py-2 whitespace-nowrap text-gray-700">
+                    <div>{order.order_type}</div>
+                  </td>
+                  <td className="px-3 py-2 whitespace-nowrap text-gray-700">
+                    {order.tif}
+                  </td>
+                  <td className="px-3 py-2 whitespace-nowrap text-gray-700">
+                    {fmt.masked(order.limit_price ?? "—")}
+                  </td>
+                  <td className="px-3 py-2 whitespace-nowrap text-gray-700">
+                    <div>{order.contract_display_name}</div>
+                  </td>
+                  <td className="px-3 py-2 whitespace-nowrap text-gray-700">
+                    {order.option_right ?? "—"}
+                  </td>
+                  <td className="px-3 py-2 whitespace-nowrap text-gray-700">
+                    {order.option_strike ?? "—"}
+                  </td>
+                  <td className="px-3 py-2 whitespace-nowrap text-gray-700">
+                    {formatExpiry(order.contract_expiry)}
+                  </td>
+                  <td className="px-3 py-2 whitespace-nowrap">
+                    <span
+                      className={`rounded px-2 py-0.5 text-xs font-medium ${STATUS_CLASS[order.status] ?? "bg-gray-100 text-gray-800"}`}
                     >
-                      {cancelingOrderIds.has(order.id)
-                        ? "Cancelling..."
-                        : "Cancel"}
-                    </button>
-                  ) : (
-                    <span className="text-xs text-gray-400">—</span>
-                  )}
-                </td>
-              </tr>
+                      {order.status}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2 whitespace-nowrap text-gray-700">
+                    <div>
+                      {fmt.masked(
+                        `${order.filled_quantity} / ${order.quantity}`,
+                      )}
+                    </div>
+                  </td>
+                  <td className="px-3 py-2 whitespace-nowrap">
+                    {order.status === "queued" ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void cancelQueuedOrder(order.id);
+                        }}
+                        disabled={cancelingOrderIds.has(order.id)}
+                        className="rounded border border-red-300 px-2 py-0.5 text-xs text-red-700 hover:bg-red-50 disabled:opacity-50"
+                      >
+                        {cancelingOrderIds.has(order.id)
+                          ? "Cancelling..."
+                          : "Cancel"}
+                      </button>
+                    ) : (
+                      <span className="text-xs text-gray-400">—</span>
+                    )}
+                  </td>
+                </tr>
+                {expandedOrderIds.has(order.id) &&
+                  order.legs.map((leg) => (
+                    <tr
+                      key={`${order.id}-leg-${leg.leg_index}`}
+                      className="border-b border-gray-100 bg-gray-50 text-xs text-gray-600"
+                    >
+                      <td className="px-3 py-1 pl-8" colSpan={6}>
+                        Leg {leg.leg_index + 1}: {leg.contract_display_name}
+                      </td>
+                      <td className="px-3 py-1 whitespace-nowrap">
+                        {leg.action}
+                      </td>
+                      <td className="px-3 py-1 whitespace-nowrap">
+                        {fmt.quantity(leg.quantity)}
+                      </td>
+                      <td className="px-3 py-1 whitespace-nowrap" colSpan={10}>
+                        ratio {leg.ratio}
+                      </td>
+                    </tr>
+                  ))}
+              </Fragment>
             ))}
           </tbody>
         </table>

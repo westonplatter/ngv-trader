@@ -6,21 +6,29 @@ Fetches open/recent broker orders and reconciles them into local `orders` and
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
 from ib_async import IB, Trade
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.engine import Engine
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from src.api.schemas import to_order_response
-from src.models import Account, ContractRef, Order
+from src.domain.enums import ExecRole
+from src.models import Account, ContractRef, Order, OrderLeg
+from src.services.jobs import (
+    JOB_TYPE_CONTRACTS_QUALIFY_AND_SNAPSHOT,
+    enqueue_job_if_idle,
+)
 from src.services.order_queue import (
     ORDER_STATUS_CANCELLED,
     ORDER_STATUS_FILLED,
     ORDER_STATUS_PARTIALLY_FILLED,
     ORDER_STATUS_QUEUED,
+    ORDER_STATUS_RECONCILE_REQUIRED,
     ORDER_STATUS_REJECTED,
     ORDER_STATUS_SUBMITTED,
     ORDER_TERMINAL_STATUSES,
@@ -29,9 +37,10 @@ from src.services.order_queue import (
     now_utc,
     transition_order_status,
 )
-from src.services.ui_events import TOPIC_ORDERS, broadcaster, make_event
 
 DEFAULT_ORDER_SYNC_SOURCE = "broker_sync"
+_REF_LEG_FIELDS = {"symbol", "sec_type", "local_symbol", "strike", "right", "contract_expiry"}
+SWEEPABLE_STATUSES = (ORDER_STATUS_SUBMITTED, ORDER_STATUS_PARTIALLY_FILLED)
 
 
 def parse_float(value: Any) -> float | None:
@@ -94,45 +103,67 @@ def _trade_key(trade: Trade) -> tuple[int | None, int | None, str]:
     return perm_id, order_id, order_ref
 
 
-def _collect_recent_trades(ib: IB, *, client_id: int) -> list[Trade]:
-    # Best-effort bind for manually-entered TWS orders when permissions/client-id allow.
-    if client_id == 0:
-        try:
-            ib.reqAutoOpenOrders(True)
-        except Exception:  # nosec B110 - best-effort; TWS may reject depending on client permissions
-            pass
+@dataclass(frozen=True)
+class TradeFetch:
+    trades: list[Trade]
+    ok: bool
 
-    # Pull open orders from this client scope.
+
+def _trades_from(fetch: Callable[[], Any]) -> tuple[list[Trade], bool]:
+    """Run one broker fetch. The flag is False when it raised or returned something other than a list."""
+    try:
+        result = fetch()
+    except Exception:
+        return [], False
+    if not isinstance(result, list):
+        return [], False
+    return [trade for trade in result if isinstance(trade, Trade)], True
+
+
+def _fetch_open_trades(ib: IB) -> list[Trade]:
     ib.reqOpenOrders()
     ib.waitOnUpdate(timeout=1.0)
-    open_trades = list(ib.openTrades())
+    return list(ib.openTrades())
 
-    # Pull open orders across all API clients.
-    all_open_trades: list[Trade] = []
-    try:
-        maybe_all_open = ib.reqAllOpenOrders()
-        if isinstance(maybe_all_open, list):
-            all_open_trades = [trade for trade in maybe_all_open if isinstance(trade, Trade)]
-    except Exception:
-        all_open_trades = []
 
-    completed: list[Trade] = []
-    try:
-        maybe_completed = ib.reqCompletedOrders(apiOnly=False)
-        if isinstance(maybe_completed, list):
-            completed = [trade for trade in maybe_completed if isinstance(trade, Trade)]
-    except Exception:
-        completed = []
-
+def _merge_trades(*groups: list[Trade]) -> list[Trade]:
     merged: list[Trade] = []
     seen: set[tuple[int | None, int | None, str]] = set()
-    for trade in [*open_trades, *all_open_trades, *completed]:
+    for trade in [trade for group in groups for trade in group]:
         key = _trade_key(trade)
         if key in seen:
             continue
         seen.add(key)
         merged.append(trade)
     return merged
+
+
+def _collect_recent_trades(ib: IB) -> TradeFetch:
+    # This client's open orders, every API client's open orders, then completed orders.
+    open_trades, open_ok = _trades_from(lambda: _fetch_open_trades(ib))
+    all_open_trades, all_open_ok = _trades_from(ib.reqAllOpenOrders)
+    completed, completed_ok = _trades_from(lambda: ib.reqCompletedOrders(apiOnly=False))
+    ok = open_ok and all_open_ok and completed_ok
+    return TradeFetch(trades=_merge_trades(open_trades, all_open_trades, completed), ok=ok)
+
+
+async def _trades_from_async(fetch: Callable[[], Awaitable[Any]]) -> tuple[list[Trade], bool]:
+    try:
+        result = await fetch()
+    except Exception:
+        return [], False
+    if not isinstance(result, list):
+        return [], False
+    return [trade for trade in result if isinstance(trade, Trade)], True
+
+
+async def collect_recent_trades_async(ib: IB) -> TradeFetch:
+    """Same fetches and merge as `_collect_recent_trades`, for use on the event loop."""
+    open_trades, open_ok = await _trades_from_async(ib.reqOpenOrdersAsync)
+    all_open_trades, all_open_ok = await _trades_from_async(ib.reqAllOpenOrdersAsync)
+    completed, completed_ok = await _trades_from_async(lambda: ib.reqCompletedOrdersAsync(apiOnly=False))
+    ok = open_ok and all_open_ok and completed_ok
+    return TradeFetch(trades=_merge_trades(open_trades, all_open_trades, completed), ok=ok)
 
 
 def _ensure_account(session: Session, account_code: str) -> Account:
@@ -146,36 +177,124 @@ def _ensure_account(session: Session, account_code: str) -> Account:
     return account
 
 
-def _find_matching_order(session: Session, trade: Trade) -> Order | None:
-    local_order_id = parse_order_ref(getattr(trade.order, "orderRef", None))
-    if local_order_id is not None:
-        matched = session.get(Order, local_order_id)
-        if matched is not None:
-            return matched
-
+def _known_perm_id(trade: Trade) -> int | None:
+    """The broker permId, or None while TWS has not assigned one (it reports 0)."""
     perm_id = parse_int(getattr(trade.order, "permId", None))
+    return perm_id if perm_id else None
+
+
+def _find_matching_order(session: Session, trade: Trade) -> Order | None:
+    perm_id = _known_perm_id(trade)
     if perm_id is not None:
         stmt = select(Order).where(Order.ib_perm_id == perm_id).order_by(Order.updated_at.desc()).limit(1)
         matched = session.execute(stmt).scalars().first()
         if matched is not None:
             return matched
 
+    local_order_id = parse_order_ref(getattr(trade.order, "orderRef", None))
+    if local_order_id is not None:
+        candidate = session.get(Order, local_order_id)
+        if candidate is not None and candidate.source != DEFAULT_ORDER_SYNC_SOURCE and (candidate.ib_perm_id is None or candidate.ib_perm_id == perm_id):
+            return candidate
+
     order_id = parse_int(getattr(trade.order, "orderId", None))
-    if order_id is not None:
-        stmt = select(Order).where(Order.ib_order_id == order_id).order_by(Order.updated_at.desc()).limit(1)
-        matched = session.execute(stmt).scalars().first()
-        if matched is not None:
-            return matched
+    client_id = parse_int(getattr(trade.order, "clientId", None))
+    if order_id and client_id is not None:
+        stmt = (
+            select(Order)
+            .where(Order.ib_order_id == order_id, Order.ib_client_id == client_id, Order.ib_perm_id.is_(None))
+            .order_by(Order.updated_at.desc())
+            .limit(1)
+        )
+        return session.execute(stmt).scalars().first()
 
     return None
 
 
-def _safe_quantity(raw_quantity: Any) -> int:
+def _raw_quantity(raw_quantity: Any) -> float:
     parsed = parse_float(raw_quantity)
-    if parsed is None:
-        return 1
-    value = int(round(abs(parsed)))
-    return value if value > 0 else 1
+    return parsed if parsed is not None else 0.0
+
+
+def _remaining_quantity(quantity: float, filled_quantity: float) -> float:
+    return max(0.0, quantity - filled_quantity)
+
+
+def _action_sign(raw_action: Any) -> int:
+    return -1 if str(raw_action or "").strip().upper() == "SELL" else 1
+
+
+def _is_combo(trade: Trade) -> bool:
+    return len(getattr(trade.contract, "comboLegs", None) or []) >= 2
+
+
+def _exec_role_for(trade: Trade) -> str:
+    return ExecRole.COMBO_SUMMARY.value if _is_combo(trade) else ExecRole.STANDALONE.value
+
+
+def _leg_values(trade: Trade, leg_index: int, leg: Any, refs: dict[int, ContractRef]) -> dict[str, Any]:
+    # TWS reports the same leg actions for a BUY and a SELL combo; the parent action flips the sign.
+    leg_action = str(getattr(leg, "action", "") or "").strip().upper()
+    ratio = parse_int(getattr(leg, "ratio", None)) or 1
+    quantity = (
+        _raw_quantity(getattr(trade.order, "totalQuantity", None)) * ratio * _action_sign(leg_action) * _action_sign(getattr(trade.order, "action", None))
+    )
+    con_id = parse_int(getattr(leg, "conId", None)) or 0
+    ref = refs.get(con_id)
+    return {
+        "leg_index": leg_index,
+        "con_id": con_id,
+        "ratio": ratio,
+        "action": leg_action,
+        "exchange": str(getattr(leg, "exchange", "") or "") or None,
+        "open_close": parse_int(getattr(leg, "openClose", None)),
+        "quantity": quantity,
+        "symbol": ref.symbol if ref else None,
+        "sec_type": ref.sec_type if ref else None,
+        "local_symbol": ref.local_symbol if ref else None,
+        "strike": ref.strike if ref else None,
+        "right": ref.right if ref else None,
+        "contract_expiry": ref.contract_expiry if ref else None,
+    }
+
+
+def _sync_legs(session: Session, order: Order, trade: Trade) -> bool:
+    """Upsert the order's legs by leg_index from the trade's comboLegs. Returns True when any leg changed."""
+    combo_legs = list(getattr(trade.contract, "comboLegs", None) or [])
+    existing = {leg.leg_index: leg for leg in session.execute(select(OrderLeg).where(OrderLeg.order_id == order.id)).scalars().all()}
+    con_ids = {parse_int(getattr(leg, "conId", None)) or 0 for leg in combo_legs}
+    refs = {ref.con_id: ref for ref in session.execute(select(ContractRef).where(ContractRef.con_id.in_(con_ids))).scalars().all()} if con_ids else {}
+
+    changed = False
+    inserted_con_ids: set[int] = set()
+    for leg_index, combo_leg in enumerate(combo_legs):
+        values = _leg_values(trade, leg_index, combo_leg, refs)
+        row = existing.pop(leg_index, None)
+        if row is None:
+            session.add(OrderLeg(order_id=order.id, **values))
+            inserted_con_ids.add(values["con_id"])
+            changed = True
+            continue
+        for key, value in values.items():
+            if getattr(row, key) != value and not (value is None and key in _REF_LEG_FIELDS):
+                setattr(row, key, value)
+                changed = True
+    for stale in existing.values():
+        session.delete(stale)
+        changed = True
+    session.flush()
+
+    # Only new legs enqueue, so a contract that cannot be qualified is not re-queued on every event.
+    unknown = sorted(con_id for con_id in inserted_con_ids if con_id and con_id not in refs)
+    if unknown:
+        enqueue_job_if_idle(
+            session=session,
+            job_type=JOB_TYPE_CONTRACTS_QUALIFY_AND_SNAPSHOT,
+            payload={"con_ids": unknown},
+            source=DEFAULT_ORDER_SYNC_SOURCE,
+            request_text="Resolve combo leg contracts from broker order sync.",
+        )
+    return changed
 
 
 def _normalize_limit_price(order_type: str, raw_value: Any) -> float | None:
@@ -209,6 +328,7 @@ def _create_order_from_trade(session: Session, trade: Trade) -> Order:
     completed_at = now if normalized_status in ORDER_TERMINAL_STATUSES else None
 
     order_type = str(getattr(trade.order, "orderType", "") or "MKT").upper()
+    quantity = _raw_quantity(getattr(trade.order, "totalQuantity", None))
     order = Order(
         account_id=account.id,
         symbol=str(getattr(contract, "symbol", "") or "UNKNOWN").upper(),
@@ -216,7 +336,9 @@ def _create_order_from_trade(session: Session, trade: Trade) -> Order:
         exchange=str(getattr(contract, "exchange", "") or "SMART").upper(),
         currency=str(getattr(contract, "currency", "") or "USD").upper(),
         side=side,
-        quantity=_safe_quantity(getattr(trade.order, "totalQuantity", None)),
+        quantity=quantity,
+        remaining_quantity=_remaining_quantity(quantity, filled_quantity),
+        exec_role=_exec_role_for(trade),
         order_type=order_type,
         limit_price=_normalize_limit_price(order_type, getattr(trade.order, "lmtPrice", None)),
         tif=str(getattr(trade.order, "tif", "") or "DAY").upper(),
@@ -227,7 +349,8 @@ def _create_order_from_trade(session: Session, trade: Trade) -> Order:
         trading_class=str(getattr(contract, "tradingClass", "") or "") or None,
         contract_expiry=str(getattr(contract, "lastTradeDateOrContractMonth", "") or "") or None,
         ib_order_id=parse_int(getattr(trade.order, "orderId", None)),
-        ib_perm_id=parse_int(getattr(trade.order, "permId", None)),
+        ib_client_id=parse_int(getattr(trade.order, "clientId", None)),
+        ib_perm_id=_known_perm_id(trade),
         filled_quantity=filled_quantity,
         avg_fill_price=avg_fill_price,
         request_text=f"Imported from broker sync (orderRef={getattr(trade.order, 'orderRef', None)}).",
@@ -238,6 +361,7 @@ def _create_order_from_trade(session: Session, trade: Trade) -> Order:
     )
     session.add(order)
     session.flush()
+    _sync_legs(session, order, trade)
     append_order_event(
         session=session,
         order_id=order.id,
@@ -263,6 +387,8 @@ def _order_snapshot(order: Order) -> tuple:
         order.currency,
         order.side,
         order.quantity,
+        order.remaining_quantity,
+        order.exec_role,
         order.order_type,
         order.limit_price,
         order.tif,
@@ -271,6 +397,7 @@ def _order_snapshot(order: Order) -> tuple:
         order.avg_fill_price,
         order.ib_order_id,
         order.ib_perm_id,
+        order.ib_client_id,
         order.con_id,
         order.local_symbol,
         order.trading_class,
@@ -287,7 +414,9 @@ def _apply_trade_fields(order: Order, trade: Trade, filled_quantity: float, avg_
     order.exchange = str(getattr(contract, "exchange", "") or order.exchange).upper()
     order.currency = str(getattr(contract, "currency", "") or order.currency).upper()
     order.side = _normalize_side(getattr(trade.order, "action", None))
-    order.quantity = _safe_quantity(getattr(trade.order, "totalQuantity", None))
+    order.quantity = _raw_quantity(getattr(trade.order, "totalQuantity", None))
+    order.remaining_quantity = _remaining_quantity(order.quantity, filled_quantity)
+    order.exec_role = _exec_role_for(trade)
     order.order_type = str(getattr(trade.order, "orderType", "") or order.order_type).upper()
     order.limit_price = _normalize_limit_price(order.order_type, getattr(trade.order, "lmtPrice", None))
     order.tif = str(getattr(trade.order, "tif", "") or order.tif).upper()
@@ -299,7 +428,10 @@ def _apply_trade_fields(order: Order, trade: Trade, filled_quantity: float, avg_
     contract_expiry = str(getattr(contract, "lastTradeDateOrContractMonth", "") or "") or None
     order.contract_expiry = contract_expiry if contract_expiry is not None else order.contract_expiry
     order.ib_order_id = parse_int(getattr(trade.order, "orderId", None)) or order.ib_order_id
-    order.ib_perm_id = parse_int(getattr(trade.order, "permId", None)) or order.ib_perm_id
+    order.ib_perm_id = _known_perm_id(trade) or order.ib_perm_id
+    client_id = parse_int(getattr(trade.order, "clientId", None))
+    if client_id is not None:
+        order.ib_client_id = client_id
     order.filled_quantity = filled_quantity
     order.avg_fill_price = avg_fill_price
     order.updated_at = now
@@ -353,8 +485,9 @@ def _sync_trade_onto_order(session: Session, order: Order, trade: Trade) -> bool
         order.submitted_at = now
 
     emitted_status_event = _reconcile_order_status(session, order, trade, normalized_status, now)
+    legs_changed = _sync_legs(session, order, trade)
 
-    if _order_snapshot(order) == prev:
+    if _order_snapshot(order) == prev and not legs_changed:
         return False
 
     if normalized_status in ORDER_TERMINAL_STATUSES and order.completed_at is None:
@@ -378,6 +511,70 @@ def _sync_trade_onto_order(session: Session, order: Order, trade: Trade) -> bool
     return True
 
 
+@dataclass(frozen=True)
+class OrderApplyResult:
+    order: Order
+    created: bool
+    changed: bool
+
+
+def find_order_for_trade(session: Session, trade: Trade) -> Order | None:
+    return _find_matching_order(session, trade)
+
+
+def is_unworked_inactive(trade: Trade) -> bool:
+    """True for TWS's transient `Inactive` report with nothing filled, sent before a new order turns `Submitted`."""
+    status = str(getattr(trade.orderStatus, "status", "") or "").strip().lower()
+    return status == "inactive" and float(trade.filled() or 0.0) <= 0.0
+
+
+def apply_trade_to_order(session: Session, trade: Trade) -> OrderApplyResult:
+    """Match a broker trade to a local order, then create or update it. Does not commit."""
+    order = _find_matching_order(session, trade)
+    if order is None:
+        try:
+            with session.begin_nested():
+                order = _create_order_from_trade(session, trade)
+        except IntegrityError:
+            # Another writer inserted this permId first; update its row instead.
+            perm_id = _known_perm_id(trade)
+            if perm_id is None:
+                raise
+            order = session.execute(select(Order).where(Order.ib_perm_id == perm_id)).scalars().first()
+            if order is None:
+                raise
+        else:
+            order.last_seen_at = now_utc()
+            return OrderApplyResult(order=order, created=True, changed=True)
+    changed = _sync_trade_onto_order(session, order, trade)
+    order.last_seen_at = now_utc()
+    return OrderApplyResult(order=order, created=False, changed=changed)
+
+
+def sweep_unseen_working_orders(session: Session, fetch_started_at: datetime) -> list[int]:
+    """Move working orders the broker no longer reports to reconcile_required. Does not commit."""
+    stale = (
+        session.execute(
+            select(Order).where(
+                Order.status.in_(SWEEPABLE_STATUSES),
+                or_(Order.last_seen_at.is_(None), Order.last_seen_at < fetch_started_at),
+                Order.updated_at < fetch_started_at,
+            )
+        )
+        .scalars()
+        .all()
+    )
+    for order in stale:
+        transition_order_status(
+            session=session,
+            order=order,
+            next_status=ORDER_STATUS_RECONCILE_REQUIRED,
+            event_type="broker_order_missing",
+            message="Order missing from a successful broker fetch; needs reconcile.",
+        )
+    return [order.id for order in stale]
+
+
 def sync_orders_once(
     engine: Engine,
     *,
@@ -385,7 +582,7 @@ def sync_orders_once(
     port: int,
     client_id: int,
     connect_timeout_seconds: float = 20.0,
-) -> dict[str, int]:
+) -> dict[str, Any]:
     ib = IB()
     try:
         try:
@@ -395,57 +592,41 @@ def sync_orders_once(
                 "Timed out connecting to TWS/Gateway while fetching orders "
                 f"(host={host}, port={port}, client_id={client_id}, timeout={connect_timeout_seconds}s)."
             ) from exc
-        return sync_orders_with_ib(
-            engine=engine,
-            ib=ib,
-            client_id=client_id,
-        )
+        return sync_orders_with_ib(engine=engine, ib=ib)
     finally:
         if ib.isConnected():
             ib.disconnect()
+
+
+def reconcile_fetch(engine: Engine, fetch: TradeFetch, fetch_started_at: datetime) -> dict[str, Any]:
+    """Apply a full broker fetch, sweep working orders it no longer shows (only if every fetch succeeded), and commit."""
+    created_ids: list[int] = []
+    updated_ids: list[int] = []
+    with Session(engine) as session:
+        for trade in fetch.trades:
+            result = apply_trade_to_order(session, trade)
+            if result.created:
+                created_ids.append(result.order.id)
+            elif result.changed:
+                updated_ids.append(result.order.id)
+        if fetch.ok:
+            swept_ids = sweep_unseen_working_orders(session, fetch_started_at)
+            updated_ids.extend(order_id for order_id in swept_ids if order_id not in updated_ids)
+        session.commit()
+
+    return {
+        "fetched_trades_count": len(fetch.trades),
+        "created_orders_count": len(created_ids),
+        "updated_orders_count": len(updated_ids),
+        "created_order_ids": created_ids,
+        "updated_order_ids": updated_ids,
+    }
 
 
 def sync_orders_with_ib(
     engine: Engine,
     *,
     ib: IB,
-    client_id: int,
-) -> dict[str, int]:
-    trades = _collect_recent_trades(ib, client_id=client_id)
-    created_count = 0
-    updated_count = 0
-    with Session(engine) as session:
-        created_ids: list[int] = []
-        updated_ids: list[int] = []
-        for trade in trades:
-            order = _find_matching_order(session, trade)
-            if order is None:
-                new_order = _create_order_from_trade(session, trade)
-                created_ids.append(new_order.id)
-                created_count += 1
-                continue
-            if _sync_trade_onto_order(session, order, trade):
-                updated_ids.append(order.id)
-                updated_count += 1
-        session.commit()
-
-        if created_ids or updated_ids:
-            created_ids_set = set(created_ids)
-            all_ids = created_ids + updated_ids
-            stmt = (
-                select(Order, Account, ContractRef)
-                .outerjoin(Account, Order.account_id == Account.id)
-                .outerjoin(ContractRef, Order.con_id == ContractRef.con_id)
-                .where(Order.id.in_(all_ids))
-            )
-            rows = session.execute(stmt).all()
-            for order, account, contract_ref in rows:
-                resp = to_order_response(order, account, contract_ref)
-                event_type = "order.created" if order.id in created_ids_set else "order.updated"
-                broadcaster.publish(make_event(TOPIC_ORDERS, event_type, resp, entity_id=order.id))
-
-    return {
-        "fetched_trades_count": len(trades),
-        "created_orders_count": created_count,
-        "updated_orders_count": updated_count,
-    }
+) -> dict[str, Any]:
+    fetch_started_at = now_utc()
+    return reconcile_fetch(engine, _collect_recent_trades(ib), fetch_started_at)

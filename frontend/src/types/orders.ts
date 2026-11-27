@@ -1,6 +1,18 @@
 // Order rows. Mirrors OrderResponse in src/api/routers/orders.py; the same
 // shape arrives over SSE on the "orders" topic.
 
+// Mirrors OrderLegResponse in src/api/schemas.py. `quantity` is signed.
+export interface OrderLeg {
+  leg_index: number;
+  con_id: number;
+  contract_display_name: string;
+  action: string;
+  ratio: number;
+  quantity: number;
+  exchange: string | null;
+  open_close: number | null;
+}
+
 export interface Order {
   id: number;
   account_id: number;
@@ -11,6 +23,8 @@ export interface Order {
   currency: string;
   side: string;
   quantity: number;
+  remaining_quantity: number | null;
+  exec_role: string;
   order_type: string;
   limit_price: number | null;
   tif: string;
@@ -34,4 +48,14 @@ export interface Order {
   completed_at: string | null;
   created_at: string;
   updated_at: string;
+  legs: OrderLeg[];
+}
+
+// Mirrors OrderStreamStatusResponse in src/api/schemas.py.
+export interface OrderStreamStatus {
+  state: "live" | "not_live" | "disabled";
+  stream_state: string | null;
+  last_event_at: string | null;
+  heartbeat_at: string | null;
+  seconds_since_heartbeat: number | null;
 }
