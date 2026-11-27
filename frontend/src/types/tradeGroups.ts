@@ -67,6 +67,8 @@ export type GroupExecution = {
   realized_pnl: number | null;
   exec_role: string;
   sec_type: string | null;
+  // Null on combo_summary rows.
+  con_id?: number | null;
   contract_display: string | null;
   data_source: string;
   // IBKR FlexQuery trade codes (the `notes` attribute): A=assigned,
@@ -78,6 +80,9 @@ export type GroupExecution = {
   // Signed qty × price × multiplier + commission (debit positive, credit
   // negative). Null on combo_summary rows so legs aren't double-counted.
   cost_basis?: number | null;
+  ib_exec_id?: string | null;
+  // Tags on the trade (settled) or on this live fill (unsettled).
+  tags?: TagChip[];
 };
 
 export type GroupOpenPosition = {

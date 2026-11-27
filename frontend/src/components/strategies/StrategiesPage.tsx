@@ -293,6 +293,7 @@ export default function StrategiesPage() {
                     void detail.reloadDetail();
                     reloadGroups();
                   }}
+                  onExecutionTagsChanged={() => void detail.reloadExecutions()}
                   onTasksChanged={reloadGroups}
                   onSave={saveGroup}
                   onDelete={deleteGroup}

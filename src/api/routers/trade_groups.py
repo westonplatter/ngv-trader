@@ -1163,6 +1163,7 @@ class TradeGroupExecutionItem(BaseModel):
     realized_pnl: float | None
     exec_role: str
     sec_type: str | None
+    con_id: int | None = None
     contract_display: str | None
     data_source: str
     # IBKR FlexQuery trade codes (the `notes` attribute): A=assigned,
@@ -1177,6 +1178,9 @@ class TradeGroupExecutionItem(BaseModel):
     # negative = credit received (matches the open positions' Cost Basis).
     # Null for combo_summary rows so their legs are not double-counted.
     cost_basis: float | None = None
+    # Tags on the trade (settled) or on this live fill (unsettled).
+    tags: list[TagChip] = Field(default_factory=list)
+    open_task_count: int = 0
 
 
 def _execution_cost_basis(
@@ -1408,6 +1412,7 @@ def trade_group_executions(trade_group_id: int, db: Session = DB_SESSION_DEPENDE
                 realized_pnl=execution_realized_pnl(execution.raw),
                 exec_role=execution.exec_role,
                 sec_type=execution.sec_type,
+                con_id=execution.con_id,
                 contract_display=contract_display_from_raw(execution.raw, contract_ref),
                 data_source=execution.data_source,
                 ib_codes=execution_ib_codes(execution.raw),
@@ -1454,6 +1459,7 @@ def trade_group_executions(trade_group_id: int, db: Session = DB_SESSION_DEPENDE
                 realized_pnl=live_exec.realized_pnl,
                 exec_role=live_exec.exec_role,
                 sec_type=live_exec.sec_type,
+                con_id=live_exec.con_id,
                 contract_display=contract_display_name(
                     symbol=live_exec.symbol,
                     sec_type=live_exec.sec_type,
@@ -1479,6 +1485,9 @@ def trade_group_executions(trade_group_id: int, db: Session = DB_SESSION_DEPENDE
                 ),
             )
         )
+
+    annotate_items(db, "trade", [item for item in items if item.settled and item.trade_id is not None], key=lambda item: item.trade_id)
+    annotate_items(db, "live_execution", [item for item in items if not item.settled], key=lambda item: item.ib_exec_id)
 
     # The group's ledger is what this endpoint already loaded: the settled rows
     # above and the tagged unsettled fills. The overlay facade (shared with the

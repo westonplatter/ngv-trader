@@ -437,3 +437,39 @@ def test_core_tag_leaves_list_endpoint_and_pnl_service_unchanged(client: TestCli
 
     assert _list_row(client) == list_before
     assert compute_trade_group_pnl(db_session, group_id) == pnl_before
+
+
+# --------------------------------------------------------------------------
+# Tags on the detail endpoint's executions
+# --------------------------------------------------------------------------
+
+
+def test_trade_tag_shows_on_every_fill_of_the_trade_and_untagged_fill_is_empty(client: TestClient, db_session: Session, core_book) -> None:
+    first = core_book["cl"]
+    second = make_execution(
+        db_session, group=core_book["group"], account=core_book["main"], con_id=CON_CL, exec_id=make_exec_id(85000004), side="BUY", quantity=1.0
+    )
+    second.trade_id = first.trade_id
+    db_session.flush()
+    response = client.post(TAG_LINKS, json={"tags": ["swing"], "items": [{"entity_type": "trade", "id": first.trade_id}], "created_by": "user"})
+    assert response.status_code == 201, response.text
+
+    items = client.get(f"{BASE}/{core_book['group'].id}/executions").json()["executions"]
+    tags_by_exec = {item["ib_exec_id"]: [tag["value"] for tag in item["tags"]] for item in items}
+
+    assert tags_by_exec[first.ib_exec_id] == ["swing"]
+    assert tags_by_exec[second.ib_exec_id] == ["swing"]
+    assert tags_by_exec[core_book["ng"].ib_exec_id] == []
+
+
+def test_live_fill_shows_its_own_tag_on_the_group_executions(client: TestClient, db_session: Session, core_book) -> None:
+    fill = make_live_execution(db_session, account=core_book["main"], con_id=CON_ES, exec_id=make_exec_id(85000005), realized=None, group=core_book["group"])
+    response = client.post(
+        TAG_LINKS, json={"tags": ["intraday"], "items": [{"entity_type": "live_execution", "ib_exec_id": fill.ib_exec_id}], "created_by": "user"}
+    )
+    assert response.status_code == 201, response.text
+
+    items = client.get(f"{BASE}/{core_book['group'].id}/executions").json()["executions"]
+    live = next(item for item in items if item["ib_exec_id"] == fill.ib_exec_id)
+
+    assert [tag["value"] for tag in live["tags"]] == ["intraday"]
