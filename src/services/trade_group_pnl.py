@@ -41,7 +41,11 @@ from src.models import (
     TradeGroupExecution,
     TradeGroupLiveExecution,
 )
-from src.services.execution_pnl import execution_lifecycle, realized_pnl_total
+from src.services.execution_pnl import (
+    execution_lifecycle,
+    execution_realized_pnl,
+    realized_pnl_total,
+)
 from src.services.intraday_overlay import (
     OverlayTotals,
     PositionView,
@@ -449,6 +453,8 @@ class GroupOverlay:
     realized_pnl: float | None
     totals: OverlayTotals
     by_account: dict[int, AccountOverlay]
+    # The live fills ``totals.intraday_realized`` was computed from.
+    live_execs: list[Any]
     # True only when the group has live-sourced marks and *every* one of them is
     # stale. A group with a mix of fresh and stale legs is not flagged: its
     # ``marks_as_of`` (the newest mark) already says how current the figures are,
@@ -511,8 +517,66 @@ def _overlay_one(context: OverlayContext, ledger: GroupLedger) -> GroupOverlay:
         realized_pnl=realized,
         totals=totals,
         by_account=_account_breakdown(views, exec_slice, settled_exec_ids, ledger.realized_pnl_by_account()),
+        live_execs=exec_slice,
         live_is_stale=_group_live_is_stale(views, flex_slice, live_slice),
     )
+
+
+_FUTURES_SEC_TYPES = frozenset({"FUT", "CONTFUT", "FUTURE"})
+_SPLIT_TOLERANCE = 0.01
+_ZERO_COST = 0.005
+
+
+@dataclass(frozen=True)
+class CoreSplit:
+    """A group's cost and realized P&L divided by contract role."""
+
+    core_cost: float
+    incremental_net: float
+
+
+def _realized_by_pair(overlay: GroupOverlay, ledger: GroupLedger) -> dict[PairKey, float]:
+    """Leg-level realized P&L per contract: settled rows plus live fills not yet settled."""
+    realized: dict[PairKey, float] = {}
+    settled = ((ex.account_id, ex.con_id, execution_realized_pnl(ex.raw)) for ex in ledger.executions if ex.exec_role != ExecRole.COMBO_SUMMARY)
+    included_live, _ = dedupe_live_realized(ledger.settled_exec_ids, overlay.live_execs)
+    live = ((ex.account_id, ex.con_id, ex.realized_pnl) for ex in included_live)
+    for account_id, con_id, value in (*settled, *live):
+        if con_id is not None and value is not None:
+            realized[(account_id, con_id)] = realized.get((account_id, con_id), 0.0) + value
+    return realized
+
+
+def core_split(overlay: GroupOverlay, ledger: GroupLedger, core_pairs: set[PairKey]) -> CoreSplit | None:
+    """Split a group's open cost basis and realized P&L into core and incremental.
+
+    ``None`` when the group has no core contract, when core cost is zero, or when
+    the per-contract realized P&L does not add up to the overlay's intraday
+    realized (a combo summary carrying P&L its legs lack).
+    """
+    core = core_pairs & ledger.pairs
+    if not core:
+        return None
+
+    realized = _realized_by_pair(overlay, ledger)
+    core_realized = sum(value for key, value in realized.items() if key in core)
+    incremental_realized = sum(value for key, value in realized.items() if key not in core)
+    if abs(core_realized + incremental_realized - (overlay.totals.intraday_realized or 0.0)) > _SPLIT_TOLERANCE:
+        return None
+
+    core_basis = 0.0
+    incremental_basis = 0.0
+    for view in overlay.views:
+        key = (view.account_id, view.con_id)
+        if key in core:
+            core_basis += view.avg_cost * view.position
+        elif view.sec_type not in _FUTURES_SEC_TYPES:
+            incremental_basis += view.avg_cost * view.position
+
+    core_cost = core_basis - core_realized
+    if abs(core_cost) < _ZERO_COST:
+        return None
+    return CoreSplit(core_cost=core_cost, incremental_net=incremental_realized - incremental_basis)
 
 
 def overlay_for_ledgers(session: Session, ledgers: dict[int, GroupLedger]) -> dict[int, GroupOverlay]:
