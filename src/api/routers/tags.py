@@ -19,8 +19,15 @@ from src.models import TAG_ENTITY_TYPES, Tag, TagLink
 from src.services.item_descriptions import describe_items, tag_chip
 from src.services.item_links import attach_tag, detach_tag, move_tag_links, now_utc
 from src.services.item_refs import ItemRef, expand_items, item_key, link_item
+from src.services.tags import (
+    get_or_create_tag,
+    normalize_tag_value,
+    reject_reserved_tag,
+    require_tag,
+    resolve_tags,
+    validate_created_by,
+)
 from src.utils.sql import escape_like
-from src.services.tags import get_or_create_tag, normalize_tag_value, require_tag, resolve_tags, validate_created_by
 
 router = APIRouter()
 DB_SESSION_DEPENDENCY = Depends(get_db)
@@ -148,6 +155,7 @@ def patch_tag(tag_id: int, body: TagPatchRequest, db: Session = DB_SESSION_DEPEN
         normalized = normalize_tag_value(body.value)
         if not normalized:
             raise HTTPException(status_code=400, detail="value cannot be empty")
+        reject_reserved_tag(tag.normalized_value, normalized)
         duplicate = db.execute(select(Tag.id).where(Tag.normalized_value == normalized, Tag.id != tag_id)).first()
         if duplicate:
             raise HTTPException(status_code=409, detail="Another tag already has this name; merge instead")
@@ -162,6 +170,7 @@ def patch_tag(tag_id: int, body: TagPatchRequest, db: Session = DB_SESSION_DEPEN
 @router.post("/tags/{tag_id}/archive", response_model=TagResponse)
 def archive_tag(tag_id: int, db: Session = DB_SESSION_DEPENDENCY):
     tag = require_tag(db, tag_id)
+    reject_reserved_tag(tag.normalized_value)
     if tag.archived_at is None:
         tag.archived_at = now_utc()
         db.commit()
@@ -184,6 +193,7 @@ def merge_tag(tag_id: int, body: TagMergeRequest, db: Session = DB_SESSION_DEPEN
         raise HTTPException(status_code=400, detail="Cannot merge a tag into itself")
     source = require_tag(db, tag_id)
     target = require_tag(db, body.into_tag_id)
+    reject_reserved_tag(source.normalized_value, target.normalized_value)
     move_tag_links(db, source.id, target.id)
     db.delete(source)
     db.commit()
