@@ -2,7 +2,7 @@
 title: Core vs Incremental P&L - Plan
 type: feat
 date: 2026-11-26
-origin: docs/design/spec-core-incremental-pnl.md
+origin: docs/design/strategies-and-trade-groups.md
 artifact_contract: ce-unified-plan/v1
 product_contract_source: legacy-requirements
 execution: code
@@ -14,7 +14,7 @@ execution: code
 
 - **Objective:** On a trade group's detail card, the operator sees what the core position cost over its life, how much the other trades have paid back, and P&L as a percent of that core cost. This holds across rolls of the core or of the financing trades.
 - **Means:** a reserved `core` tag on orders decides each contract's role. The backend splits the group's existing cost basis and realized P&L by role (KTD1, KTD2).
-- **Authority:** the origin spec `docs/design/spec-core-incremental-pnl.md` owns product behavior. This plan owns the mechanism. If they conflict, the spec wins and the plan is updated.
+- **Authority:** the "Group P&L card: core vs incremental" section of `docs/design/strategies-and-trade-groups.md` (the origin spec, folded in at ship) owns product behavior. This plan owns the mechanism. If they conflict, the spec wins and the plan is updated.
 - **Stop conditions:** stop and ask if the split cannot reconcile to the group's realized P&L on real FlexQuery data (KTD4), or if a `core` tag already exists in a shared database with links the operator did not make.
 - **Execution profile:** backend first (U1–U3), then frontend (U4), then docs at ship (U5). Each unit lands as its own commit on a feature branch.
 - **Finishes and ships:** the implementer opens a PR. The operator merges it.
@@ -29,7 +29,7 @@ Compute a core/incremental split of each trade group's cost and realized P&L on 
 
 ### Problem Frame
 
-See origin: `docs/design/spec-core-incremental-pnl.md` (Problem). Today's "Capital invested" moves on every roll and can't say how much of a long-term outlay the financing trades have paid back.
+See origin: the former `spec-core-incremental-pnl.md` (Problem), now folded into `docs/design/strategies-and-trade-groups.md`. Today's "Capital invested" moves on every roll and can't say how much of a long-term outlay the financing trades have paid back.
 
 ### Requirements
 
@@ -231,7 +231,7 @@ flowchart TB
 - **Files:**
   - `docs/design/tags-and-tasks.md`
   - `docs/design/strategies-and-trade-groups.md`
-  - `docs/design/spec-core-incremental-pnl.md` (delete)
+  - `docs/design/spec-core-incremental-pnl.md` (delete; folded into `docs/design/strategies-and-trade-groups.md`)
   - `docs/design/README.md` (regenerated)
 - **Approach:**
   1. Add the rule 7 exception and the reserved-name note to `tags-and-tasks.md`.
