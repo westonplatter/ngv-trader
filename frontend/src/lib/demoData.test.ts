@@ -9,6 +9,7 @@ import {
   DEMO_POSITIONS,
   DEMO_TRADE_GROUPS,
   demoGroupExecutions,
+  demoGroupWorkingOrders,
   demoTradeGroupDetail,
   demoTradeGroupRows,
 } from "./demoData";
@@ -348,5 +349,18 @@ describe("demoTradeGroupRows", () => {
     expect(demoTradeGroupRows({ status: "all", accountId: "1" }).length).toBe(
       DEMO_TRADE_GROUPS.length,
     );
+  });
+});
+
+describe("demoGroupWorkingOrders", () => {
+  test("lists working orders on contracts the group holds, combos by leg", () => {
+    const rows = demoGroupWorkingOrders(GROUP_GLD_CC_ID);
+    expect(rows.map((r) => r.order.id).sort()).toEqual([5, 6]);
+    const combo = rows.find((r) => r.order.legs.length > 0);
+    expect(combo?.matched_con_ids.length).toBe(1);
+  });
+
+  test("returns nothing for a group with no matching working order", () => {
+    expect(demoGroupWorkingOrders(GROUP_SPY_PUTS_ID)).toEqual([]);
   });
 });

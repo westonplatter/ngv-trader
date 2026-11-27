@@ -1,0 +1,813 @@
+{
+  "client_id": 0,
+  "auto_open": true,
+  "events": [
+    {
+      "t": 91.104,
+      "event": "openOrder",
+      "contract": {
+        "secType": "FUT",
+        "conId": 400000001,
+        "symbol": "MNQ",
+        "localSymbol": "MNQZ6",
+        "exchange": "CME",
+        "currency": "USD",
+        "lastTradeDateOrContractMonth": "20261218",
+        "strike": 0.0,
+        "right": "?",
+        "multiplier": "2",
+        "comboLegs": []
+      },
+      "order": {
+        "action": "BUY",
+        "totalQuantity": 1.0,
+        "orderType": "LMT",
+        "lmtPrice": 2500.0,
+        "auxPrice": 0.0,
+        "tif": "GTC",
+        "account": "U1234567",
+        "permId": 7777777,
+        "orderId": -9000000001,
+        "clientId": 0,
+        "parentId": 0,
+        "ocaGroup": "",
+        "orderRef": "",
+        "orderComboLegs": []
+      },
+      "orderStatus": {
+        "status": "Inactive",
+        "filled": 0.0,
+        "remaining": 0.0,
+        "avgFillPrice": 0.0,
+        "permId": 0,
+        "clientId": 0
+      }
+    },
+    {
+      "t": 91.104,
+      "event": "orderStatus",
+      "contract": {
+        "secType": "FUT",
+        "conId": 400000001,
+        "symbol": "MNQ",
+        "localSymbol": "MNQZ6",
+        "exchange": "CME",
+        "currency": "USD",
+        "lastTradeDateOrContractMonth": "20261218",
+        "strike": 0.0,
+        "right": "?",
+        "multiplier": "2",
+        "comboLegs": []
+      },
+      "order": {
+        "action": "BUY",
+        "totalQuantity": 1.0,
+        "orderType": "LMT",
+        "lmtPrice": 2500.0,
+        "auxPrice": 0.0,
+        "tif": "GTC",
+        "account": "U1234567",
+        "permId": 7777777,
+        "orderId": -9000000001,
+        "clientId": 0,
+        "parentId": 0,
+        "ocaGroup": "",
+        "orderRef": "",
+        "orderComboLegs": []
+      },
+      "orderStatus": {
+        "status": "Inactive",
+        "filled": 0.0,
+        "remaining": 1.0,
+        "avgFillPrice": 0.0,
+        "permId": 7777777,
+        "clientId": 0
+      }
+    },
+    {
+      "t": 91.194,
+      "event": "openOrder",
+      "contract": {
+        "secType": "FUT",
+        "conId": 400000001,
+        "symbol": "MNQ",
+        "localSymbol": "MNQZ6",
+        "exchange": "CME",
+        "currency": "USD",
+        "lastTradeDateOrContractMonth": "20261218",
+        "strike": 0.0,
+        "right": "?",
+        "multiplier": "2",
+        "comboLegs": []
+      },
+      "order": {
+        "action": "BUY",
+        "totalQuantity": 1.0,
+        "orderType": "LMT",
+        "lmtPrice": 2500.0,
+        "auxPrice": 0.0,
+        "tif": "GTC",
+        "account": "U1234567",
+        "permId": 7777777,
+        "orderId": -9000000001,
+        "clientId": 0,
+        "parentId": 0,
+        "ocaGroup": "",
+        "orderRef": "",
+        "orderComboLegs": []
+      },
+      "orderStatus": {
+        "status": "Inactive",
+        "filled": 0.0,
+        "remaining": 1.0,
+        "avgFillPrice": 0.0,
+        "permId": 7777777,
+        "clientId": 0
+      }
+    },
+    {
+      "t": 91.194,
+      "event": "orderStatus",
+      "contract": {
+        "secType": "FUT",
+        "conId": 400000001,
+        "symbol": "MNQ",
+        "localSymbol": "MNQZ6",
+        "exchange": "CME",
+        "currency": "USD",
+        "lastTradeDateOrContractMonth": "20261218",
+        "strike": 0.0,
+        "right": "?",
+        "multiplier": "2",
+        "comboLegs": []
+      },
+      "order": {
+        "action": "BUY",
+        "totalQuantity": 1.0,
+        "orderType": "LMT",
+        "lmtPrice": 2500.0,
+        "auxPrice": 0.0,
+        "tif": "GTC",
+        "account": "U1234567",
+        "permId": 7777777,
+        "orderId": -9000000001,
+        "clientId": 0,
+        "parentId": 0,
+        "ocaGroup": "",
+        "orderRef": "",
+        "orderComboLegs": []
+      },
+      "orderStatus": {
+        "status": "Submitted",
+        "filled": 0.0,
+        "remaining": 1.0,
+        "avgFillPrice": 0.0,
+        "permId": 7777777,
+        "clientId": 0
+      }
+    },
+    {
+      "t": 127.19,
+      "event": "openOrder",
+      "contract": {
+        "secType": "FUT",
+        "conId": 400000001,
+        "symbol": "MNQ",
+        "localSymbol": "MNQZ6",
+        "exchange": "CME",
+        "currency": "USD",
+        "lastTradeDateOrContractMonth": "20261218",
+        "strike": 0.0,
+        "right": "?",
+        "multiplier": "2",
+        "comboLegs": []
+      },
+      "order": {
+        "action": "BUY",
+        "totalQuantity": 1.0,
+        "orderType": "LMT",
+        "lmtPrice": 2511.0,
+        "auxPrice": 0.0,
+        "tif": "GTC",
+        "account": "U1234567",
+        "permId": 7777777,
+        "orderId": -9000000001,
+        "clientId": 0,
+        "parentId": 0,
+        "ocaGroup": "",
+        "orderRef": "",
+        "orderComboLegs": []
+      },
+      "orderStatus": {
+        "status": "Submitted",
+        "filled": 0.0,
+        "remaining": 1.0,
+        "avgFillPrice": 0.0,
+        "permId": 7777777,
+        "clientId": 0
+      }
+    },
+    {
+      "t": 283.953,
+      "event": "openOrder",
+      "contract": {
+        "secType": "BAG",
+        "conId": 400000002,
+        "symbol": "MNQ",
+        "localSymbol": "MNQ",
+        "exchange": "CME",
+        "currency": "USD",
+        "lastTradeDateOrContractMonth": "",
+        "strike": 0.0,
+        "right": "?",
+        "multiplier": "",
+        "comboLegs": [
+          {
+            "conId": 400000003,
+            "ratio": 1,
+            "action": "SELL",
+            "exchange": "CME",
+            "openClose": 0
+          },
+          {
+            "conId": 400000004,
+            "ratio": 1,
+            "action": "BUY",
+            "exchange": "CME",
+            "openClose": 0
+          }
+        ]
+      },
+      "order": {
+        "action": "BUY",
+        "totalQuantity": 1.0,
+        "orderType": "LMT",
+        "lmtPrice": 29.0,
+        "auxPrice": 0.0,
+        "tif": "DAY",
+        "account": "U1234567",
+        "permId": 8888888,
+        "orderId": -9000000002,
+        "clientId": 0,
+        "parentId": 0,
+        "ocaGroup": "",
+        "orderRef": "",
+        "orderComboLegs": []
+      },
+      "orderStatus": {
+        "status": "Inactive",
+        "filled": 0.0,
+        "remaining": 0.0,
+        "avgFillPrice": 0.0,
+        "permId": 0,
+        "clientId": 0
+      }
+    },
+    {
+      "t": 283.953,
+      "event": "orderStatus",
+      "contract": {
+        "secType": "BAG",
+        "conId": 400000002,
+        "symbol": "MNQ",
+        "localSymbol": "MNQ",
+        "exchange": "CME",
+        "currency": "USD",
+        "lastTradeDateOrContractMonth": "",
+        "strike": 0.0,
+        "right": "?",
+        "multiplier": "",
+        "comboLegs": [
+          {
+            "conId": 400000003,
+            "ratio": 1,
+            "action": "SELL",
+            "exchange": "CME",
+            "openClose": 0
+          },
+          {
+            "conId": 400000004,
+            "ratio": 1,
+            "action": "BUY",
+            "exchange": "CME",
+            "openClose": 0
+          }
+        ]
+      },
+      "order": {
+        "action": "BUY",
+        "totalQuantity": 1.0,
+        "orderType": "LMT",
+        "lmtPrice": 29.0,
+        "auxPrice": 0.0,
+        "tif": "DAY",
+        "account": "U1234567",
+        "permId": 8888888,
+        "orderId": -9000000002,
+        "clientId": 0,
+        "parentId": 0,
+        "ocaGroup": "",
+        "orderRef": "",
+        "orderComboLegs": []
+      },
+      "orderStatus": {
+        "status": "Inactive",
+        "filled": 0.0,
+        "remaining": 1.0,
+        "avgFillPrice": 0.0,
+        "permId": 8888888,
+        "clientId": 0
+      }
+    },
+    {
+      "t": 284.181,
+      "event": "openOrder",
+      "contract": {
+        "secType": "BAG",
+        "conId": 400000002,
+        "symbol": "MNQ",
+        "localSymbol": "MNQ",
+        "exchange": "CME",
+        "currency": "USD",
+        "lastTradeDateOrContractMonth": "",
+        "strike": 0.0,
+        "right": "?",
+        "multiplier": "",
+        "comboLegs": [
+          {
+            "conId": 400000003,
+            "ratio": 1,
+            "action": "SELL",
+            "exchange": "CME",
+            "openClose": 0
+          },
+          {
+            "conId": 400000004,
+            "ratio": 1,
+            "action": "BUY",
+            "exchange": "CME",
+            "openClose": 0
+          }
+        ]
+      },
+      "order": {
+        "action": "BUY",
+        "totalQuantity": 1.0,
+        "orderType": "LMT",
+        "lmtPrice": 29.0,
+        "auxPrice": 0.0,
+        "tif": "DAY",
+        "account": "U1234567",
+        "permId": 8888888,
+        "orderId": -9000000002,
+        "clientId": 0,
+        "parentId": 0,
+        "ocaGroup": "",
+        "orderRef": "",
+        "orderComboLegs": []
+      },
+      "orderStatus": {
+        "status": "Inactive",
+        "filled": 0.0,
+        "remaining": 1.0,
+        "avgFillPrice": 0.0,
+        "permId": 8888888,
+        "clientId": 0
+      }
+    },
+    {
+      "t": 284.182,
+      "event": "orderStatus",
+      "contract": {
+        "secType": "BAG",
+        "conId": 400000002,
+        "symbol": "MNQ",
+        "localSymbol": "MNQ",
+        "exchange": "CME",
+        "currency": "USD",
+        "lastTradeDateOrContractMonth": "",
+        "strike": 0.0,
+        "right": "?",
+        "multiplier": "",
+        "comboLegs": [
+          {
+            "conId": 400000003,
+            "ratio": 1,
+            "action": "SELL",
+            "exchange": "CME",
+            "openClose": 0
+          },
+          {
+            "conId": 400000004,
+            "ratio": 1,
+            "action": "BUY",
+            "exchange": "CME",
+            "openClose": 0
+          }
+        ]
+      },
+      "order": {
+        "action": "BUY",
+        "totalQuantity": 1.0,
+        "orderType": "LMT",
+        "lmtPrice": 29.0,
+        "auxPrice": 0.0,
+        "tif": "DAY",
+        "account": "U1234567",
+        "permId": 8888888,
+        "orderId": -9000000002,
+        "clientId": 0,
+        "parentId": 0,
+        "ocaGroup": "",
+        "orderRef": "",
+        "orderComboLegs": []
+      },
+      "orderStatus": {
+        "status": "Submitted",
+        "filled": 0.0,
+        "remaining": 1.0,
+        "avgFillPrice": 0.0,
+        "permId": 8888888,
+        "clientId": 0
+      }
+    },
+    {
+      "t": 408.86,
+      "event": "orderStatus",
+      "contract": {
+        "secType": "FUT",
+        "conId": 400000001,
+        "symbol": "MNQ",
+        "localSymbol": "MNQZ6",
+        "exchange": "CME",
+        "currency": "USD",
+        "lastTradeDateOrContractMonth": "20261218",
+        "strike": 0.0,
+        "right": "?",
+        "multiplier": "2",
+        "comboLegs": []
+      },
+      "order": {
+        "action": "BUY",
+        "totalQuantity": 1.0,
+        "orderType": "LMT",
+        "lmtPrice": 2511.0,
+        "auxPrice": 0.0,
+        "tif": "GTC",
+        "account": "U1234567",
+        "permId": 7777777,
+        "orderId": -9000000001,
+        "clientId": 0,
+        "parentId": 0,
+        "ocaGroup": "",
+        "orderRef": "",
+        "orderComboLegs": []
+      },
+      "orderStatus": {
+        "status": "Cancelled",
+        "filled": 0.0,
+        "remaining": 1.0,
+        "avgFillPrice": 0.0,
+        "permId": 7777777,
+        "clientId": 0
+      }
+    },
+    {
+      "t": 567.533,
+      "event": "openOrder",
+      "contract": {
+        "secType": "BAG",
+        "conId": 400000002,
+        "symbol": "MNQ",
+        "localSymbol": "MNQ",
+        "exchange": "CME",
+        "currency": "USD",
+        "lastTradeDateOrContractMonth": "",
+        "strike": 0.0,
+        "right": "?",
+        "multiplier": "",
+        "comboLegs": [
+          {
+            "conId": 400000003,
+            "ratio": 1,
+            "action": "SELL",
+            "exchange": "CME",
+            "openClose": 0
+          },
+          {
+            "conId": 400000004,
+            "ratio": 1,
+            "action": "BUY",
+            "exchange": "CME",
+            "openClose": 0
+          }
+        ]
+      },
+      "order": {
+        "action": "SELL",
+        "totalQuantity": 1.0,
+        "orderType": "LMT",
+        "lmtPrice": 300.0,
+        "auxPrice": 0.0,
+        "tif": "DAY",
+        "account": "U1234567",
+        "permId": 9999999,
+        "orderId": -9000000003,
+        "clientId": 0,
+        "parentId": 0,
+        "ocaGroup": "",
+        "orderRef": "",
+        "orderComboLegs": []
+      },
+      "orderStatus": {
+        "status": "Inactive",
+        "filled": 0.0,
+        "remaining": 0.0,
+        "avgFillPrice": 0.0,
+        "permId": 0,
+        "clientId": 0
+      }
+    },
+    {
+      "t": 567.534,
+      "event": "orderStatus",
+      "contract": {
+        "secType": "BAG",
+        "conId": 400000002,
+        "symbol": "MNQ",
+        "localSymbol": "MNQ",
+        "exchange": "CME",
+        "currency": "USD",
+        "lastTradeDateOrContractMonth": "",
+        "strike": 0.0,
+        "right": "?",
+        "multiplier": "",
+        "comboLegs": [
+          {
+            "conId": 400000003,
+            "ratio": 1,
+            "action": "SELL",
+            "exchange": "CME",
+            "openClose": 0
+          },
+          {
+            "conId": 400000004,
+            "ratio": 1,
+            "action": "BUY",
+            "exchange": "CME",
+            "openClose": 0
+          }
+        ]
+      },
+      "order": {
+        "action": "SELL",
+        "totalQuantity": 1.0,
+        "orderType": "LMT",
+        "lmtPrice": 300.0,
+        "auxPrice": 0.0,
+        "tif": "DAY",
+        "account": "U1234567",
+        "permId": 9999999,
+        "orderId": -9000000003,
+        "clientId": 0,
+        "parentId": 0,
+        "ocaGroup": "",
+        "orderRef": "",
+        "orderComboLegs": []
+      },
+      "orderStatus": {
+        "status": "Inactive",
+        "filled": 0.0,
+        "remaining": 1.0,
+        "avgFillPrice": 0.0,
+        "permId": 9999999,
+        "clientId": 0
+      }
+    },
+    {
+      "t": 567.627,
+      "event": "openOrder",
+      "contract": {
+        "secType": "BAG",
+        "conId": 400000002,
+        "symbol": "MNQ",
+        "localSymbol": "MNQ",
+        "exchange": "CME",
+        "currency": "USD",
+        "lastTradeDateOrContractMonth": "",
+        "strike": 0.0,
+        "right": "?",
+        "multiplier": "",
+        "comboLegs": [
+          {
+            "conId": 400000003,
+            "ratio": 1,
+            "action": "SELL",
+            "exchange": "CME",
+            "openClose": 0
+          },
+          {
+            "conId": 400000004,
+            "ratio": 1,
+            "action": "BUY",
+            "exchange": "CME",
+            "openClose": 0
+          }
+        ]
+      },
+      "order": {
+        "action": "SELL",
+        "totalQuantity": 1.0,
+        "orderType": "LMT",
+        "lmtPrice": 300.0,
+        "auxPrice": 0.0,
+        "tif": "DAY",
+        "account": "U1234567",
+        "permId": 9999999,
+        "orderId": -9000000003,
+        "clientId": 0,
+        "parentId": 0,
+        "ocaGroup": "",
+        "orderRef": "",
+        "orderComboLegs": []
+      },
+      "orderStatus": {
+        "status": "Inactive",
+        "filled": 0.0,
+        "remaining": 1.0,
+        "avgFillPrice": 0.0,
+        "permId": 9999999,
+        "clientId": 0
+      }
+    },
+    {
+      "t": 567.627,
+      "event": "orderStatus",
+      "contract": {
+        "secType": "BAG",
+        "conId": 400000002,
+        "symbol": "MNQ",
+        "localSymbol": "MNQ",
+        "exchange": "CME",
+        "currency": "USD",
+        "lastTradeDateOrContractMonth": "",
+        "strike": 0.0,
+        "right": "?",
+        "multiplier": "",
+        "comboLegs": [
+          {
+            "conId": 400000003,
+            "ratio": 1,
+            "action": "SELL",
+            "exchange": "CME",
+            "openClose": 0
+          },
+          {
+            "conId": 400000004,
+            "ratio": 1,
+            "action": "BUY",
+            "exchange": "CME",
+            "openClose": 0
+          }
+        ]
+      },
+      "order": {
+        "action": "SELL",
+        "totalQuantity": 1.0,
+        "orderType": "LMT",
+        "lmtPrice": 300.0,
+        "auxPrice": 0.0,
+        "tif": "DAY",
+        "account": "U1234567",
+        "permId": 9999999,
+        "orderId": -9000000003,
+        "clientId": 0,
+        "parentId": 0,
+        "ocaGroup": "",
+        "orderRef": "",
+        "orderComboLegs": []
+      },
+      "orderStatus": {
+        "status": "Submitted",
+        "filled": 0.0,
+        "remaining": 1.0,
+        "avgFillPrice": 0.0,
+        "permId": 9999999,
+        "clientId": 0
+      }
+    },
+    {
+      "t": 596.136,
+      "event": "orderStatus",
+      "contract": {
+        "secType": "BAG",
+        "conId": 400000002,
+        "symbol": "MNQ",
+        "localSymbol": "MNQ",
+        "exchange": "CME",
+        "currency": "USD",
+        "lastTradeDateOrContractMonth": "",
+        "strike": 0.0,
+        "right": "?",
+        "multiplier": "",
+        "comboLegs": [
+          {
+            "conId": 400000003,
+            "ratio": 1,
+            "action": "SELL",
+            "exchange": "CME",
+            "openClose": 0
+          },
+          {
+            "conId": 400000004,
+            "ratio": 1,
+            "action": "BUY",
+            "exchange": "CME",
+            "openClose": 0
+          }
+        ]
+      },
+      "order": {
+        "action": "SELL",
+        "totalQuantity": 1.0,
+        "orderType": "LMT",
+        "lmtPrice": 300.0,
+        "auxPrice": 0.0,
+        "tif": "DAY",
+        "account": "U1234567",
+        "permId": 9999999,
+        "orderId": -9000000003,
+        "clientId": 0,
+        "parentId": 0,
+        "ocaGroup": "",
+        "orderRef": "",
+        "orderComboLegs": []
+      },
+      "orderStatus": {
+        "status": "Cancelled",
+        "filled": 0.0,
+        "remaining": 1.0,
+        "avgFillPrice": 0.0,
+        "permId": 9999999,
+        "clientId": 0
+      }
+    },
+    {
+      "t": 596.833,
+      "event": "orderStatus",
+      "contract": {
+        "secType": "BAG",
+        "conId": 400000002,
+        "symbol": "MNQ",
+        "localSymbol": "MNQ",
+        "exchange": "CME",
+        "currency": "USD",
+        "lastTradeDateOrContractMonth": "",
+        "strike": 0.0,
+        "right": "?",
+        "multiplier": "",
+        "comboLegs": [
+          {
+            "conId": 400000003,
+            "ratio": 1,
+            "action": "SELL",
+            "exchange": "CME",
+            "openClose": 0
+          },
+          {
+            "conId": 400000004,
+            "ratio": 1,
+            "action": "BUY",
+            "exchange": "CME",
+            "openClose": 0
+          }
+        ]
+      },
+      "order": {
+        "action": "BUY",
+        "totalQuantity": 1.0,
+        "orderType": "LMT",
+        "lmtPrice": 29.0,
+        "auxPrice": 0.0,
+        "tif": "DAY",
+        "account": "U1234567",
+        "permId": 8888888,
+        "orderId": -9000000002,
+        "clientId": 0,
+        "parentId": 0,
+        "ocaGroup": "",
+        "orderRef": "",
+        "orderComboLegs": []
+      },
+      "orderStatus": {
+        "status": "Cancelled",
+        "filled": 0.0,
+        "remaining": 1.0,
+        "avgFillPrice": 0.0,
+        "permId": 8888888,
+        "clientId": 0
+      }
+    }
+  ],
+  "perm_id_exceeds_int32": false
+}

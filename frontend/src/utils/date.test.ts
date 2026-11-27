@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+  formatAgo,
   formatDate,
   formatDateTime,
   formatDuration,
@@ -78,5 +79,18 @@ describe("formatDuration", () => {
   test("clamps negatives and falls back for null", () => {
     expect(formatDuration(-5000)).toBe("0s");
     expect(formatDuration(null)).toBe("—");
+  });
+});
+
+describe("formatAgo", () => {
+  test("reads just now under ten seconds", () => {
+    expect(formatAgo(4_000)).toBe("just now");
+    expect(formatAgo(-5_000)).toBe("just now");
+  });
+
+  test("steps through seconds, minutes, and hours", () => {
+    expect(formatAgo(45_000)).toBe("45s ago");
+    expect(formatAgo(95_000)).toBe("1m ago");
+    expect(formatAgo(7_260_000)).toBe("2h ago");
   });
 });

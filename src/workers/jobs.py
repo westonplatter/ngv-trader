@@ -300,17 +300,16 @@ def handle_watchlist_quotes_refresh(job: Job, engine: Engine, ib_pool: IBSession
     )
 
 
+ORDER_FETCH_SYNC_CLIENT_ID = 42
+
+
 def handle_order_fetch_sync(job: Job, engine: Engine, ib_pool: IBSessionPool) -> dict:
     from src.services.order_sync_tws import sync_orders_with_ib
 
     payload = job.payload or {}
-    host, port, client_id, connect_timeout_seconds = resolve_tws_connection(payload, default_client_id=0)
+    host, port, client_id, connect_timeout_seconds = resolve_tws_connection(payload, default_client_id=ORDER_FETCH_SYNC_CLIENT_ID)
     ib = ib_pool.get(host=host, port=port, client_id=client_id, connect_timeout_seconds=connect_timeout_seconds)
-    result = sync_orders_with_ib(
-        engine=engine,
-        ib=ib,
-        client_id=client_id,
-    )
+    result = sync_orders_with_ib(engine=engine, ib=ib)
     return {
         **result,
         "host": host,
@@ -775,6 +774,13 @@ def handle_contracts_qualify_and_snapshot(job: Job, engine: Engine, ib_pool: IBS
 
     payload = job.payload or {}
     host, port, client_id, connect_timeout_seconds = resolve_tws_connection(payload, default_client_id=38)
+
+    con_ids = payload.get("con_ids")
+    if isinstance(con_ids, list) and con_ids:
+        from src.services.contract_sync import sync_contracts_with_ib
+
+        ib = ib_pool.get(host=host, port=port, client_id=client_id, connect_timeout_seconds=connect_timeout_seconds)
+        return {"sync": sync_contracts_with_ib(engine=engine, ib=ib, specs=[Contract(conId=int(con_id)) for con_id in con_ids]), "snapshot": {}}
 
     symbol = payload.get("symbol")
     sec_type = payload.get("sec_type", "FOP")

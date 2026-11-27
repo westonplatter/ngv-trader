@@ -13,7 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from src.api.deps import get_db
-from src.api.schemas import to_job_response, to_order_response
+from src.api.schemas import load_order_legs, to_job_response, to_order_response
 from src.models import Account, ContractRef, Job, Order, WorkerHeartbeat
 from src.services.ui_events import (
     TOPIC_JOBS,
@@ -124,7 +124,7 @@ def notify_order(
     if row is None:
         raise HTTPException(status_code=404, detail="Order not found")
     order, account, contract_ref = row
-    resp = to_order_response(order, account, contract_ref)
+    resp = to_order_response(order, account, contract_ref, load_order_legs(db, [order]).get(order.id))
     broadcaster.publish(make_event(TOPIC_ORDERS, body.event, resp, entity_id=order.id))
 
 

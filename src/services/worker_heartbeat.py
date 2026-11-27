@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 
 WORKER_TYPE_ORDERS = "orders"
 WORKER_TYPE_JOBS = "jobs"
+WORKER_TYPE_ORDER_STREAM = "order_stream"
 
 GREEN_SECONDS = 12.0
 YELLOW_SECONDS = 30.0

@@ -5,11 +5,14 @@ lives here, so routers never import from one another.
 """
 
 import re
+from collections.abc import Sequence
 from datetime import datetime
 
 from pydantic import BaseModel
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
-from src.models import Account, ContractRef, Job, Order
+from src.models import Account, ContractRef, Job, Order, OrderLeg
 from src.services.item_refs import ItemRef
 from src.utils.contract_display import contract_display_name
 
@@ -81,6 +84,17 @@ def to_job_response(job: Job) -> JobResponse:
     )
 
 
+class OrderLegResponse(BaseModel):
+    leg_index: int
+    con_id: int
+    contract_display_name: str
+    action: str
+    ratio: int
+    quantity: float
+    exchange: str | None
+    open_close: int | None
+
+
 class OrderResponse(BaseModel):
     model_config = {"from_attributes": True}
 
@@ -92,7 +106,9 @@ class OrderResponse(BaseModel):
     exchange: str
     currency: str
     side: str
-    quantity: int
+    quantity: float
+    remaining_quantity: float | None
+    exec_role: str
     order_type: str
     limit_price: float | None
     tif: str
@@ -116,6 +132,7 @@ class OrderResponse(BaseModel):
     completed_at: datetime | None
     created_at: datetime
     updated_at: datetime
+    legs: list[OrderLegResponse] = []
 
 
 # (pattern, right group, strike group) tried in order against a local symbol, e.g.
@@ -128,7 +145,7 @@ _OPTION_LOCAL_SYMBOL_PATTERNS: tuple[tuple[re.Pattern[str], int, int], ...] = (
 
 
 def _derive_option_fields(order: Order) -> tuple[str | None, str | None]:
-    if order.sec_type not in {"FOP", "OPT", "BAG"}:
+    if order.sec_type not in {"FOP", "OPT"}:
         return None, None
     local_symbol = (order.local_symbol or "").strip().upper()
     if not local_symbol:
@@ -142,10 +159,49 @@ def _derive_option_fields(order: Order) -> tuple[str | None, str | None]:
     return None, None
 
 
+def _leg_response(leg: OrderLeg, ref: ContractRef | None, fallback_symbol: str) -> OrderLegResponse:
+    symbol = (ref.symbol if ref else None) or leg.symbol or fallback_symbol
+    sec_type = (ref.sec_type if ref else None) or leg.sec_type
+    local_symbol = (ref.local_symbol if ref else None) or leg.local_symbol
+    expiry = (ref.contract_expiry if ref else None) or leg.contract_expiry
+    right = (ref.right if ref else None) or leg.right
+    strike = ref.strike if ref and ref.strike is not None else leg.strike
+    name = (
+        contract_display_name(symbol=symbol, sec_type=sec_type, local_symbol=local_symbol, right=right, strike=strike, contract_expiry=expiry)
+        if sec_type
+        else f"{symbol} (con {leg.con_id})"
+    )
+    return OrderLegResponse(
+        leg_index=leg.leg_index,
+        con_id=leg.con_id,
+        contract_display_name=name,
+        action=leg.action,
+        ratio=leg.ratio,
+        quantity=leg.quantity,
+        exchange=leg.exchange,
+        open_close=leg.open_close,
+    )
+
+
+def load_order_legs(db: Session, orders: Sequence[Order]) -> dict[int, list[OrderLegResponse]]:
+    """Legs of the given orders, grouped by order id, in two queries regardless of order count."""
+    symbols = {order.id: order.symbol for order in orders}
+    if not symbols:
+        return {}
+    legs = db.execute(select(OrderLeg).where(OrderLeg.order_id.in_(list(symbols))).order_by(OrderLeg.order_id, OrderLeg.leg_index)).scalars().all()
+    con_ids = {leg.con_id for leg in legs}
+    refs = {ref.con_id: ref for ref in db.execute(select(ContractRef).where(ContractRef.con_id.in_(con_ids))).scalars().all()} if con_ids else {}
+    grouped: dict[int, list[OrderLegResponse]] = {}
+    for leg in legs:
+        grouped.setdefault(leg.order_id, []).append(_leg_response(leg, refs.get(leg.con_id), symbols[leg.order_id]))
+    return grouped
+
+
 def to_order_response(
     order: Order,
     account: Account | None,
     contract_ref: ContractRef | None = None,
+    legs: list[OrderLegResponse] | None = None,
 ) -> OrderResponse:
     alias = account.alias if account and account.alias else None
     effective_symbol = contract_ref.symbol if contract_ref and contract_ref.symbol else order.symbol
@@ -174,6 +230,8 @@ def to_order_response(
         currency=order.currency,
         side=order.side,
         quantity=order.quantity,
+        remaining_quantity=order.remaining_quantity,
+        exec_role=order.exec_role,
         order_type=order.order_type,
         limit_price=order.limit_price,
         tif=order.tif,
@@ -207,4 +265,15 @@ def to_order_response(
         completed_at=order.completed_at,
         created_at=order.created_at,
         updated_at=order.updated_at,
+        legs=legs or [],
     )
+
+
+class OrderStreamStatusResponse(BaseModel):
+    # live: the stream is connected and reconciled. not_live: it ran but is down,
+    # stale, or reconnecting. disabled: no stream heartbeat exists.
+    state: str
+    stream_state: str | None
+    last_event_at: datetime | None
+    heartbeat_at: datetime | None
+    seconds_since_heartbeat: float | None

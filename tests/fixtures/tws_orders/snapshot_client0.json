@@ -1,0 +1,168 @@
+{
+  "client_id": 0,
+  "auto_open": false,
+  "snapshot": {
+    "openTrades": [
+      {
+        "contract": {
+          "secType": "FUT",
+          "conId": 400000001,
+          "symbol": "MES",
+          "localSymbol": "MESZ6",
+          "exchange": "CME",
+          "currency": "USD",
+          "lastTradeDateOrContractMonth": "20261218",
+          "strike": 0.0,
+          "right": "?",
+          "multiplier": "5",
+          "comboLegs": []
+        },
+        "order": {
+          "action": "BUY",
+          "totalQuantity": 1.0,
+          "orderType": "LMT",
+          "lmtPrice": 7132.75,
+          "auxPrice": 0.0,
+          "tif": "GTC",
+          "account": "U1234567",
+          "permId": 7777777,
+          "orderId": -9000000001,
+          "clientId": 0,
+          "parentId": 0,
+          "ocaGroup": "",
+          "orderRef": "",
+          "orderComboLegs": []
+        },
+        "orderStatus": {
+          "status": "Submitted",
+          "filled": 0.0,
+          "remaining": 1.0,
+          "avgFillPrice": 0.0,
+          "permId": 7777777,
+          "clientId": 0
+        }
+      },
+      {
+        "contract": {
+          "secType": "OPT",
+          "conId": 400000002,
+          "symbol": "AAPL",
+          "localSymbol": "AAPL  261127C00357500",
+          "exchange": "SMART",
+          "currency": "USD",
+          "lastTradeDateOrContractMonth": "20261127",
+          "strike": 357.5,
+          "right": "C",
+          "multiplier": "100",
+          "comboLegs": []
+        },
+        "order": {
+          "action": "BUY",
+          "totalQuantity": 1.0,
+          "orderType": "LMT",
+          "lmtPrice": 0.1,
+          "auxPrice": 0.0,
+          "tif": "GTC",
+          "account": "U9999999",
+          "permId": 8888888,
+          "orderId": -9000000002,
+          "clientId": 0,
+          "parentId": 9000000003,
+          "ocaGroup": "OCA-1",
+          "orderRef": "",
+          "orderComboLegs": []
+        },
+        "orderStatus": {
+          "status": "Submitted",
+          "filled": 0.0,
+          "remaining": 1.0,
+          "avgFillPrice": 0.0,
+          "permId": 8888888,
+          "clientId": 0
+        }
+      }
+    ],
+    "reqAllOpenOrders": [
+      {
+        "contract": {
+          "secType": "FUT",
+          "conId": 400000001,
+          "symbol": "MES",
+          "localSymbol": "MESZ6",
+          "exchange": "CME",
+          "currency": "USD",
+          "lastTradeDateOrContractMonth": "20261218",
+          "strike": 0.0,
+          "right": "?",
+          "multiplier": "5",
+          "comboLegs": []
+        },
+        "order": {
+          "action": "BUY",
+          "totalQuantity": 1.0,
+          "orderType": "LMT",
+          "lmtPrice": 7132.75,
+          "auxPrice": 0.0,
+          "tif": "GTC",
+          "account": "U1234567",
+          "permId": 7777777,
+          "orderId": -9000000001,
+          "clientId": 0,
+          "parentId": 0,
+          "ocaGroup": "",
+          "orderRef": "",
+          "orderComboLegs": []
+        },
+        "orderStatus": {
+          "status": "Submitted",
+          "filled": 0.0,
+          "remaining": 1.0,
+          "avgFillPrice": 0.0,
+          "permId": 7777777,
+          "clientId": 0
+        }
+      },
+      {
+        "contract": {
+          "secType": "OPT",
+          "conId": 400000002,
+          "symbol": "AAPL",
+          "localSymbol": "AAPL  261127C00357500",
+          "exchange": "SMART",
+          "currency": "USD",
+          "lastTradeDateOrContractMonth": "20261127",
+          "strike": 357.5,
+          "right": "C",
+          "multiplier": "100",
+          "comboLegs": []
+        },
+        "order": {
+          "action": "BUY",
+          "totalQuantity": 1.0,
+          "orderType": "LMT",
+          "lmtPrice": 0.1,
+          "auxPrice": 0.0,
+          "tif": "GTC",
+          "account": "U9999999",
+          "permId": 8888888,
+          "orderId": -9000000002,
+          "clientId": 0,
+          "parentId": 9000000003,
+          "ocaGroup": "OCA-1",
+          "orderRef": "",
+          "orderComboLegs": []
+        },
+        "orderStatus": {
+          "status": "Submitted",
+          "filled": 0.0,
+          "remaining": 1.0,
+          "avgFillPrice": 0.0,
+          "permId": 8888888,
+          "clientId": 0
+        }
+      }
+    ],
+    "reqCompletedOrders": []
+  },
+  "perm_id_exceeds_int32": false
+}

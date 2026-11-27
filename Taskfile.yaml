@@ -32,6 +32,12 @@ tasks:
       ENV: "{{.ENV}}"
     cmd: op run --env-file=.env.{{.ENV}} -- uv run python scripts/work_order_queue.py
 
+  worker:order-stream:
+    desc: Start the live TWS order stream (prod only; holds the push client ID)
+    env:
+      ENV: "{{.ENV}}"
+    cmd: op run --env-file=.env.{{.ENV}} -- uv run python scripts/work_order_stream.py
+
   frontend:install:
     desc: Install frontend dependencies
     dir: frontend

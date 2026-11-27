@@ -75,3 +75,18 @@ export function formatDuration(ms: number | null, fallback = MISSING): string {
   const remMinutes = minutes % 60;
   return `${hours}h ${remMinutes}m`;
 }
+
+/**
+ * Age of a past instant as short text. Under 10s reads "just now".
+ *   4000   -> "just now"
+ *   95000  -> "1m ago"
+ *   7260000 -> "2h ago"
+ */
+export function formatAgo(elapsedMs: number): string {
+  const seconds = Math.max(0, Math.floor(elapsedMs / 1000));
+  if (seconds < 10) return "just now";
+  if (seconds < 60) return `${seconds}s ago`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  return `${Math.floor(minutes / 60)}h ago`;
+}

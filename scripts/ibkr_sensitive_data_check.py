@@ -86,7 +86,7 @@ RULES: tuple[Rule, ...] = (
     Rule("exec_id", re.compile(r"\b[0-9a-fA-F]{8}\.[0-9a-fA-F]{8}\.\d{2}\.\d{2}\b"), "0000abcd.12345678.01.01"),
     Rule("brokerage_order_id", re.compile(r"\b[0-9a-f]{8}\.[0-9a-f]{8}\.[0-9a-f]{8}\.\d{3}\b"), "00aabbcc.00ddeeff.11223344.000"),
     Rule("synthetic_id", re.compile(r"\b(?:FLEX-TX-|SYNTH-)[\w.-]+"), "FLEX-TX-1000000001"),
-    Rule("perm_id", re.compile(r"\bpermId\W+\d{6,}"), "permId 8888888"),
+    Rule("perm_id", re.compile(r"\bpermId\W+(\d{6,})"), "permId 8888888"),
 )
 
 
