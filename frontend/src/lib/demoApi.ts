@@ -21,6 +21,7 @@ import {
   DEMO_STRATEGIES,
   DEMO_TRADE_EXECUTIONS,
   demoGroupExecutions,
+  demoGroupWorkingOrders,
   demoTradeGroupDetail,
   demoTradeGroupRows,
 } from "./demoData";
@@ -106,6 +107,9 @@ function routeGet(path: string, params: URLSearchParams): Json | undefined {
       last_error: null,
     };
   }
+
+  const workingMatch = path.match(/^\/trade-groups\/(\d+)\/working-orders$/);
+  if (workingMatch) return demoGroupWorkingOrders(Number(workingMatch[1]));
 
   const execMatch = path.match(/^\/trade-groups\/(\d+)\/executions$/);
   if (execMatch) return demoGroupExecutions(Number(execMatch[1])) ?? undefined;

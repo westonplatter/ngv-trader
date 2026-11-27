@@ -145,6 +145,7 @@ Implemented endpoints:
 12. `POST /api/v1/trade-executions/{execution_id}/trade-group:reassign`
 13. `GET /api/v1/trade-groups/{trade_group_id}/timeline`
 14. `GET /api/v1/trade-groups/{trade_group_id}/executions`
+15. `GET /api/v1/trade-groups/{trade_group_id}/working-orders`
 
 #### `GET /trade-groups`
 
@@ -228,6 +229,16 @@ The timeline is assembled from:
 3. trade-group links
 
 Displayed event types are derived from execution side and role, plus assignment history and group-link rows.
+
+#### Working orders endpoint
+
+Lists working broker orders (`submitted`, `partially_filled`, `reconcile_required`)
+on contracts the group holds now, from `src/services/group_working_orders.py`.
+Orders are matched, not assigned: an order matches when its account and con_id,
+or for a combo any leg's con_id, is a pair the group's ledger holds a non-zero
+quantity of. An order on a contract another group also holds lists that group in
+`shared_with`, because the order may be for either. An order that opens a
+contract the group does not hold yet does not show.
 
 ## Strategy API
 
@@ -343,6 +354,8 @@ It currently supports:
    strategy re-selects that strategy so the group stays in view)
 7. deleting trade groups
 8. viewing a read-only timeline
+9. viewing working orders on the group's open positions (refreshed from the
+   `orders` SSE topic)
 
 The current page does not provide:
 

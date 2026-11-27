@@ -2,6 +2,7 @@
 // with its P&L split, and the Strategies workspace detail and executions
 // payloads. See docs/design/strategies-and-trade-groups.md.
 
+import type { Order } from "./orders";
 import type { TagChip } from "./tags";
 
 export interface TradeGroupResult {
@@ -142,4 +143,13 @@ export type GroupExecutionsResponse = {
   marks_as_of: string | null;
   // Per-account breakdown (additive).
   by_account: GroupAccountPnl[];
+};
+
+// Mirrors TradeGroupWorkingOrderItem in src/api/routers/trade_groups.py: a
+// working order on a contract this group holds. `shared_with` lists other groups
+// that hold one of those contracts too.
+export type GroupWorkingOrder = {
+  order: Order;
+  matched_con_ids: number[];
+  shared_with: { id: number; name: string }[];
 };

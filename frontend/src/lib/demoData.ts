@@ -32,6 +32,7 @@ import type {
   GroupExecution,
   GroupExecutionsResponse,
   GroupOpenPosition,
+  GroupWorkingOrder,
   TradeGroup,
   TradeGroupDetail,
 } from "../types/tradeGroups";
@@ -1500,3 +1501,33 @@ export const DEMO_ORDERS: Order[] = [
     ],
   }),
 ];
+
+const DEMO_WORKING_STATUSES = new Set([
+  "submitted",
+  "partially_filled",
+  "reconcile_required",
+]);
+
+// Same rule as the API: a working order whose contract, or any leg, the group holds.
+export function demoGroupWorkingOrders(groupId: number): GroupWorkingOrder[] {
+  const held = new Set(
+    (demoGroupExecutions(groupId)?.open_positions ?? []).map(
+      (p) => `${p.account_id}:${p.con_id}`,
+    ),
+  );
+  return DEMO_ORDERS.filter((o) => DEMO_WORKING_STATUSES.has(o.status)).flatMap(
+    (order) => {
+      const conIds = order.legs.length
+        ? order.legs.map((leg) => leg.con_id)
+        : order.con_id != null
+          ? [order.con_id]
+          : [];
+      const matched = conIds.filter((c) =>
+        held.has(`${order.account_id}:${c}`),
+      );
+      return matched.length
+        ? [{ order, matched_con_ids: matched, shared_with: [] }]
+        : [];
+    },
+  );
+}

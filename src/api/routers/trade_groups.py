@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from src.api.annotations import annotate_items
 from src.api.deps import get_db
-from src.api.schemas import TagChip
+from src.api.schemas import OrderResponse, TagChip, load_order_legs, to_order_response
 from src.models import (
     Account,
     ContractRef,
@@ -28,10 +28,10 @@ from src.models import (
 from src.services.cl_contracts import infer_contract_month_from_local_symbol
 from src.services.execution_display import contract_display_from_raw, execution_ib_codes
 from src.services.execution_pnl import execution_realized_pnl
+from src.services.group_working_orders import working_orders_for_group
+from src.services.intraday_overlay import is_live_stale, parse_multiplier
 from src.services.option_expiry import option_expiry_and_dte
 from src.services.strategies import normalize_strategy_name, require_strategy
-from src.utils.sql import escape_like
-from src.services.intraday_overlay import is_live_stale, parse_multiplier
 from src.services.trade_group_instruments import (
     InstrumentPatternError,
     instrument_filter_condition,
@@ -52,6 +52,7 @@ from src.services.ui_events import (
     make_coarse_event,
 )
 from src.utils.contract_display import contract_display_name
+from src.utils.sql import escape_like
 
 router = APIRouter()
 DB_SESSION_DEPENDENCY = Depends(get_db)
@@ -1511,3 +1512,44 @@ def trade_group_executions(trade_group_id: int, db: Session = DB_SESSION_DEPENDE
         marks_as_of=overlay.totals.marks_as_of,
         by_account=by_account,
     )
+
+
+class TradeGroupRef(BaseModel):
+    id: int
+    name: str
+
+
+class TradeGroupWorkingOrderItem(BaseModel):
+    order: OrderResponse
+    # The order's con_ids (its own, or its legs') that this group holds.
+    matched_con_ids: list[int]
+    # Other groups that hold one of those contracts too; the order may be for either.
+    shared_with: list[TradeGroupRef]
+
+
+@router.get("/trade-groups/{trade_group_id}/working-orders", response_model=list[TradeGroupWorkingOrderItem])
+def trade_group_working_orders(trade_group_id: int, db: Session = DB_SESSION_DEPENDENCY) -> list[TradeGroupWorkingOrderItem]:
+    _ensure_group(db, trade_group_id)
+    matches = working_orders_for_group(db, trade_group_id)
+    if not matches:
+        return []
+    orders = [match.order for match in matches]
+    accounts = {account.id: account for account in db.execute(select(Account).where(Account.id.in_({o.account_id for o in orders}))).scalars()}
+    con_ids = {o.con_id for o in orders if o.con_id is not None}
+    refs = {ref.con_id: ref for ref in db.execute(select(ContractRef).where(ContractRef.con_id.in_(con_ids))).scalars()} if con_ids else {}
+    other_ids = {group_id for match in matches for group_id in match.shared_with_group_ids}
+    names = {row.id: row.name for row in db.execute(select(TradeGroup.id, TradeGroup.name).where(TradeGroup.id.in_(other_ids)))} if other_ids else {}
+    legs = load_order_legs(db, orders)
+    return [
+        TradeGroupWorkingOrderItem(
+            order=to_order_response(
+                match.order,
+                accounts.get(match.order.account_id),
+                refs.get(match.order.con_id) if match.order.con_id is not None else None,
+                legs.get(match.order.id),
+            ),
+            matched_con_ids=match.matched_con_ids,
+            shared_with=[TradeGroupRef(id=group_id, name=names.get(group_id, f"#{group_id}")) for group_id in match.shared_with_group_ids],
+        )
+        for match in matches
+    ]
