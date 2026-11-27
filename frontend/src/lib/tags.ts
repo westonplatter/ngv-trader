@@ -161,10 +161,12 @@ export const tasksApi = {
 export function tradeRowItem(row: {
   settled?: boolean;
   trade_id: number | null;
-  ib_exec_id: string;
+  ib_exec_id?: string | null;
 }): ItemRef | null {
   if (row.settled === false)
-    return { entity_type: "live_execution", ib_exec_id: row.ib_exec_id };
+    return row.ib_exec_id
+      ? { entity_type: "live_execution", ib_exec_id: row.ib_exec_id }
+      : null;
   return row.trade_id !== null
     ? { entity_type: "trade", id: row.trade_id }
     : null;

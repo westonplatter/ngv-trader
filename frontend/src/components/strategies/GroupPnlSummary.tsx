@@ -7,7 +7,7 @@ import { formatMarkTime } from "../../lib/markTime";
 import {
   accountTotal,
   capitalForAccount,
-  groupCapital,
+  cardCapital,
   hasFreshLive,
   sortAccountPnl,
   totalPnl,
@@ -15,6 +15,8 @@ import {
 import type { GroupExecutionsResponse } from "../../types/tradeGroups";
 import { makeFormatters } from "../../utils/maskedFormatters";
 import { formatUsd, pnlClassName } from "./statusStyles";
+
+const pnlGridCols = "grid grid-cols-[8rem_6rem_7rem] items-baseline";
 
 export function GroupPnlSummary({
   executions,
@@ -28,19 +30,24 @@ export function GroupPnlSummary({
     executions.total_unrealized_pnl,
     executions.total_realized_pnl,
   );
-  const { capital, optionsCapital, equityCapital } =
-    groupCapital(openPositions);
+  const card = cardCapital(
+    openPositions,
+    executions.core_cost,
+    executions.incremental_net,
+  );
   const fmt = makeFormatters(privacyMode);
   const usd = (v: number | null) => fmt.masked(formatUsd(v));
   const pct = (v: number | null) =>
-    v == null || capital == null ? "—" : `${((v / capital) * 100).toFixed(2)}%`;
+    v == null || card.base == null
+      ? "—"
+      : `${((v / card.base) * 100).toFixed(2)}%`;
   const row = (
     label: string,
     v: number | null,
     showPct: boolean,
     colorize: boolean,
   ) => (
-    <div className="grid grid-cols-[7rem_6rem_5rem] items-baseline">
+    <div className={pnlGridCols}>
       <span className="text-gray-500">{label}:</span>
       <span
         className={`text-right ${colorize ? pnlClassName(v) : "font-semibold text-gray-800"}`}
@@ -55,18 +62,45 @@ export function GroupPnlSummary({
     </div>
   );
   const subRow = (label: string, v: number | null) => (
-    <div className="grid grid-cols-[7rem_6rem_5rem] items-baseline">
+    <div className={pnlGridCols}>
       <span className="pl-3 text-gray-400">{label}:</span>
       <span className="text-right font-medium text-gray-600">{usd(v)}</span>
       <span />
     </div>
   );
+  const incrementalRow = (v: number | null, note: string) => (
+    <div className={pnlGridCols}>
+      <span className="text-gray-500">Incremental net:</span>
+      <span className={`text-right ${pnlClassName(v)}`}>{usd(v)}</span>
+      <span className="text-right text-gray-400">{note}</span>
+    </div>
+  );
   const marksAsOf = executions.marks_as_of;
   return (
     <div className="flex flex-col gap-0.5 rounded border border-gray-200 bg-gray-50 px-3 py-1.5 text-xs">
-      {row("Capital invested", capital, false, false)}
-      {subRow("Options capital", optionsCapital)}
-      {subRow("Equity capital", equityCapital)}
+      {card.mode === "core" ? (
+        <>
+          {row("Core cost", card.coreCost, false, false)}
+          {incrementalRow(
+            card.incrementalNet,
+            card.percentFinanced == null
+              ? ""
+              : `${(card.percentFinanced * 100).toFixed(2)}% financed`,
+          )}
+          {card.kind === "debit" && (
+            <>
+              <div className="my-1 border-t border-gray-200" />
+              {row("Net cost", card.netCost, false, false)}
+            </>
+          )}
+        </>
+      ) : (
+        <>
+          {row("Capital invested", card.capital, false, false)}
+          {subRow("Options capital", card.optionsCapital)}
+          {subRow("Equity capital", card.equityCapital)}
+        </>
+      )}
       {row("Total PnL", total, true, true)}
       {row("Unrealized PnL", executions.total_unrealized_pnl, true, true)}
       {row("Realized PnL", executions.total_realized_pnl, true, true)}
@@ -134,9 +168,7 @@ export function GroupAccountBreakdown({
             <span className={`text-right ${pnlClassName(acct.realized_pnl)}`}>
               {fmt.pnl(acct.realized_pnl, capital, formatUsd)}
             </span>
-            <span
-              className={`text-right ${pnlClassName(acct.unrealized_pnl)}`}
-            >
+            <span className={`text-right ${pnlClassName(acct.unrealized_pnl)}`}>
               {fmt.pnl(acct.unrealized_pnl, capital, formatUsd)}
             </span>
           </div>

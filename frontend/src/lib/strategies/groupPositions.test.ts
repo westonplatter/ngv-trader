@@ -1,7 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import type { GroupExecution, GroupOpenPosition } from "../../types/tradeGroups";
+import type {
+  GroupExecution,
+  GroupOpenPosition,
+} from "../../types/tradeGroups";
 import {
   accountBands,
+  cardCapital,
   capitalForAccount,
   groupCapital,
   hasFreshLive,
@@ -60,25 +64,34 @@ describe("parseMultiplier", () => {
 
 describe("positionGreeks", () => {
   test("options scale per-unit greeks by signed qty and multiplier", () => {
-    const g = positionGreeks(position({ delta: 0.5, gamma: 0.01, position: -2 }));
+    const g = positionGreeks(
+      position({ delta: 0.5, gamma: 0.01, position: -2 }),
+    );
     expect(g.delta).toBe(-1000);
     expect(g.gamma).toBe(-20);
   });
 
   test("a stale live overlay blanks option greeks", () => {
-    expect(positionGreeks(position({ delta: 0.5, live_is_stale: true }))).toEqual(
-      { delta: null, gamma: null },
-    );
+    expect(
+      positionGreeks(position({ delta: 0.5, live_is_stale: true })),
+    ).toEqual({ delta: null, gamma: null });
   });
 
   test("futures and stock are delta one per unit, gamma zero, even when stale", () => {
     expect(
       positionGreeks(
-        position({ sec_type: "FUT", position: 3, multiplier: "100", live_is_stale: true }),
+        position({
+          sec_type: "FUT",
+          position: 3,
+          multiplier: "100",
+          live_is_stale: true,
+        }),
       ),
     ).toEqual({ delta: 300, gamma: 0 });
     expect(
-      positionGreeks(position({ sec_type: "STK", position: 200, multiplier: null })),
+      positionGreeks(
+        position({ sec_type: "STK", position: 200, multiplier: null }),
+      ),
     ).toEqual({ delta: 200, gamma: 0 });
   });
 });
@@ -86,14 +99,48 @@ describe("positionGreeks", () => {
 describe("sortGroupPositions", () => {
   test("account, then symbol, then strike high to low, then natural display", () => {
     const rows = [
-      position({ con_id: 1, account_alias: "B", symbol: "CL", contract_display: "CL 70 CALL" }),
-      position({ con_id: 2, account_alias: "A", symbol: "ES", contract_display: "ES 6000 PUT" }),
-      position({ con_id: 3, account_alias: "A", symbol: "CL", contract_display: "CL 70 CALL" }),
-      position({ con_id: 4, account_alias: "A", symbol: "CL", contract_display: "CL 75 CALL" }),
-      position({ con_id: 5, account_alias: "A", symbol: "CL", contract_display: "CLZ10", sec_type: "FUT" }),
-      position({ con_id: 6, account_alias: "A", symbol: "CL", contract_display: "CLZ9", sec_type: "FUT" }),
+      position({
+        con_id: 1,
+        account_alias: "B",
+        symbol: "CL",
+        contract_display: "CL 70 CALL",
+      }),
+      position({
+        con_id: 2,
+        account_alias: "A",
+        symbol: "ES",
+        contract_display: "ES 6000 PUT",
+      }),
+      position({
+        con_id: 3,
+        account_alias: "A",
+        symbol: "CL",
+        contract_display: "CL 70 CALL",
+      }),
+      position({
+        con_id: 4,
+        account_alias: "A",
+        symbol: "CL",
+        contract_display: "CL 75 CALL",
+      }),
+      position({
+        con_id: 5,
+        account_alias: "A",
+        symbol: "CL",
+        contract_display: "CLZ10",
+        sec_type: "FUT",
+      }),
+      position({
+        con_id: 6,
+        account_alias: "A",
+        symbol: "CL",
+        contract_display: "CLZ9",
+        sec_type: "FUT",
+      }),
     ];
-    expect(sortGroupPositions(rows).map((r) => r.con_id)).toEqual([4, 3, 6, 5, 2, 1]);
+    expect(sortGroupPositions(rows).map((r) => r.con_id)).toEqual([
+      4, 3, 6, 5, 2, 1,
+    ]);
     expect(positionStrike(rows[0])).toBe(70);
     expect(positionStrike(rows[4])).toBeNull();
   });
@@ -165,7 +212,11 @@ describe("capital", () => {
   });
 
   test("groupCapital is all null with no positions or a zero net", () => {
-    expect(groupCapital([])).toEqual({ capital: null, optionsCapital: null, equityCapital: null });
+    expect(groupCapital([])).toEqual({
+      capital: null,
+      optionsCapital: null,
+      equityCapital: null,
+    });
     expect(
       groupCapital([
         position({ position: -1, avg_cost: 100 }),
@@ -181,6 +232,50 @@ describe("capital", () => {
   });
 });
 
+describe("cardCapital", () => {
+  const legs = [
+    position({ account_id: 1, sec_type: "FOP", position: -1, avg_cost: 1200 }),
+    position({ account_id: 1, sec_type: "FOP", position: 1, avg_cost: 800 }),
+  ];
+
+  test("debit core reports financed share and net cost (AE1)", () => {
+    const card = cardCapital(legs, 12190.78, 407.1);
+    expect(card.mode).toBe("core");
+    if (card.mode !== "core") return;
+    expect(card.kind).toBe("debit");
+    expect(card.coreCost).toBe(12190.78);
+    expect(card.incrementalNet).toBe(407.1);
+    expect((card.percentFinanced ?? 0) * 100).toBeCloseTo(3.34, 2);
+    expect(card.netCost).toBeCloseTo(11783.68, 2);
+    expect(card.base).toBe(12190.78);
+  });
+
+  test("credit core drops financed and net cost, base is magnitude (AE4)", () => {
+    const card = cardCapital(legs, -300000, 3000);
+    expect(card).toEqual({
+      mode: "core",
+      kind: "credit",
+      coreCost: -300000,
+      incrementalNet: 3000,
+      percentFinanced: null,
+      netCost: null,
+      base: 300000,
+    });
+  });
+
+  test("null core cost matches groupCapital (AE6)", () => {
+    expect(cardCapital(legs, null, null)).toEqual({
+      mode: "capital",
+      ...groupCapital(legs),
+      base: groupCapital(legs).capital,
+    });
+  });
+
+  test("zero core cost is treated like null", () => {
+    expect(cardCapital(legs, 0, 0)).toEqual(cardCapital(legs, null, null));
+  });
+});
+
 describe("P&L helpers", () => {
   test("totalPnl treats a lone null as zero and both null as unknown", () => {
     expect(totalPnl(10, null)).toBe(10);
@@ -190,16 +285,42 @@ describe("P&L helpers", () => {
 
   test("sortAccountPnl orders by total desc with unknowns last", () => {
     const sorted = sortAccountPnl([
-      { account_id: 1, account_alias: null, realized_pnl: null, unrealized_pnl: null, intraday_unrealized_pnl: null, intraday_realized_pnl: null, intraday_total_pnl: null },
-      { account_id: 2, account_alias: null, realized_pnl: 5, unrealized_pnl: 5, intraday_unrealized_pnl: null, intraday_realized_pnl: null, intraday_total_pnl: null },
-      { account_id: 3, account_alias: null, realized_pnl: 50, unrealized_pnl: null, intraday_unrealized_pnl: null, intraday_realized_pnl: null, intraday_total_pnl: null },
+      {
+        account_id: 1,
+        account_alias: null,
+        realized_pnl: null,
+        unrealized_pnl: null,
+        intraday_unrealized_pnl: null,
+        intraday_realized_pnl: null,
+        intraday_total_pnl: null,
+      },
+      {
+        account_id: 2,
+        account_alias: null,
+        realized_pnl: 5,
+        unrealized_pnl: 5,
+        intraday_unrealized_pnl: null,
+        intraday_realized_pnl: null,
+        intraday_total_pnl: null,
+      },
+      {
+        account_id: 3,
+        account_alias: null,
+        realized_pnl: 50,
+        unrealized_pnl: null,
+        intraday_unrealized_pnl: null,
+        intraday_realized_pnl: null,
+        intraday_total_pnl: null,
+      },
     ]);
     expect(sorted.map((a) => a.account_id)).toEqual([3, 2, 1]);
   });
 
   test("hasFreshLive needs a live, non-stale position", () => {
     expect(hasFreshLive([position({ source: "live" })])).toBe(true);
-    expect(hasFreshLive([position({ source: "live", live_is_stale: true })])).toBe(false);
+    expect(
+      hasFreshLive([position({ source: "live", live_is_stale: true })]),
+    ).toBe(false);
     expect(hasFreshLive([position({})])).toBe(false);
   });
 

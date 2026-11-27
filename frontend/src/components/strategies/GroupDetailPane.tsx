@@ -76,6 +76,7 @@ export default function GroupDetailPane({
   privacyMode,
   liveSync,
   onTagsChanged,
+  onExecutionTagsChanged,
   onTasksChanged,
   onSave,
   onDelete,
@@ -90,6 +91,7 @@ export default function GroupDetailPane({
   privacyMode: boolean;
   liveSync: GroupLiveSync;
   onTagsChanged: () => void;
+  onExecutionTagsChanged: () => void;
   onTasksChanged: () => void;
   onSave: (body: GroupPatch) => Promise<void>;
   onDelete: () => void;
@@ -166,6 +168,8 @@ export default function GroupDetailPane({
         totalCount={allExecutions.length}
         accountFiltered={accountFilter != null}
         privacyMode={privacyMode}
+        expanded={focusActive}
+        onTagsChanged={onExecutionTagsChanged}
       />
     </div>
   );

@@ -24,12 +24,23 @@ def normalize_tag_value(value: str) -> str:
     return re.sub(r"[\s_\-]+", "-", value.strip().lower()).strip("-")
 
 
+CORE_TAG = "core"
+RESERVED_TAG_VALUES = frozenset({normalize_tag_value(CORE_TAG)})
+
+
 class TagError(ServiceError):
     """A tag request the catalog cannot satisfy."""
 
 
 class TagNotFound(TagError, NotFoundError):
     """A tag id or name that does not exist."""
+
+
+def reject_reserved_tag(*values: str) -> None:
+    """Raise ``TagError`` when any value normalizes to a reserved tag name."""
+    for value in values:
+        if normalize_tag_value(value) in RESERVED_TAG_VALUES:
+            raise TagError(f"The '{normalize_tag_value(value)}' tag is reserved and cannot be renamed, archived or merged")
 
 
 def validate_created_by(created_by: str) -> str:

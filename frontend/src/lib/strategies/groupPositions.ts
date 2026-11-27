@@ -85,7 +85,9 @@ export function sortGroupPositions(
 // Google-Sheets-style banding: each account group gets a subtle alternating
 // background so rows read as grouped by account. 0 or 1 per account id, in
 // the order the accounts first appear.
-export function accountBands(positions: GroupOpenPosition[]): Map<number, number> {
+export function accountBands(
+  positions: GroupOpenPosition[],
+): Map<number, number> {
   const bands = new Map<number, number>();
   for (const p of positions) {
     if (!bands.has(p.account_id)) bands.set(p.account_id, bands.size % 2);
@@ -203,6 +205,54 @@ export function groupCapital(openPositions: GroupOpenPosition[]): GroupCapital {
   return { capital: null, optionsCapital: null, equityCapital: null };
 }
 
+export type CardCapital =
+  | ({ mode: "capital"; base: number | null } & GroupCapital)
+  | {
+      mode: "core";
+      kind: "debit" | "credit";
+      coreCost: number;
+      incrementalNet: number | null;
+      // Debit only: incremental net as a share of core cost (a fraction).
+      percentFinanced: number | null;
+      // Debit only: core cost less incremental net.
+      netCost: number | null;
+      base: number;
+    };
+
+// Capital rows for the P&L card. Core mode needs a non-zero core cost;
+// otherwise the card falls back to today's capital rows.
+export function cardCapital(
+  openPositions: GroupOpenPosition[],
+  coreCost: number | null,
+  incrementalNet: number | null,
+): CardCapital {
+  if (coreCost == null || coreCost === 0) {
+    const capital = groupCapital(openPositions);
+    return { mode: "capital", ...capital, base: capital.capital };
+  }
+  if (coreCost > 0) {
+    return {
+      mode: "core",
+      kind: "debit",
+      coreCost,
+      incrementalNet,
+      percentFinanced:
+        incrementalNet == null ? null : incrementalNet / coreCost,
+      netCost: incrementalNet == null ? null : coreCost - incrementalNet,
+      base: coreCost,
+    };
+  }
+  return {
+    mode: "core",
+    kind: "credit",
+    coreCost,
+    incrementalNet,
+    percentFinanced: null,
+    netCost: null,
+    base: Math.abs(coreCost),
+  };
+}
+
 // Per-account capital: net signed cost basis per bucket, then magnitude — the
 // same convention as groupCapital so spread legs net out rather than
 // double-counting. Null when the account holds nothing in the group.
@@ -239,7 +289,9 @@ export function accountTotal(acct: GroupAccountPnl): number | null {
 
 // By total P&L (realized + unrealized) descending; accounts with no P&L data
 // sort last.
-export function sortAccountPnl(byAccount: GroupAccountPnl[]): GroupAccountPnl[] {
+export function sortAccountPnl(
+  byAccount: GroupAccountPnl[],
+): GroupAccountPnl[] {
   const totalOf = (x: GroupAccountPnl) => accountTotal(x) ?? -Infinity;
   return [...byAccount].sort((a, b) => totalOf(b) - totalOf(a));
 }
