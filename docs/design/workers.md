@@ -144,6 +144,9 @@ one was already running). It never places, changes, or cancels a broker order.
   applies events queued meanwhile.
 - **Health:** heartbeat `order_stream`; `details` is JSON with `state` and
   `last_event_at`. The polled `order.fetch_sync` stays the fallback.
+  `GET /api/v1/orders/stream-status` reads it: `live` (running, fresh within 30 s,
+  state `live`), `not_live`, or `disabled` (no heartbeat row). `/orders` shows it
+  beside Sync.
 
 ## Heartbeats and health
 

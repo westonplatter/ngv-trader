@@ -208,3 +208,13 @@ def to_order_response(
         created_at=order.created_at,
         updated_at=order.updated_at,
     )
+
+
+class OrderStreamStatusResponse(BaseModel):
+    # live: the stream is connected and reconciled. not_live: it ran but is down,
+    # stale, or reconnecting. disabled: no stream heartbeat exists.
+    state: str
+    stream_state: str | None
+    last_event_at: datetime | None
+    heartbeat_at: datetime | None
+    seconds_since_heartbeat: float | None

@@ -1,5 +1,6 @@
 """Orders API router."""
 
+import json
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
@@ -8,8 +9,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from src.api.deps import get_db
-from src.api.schemas import OrderResponse, to_job_response, to_order_response
-from src.models import Account, ContractRef, Order, OrderEvent
+from src.api.schemas import (
+    OrderResponse,
+    OrderStreamStatusResponse,
+    to_job_response,
+    to_order_response,
+)
+from src.models import Account, ContractRef, Order, OrderEvent, WorkerHeartbeat
 from src.services.jobs import JOB_TYPE_ORDER_FETCH_SYNC, enqueue_job
 from src.services.order_mutations import OrderCreateInput, create_queued_order
 from src.services.order_queue import (
@@ -19,6 +25,8 @@ from src.services.order_queue import (
     transition_order_status,
 )
 from src.services.ui_events import TOPIC_JOBS, TOPIC_ORDERS, broadcaster, make_event
+from src.services.worker_heartbeat import WORKER_TYPE_ORDER_STREAM, YELLOW_SECONDS
+from src.utils.time import now_utc
 
 router = APIRouter()
 DB_SESSION_DEPENDENCY = Depends(get_db)
@@ -99,6 +107,38 @@ def list_orders(db: Session = DB_SESSION_DEPENDENCY) -> list[OrderResponse]:
     )
     rows = db.execute(stmt).all()
     return [to_order_response(order, account, contract_ref) for order, account, contract_ref in rows]
+
+
+def _stream_details(details: str | None) -> dict:
+    try:
+        parsed = json.loads(details or "")
+    except ValueError:
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def to_stream_status_response(row: WorkerHeartbeat | None, now: datetime) -> OrderStreamStatusResponse:
+    if row is None:
+        return OrderStreamStatusResponse(state="disabled", stream_state=None, last_event_at=None, heartbeat_at=None, seconds_since_heartbeat=None)
+    details = _stream_details(row.details)
+    seconds_since = max(0.0, (now - row.heartbeat_at).total_seconds())
+    stream_state = details.get("state")
+    live = row.status == "running" and seconds_since <= YELLOW_SECONDS and stream_state == "live"
+    last_event_at = details.get("last_event_at")
+    return OrderStreamStatusResponse(
+        state="live" if live else "not_live",
+        stream_state=stream_state if isinstance(stream_state, str) else None,
+        last_event_at=datetime.fromisoformat(last_event_at) if isinstance(last_event_at, str) else None,
+        heartbeat_at=row.heartbeat_at,
+        seconds_since_heartbeat=seconds_since,
+    )
+
+
+# Registered before /orders/{order_id} so the literal path is not read as an id.
+@router.get("/orders/stream-status", response_model=OrderStreamStatusResponse)
+def get_order_stream_status(db: Session = DB_SESSION_DEPENDENCY) -> OrderStreamStatusResponse:
+    row = db.execute(select(WorkerHeartbeat).where(WorkerHeartbeat.worker_type == WORKER_TYPE_ORDER_STREAM)).scalar_one_or_none()
+    return to_stream_status_response(row, now_utc())
 
 
 @router.get("/orders/{order_id}", response_model=OrderResponse)

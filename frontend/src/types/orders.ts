@@ -35,3 +35,12 @@ export interface Order {
   created_at: string;
   updated_at: string;
 }
+
+// Mirrors OrderStreamStatusResponse in src/api/schemas.py.
+export interface OrderStreamStatus {
+  state: "live" | "not_live" | "disabled";
+  stream_state: string | null;
+  last_event_at: string | null;
+  heartbeat_at: string | null;
+  seconds_since_heartbeat: number | null;
+}

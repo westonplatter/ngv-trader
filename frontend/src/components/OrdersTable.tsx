@@ -8,7 +8,7 @@ import { useFormatters } from "../hooks/useFormatters";
 import { useSseList } from "../hooks/useSseList";
 import { api } from "../lib/api";
 import { useSSE } from "../lib/events";
-import type { Order } from "../types/orders";
+import type { Order, OrderStreamStatus } from "../types/orders";
 import { OUTLINE_BUTTON } from "./ui/buttonClasses";
 import { formatAgo, formatDate, formatExpiry } from "../utils/date";
 
@@ -40,6 +40,23 @@ const TERMINAL_STATUSES = new Set([
 
 const ORDER_SYNC_JOB_TYPE = "order.fetch_sync";
 const AGO_REFRESH_MS = 15_000;
+
+const STREAM_LABEL: Record<OrderStreamStatus["state"], string> = {
+  live: "Live",
+  not_live: "Not live",
+  disabled: "Stream off",
+};
+const STREAM_DOT: Record<OrderStreamStatus["state"], string> = {
+  live: "bg-green-500",
+  not_live: "bg-red-500",
+  disabled: "bg-gray-400",
+};
+const STREAM_TITLE: Record<OrderStreamStatus["state"], string> = {
+  live: "TWS order changes arrive as they happen.",
+  not_live:
+    "The order stream is down or reconnecting. Orders update on sync only.",
+  disabled: "The order stream is not running. Orders update on sync only.",
+};
 
 function getDisplayedSymbol(order: Order): string {
   return (order.symbol || "").trim().toUpperCase();
@@ -85,6 +102,24 @@ export default function OrdersTable() {
     const timer = window.setInterval(() => setNow(Date.now()), AGO_REFRESH_MS);
     return () => window.clearInterval(timer);
   }, []);
+
+  const [streamStatus, setStreamStatus] = useState<OrderStreamStatus | null>(
+    null,
+  );
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .get<OrderStreamStatus>("/orders/stream-status")
+      .then((next) => {
+        if (!cancelled) setStreamStatus(next);
+      })
+      .catch(() => {
+        if (!cancelled) setStreamStatus(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [now]);
 
   const symbolFilter = useMemo(() => {
     const raw = symbolRegexFilter.trim();
@@ -204,6 +239,20 @@ export default function OrdersTable() {
           </p>
         </div>
         <div className="flex items-center gap-3">
+          {streamStatus !== null && (
+            <span
+              className="inline-flex items-center gap-1.5 text-xs text-gray-500"
+              title={STREAM_TITLE[streamStatus.state]}
+            >
+              <span
+                className={`inline-block h-2 w-2 rounded-full ${STREAM_DOT[streamStatus.state]}`}
+              />
+              {STREAM_LABEL[streamStatus.state]}
+              {streamStatus.state === "live" &&
+                streamStatus.last_event_at !== null &&
+                ` · last event ${formatAgo(now - Date.parse(streamStatus.last_event_at))}`}
+            </span>
+          )}
           {lastSyncAt !== null && (
             <span className="text-xs text-gray-500">
               Last sync {formatAgo(now - lastSyncAt)}

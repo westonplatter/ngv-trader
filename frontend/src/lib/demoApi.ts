@@ -66,6 +66,15 @@ function routeGet(path: string, params: URLSearchParams): Json | undefined {
   if (path === "/positions") return withPositionTags(DEMO_POSITIONS);
   if (path === "/accounts") return DEMO_ACCOUNTS;
   if (path === "/orders") return DEMO_ORDERS;
+  if (path === "/orders/stream-status") {
+    return {
+      state: "live",
+      stream_state: "live",
+      last_event_at: "2026-06-21T14:29:48Z",
+      heartbeat_at: "2026-06-21T14:30:00Z",
+      seconds_since_heartbeat: 3,
+    };
+  }
   if (path === "/flexquery-tokens") return DEMO_FLEXQUERY_TOKENS;
   if (path === "/workers/status") return demoWorkerStatuses();
   if (path === "/strategies") return DEMO_STRATEGIES;
