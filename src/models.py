@@ -5,8 +5,8 @@ from datetime import date, datetime, timezone
 from sqlalchemy import (
     JSON,
     BigInteger,
-    CheckConstraint,
     Boolean,
+    CheckConstraint,
     Date,
     DateTime,
     Float,
@@ -257,6 +257,7 @@ class Position(Base):
 
 class Order(Base):
     __tablename__ = "orders"
+    __table_args__ = (Index("uq_orders_ib_perm_id", "ib_perm_id", unique=True, postgresql_where=text("ib_perm_id IS NOT NULL")),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     account_id: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -277,7 +278,8 @@ class Order(Base):
     contract_month: Mapped[str | None] = mapped_column(String, nullable=True)
     contract_expiry: Mapped[str | None] = mapped_column(String, nullable=True)
     ib_order_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    ib_perm_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    ib_client_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    ib_perm_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     filled_quantity: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     avg_fill_price: Mapped[float | None] = mapped_column(Float, nullable=True)
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -1084,7 +1086,7 @@ class LiveExecution(Base):
     # Broker order identity, used to group a combo's BAG summary fill with its
     # leg fills within a sync batch. ``ib_perm_id`` is stable across the order
     # lifecycle; ``ib_order_id`` is the fallback when permId is absent.
-    ib_perm_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    ib_perm_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     ib_order_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # "combo_summary" (the BAG fill), "leg" (a constituent of a combo), or
     # "standalone". Mirrors TradeExecution.exec_role on the settled path.

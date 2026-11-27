@@ -6,6 +6,7 @@ Fetches open/recent broker orders and reconciles them into local `orders` and
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
@@ -146,26 +147,36 @@ def _ensure_account(session: Session, account_code: str) -> Account:
     return account
 
 
-def _find_matching_order(session: Session, trade: Trade) -> Order | None:
-    local_order_id = parse_order_ref(getattr(trade.order, "orderRef", None))
-    if local_order_id is not None:
-        matched = session.get(Order, local_order_id)
-        if matched is not None:
-            return matched
-
+def _known_perm_id(trade: Trade) -> int | None:
+    """The broker permId, or None while TWS has not assigned one (it reports 0)."""
     perm_id = parse_int(getattr(trade.order, "permId", None))
+    return perm_id if perm_id else None
+
+
+def _find_matching_order(session: Session, trade: Trade) -> Order | None:
+    perm_id = _known_perm_id(trade)
     if perm_id is not None:
         stmt = select(Order).where(Order.ib_perm_id == perm_id).order_by(Order.updated_at.desc()).limit(1)
         matched = session.execute(stmt).scalars().first()
         if matched is not None:
             return matched
 
+    local_order_id = parse_order_ref(getattr(trade.order, "orderRef", None))
+    if local_order_id is not None:
+        candidate = session.get(Order, local_order_id)
+        if candidate is not None and candidate.source != DEFAULT_ORDER_SYNC_SOURCE and (candidate.ib_perm_id is None or candidate.ib_perm_id == perm_id):
+            return candidate
+
     order_id = parse_int(getattr(trade.order, "orderId", None))
-    if order_id is not None:
-        stmt = select(Order).where(Order.ib_order_id == order_id).order_by(Order.updated_at.desc()).limit(1)
-        matched = session.execute(stmt).scalars().first()
-        if matched is not None:
-            return matched
+    client_id = parse_int(getattr(trade.order, "clientId", None))
+    if order_id and client_id is not None:
+        stmt = (
+            select(Order)
+            .where(Order.ib_order_id == order_id, Order.ib_client_id == client_id, Order.ib_perm_id.is_(None))
+            .order_by(Order.updated_at.desc())
+            .limit(1)
+        )
+        return session.execute(stmt).scalars().first()
 
     return None
 
@@ -227,7 +238,8 @@ def _create_order_from_trade(session: Session, trade: Trade) -> Order:
         trading_class=str(getattr(contract, "tradingClass", "") or "") or None,
         contract_expiry=str(getattr(contract, "lastTradeDateOrContractMonth", "") or "") or None,
         ib_order_id=parse_int(getattr(trade.order, "orderId", None)),
-        ib_perm_id=parse_int(getattr(trade.order, "permId", None)),
+        ib_client_id=parse_int(getattr(trade.order, "clientId", None)),
+        ib_perm_id=_known_perm_id(trade),
         filled_quantity=filled_quantity,
         avg_fill_price=avg_fill_price,
         request_text=f"Imported from broker sync (orderRef={getattr(trade.order, 'orderRef', None)}).",
@@ -271,6 +283,7 @@ def _order_snapshot(order: Order) -> tuple:
         order.avg_fill_price,
         order.ib_order_id,
         order.ib_perm_id,
+        order.ib_client_id,
         order.con_id,
         order.local_symbol,
         order.trading_class,
@@ -299,7 +312,10 @@ def _apply_trade_fields(order: Order, trade: Trade, filled_quantity: float, avg_
     contract_expiry = str(getattr(contract, "lastTradeDateOrContractMonth", "") or "") or None
     order.contract_expiry = contract_expiry if contract_expiry is not None else order.contract_expiry
     order.ib_order_id = parse_int(getattr(trade.order, "orderId", None)) or order.ib_order_id
-    order.ib_perm_id = parse_int(getattr(trade.order, "permId", None)) or order.ib_perm_id
+    order.ib_perm_id = _known_perm_id(trade) or order.ib_perm_id
+    client_id = parse_int(getattr(trade.order, "clientId", None))
+    if client_id is not None:
+        order.ib_client_id = client_id
     order.filled_quantity = filled_quantity
     order.avg_fill_price = avg_fill_price
     order.updated_at = now
@@ -378,6 +394,21 @@ def _sync_trade_onto_order(session: Session, order: Order, trade: Trade) -> bool
     return True
 
 
+@dataclass(frozen=True)
+class OrderApplyResult:
+    order: Order
+    created: bool
+    changed: bool
+
+
+def apply_trade_to_order(session: Session, trade: Trade) -> OrderApplyResult:
+    """Match a broker trade to a local order, then create or update it. Does not commit."""
+    order = _find_matching_order(session, trade)
+    if order is None:
+        return OrderApplyResult(order=_create_order_from_trade(session, trade), created=True, changed=True)
+    return OrderApplyResult(order=order, created=False, changed=_sync_trade_onto_order(session, order, trade))
+
+
 def sync_orders_once(
     engine: Engine,
     *,
@@ -418,14 +449,12 @@ def sync_orders_with_ib(
         created_ids: list[int] = []
         updated_ids: list[int] = []
         for trade in trades:
-            order = _find_matching_order(session, trade)
-            if order is None:
-                new_order = _create_order_from_trade(session, trade)
-                created_ids.append(new_order.id)
+            result = apply_trade_to_order(session, trade)
+            if result.created:
+                created_ids.append(result.order.id)
                 created_count += 1
-                continue
-            if _sync_trade_onto_order(session, order, trade):
-                updated_ids.append(order.id)
+            elif result.changed:
+                updated_ids.append(result.order.id)
                 updated_count += 1
         session.commit()
 

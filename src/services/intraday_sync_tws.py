@@ -375,7 +375,7 @@ def _live_execution_values(
     return {
         "ib_exec_id": execution.execId,
         "account_id": account_id,
-        "ib_perm_id": _safe_int(getattr(execution, "permId", None)),
+        "ib_perm_id": _safe_int(getattr(execution, "permId", None)) or None,
         "ib_order_id": _safe_int(getattr(execution, "orderId", None)),
         "exec_role": exec_role,
         "con_id": getattr(contract, "conId", None) if contract else None,
