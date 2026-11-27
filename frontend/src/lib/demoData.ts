@@ -24,6 +24,7 @@
 // the shapes the UI actually consumes.
 
 import type { FlexQueryToken } from "../types/flexQueryTokens";
+import type { Order } from "../types/orders";
 import type { Position, TradeGroupRef } from "../types/positions";
 import type { Strategy } from "../types/strategies";
 import type { TradeExecutionRow } from "../types/trades";
@@ -1341,4 +1342,108 @@ export const DEMO_TRADE_EXECUTIONS: TradeExecutionRow[] = [
     settled: false,
     live_trade_group_id: GROUP_MES_SCALP.id,
   },
+];
+
+function demoOrder(overrides: Partial<Order> & Pick<Order, "id">): Order {
+  return {
+    account_id: ACCOUNT_ID,
+    account_alias: ACCOUNT_ALIAS,
+    symbol: "MES",
+    sec_type: "FUT",
+    exchange: "CME",
+    currency: "USD",
+    side: "BUY",
+    quantity: 1,
+    order_type: "LMT",
+    limit_price: null,
+    tif: "DAY",
+    status: "submitted",
+    source: "broker_sync",
+    con_id: null,
+    local_symbol: null,
+    trading_class: null,
+    contract_month: null,
+    contract_expiry: null,
+    option_right: null,
+    option_strike: null,
+    contract_display_name: "",
+    ib_order_id: null,
+    ib_perm_id: null,
+    filled_quantity: 0,
+    avg_fill_price: null,
+    last_error: null,
+    request_text: null,
+    submitted_at: LIVE_MARK_TS,
+    completed_at: null,
+    created_at: LIVE_MARK_TS,
+    updated_at: LIVE_MARK_TS,
+    ...overrides,
+  };
+}
+
+// Orders pulled from TWS: a resting hand-entered future limit, a resting
+// option limit, one fill, and one cancel, so every status badge and the
+// working/closed filters have something to show.
+export const DEMO_ORDERS: Order[] = [
+  demoOrder({
+    id: 4,
+    symbol: "MES",
+    limit_price: 5800.25,
+    con_id: 400000001,
+    local_symbol: "MESZ6",
+    contract_month: "202612",
+    contract_expiry: "20261218",
+    contract_display_name: "MES Dec 2026",
+    ib_order_id: -1,
+    ib_perm_id: 7777774,
+    created_at: "2026-06-21T14:28:00Z",
+  }),
+  demoOrder({
+    id: 3,
+    symbol: "SPY",
+    sec_type: "OPT",
+    exchange: "SMART",
+    side: "SELL",
+    quantity: 2,
+    limit_price: 3.4,
+    con_id: 400000002,
+    option_right: "C",
+    option_strike: "620",
+    contract_expiry: "20260717",
+    contract_display_name: "SPY Jul 2026 620 C",
+    ib_order_id: -2,
+    ib_perm_id: 7777773,
+    created_at: "2026-06-21T13:10:00Z",
+  }),
+  demoOrder({
+    id: 2,
+    symbol: "NQ",
+    side: "BUY",
+    quantity: 3,
+    limit_price: 21450.5,
+    status: "filled",
+    con_id: 400000003,
+    contract_display_name: "NQ Sep 2026",
+    contract_expiry: "20260918",
+    ib_order_id: 12,
+    ib_perm_id: 7777772,
+    filled_quantity: 3,
+    avg_fill_price: 21450.5,
+    completed_at: "2026-06-20T15:02:00Z",
+    created_at: "2026-06-20T14:55:00Z",
+  }),
+  demoOrder({
+    id: 1,
+    symbol: "ES",
+    side: "SELL",
+    limit_price: 6100,
+    status: "cancelled",
+    con_id: 400000004,
+    contract_display_name: "ES Sep 2026",
+    contract_expiry: "20260918",
+    ib_order_id: 11,
+    ib_perm_id: 7777771,
+    completed_at: "2026-06-19T20:00:00Z",
+    created_at: "2026-06-19T15:30:00Z",
+  }),
 ];

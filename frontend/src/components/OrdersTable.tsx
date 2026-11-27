@@ -1,11 +1,16 @@
-import { useCallback, useMemo, useState } from "react";
-import { enqueueSyncJob, useJobWatcher } from "../hooks/useJobWatcher";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  enqueueSyncJob,
+  useJobWatcher,
+  type WatchedJob,
+} from "../hooks/useJobWatcher";
 import { useFormatters } from "../hooks/useFormatters";
 import { useSseList } from "../hooks/useSseList";
 import { api } from "../lib/api";
+import { useSSE } from "../lib/events";
 import type { Order } from "../types/orders";
 import { OUTLINE_BUTTON } from "./ui/buttonClasses";
-import { formatDate, formatExpiry } from "../utils/date";
+import { formatAgo, formatDate, formatExpiry } from "../utils/date";
 
 type OrderFilter = "all" | "working" | "closed";
 
@@ -33,6 +38,9 @@ const TERMINAL_STATUSES = new Set([
   "rejected",
   "failed",
 ]);
+
+const ORDER_SYNC_JOB_TYPE = "order.fetch_sync";
+const AGO_REFRESH_MS = 15_000;
 
 function getDisplayedSymbol(order: Order): string {
   return (order.symbol || "").trim().toUpperCase();
@@ -65,6 +73,19 @@ export default function OrdersTable() {
     key: (order) => order.id,
   });
   const { watch } = useJobWatcher();
+
+  // The jobs stream carries every order sync, including ones queued elsewhere.
+  const [lastSyncAt, setLastSyncAt] = useState<number | null>(null);
+  const [now, setNow] = useState(() => Date.now());
+  useSSE<WatchedJob>("jobs", (job) => {
+    if (job.job_type !== ORDER_SYNC_JOB_TYPE || job.status !== "completed")
+      return;
+    setLastSyncAt(Date.now());
+  });
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), AGO_REFRESH_MS);
+    return () => window.clearInterval(timer);
+  }, []);
 
   const symbolFilter = useMemo(() => {
     const raw = symbolRegexFilter.trim();
@@ -124,7 +145,10 @@ export default function OrdersTable() {
         "Manual order fetch/sync from Orders page.",
       );
       setSyncMessage(`Queued order sync job #${data.job_id} (${data.status}).`);
-      watch(data.job_id, () => reload());
+      watch(data.job_id, (job) => {
+        if (job.status === "completed") setLastSyncAt(Date.now());
+        reload();
+      });
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unknown sync error";
       setSyncError(message);
@@ -172,6 +196,11 @@ export default function OrdersTable() {
           </p>
         </div>
         <div className="flex items-center gap-3">
+          {lastSyncAt !== null && (
+            <span className="text-xs text-gray-500">
+              Last sync {formatAgo(now - lastSyncAt)}
+            </span>
+          )}
           <button
             type="button"
             onClick={() => {

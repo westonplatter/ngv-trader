@@ -15,8 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
-from src.api.schemas import to_order_response
-from src.models import Account, ContractRef, Order
+from src.models import Account, Order
 from src.services.order_queue import (
     ORDER_STATUS_CANCELLED,
     ORDER_STATUS_FILLED,
@@ -30,7 +29,6 @@ from src.services.order_queue import (
     now_utc,
     transition_order_status,
 )
-from src.services.ui_events import TOPIC_ORDERS, broadcaster, make_event
 
 DEFAULT_ORDER_SYNC_SOURCE = "broker_sync"
 
@@ -95,14 +93,7 @@ def _trade_key(trade: Trade) -> tuple[int | None, int | None, str]:
     return perm_id, order_id, order_ref
 
 
-def _collect_recent_trades(ib: IB, *, client_id: int) -> list[Trade]:
-    # Best-effort bind for manually-entered TWS orders when permissions/client-id allow.
-    if client_id == 0:
-        try:
-            ib.reqAutoOpenOrders(True)
-        except Exception:  # nosec B110 - best-effort; TWS may reject depending on client permissions
-            pass
-
+def _collect_recent_trades(ib: IB) -> list[Trade]:
     # Pull open orders from this client scope.
     ib.reqOpenOrders()
     ib.waitOnUpdate(timeout=1.0)
@@ -416,7 +407,7 @@ def sync_orders_once(
     port: int,
     client_id: int,
     connect_timeout_seconds: float = 20.0,
-) -> dict[str, int]:
+) -> dict[str, Any]:
     ib = IB()
     try:
         try:
@@ -426,11 +417,7 @@ def sync_orders_once(
                 "Timed out connecting to TWS/Gateway while fetching orders "
                 f"(host={host}, port={port}, client_id={client_id}, timeout={connect_timeout_seconds}s)."
             ) from exc
-        return sync_orders_with_ib(
-            engine=engine,
-            ib=ib,
-            client_id=client_id,
-        )
+        return sync_orders_with_ib(engine=engine, ib=ib)
     finally:
         if ib.isConnected():
             ib.disconnect()
@@ -440,41 +427,23 @@ def sync_orders_with_ib(
     engine: Engine,
     *,
     ib: IB,
-    client_id: int,
-) -> dict[str, int]:
-    trades = _collect_recent_trades(ib, client_id=client_id)
-    created_count = 0
-    updated_count = 0
+) -> dict[str, Any]:
+    trades = _collect_recent_trades(ib)
+    created_ids: list[int] = []
+    updated_ids: list[int] = []
     with Session(engine) as session:
-        created_ids: list[int] = []
-        updated_ids: list[int] = []
         for trade in trades:
             result = apply_trade_to_order(session, trade)
             if result.created:
                 created_ids.append(result.order.id)
-                created_count += 1
             elif result.changed:
                 updated_ids.append(result.order.id)
-                updated_count += 1
         session.commit()
-
-        if created_ids or updated_ids:
-            created_ids_set = set(created_ids)
-            all_ids = created_ids + updated_ids
-            stmt = (
-                select(Order, Account, ContractRef)
-                .outerjoin(Account, Order.account_id == Account.id)
-                .outerjoin(ContractRef, Order.con_id == ContractRef.con_id)
-                .where(Order.id.in_(all_ids))
-            )
-            rows = session.execute(stmt).all()
-            for order, account, contract_ref in rows:
-                resp = to_order_response(order, account, contract_ref)
-                event_type = "order.created" if order.id in created_ids_set else "order.updated"
-                broadcaster.publish(make_event(TOPIC_ORDERS, event_type, resp, entity_id=order.id))
 
     return {
         "fetched_trades_count": len(trades),
-        "created_orders_count": created_count,
-        "updated_orders_count": updated_count,
+        "created_orders_count": len(created_ids),
+        "updated_orders_count": len(updated_ids),
+        "created_order_ids": created_ids,
+        "updated_order_ids": updated_ids,
     }

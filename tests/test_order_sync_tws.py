@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
+import pytest
+from ib_async import IB
 from sqlalchemy import select
+from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
 from src.models import Order
@@ -163,3 +166,43 @@ def test_live_fill_with_perm_id_zero_stores_null() -> None:
     values = _live_execution_values(fill, 1, now, now)
 
     assert values["ib_perm_id"] is None
+
+
+def _sync(db_session: Session, monkeypatch: pytest.MonkeyPatch, trades: list[Any]) -> dict[str, Any]:
+    monkeypatch.setattr(order_sync_tws, "_collect_recent_trades", lambda ib: trades)
+    engine = cast(Engine, db_session.get_bind())
+    return order_sync_tws.sync_orders_with_ib(engine, ib=cast(IB, SimpleNamespace()))
+
+
+def test_sync_returns_created_and_updated_order_ids(db_session: Session, monkeypatch: pytest.MonkeyPatch) -> None:
+    existing = _apply(db_session, _trade(perm_id=7777771, order_id=90000001, status="Submitted"))
+    db_session.flush()
+
+    result = _sync(
+        db_session,
+        monkeypatch,
+        [
+            _trade(perm_id=7777771, order_id=90000001, status="Cancelled"),
+            _trade(perm_id=7777772, order_id=90000002),
+        ],
+    )
+
+    created = db_session.execute(select(Order).where(Order.ib_perm_id == 7777772)).scalar_one()
+    assert result["created_order_ids"] == [created.id]
+    assert result["updated_order_ids"] == [existing.id]
+    assert result["created_orders_count"] == 1
+    assert result["updated_orders_count"] == 1
+
+
+def test_sync_with_no_changes_returns_empty_id_lists(db_session: Session, monkeypatch: pytest.MonkeyPatch) -> None:
+    trades = [_trade(perm_id=7777773, order_id=90000003)]
+    _sync(db_session, monkeypatch, trades)
+
+    result = _sync(db_session, monkeypatch, trades)
+
+    assert result["created_order_ids"] == []
+    assert result["updated_order_ids"] == []
+
+
+def test_sync_does_not_publish_in_the_worker_process() -> None:
+    assert not hasattr(order_sync_tws, "broadcaster")

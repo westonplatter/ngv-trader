@@ -16,6 +16,7 @@ import { setApiFetch, type ApiFetch } from "./api";
 import {
   DEMO_ACCOUNTS,
   DEMO_FLEXQUERY_TOKENS,
+  DEMO_ORDERS,
   DEMO_POSITIONS,
   DEMO_STRATEGIES,
   DEMO_TRADE_EXECUTIONS,
@@ -64,6 +65,7 @@ function demoWorkerStatuses(): Json {
 function routeGet(path: string, params: URLSearchParams): Json | undefined {
   if (path === "/positions") return withPositionTags(DEMO_POSITIONS);
   if (path === "/accounts") return DEMO_ACCOUNTS;
+  if (path === "/orders") return DEMO_ORDERS;
   if (path === "/flexquery-tokens") return DEMO_FLEXQUERY_TOKENS;
   if (path === "/workers/status") return demoWorkerStatuses();
   if (path === "/strategies") return DEMO_STRATEGIES;
@@ -123,6 +125,9 @@ function handle(
 
   // Writes have no backend in demo mode. The sync trigger returns a job-shaped
   // payload so its UI flow stays intact; everything else gets a benign 200.
+  if (path === "/orders/sync") {
+    return jsonResponse({ job_id: 0, status: "demo (no backend)" });
+  }
   if (path.startsWith("/positions/sync/")) {
     return jsonResponse({ job_id: 0, status: "demo (no backend)" });
   }

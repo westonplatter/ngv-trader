@@ -61,6 +61,28 @@ retries up to `max_attempts`. Queue primitive: `src/services/jobs.py`.
 | `contracts.sync_activated`             | `handle_contracts_sync_activated`             | Discover exchange/metadata + sync next-12-calendar-month FUT contracts for each row in `activated_products`. See [activated products plan](../plans/2026-06-20-001-feat-activated-products-security-master-plan.md).                                                                                                       |
 | `option_metrics.sync.tws`              | `handle_option_metrics_sync_tws`              | Live option metrics overlay. See [option-metrics-overlay.md](option-metrics-overlay.md).                                                                                                                                                                                                                                   |
 
+### TWS client IDs
+
+TWS allows one connection per client ID, so every process that connects must
+hold its own. A job's `client_id` payload field overrides its default.
+
+| Client ID | Holder                                                                                                                        |
+| --------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| 0         | Reserved for the order push stream (hand-entered orders report client 0)                                                      |
+| 30        | `worker:orders` (order submission)                                                                                            |
+| 31        | `positions.sync.tws`                                                                                                          |
+| 32        | `contracts.sync`, `contracts.chain_sync`                                                                                      |
+| 33        | `trades.sync.tws`                                                                                                             |
+| 34        | `watchlist.add_instrument`                                                                                                    |
+| 35-41     | `market_data.*`, `contracts.qualify_and_snapshot`, `contracts.sync_activated`, `intraday.sync.tws`, `option_metrics.sync.tws` |
+| 42        | `order.fetch_sync`                                                                                                            |
+| 141       | `watchlist.quotes_refresh` (`BROKER_TWS_QUOTES_CLIENT_ID`)                                                                    |
+
+`order.fetch_sync` does not need client 0: `reqAllOpenOrders` returns orders
+entered by hand in TWS on any client ID. After each sync the worker POSTs
+`/events/notify-order` per created or updated order, so open browsers update
+without a refresh.
+
 ### Defined but NOT registered (dormant)
 
 The TWS sync handlers exist but are intentionally absent from the dispatch table

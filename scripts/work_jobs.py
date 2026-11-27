@@ -23,6 +23,7 @@ from sqlalchemy.orm import Session
 from src.db import get_engine
 from src.models import Job
 from src.services.jobs import (
+    JOB_TYPE_ORDER_FETCH_SYNC,
     JOB_TYPE_POSITIONS_FLEXQUERY_FETCH_REPORT,
     JOB_TYPE_TRADES_FLEXQUERY_FETCH_REPORT,
     JOB_TYPE_TRADES_SYNC_TWS,
@@ -99,6 +100,19 @@ def _notify_coarse_for_job_type(job_type: str) -> None:
             _notify_api("/events/notify-positions", {})
     except Exception as exc:
         logger.warning("SSE coarse notify for %s failed: %s", job_type, exc)
+
+
+def _notify_orders_for_job(job_type: str, result: dict | None) -> None:
+    """Publish one order SSE event per order a finished order sync created or updated."""
+    if job_type != JOB_TYPE_ORDER_FETCH_SYNC or not result:
+        return
+    events = [(order_id, "order.created") for order_id in result.get("created_order_ids", [])]
+    events += [(order_id, "order.updated") for order_id in result.get("updated_order_ids", [])]
+    for order_id, event in events:
+        try:
+            _notify_api("/events/notify-order", {"order_id": order_id, "event": event})
+        except Exception as exc:
+            logger.warning("SSE notify order #%s (%s) failed: %s", order_id, event, exc)
 
 
 def load_env(env_name: str) -> None:
@@ -184,6 +198,7 @@ def main() -> int:  # noqa: C901, PLR0912, PLR0915 — CLI entry point; one line
                     logger.info("job #%d: starting %s", job_id, job.job_type)
                     job_type_str = job.job_type
                     completed_ok = False
+                    result: dict | None = None
                     try:
                         result = handler(job, engine, ib_pool)
                         complete_job(session, job, result)
@@ -208,6 +223,7 @@ def main() -> int:  # noqa: C901, PLR0912, PLR0915 — CLI entry point; one line
                     _notify_job_event(job_id, "job.updated")
                     if completed_ok:
                         _notify_coarse_for_job_type(job_type_str)
+                        _notify_orders_for_job(job_type_str, result)
 
             upsert_worker_heartbeat(
                 engine,
