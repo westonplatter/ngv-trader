@@ -148,23 +148,23 @@ All events use a consistent envelope:
 
 ### Event reference
 
-| Event               | Topic           | Trigger                                                              | Publisher                                                                                  | Payload DTO           |
-| ------------------- | --------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ | --------------------- |
-| `job.created`       | `jobs`          | `POST /api/v1/jobs` (UI enqueues a job)                              | `src/api/routers/jobs.py`                                                                  | `JobResponse`         |
-| `job.created`       | `jobs`          | `POST /api/v1/orders/sync` (enqueue order sync)                      | `src/api/routers/orders.py`                                                                | `JobResponse`         |
-| `job.created`       | `jobs`          | `POST /api/v1/jobs/{id}/rerun` (re-enqueue a job)                    | `src/api/routers/jobs.py`                                                                  | `JobResponse`         |
-| `job.updated`       | `jobs`          | Worker claims a job (queued → running)                               | `scripts/work_jobs.py` via notify                                                          | `JobResponse`         |
-| `job.updated`       | `jobs`          | Worker completes a job (running → completed)                         | `scripts/work_jobs.py` via notify                                                          | `JobResponse`         |
-| `job.updated`       | `jobs`          | Worker fails a job (running → failed/queued)                         | `scripts/work_jobs.py` via notify                                                          | `JobResponse`         |
-| `job.archived`      | `jobs`          | `POST /api/v1/jobs/{id}/archive`                                     | `src/api/routers/jobs.py`                                                                  | `JobResponse`         |
-| `order.created`     | `orders`        | TWS broker sync discovers a new order                                | `src/services/order_sync_tws.py` (calls `broadcaster.publish()` directly — see note below) | `OrderResponse`       |
-| `order.updated`     | `orders`        | TWS broker sync updates an existing order                            | `src/services/order_sync_tws.py` (calls `broadcaster.publish()` directly — see note below) | `OrderResponse`       |
-| `order.cancelled`   | `orders`        | `POST /api/v1/orders/{id}/cancel`                                    | `src/api/routers/orders.py`                                                                | `OrderResponse`       |
-| `worker.heartbeat`  | `worker_status` | Worker heartbeat upsert (every poll cycle)                           | `src/services/worker_heartbeat.py` via notify                                              | `WorkerStatusPayload` |
-| `trades.changed`    | `trades`        | `trades.flexquery.fetch_report` or `trades.sync.tws` job completes   | `scripts/work_jobs.py` via notify                                                          | `{}` (coarse hint)    |
-| `positions.changed` | `positions`     | `positions.flexquery.fetch_report` job completes                     | `scripts/work_jobs.py` via notify                                                          | `{}` (coarse hint)    |
-| `trades.changed`    | `trades`        | Trade-group execution / position / live-execution assign or unassign | `src/api/routers/trade_groups.py`                                                          | `{}` (coarse hint)    |
-| `positions.changed` | `positions`     | Trade-group position or live-execution assign or unassign            | `src/api/routers/trade_groups.py`                                                          | `{}` (coarse hint)    |
+| Event               | Topic           | Trigger                                                              | Publisher                                                                | Payload DTO           |
+| ------------------- | --------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------ | --------------------- |
+| `job.created`       | `jobs`          | `POST /api/v1/jobs` (UI enqueues a job)                              | `src/api/routers/jobs.py`                                                | `JobResponse`         |
+| `job.created`       | `jobs`          | `POST /api/v1/orders/sync` (enqueue order sync)                      | `src/api/routers/orders.py`                                              | `JobResponse`         |
+| `job.created`       | `jobs`          | `POST /api/v1/jobs/{id}/rerun` (re-enqueue a job)                    | `src/api/routers/jobs.py`                                                | `JobResponse`         |
+| `job.updated`       | `jobs`          | Worker claims a job (queued → running)                               | `scripts/work_jobs.py` via notify                                        | `JobResponse`         |
+| `job.updated`       | `jobs`          | Worker completes a job (running → completed)                         | `scripts/work_jobs.py` via notify                                        | `JobResponse`         |
+| `job.updated`       | `jobs`          | Worker fails a job (running → failed/queued)                         | `scripts/work_jobs.py` via notify                                        | `JobResponse`         |
+| `job.archived`      | `jobs`          | `POST /api/v1/jobs/{id}/archive`                                     | `src/api/routers/jobs.py`                                                | `JobResponse`         |
+| `order.created`     | `orders`        | TWS broker sync or the order stream discovers a new order            | `scripts/work_jobs.py` and `src/services/order_stream_tws.py` via notify | `OrderResponse`       |
+| `order.updated`     | `orders`        | TWS broker sync or the order stream updates an existing order        | `scripts/work_jobs.py` and `src/services/order_stream_tws.py` via notify | `OrderResponse`       |
+| `order.cancelled`   | `orders`        | `POST /api/v1/orders/{id}/cancel`                                    | `src/api/routers/orders.py`                                              | `OrderResponse`       |
+| `worker.heartbeat`  | `worker_status` | Worker heartbeat upsert (every poll cycle)                           | `src/services/worker_heartbeat.py` via notify                            | `WorkerStatusPayload` |
+| `trades.changed`    | `trades`        | `trades.flexquery.fetch_report` or `trades.sync.tws` job completes   | `scripts/work_jobs.py` via notify                                        | `{}` (coarse hint)    |
+| `positions.changed` | `positions`     | `positions.flexquery.fetch_report` job completes                     | `scripts/work_jobs.py` via notify                                        | `{}` (coarse hint)    |
+| `trades.changed`    | `trades`        | Trade-group execution / position / live-execution assign or unassign | `src/api/routers/trade_groups.py`                                        | `{}` (coarse hint)    |
+| `positions.changed` | `positions`     | Trade-group position or live-execution assign or unassign            | `src/api/routers/trade_groups.py`                                        | `{}` (coarse hint)    |
 
 ## Publish Paths
 
@@ -184,7 +184,7 @@ any data exists. `scripts/work_jobs.py` keeps the writing job types in
 `_TRADE_WRITING_JOB_TYPES` / `_POSITION_WRITING_JOB_TYPES` — add to those sets when
 a new job type writes trades or positions.
 
-**Order sync events**: `order_sync_tws.py` runs inside the worker process and currently publishes directly to a broadcaster with no SSE subscribers. The `order.created`/`order.updated` events do not reach the browser; the UI catches up via the next REST fetch. Endpoint `POST /api/v1/events/notify-order` exists but is never invoked.
+**Order sync events**: `sync_orders_with_ib` returns the created and updated order ids, and `scripts/work_jobs.py` POSTs `/events/notify-order` for each after the `order.fetch_sync` job commits. The order stream POSTs the same endpoint after each coalesced write. The API loads the order with its legs and publishes it.
 
 ## Frontend Integration
 
@@ -236,7 +236,7 @@ connected, so there are no fixed refresh timers.
 | `src/api/routers/events.py`        | SSE stream endpoint + worker notification endpoints                              |
 | `src/api/routers/jobs.py`          | Publishes `job.created` and `job.archived` after API mutations                   |
 | `src/api/routers/orders.py`        | Publishes `order.cancelled` after cancel; `job.created` after order sync enqueue |
-| `src/services/order_sync_tws.py`   | Publishes `order.created` / `order.updated` after broker sync commit             |
+| `src/services/order_stream_tws.py` | Calls `POST /events/notify-order` after each order stream write                  |
 | `src/services/worker_heartbeat.py` | Publishes `worker.heartbeat` after each heartbeat upsert                         |
 | `scripts/work_jobs.py`             | Calls `POST /events/notify-job` after job state transitions                      |
 | `frontend/src/lib/events.ts`       | Shared EventSource client with `useSSE` React hook                               |

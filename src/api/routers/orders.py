@@ -12,6 +12,7 @@ from src.api.deps import get_db
 from src.api.schemas import (
     OrderResponse,
     OrderStreamStatusResponse,
+    load_order_legs,
     to_job_response,
     to_order_response,
 )
@@ -106,7 +107,8 @@ def list_orders(db: Session = DB_SESSION_DEPENDENCY) -> list[OrderResponse]:
         .order_by(Order.created_at.desc())
     )
     rows = db.execute(stmt).all()
-    return [to_order_response(order, account, contract_ref) for order, account, contract_ref in rows]
+    legs = load_order_legs(db, [order for order, _, _ in rows])
+    return [to_order_response(order, account, contract_ref, legs.get(order.id)) for order, account, contract_ref in rows]
 
 
 def _stream_details(details: str | None) -> dict:
@@ -153,7 +155,7 @@ def get_order(order_id: int, db: Session = DB_SESSION_DEPENDENCY) -> OrderRespon
     if row is None:
         raise HTTPException(status_code=404, detail="Order not found")
     order, account, contract_ref = row
-    return to_order_response(order, account, contract_ref)
+    return to_order_response(order, account, contract_ref, load_order_legs(db, [order]).get(order.id))
 
 
 @router.post("/orders", response_model=OrderResponse, status_code=201)

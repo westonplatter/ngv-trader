@@ -17,7 +17,12 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from src.models import Account, Order
+from src.domain.enums import ExecRole
+from src.models import Account, ContractRef, Order, OrderLeg
+from src.services.jobs import (
+    JOB_TYPE_CONTRACTS_QUALIFY_AND_SNAPSHOT,
+    enqueue_job_if_idle,
+)
 from src.services.order_queue import (
     ORDER_STATUS_CANCELLED,
     ORDER_STATUS_FILLED,
@@ -34,6 +39,7 @@ from src.services.order_queue import (
 )
 
 DEFAULT_ORDER_SYNC_SOURCE = "broker_sync"
+_REF_LEG_FIELDS = {"symbol", "sec_type", "local_symbol", "strike", "right", "contract_expiry"}
 SWEEPABLE_STATUSES = (ORDER_STATUS_SUBMITTED, ORDER_STATUS_PARTIALLY_FILLED)
 
 
@@ -205,12 +211,90 @@ def _find_matching_order(session: Session, trade: Trade) -> Order | None:
     return None
 
 
-def _safe_quantity(raw_quantity: Any) -> int:
+def _raw_quantity(raw_quantity: Any) -> float:
     parsed = parse_float(raw_quantity)
-    if parsed is None:
-        return 1
-    value = int(round(abs(parsed)))
-    return value if value > 0 else 1
+    return parsed if parsed is not None else 0.0
+
+
+def _remaining_quantity(quantity: float, filled_quantity: float) -> float:
+    return max(0.0, quantity - filled_quantity)
+
+
+def _action_sign(raw_action: Any) -> int:
+    return -1 if str(raw_action or "").strip().upper() == "SELL" else 1
+
+
+def _is_combo(trade: Trade) -> bool:
+    return len(getattr(trade.contract, "comboLegs", None) or []) >= 2
+
+
+def _exec_role_for(trade: Trade) -> str:
+    return ExecRole.COMBO_SUMMARY.value if _is_combo(trade) else ExecRole.STANDALONE.value
+
+
+def _leg_values(trade: Trade, leg_index: int, leg: Any, refs: dict[int, ContractRef]) -> dict[str, Any]:
+    # TWS reports the same leg actions for a BUY and a SELL combo; the parent action flips the sign.
+    leg_action = str(getattr(leg, "action", "") or "").strip().upper()
+    ratio = parse_int(getattr(leg, "ratio", None)) or 1
+    quantity = (
+        _raw_quantity(getattr(trade.order, "totalQuantity", None)) * ratio * _action_sign(leg_action) * _action_sign(getattr(trade.order, "action", None))
+    )
+    con_id = parse_int(getattr(leg, "conId", None)) or 0
+    ref = refs.get(con_id)
+    return {
+        "leg_index": leg_index,
+        "con_id": con_id,
+        "ratio": ratio,
+        "action": leg_action,
+        "exchange": str(getattr(leg, "exchange", "") or "") or None,
+        "open_close": parse_int(getattr(leg, "openClose", None)),
+        "quantity": quantity,
+        "symbol": ref.symbol if ref else None,
+        "sec_type": ref.sec_type if ref else None,
+        "local_symbol": ref.local_symbol if ref else None,
+        "strike": ref.strike if ref else None,
+        "right": ref.right if ref else None,
+        "contract_expiry": ref.contract_expiry if ref else None,
+    }
+
+
+def _sync_legs(session: Session, order: Order, trade: Trade) -> bool:
+    """Upsert the order's legs by leg_index from the trade's comboLegs. Returns True when any leg changed."""
+    combo_legs = list(getattr(trade.contract, "comboLegs", None) or [])
+    existing = {leg.leg_index: leg for leg in session.execute(select(OrderLeg).where(OrderLeg.order_id == order.id)).scalars().all()}
+    con_ids = {parse_int(getattr(leg, "conId", None)) or 0 for leg in combo_legs}
+    refs = {ref.con_id: ref for ref in session.execute(select(ContractRef).where(ContractRef.con_id.in_(con_ids))).scalars().all()} if con_ids else {}
+
+    changed = False
+    inserted_con_ids: set[int] = set()
+    for leg_index, combo_leg in enumerate(combo_legs):
+        values = _leg_values(trade, leg_index, combo_leg, refs)
+        row = existing.pop(leg_index, None)
+        if row is None:
+            session.add(OrderLeg(order_id=order.id, **values))
+            inserted_con_ids.add(values["con_id"])
+            changed = True
+            continue
+        for key, value in values.items():
+            if getattr(row, key) != value and not (value is None and key in _REF_LEG_FIELDS):
+                setattr(row, key, value)
+                changed = True
+    for stale in existing.values():
+        session.delete(stale)
+        changed = True
+    session.flush()
+
+    # Only new legs enqueue, so a contract that cannot be qualified is not re-queued on every event.
+    unknown = sorted(con_id for con_id in inserted_con_ids if con_id and con_id not in refs)
+    if unknown:
+        enqueue_job_if_idle(
+            session=session,
+            job_type=JOB_TYPE_CONTRACTS_QUALIFY_AND_SNAPSHOT,
+            payload={"con_ids": unknown},
+            source=DEFAULT_ORDER_SYNC_SOURCE,
+            request_text="Resolve combo leg contracts from broker order sync.",
+        )
+    return changed
 
 
 def _normalize_limit_price(order_type: str, raw_value: Any) -> float | None:
@@ -244,6 +328,7 @@ def _create_order_from_trade(session: Session, trade: Trade) -> Order:
     completed_at = now if normalized_status in ORDER_TERMINAL_STATUSES else None
 
     order_type = str(getattr(trade.order, "orderType", "") or "MKT").upper()
+    quantity = _raw_quantity(getattr(trade.order, "totalQuantity", None))
     order = Order(
         account_id=account.id,
         symbol=str(getattr(contract, "symbol", "") or "UNKNOWN").upper(),
@@ -251,7 +336,9 @@ def _create_order_from_trade(session: Session, trade: Trade) -> Order:
         exchange=str(getattr(contract, "exchange", "") or "SMART").upper(),
         currency=str(getattr(contract, "currency", "") or "USD").upper(),
         side=side,
-        quantity=_safe_quantity(getattr(trade.order, "totalQuantity", None)),
+        quantity=quantity,
+        remaining_quantity=_remaining_quantity(quantity, filled_quantity),
+        exec_role=_exec_role_for(trade),
         order_type=order_type,
         limit_price=_normalize_limit_price(order_type, getattr(trade.order, "lmtPrice", None)),
         tif=str(getattr(trade.order, "tif", "") or "DAY").upper(),
@@ -274,6 +361,7 @@ def _create_order_from_trade(session: Session, trade: Trade) -> Order:
     )
     session.add(order)
     session.flush()
+    _sync_legs(session, order, trade)
     append_order_event(
         session=session,
         order_id=order.id,
@@ -299,6 +387,8 @@ def _order_snapshot(order: Order) -> tuple:
         order.currency,
         order.side,
         order.quantity,
+        order.remaining_quantity,
+        order.exec_role,
         order.order_type,
         order.limit_price,
         order.tif,
@@ -324,7 +414,9 @@ def _apply_trade_fields(order: Order, trade: Trade, filled_quantity: float, avg_
     order.exchange = str(getattr(contract, "exchange", "") or order.exchange).upper()
     order.currency = str(getattr(contract, "currency", "") or order.currency).upper()
     order.side = _normalize_side(getattr(trade.order, "action", None))
-    order.quantity = _safe_quantity(getattr(trade.order, "totalQuantity", None))
+    order.quantity = _raw_quantity(getattr(trade.order, "totalQuantity", None))
+    order.remaining_quantity = _remaining_quantity(order.quantity, filled_quantity)
+    order.exec_role = _exec_role_for(trade)
     order.order_type = str(getattr(trade.order, "orderType", "") or order.order_type).upper()
     order.limit_price = _normalize_limit_price(order.order_type, getattr(trade.order, "lmtPrice", None))
     order.tif = str(getattr(trade.order, "tif", "") or order.tif).upper()
@@ -393,8 +485,9 @@ def _sync_trade_onto_order(session: Session, order: Order, trade: Trade) -> bool
         order.submitted_at = now
 
     emitted_status_event = _reconcile_order_status(session, order, trade, normalized_status, now)
+    legs_changed = _sync_legs(session, order, trade)
 
-    if _order_snapshot(order) == prev:
+    if _order_snapshot(order) == prev and not legs_changed:
         return False
 
     if normalized_status in ORDER_TERMINAL_STATUSES and order.completed_at is None:

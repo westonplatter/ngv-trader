@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import {
   enqueueSyncJob,
   useJobWatcher,
@@ -74,6 +74,16 @@ export default function OrdersTable() {
     new Set(),
   );
   const [symbolRegexFilter, setSymbolRegexFilter] = useState("");
+  const [expandedOrderIds, setExpandedOrderIds] = useState<Set<number>>(
+    new Set(),
+  );
+  const toggleExpanded = (orderId: number) =>
+    setExpandedOrderIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(orderId)) next.delete(orderId);
+      else next.add(orderId);
+      return next;
+    });
 
   const loadOrders = useCallback(() => api.get<Order[]>("/orders"), []);
 
@@ -394,88 +404,122 @@ export default function OrdersTable() {
               </tr>
             )}
             {sortedOrders.map((order) => (
-              <tr
-                key={order.id}
-                className={`border-b border-gray-200 hover:bg-gray-50 ${
-                  WORKING_STATUSES.has(order.status) ? "bg-blue-50/40" : ""
-                }`}
-              >
-                <td className="px-3 py-2 whitespace-nowrap text-gray-700">
-                  {formatDate(order.created_at)}
-                </td>
-                <td className="px-3 py-2 whitespace-nowrap text-gray-800">
-                  {order.ib_order_id ?? "—"}
-                </td>
-                <td className="px-3 py-2 whitespace-nowrap text-gray-800">
-                  {order.con_id ?? "—"}
-                </td>
-                <td className="px-3 py-2 whitespace-nowrap text-gray-800">
-                  {getDisplayedSymbol(order) || "—"}
-                </td>
-                <td className="px-3 py-2 whitespace-nowrap text-gray-800">
-                  {fmt.masked(order.ib_perm_id ?? "—")}
-                </td>
-                <td className="px-3 py-2 whitespace-nowrap text-gray-800">
-                  {order.account_alias ?? `Account ${order.account_id}`}
-                </td>
-                <td className="px-3 py-2 whitespace-nowrap text-gray-700">
-                  {order.side}
-                </td>
-                <td className="px-3 py-2 whitespace-nowrap text-gray-700">
-                  {fmt.quantity(order.quantity)}
-                </td>
-                <td className="px-3 py-2 whitespace-nowrap text-gray-700">
-                  <div>{order.order_type}</div>
-                </td>
-                <td className="px-3 py-2 whitespace-nowrap text-gray-700">
-                  {order.tif}
-                </td>
-                <td className="px-3 py-2 whitespace-nowrap text-gray-700">
-                  {fmt.masked(order.limit_price ?? "—")}
-                </td>
-                <td className="px-3 py-2 whitespace-nowrap text-gray-700">
-                  <div>{order.contract_display_name}</div>
-                </td>
-                <td className="px-3 py-2 whitespace-nowrap text-gray-700">
-                  {order.option_right ?? "—"}
-                </td>
-                <td className="px-3 py-2 whitespace-nowrap text-gray-700">
-                  {order.option_strike ?? "—"}
-                </td>
-                <td className="px-3 py-2 whitespace-nowrap text-gray-700">
-                  {formatExpiry(order.contract_expiry)}
-                </td>
-                <td className="px-3 py-2 whitespace-nowrap">
-                  <span
-                    className={`rounded px-2 py-0.5 text-xs font-medium ${STATUS_CLASS[order.status] ?? "bg-gray-100 text-gray-800"}`}
-                  >
-                    {order.status}
-                  </span>
-                </td>
-                <td className="px-3 py-2 whitespace-nowrap text-gray-700">
-                  <div>
-                    {fmt.masked(`${order.filled_quantity} / ${order.quantity}`)}
-                  </div>
-                </td>
-                <td className="px-3 py-2 whitespace-nowrap">
-                  {order.status === "queued" ? (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        void cancelQueuedOrder(order.id);
-                      }}
-                      disabled={cancelingOrderIds.has(order.id)}
-                      className="rounded border border-red-300 px-2 py-0.5 text-xs text-red-700 hover:bg-red-50 disabled:opacity-50"
+              <Fragment key={order.id}>
+                <tr
+                  className={`border-b border-gray-200 hover:bg-gray-50 ${
+                    WORKING_STATUSES.has(order.status) ? "bg-blue-50/40" : ""
+                  }`}
+                >
+                  <td className="px-3 py-2 whitespace-nowrap text-gray-700">
+                    {order.legs.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => toggleExpanded(order.id)}
+                        aria-expanded={expandedOrderIds.has(order.id)}
+                        aria-label={`Toggle legs of order ${order.id}`}
+                        className="mr-1 text-xs text-gray-500 hover:text-gray-800"
+                      >
+                        {expandedOrderIds.has(order.id) ? "▾" : "▸"}
+                      </button>
+                    )}
+                    {formatDate(order.created_at)}
+                  </td>
+                  <td className="px-3 py-2 whitespace-nowrap text-gray-800">
+                    {order.ib_order_id ?? "—"}
+                  </td>
+                  <td className="px-3 py-2 whitespace-nowrap text-gray-800">
+                    {order.con_id ?? "—"}
+                  </td>
+                  <td className="px-3 py-2 whitespace-nowrap text-gray-800">
+                    {getDisplayedSymbol(order) || "—"}
+                  </td>
+                  <td className="px-3 py-2 whitespace-nowrap text-gray-800">
+                    {fmt.masked(order.ib_perm_id ?? "—")}
+                  </td>
+                  <td className="px-3 py-2 whitespace-nowrap text-gray-800">
+                    {order.account_alias ?? `Account ${order.account_id}`}
+                  </td>
+                  <td className="px-3 py-2 whitespace-nowrap text-gray-700">
+                    {order.side}
+                  </td>
+                  <td className="px-3 py-2 whitespace-nowrap text-gray-700">
+                    {fmt.quantity(order.quantity)}
+                  </td>
+                  <td className="px-3 py-2 whitespace-nowrap text-gray-700">
+                    <div>{order.order_type}</div>
+                  </td>
+                  <td className="px-3 py-2 whitespace-nowrap text-gray-700">
+                    {order.tif}
+                  </td>
+                  <td className="px-3 py-2 whitespace-nowrap text-gray-700">
+                    {fmt.masked(order.limit_price ?? "—")}
+                  </td>
+                  <td className="px-3 py-2 whitespace-nowrap text-gray-700">
+                    <div>{order.contract_display_name}</div>
+                  </td>
+                  <td className="px-3 py-2 whitespace-nowrap text-gray-700">
+                    {order.option_right ?? "—"}
+                  </td>
+                  <td className="px-3 py-2 whitespace-nowrap text-gray-700">
+                    {order.option_strike ?? "—"}
+                  </td>
+                  <td className="px-3 py-2 whitespace-nowrap text-gray-700">
+                    {formatExpiry(order.contract_expiry)}
+                  </td>
+                  <td className="px-3 py-2 whitespace-nowrap">
+                    <span
+                      className={`rounded px-2 py-0.5 text-xs font-medium ${STATUS_CLASS[order.status] ?? "bg-gray-100 text-gray-800"}`}
                     >
-                      {cancelingOrderIds.has(order.id)
-                        ? "Cancelling..."
-                        : "Cancel"}
-                    </button>
-                  ) : (
-                    <span className="text-xs text-gray-400">—</span>
-                  )}
-                </td>
-              </tr>
+                      {order.status}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2 whitespace-nowrap text-gray-700">
+                    <div>
+                      {fmt.masked(
+                        `${order.filled_quantity} / ${order.quantity}`,
+                      )}
+                    </div>
+                  </td>
+                  <td className="px-3 py-2 whitespace-nowrap">
+                    {order.status === "queued" ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void cancelQueuedOrder(order.id);
+                        }}
+                        disabled={cancelingOrderIds.has(order.id)}
+                        className="rounded border border-red-300 px-2 py-0.5 text-xs text-red-700 hover:bg-red-50 disabled:opacity-50"
+                      >
+                        {cancelingOrderIds.has(order.id)
+                          ? "Cancelling..."
+                          : "Cancel"}
+                      </button>
+                    ) : (
+                      <span className="text-xs text-gray-400">—</span>
+                    )}
+                  </td>
+                </tr>
+                {expandedOrderIds.has(order.id) &&
+                  order.legs.map((leg) => (
+                    <tr
+                      key={`${order.id}-leg-${leg.leg_index}`}
+                      className="border-b border-gray-100 bg-gray-50 text-xs text-gray-600"
+                    >
+                      <td className="px-3 py-1 pl-8" colSpan={6}>
+                        Leg {leg.leg_index + 1}: {leg.contract_display_name}
+                      </td>
+                      <td className="px-3 py-1 whitespace-nowrap">
+                        {leg.action}
+                      </td>
+                      <td className="px-3 py-1 whitespace-nowrap">
+                        {fmt.quantity(leg.quantity)}
+                      </td>
+                      <td className="px-3 py-1 whitespace-nowrap" colSpan={10}>
+                        ratio {leg.ratio}
+                      </td>
+                    </tr>
+                  ))}
+              </Fragment>
             ))}
           </tbody>
         </table>

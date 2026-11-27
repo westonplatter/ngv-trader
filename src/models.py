@@ -266,7 +266,9 @@ class Order(Base):
     exchange: Mapped[str] = mapped_column(String, nullable=False, default="NYMEX")
     currency: Mapped[str] = mapped_column(String, nullable=False, default="USD")
     side: Mapped[str] = mapped_column(String, nullable=False)
-    quantity: Mapped[int] = mapped_column(Integer, nullable=False)
+    quantity: Mapped[float] = mapped_column(Float, nullable=False)
+    remaining_quantity: Mapped[float | None] = mapped_column(Float, nullable=True)
+    exec_role: Mapped[str] = mapped_column(String, nullable=False, default="standalone", server_default="standalone")
     order_type: Mapped[str] = mapped_column(String, nullable=False, default="MKT")
     limit_price: Mapped[float | None] = mapped_column(Float, nullable=True)
     tif: Mapped[str] = mapped_column(String, nullable=False, default="DAY")
@@ -297,6 +299,27 @@ class Order(Base):
         nullable=False,
         default=lambda: datetime.now(timezone.utc),
     )
+
+
+class OrderLeg(Base):
+    __tablename__ = "order_legs"
+    __table_args__ = (UniqueConstraint("order_id", "leg_index", name="uq_order_legs_order_id_leg_index"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    order_id: Mapped[int] = mapped_column(Integer, ForeignKey("orders.id", ondelete="CASCADE"), nullable=False)
+    leg_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    con_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    ratio: Mapped[int] = mapped_column(Integer, nullable=False)
+    action: Mapped[str] = mapped_column(String, nullable=False)
+    exchange: Mapped[str | None] = mapped_column(String, nullable=True)
+    open_close: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    quantity: Mapped[float] = mapped_column(Float, nullable=False)
+    symbol: Mapped[str | None] = mapped_column(String, nullable=True)
+    sec_type: Mapped[str | None] = mapped_column(String, nullable=True)
+    local_symbol: Mapped[str | None] = mapped_column(String, nullable=True)
+    strike: Mapped[float | None] = mapped_column(Float, nullable=True)
+    right: Mapped[str | None] = mapped_column(String, nullable=True)
+    contract_expiry: Mapped[str | None] = mapped_column(String, nullable=True)
 
 
 class OrderEvent(Base):

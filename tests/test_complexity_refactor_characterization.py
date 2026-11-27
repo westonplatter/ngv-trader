@@ -20,7 +20,10 @@ from sqlalchemy.orm import Session
 from src.api.schemas import _derive_option_fields
 from src.models import Order, OrderEvent
 from src.services import contract_sync, order_sync_tws
-from src.services.cl_contracts import normalize_contract_month_input, select_front_month_future_contract
+from src.services.cl_contracts import (
+    normalize_contract_month_input,
+    select_front_month_future_contract,
+)
 from src.services.order_mutations import OrderCreateInput, normalize_order_create_input
 from src.services.position_sync_flexquery import _resolve_as_of_date
 from src.workers import jobs
@@ -197,7 +200,7 @@ def test_normalize_order_create_input_rejects(overrides: dict[str, Any], message
         ("FOP", "WA4G6 C0707", ("C", "0707")),
         ("FOP", "wa4g6 p0707", ("P", "0707")),
         ("OPT", "CL   MAY 26 70.5 C", ("C", "70.5")),
-        ("BAG", "CL 70.5 P", ("P", "70.5")),
+        ("BAG", "CL 70.5 P", (None, None)),
         ("FOP", "CL FUT", (None, None)),
     ],
 )
