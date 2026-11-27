@@ -87,7 +87,12 @@ export function GroupPnlSummary({
               ? ""
               : `${(card.percentFinanced * 100).toFixed(2)}% financed`,
           )}
-          {card.kind === "debit" && row("Net cost", card.netCost, false, false)}
+          {card.kind === "debit" && (
+            <>
+              <div className="my-1 border-t border-gray-200" />
+              {row("Net cost", card.netCost, false, false)}
+            </>
+          )}
         </>
       ) : (
         <>
