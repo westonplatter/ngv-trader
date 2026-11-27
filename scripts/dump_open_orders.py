@@ -72,7 +72,9 @@ class Anonymizer:
         return self._map("perm_id", value, lambda i: 7777777 + i * 1111111)
 
     def order_id(self, value: int | None) -> int | None:
-        return self._map("order_id", value, lambda i: 9000000001 + i)
+        # Keep the sign: TWS can report negative orderIds for orders bound from the TWS UI.
+        sign = -1 if value is not None and value < 0 else 1
+        return self._map("order_id", value, lambda i: sign * (9000000001 + i))
 
     def exec_id(self, value: str | None) -> str | None:
         return self._map("exec_id", value, lambda i: f"0000abcd.{12345678 + i}.01.01")
