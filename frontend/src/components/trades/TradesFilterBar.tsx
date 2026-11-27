@@ -4,6 +4,7 @@
 import {
   TIME_RANGES,
   type AccountOption,
+  type ActionFilter,
   type GroupStatus,
 } from "../../lib/trades/view";
 import type { TradeFilterState } from "./useTradeFilters";
@@ -51,6 +52,12 @@ const GROUP_OPTIONS: readonly { id: GroupStatus; label: string }[] = [
   { id: "all", label: "All" },
   { id: "grouped", label: "Grouped" },
   { id: "ungrouped", label: "Ungrouped" },
+];
+
+const ACTION_OPTIONS: readonly { id: ActionFilter; label: string }[] = [
+  { id: "all", label: "All" },
+  { id: "open", label: "Open" },
+  { id: "close", label: "Close" },
 ];
 
 const COLUMN_OPTIONS: readonly { id: "simple" | "all"; label: string }[] = [
@@ -115,6 +122,12 @@ export default function TradesFilterBar({
           onChange={state.setGroupStatus}
         />
         <Segmented
+          label="Action"
+          options={ACTION_OPTIONS}
+          value={filters.action}
+          onChange={state.setAction}
+        />
+        <Segmented
           label="Columns"
           options={COLUMN_OPTIONS}
           value={showDetails ? "all" : "simple"}
@@ -130,8 +143,8 @@ export default function TradesFilterBar({
       {conId !== null && (
         <p className="text-sm text-gray-600">
           Showing all executions for Contract ID{" "}
-          <span className="font-mono font-medium">{conId}</span> across all
-          time and accounts.{" "}
+          <span className="font-mono font-medium">{conId}</span> across all time
+          and accounts.{" "}
           <button
             type="button"
             onClick={state.clearConId}

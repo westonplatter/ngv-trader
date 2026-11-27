@@ -51,6 +51,18 @@ export function parseGroupStatus(raw: string | null): GroupStatus {
   return raw === "grouped" || raw === "ungrouped" ? raw : "all";
 }
 
+// Filters on the Action column (the fill's open/close lifecycle).
+export type ActionFilter = "all" | "open" | "close";
+
+export function parseActionFilter(raw: string | null): ActionFilter {
+  return raw === "open" || raw === "close" ? raw : "all";
+}
+
+const LIFECYCLE_BY_ACTION: Record<Exclude<ActionFilter, "all">, string> = {
+  open: "Open",
+  close: "Close",
+};
+
 export const TIME_RANGES: readonly { id: string; label: string }[] = [
   { id: "all", label: "All" },
   { id: "24h", label: "24h" },
@@ -76,6 +88,7 @@ export interface TradeFilters {
   // One of TIME_RANGES; anything unknown behaves like "all".
   timeRange: string;
   groupStatus: GroupStatus;
+  action: ActionFilter;
 }
 
 // The Contract pattern compiled case-insensitively. An invalid pattern (the
@@ -105,7 +118,7 @@ export function parseConId(raw: string | null): number | null {
 
 // ─── Filtering and ordering ──────────────────────────────────────────────────
 
-// Rows passing the account, contract, time-range, and group-status filters,
+// Rows passing the account, contract, time-range, group-status, and action filters,
 // newest first. `nowMs` is the clock the relative ranges measure against; the
 // caller takes it when rows arrive or the range changes, never during render.
 export function filterExecutions(
@@ -136,6 +149,10 @@ export function filterExecutions(
         ? rowGroupId(row) !== null
         : rowGroupId(row) === null,
     );
+  }
+  if (filters.action !== "all") {
+    const lifecycle = LIFECYCLE_BY_ACTION[filters.action];
+    next = next.filter((row) => row.trade_lifecycle === lifecycle);
   }
   // Newest first by execution time, regardless of settled/unsettled — so the
   // most recent fills (including today's unsettled TWS fills) sit at the top.
@@ -168,7 +185,9 @@ export function accountOptions(rows: TradeExecutionRow[]): AccountOption[] {
 // Group, Tags, and Tasks cells. Prefer combo_summary; otherwise the earliest
 // row in the filtered view. One cell per group, so a spread is grouped as one
 // trade rather than once per leg.
-export function groupCellOwners(rows: TradeExecutionRow[]): Map<string, number> {
+export function groupCellOwners(
+  rows: TradeExecutionRow[],
+): Map<string, number> {
   const map = new Map<string, number>();
   for (const row of rows) {
     if (row.exec_role === "combo_summary") {

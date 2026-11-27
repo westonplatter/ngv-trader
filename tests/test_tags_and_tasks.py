@@ -13,7 +13,10 @@ from sqlalchemy.orm import Session
 from src.api.deps import get_db
 from src.api.main import app
 from src.models import LiveExecution, LivePosition, TagLink, TaskLink
-from src.services.group_link_carryover import carry_over_link_to_executions, carry_over_settled_group_links
+from src.services.group_link_carryover import (
+    carry_over_link_to_executions,
+    carry_over_settled_group_links,
+)
 from src.services.intraday_overlay import ct_date
 from src.services.item_links import end_flat_position_tags, inherit_order_links
 from src.services.tags import normalize_tag_value
@@ -103,6 +106,41 @@ def test_rename_conflict_merge_and_archive(client: TestClient, db_session: Sessi
     client.post(f"{API}/tags/{oil['id']}/archive")
     assert client.get(f"{API}/tags").json() == []
     assert len(client.get(f"{API}/tags", params={"include_archived": "true"}).json()) == 1
+
+
+def test_core_tag_cannot_be_renamed_archived_or_merged(client: TestClient, db_session: Session) -> None:
+    account = make_account(db_session)
+    group = make_group(db_session, "Crude", account.id)
+    core = client.post(f"{API}/tags", json={"value": "core"}).json()
+    other = client.post(f"{API}/tags", json={"value": "oil"}).json()
+    _tag(client, [core["id"]], [{"entity_type": "trade_group", "id": group.id}])
+    _tag(client, [other["id"]], [{"entity_type": "trade_group", "id": group.id}])
+
+    assert client.patch(f"{API}/tags/{core['id']}", json={"value": "base"}).status_code == 400
+    assert client.patch(f"{API}/tags/{other['id']}", json={"value": "Core"}).status_code == 400
+    assert client.patch(f"{API}/tags/{other['id']}", json={"value": "core"}).status_code == 400
+    assert client.post(f"{API}/tags/{core['id']}/archive").status_code == 400
+    assert client.post(f"{API}/tags/{core['id']}/merge", json={"into_tag_id": other["id"]}).status_code == 400
+    assert client.post(f"{API}/tags/{other['id']}/merge", json={"into_tag_id": core["id"]}).status_code == 400
+
+    tags = {tag["id"]: tag for tag in client.get(f"{API}/tags").json()}
+    assert tags[core["id"]]["value"] == "core"
+    assert tags[core["id"]]["archived_at"] is None
+    assert tags[core["id"]]["usage"] == {"trade_group": 1}
+    assert tags[other["id"]]["value"] == "oil"
+    assert tags[other["id"]]["usage"] == {"trade_group": 1}
+
+
+def test_core_tag_color_can_change_and_attach_works(client: TestClient, db_session: Session) -> None:
+    account = make_account(db_session)
+    group = make_group(db_session, "Crude", account.id)
+    result = _tag(client, ["core"], [{"entity_type": "trade_group", "id": group.id}])
+    core = result["tags"][0]
+
+    patched = client.patch(f"{API}/tags/{core['id']}", json={"color": "#00aa00"})
+    assert patched.status_code == 200
+    assert patched.json()["color"] == "#00aa00"
+    assert patched.json()["value"] == "core"
 
 
 # --------------------------------------------------------------------------

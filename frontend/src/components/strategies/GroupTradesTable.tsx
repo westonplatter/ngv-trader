@@ -1,11 +1,14 @@
 // The Trades table of a group's detail, newest first, with a running realized
 // P&L column. Rows are already account-filtered.
 
+import { Link } from "react-router-dom";
 import { ibCodesTitle, parseIbCodes } from "../../lib/ibCodes";
 import { runningRealized } from "../../lib/strategies/groupPositions";
+import { tradeRowItem } from "../../lib/tags";
 import type { GroupExecution } from "../../types/tradeGroups";
 import { formatDateTime } from "../../utils/date";
 import { makeFormatters } from "../../utils/maskedFormatters";
+import TagChips from "../TagChips";
 
 const TH_RIGHT = "px-2 py-1 text-right font-medium";
 
@@ -35,12 +38,17 @@ export default function GroupTradesTable({
   totalCount,
   accountFiltered,
   privacyMode,
+  expanded,
+  onTagsChanged,
 }: {
   // Visible (account-filtered) executions, oldest first as the API sends them.
   executions: GroupExecution[];
   totalCount: number;
   accountFiltered: boolean;
   privacyMode: boolean;
+  // Full view (focus mode): editable tag chips. Compact view: read-only chips.
+  expanded: boolean;
+  onTagsChanged: () => void;
 }) {
   const fmt = makeFormatters(privacyMode);
   return (
@@ -62,6 +70,7 @@ export default function GroupTradesTable({
             <thead className="sticky top-0 bg-gray-50 text-gray-600">
               <tr>
                 <th className="px-2 py-1 font-medium">When</th>
+                <th className="px-2 py-1 font-medium">Tags</th>
                 <th className="px-2 py-1 font-medium">Account</th>
                 <th className="px-2 py-1 font-medium">Contract</th>
                 <th className="px-2 py-1 font-medium">Codes</th>
@@ -97,7 +106,25 @@ export default function GroupTradesTable({
                   return (
                     <tr key={ex.id} className="border-t border-gray-100">
                       <td className="px-2 py-1 text-gray-700">
-                        {formatDateTime(ex.executed_at)}
+                        {ex.con_id ? (
+                          <Link
+                            to={`/trades?con_id=${ex.con_id}`}
+                            className="text-blue-600 hover:underline"
+                            title="Open every trade on this contract, to tag it"
+                          >
+                            {formatDateTime(ex.executed_at)}
+                          </Link>
+                        ) : (
+                          formatDateTime(ex.executed_at)
+                        )}
+                      </td>
+                      <td className="px-2 py-1 text-gray-700">
+                        <TagChips
+                          item={tradeRowItem(ex)}
+                          tags={ex.tags ?? []}
+                          onChanged={onTagsChanged}
+                          readOnly={!expanded}
+                        />
                       </td>
                       <td className="px-2 py-1 text-gray-700">
                         {ex.account_alias ?? `Account ${ex.account_id}`}
@@ -119,7 +146,9 @@ export default function GroupTradesTable({
                       <td className="px-2 py-1">
                         <CodesCell codes={ex.ib_codes} />
                       </td>
-                      <td className={`px-2 py-1 text-right font-mono ${sideClass}`}>
+                      <td
+                        className={`px-2 py-1 text-right font-mono ${sideClass}`}
+                      >
                         {ex.side ?? "—"}
                       </td>
                       <td className="px-2 py-1 text-right font-mono text-gray-800">
@@ -131,7 +160,9 @@ export default function GroupTradesTable({
                       <td className="px-2 py-1 text-right font-mono text-gray-800">
                         {fmt.money(ex.cost_basis)}
                       </td>
-                      <td className={`px-2 py-1 text-right font-mono ${pnlClass}`}>
+                      <td
+                        className={`px-2 py-1 text-right font-mono ${pnlClass}`}
+                      >
                         {fmt.masked(
                           ex.realized_pnl == null
                             ? "—"

@@ -1,4 +1,4 @@
-// The Trades page filters live in the URL (?account=&range=&group=&cols=
+// The Trades page filters live in the URL (?account=&range=&group=&action=&cols=
 // &symbol=&con_id=) so a refresh or a shared link restores the view. Defaults
 // are omitted to keep URLs short. This is the only place on the page that
 // touches useSearchParams.
@@ -6,8 +6,10 @@
 import { useCallback, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
+  parseActionFilter,
   parseConId,
   parseGroupStatus,
+  type ActionFilter,
   type GroupStatus,
   type TradeFilters,
 } from "../../lib/trades/view";
@@ -24,6 +26,7 @@ export interface TradeFilterState {
   setSymbol: (value: string) => void;
   setTimeRange: (value: string) => void;
   setGroupStatus: (value: GroupStatus) => void;
+  setAction: (value: ActionFilter) => void;
   setShowDetails: (value: boolean) => void;
   clearConId: () => void;
 }
@@ -56,6 +59,7 @@ export function useTradeFilters(): TradeFilterState {
       symbol: searchParams.get("symbol") ?? "",
       timeRange: searchParams.get("range") ?? defaultTimeRange,
       groupStatus: parseGroupStatus(searchParams.get("group")),
+      action: parseActionFilter(searchParams.get("action")),
     }),
     [searchParams, defaultTimeRange],
   );
@@ -72,6 +76,7 @@ export function useTradeFilters(): TradeFilterState {
     setSymbol: (value) => setParam("symbol", value, ""),
     setTimeRange: (value) => setParam("range", value, defaultTimeRange),
     setGroupStatus: (value) => setParam("group", value, "all"),
+    setAction: (value) => setParam("action", value, "all"),
     setShowDetails: (value) =>
       setParam("cols", value ? "all" : "simple", "simple"),
     clearConId: () =>

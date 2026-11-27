@@ -51,7 +51,12 @@ use the word "tag".
 6. **Tags are shared across accounts.** Names are matched after folding case,
    spaces, `-`, and `_` (`Long Beta` = `long_beta` = `long-beta`); the first
    spelling is kept for display.
-7. **No reporting on tags.** No P&L, Greeks, or aggregates by tag.
+7. **No reporting on tags.** No P&L, Greeks, or aggregates by tag. One
+   exception: the reserved `core` tag drives the core/incremental split of a
+   group's P&L card; no other tag feeds a figure. See
+   [strategies-and-trade-groups.md](strategies-and-trade-groups.md#group-pl-card-core-vs-incremental).
+8. **`core` is reserved.** It cannot be renamed, archived, or merged, and no
+   tag can be renamed or merged into it (400); color changes are allowed.
 
 ## Data model
 
