@@ -28,7 +28,7 @@ from sqlalchemy import func, select
 from sqlalchemy import tuple_ as sa_tuple
 from sqlalchemy.orm import Session
 
-from src.domain.enums import ExecRole
+from src.domain.enums import EntityType, ExecRole
 from src.models import (
     ContractRef,
     LatestOptionMetrics,
@@ -36,6 +36,8 @@ from src.models import (
     LiveExecution,
     LivePosition,
     Position,
+    Tag,
+    TagLink,
     TradeExecution,
     TradeGroup,
     TradeGroupExecution,
@@ -56,6 +58,7 @@ from src.services.intraday_overlay import (
     merge_positions,
     overlay_totals,
 )
+from src.services.tags import CORE_TAG, normalize_tag_value
 
 
 def trade_group_realized_pnl(executions: Iterable[Any]) -> float | None:
@@ -545,6 +548,39 @@ def _realized_by_pair(overlay: GroupOverlay, ledger: GroupLedger) -> dict[PairKe
         if con_id is not None and value is not None:
             realized[(account_id, con_id)] = realized.get((account_id, con_id), 0.0) + value
     return realized
+
+
+def load_core_pairs(session: Session, ledger: GroupLedger) -> set[PairKey]:
+    """``(account_id, con_id)`` pairs of the ledger's fills carrying an open ``core`` tag link.
+
+    Only trade links (settled fills) and live-execution links (unsettled fills)
+    count; position and trade-group links never mark a contract core.
+    """
+    settled = [ex for ex in ledger.executions if ex.exec_role != ExecRole.COMBO_SUMMARY and ex.con_id is not None]
+    live = [ex for ex in ledger.live_fills if ex.con_id is not None]
+    if not settled and not live:
+        return set()
+    tag_id = session.execute(select(Tag.id).where(Tag.normalized_value == normalize_tag_value(CORE_TAG))).scalar_one_or_none()
+    if tag_id is None:
+        return set()
+
+    open_links = (TagLink.tag_id == tag_id, TagLink.ended_at.is_(None))
+    pairs: set[PairKey] = set()
+    if settled:
+        trade_ids = {ex.trade_id for ex in settled}
+        tagged_trades = set(
+            session.execute(select(TagLink.trade_id).where(TagLink.entity_type == EntityType.TRADE, TagLink.trade_id.in_(trade_ids), *open_links)).scalars()
+        )
+        pairs |= {(ex.account_id, ex.con_id) for ex in settled if ex.trade_id in tagged_trades}
+    if live:
+        exec_ids = {ex.ib_exec_id for ex in live}
+        tagged_fills = set(
+            session.execute(
+                select(TagLink.ib_exec_id).where(TagLink.entity_type == EntityType.LIVE_EXECUTION, TagLink.ib_exec_id.in_(exec_ids), *open_links)
+            ).scalars()
+        )
+        pairs |= {(ex.account_id, ex.con_id) for ex in live if ex.ib_exec_id in tagged_fills}
+    return pairs
 
 
 def core_split(overlay: GroupOverlay, ledger: GroupLedger, core_pairs: set[PairKey]) -> CoreSplit | None:

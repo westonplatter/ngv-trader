@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from src.api.deps import get_db
 from src.api.main import app
+from src.services.trade_group_pnl import compute_trade_group_pnl
 from tests.trade_group_factories import (
     ACCOUNT_LSC,
     ACCOUNT_THIRD,
@@ -21,6 +22,7 @@ from tests.trade_group_factories import (
     make_exec_id,
     make_execution,
     make_group,
+    make_live_execution,
     make_live_position,
     make_position,
     make_quote,
@@ -333,3 +335,105 @@ def test_execution_cost_basis_is_signed_multiplier_and_commission_inclusive(clie
     assert rows[no_ref.id]["multiplier"] == 1.0
     assert rows[no_ref.id]["cost_basis"] == pytest.approx(140.0)
     assert rows[combo.id]["cost_basis"] is None
+
+
+# --------------------------------------------------------------------------
+# Core vs incremental split on the detail endpoint
+# --------------------------------------------------------------------------
+
+TAG_LINKS = "/api/v1/tag-links"
+
+
+def _tag_core(client: TestClient, item: dict) -> None:
+    response = client.post(TAG_LINKS, json={"tags": ["core"], "items": [item], "created_by": "user"})
+    assert response.status_code == 201, response.text
+
+
+def _list_row(client: TestClient) -> dict:
+    row = _by_name(client.get(BASE).json())["Core book"]
+    return {key: value for key, value in row.items() if not key.endswith("_at")}
+
+
+def _split_fields(client: TestClient, group_id: int) -> tuple[float | None, float | None]:
+    body = client.get(f"{BASE}/{group_id}/executions").json()
+    return body["core_cost"], body["incremental_net"]
+
+
+@pytest.fixture
+def core_book(db_session: Session):
+    """A long CL leg (core candidate, cost 70,000) and a short NG option leg (realized 250, basis -500)."""
+    main = make_account(db_session)
+    group = make_group(db_session, "Core book", main.id)
+    cl = make_execution(db_session, group=group, account=main, con_id=CON_CL, exec_id=make_exec_id(85000001), side="BUY", quantity=1.0)
+    ng = make_execution(
+        db_session, group=group, account=main, con_id=CON_NG, exec_id=make_exec_id(85000002), side="SELL", quantity=-1.0, realized=250.0, raw_symbol="NG"
+    )
+    make_position(db_session, account=main, con_id=CON_CL, quantity=1.0, avg_cost=70.0, unrealized=None)
+    ng_position = make_position(db_session, account=main, con_id=CON_NG, quantity=-1.0, avg_cost=0.5, unrealized=None)
+    ng_position.sec_type = "OPT"
+    db_session.flush()
+    return {"main": main, "group": group, "cl": cl, "ng": ng}
+
+
+def test_core_trade_tag_returns_core_cost_and_incremental_net(client: TestClient, core_book) -> None:
+    _tag_core(client, {"entity_type": "trade", "id": core_book["cl"].trade_id})
+
+    core_cost, incremental_net = _split_fields(client, core_book["group"].id)
+
+    assert core_cost == pytest.approx(70_000.0)
+    assert incremental_net == pytest.approx(750.0)
+
+
+def test_group_without_core_tag_has_null_split(client: TestClient, core_book) -> None:
+    assert _split_fields(client, core_book["group"].id) == (None, None)
+
+
+def test_core_tagged_live_fill_marks_its_contract_core_before_settlement(client: TestClient, db_session: Session, core_book) -> None:
+    fill = make_live_execution(db_session, account=core_book["main"], con_id=CON_ES, exec_id=make_exec_id(85000003), realized=None, group=core_book["group"])
+    make_live_position(db_session, account=core_book["main"], con_id=CON_ES, quantity=-1.0, avg_cost=0.1)
+    _tag_core(client, {"entity_type": "live_execution", "ib_exec_id": fill.ib_exec_id})
+
+    core_cost, incremental_net = _split_fields(client, core_book["group"].id)
+
+    assert core_cost == pytest.approx(-0.1)
+    assert incremental_net == pytest.approx(250.0)
+
+
+def test_core_tag_on_a_position_leaves_split_null(client: TestClient, core_book) -> None:
+    _tag_core(client, {"entity_type": "position", "account_id": core_book["main"].id, "con_id": CON_CL})
+
+    assert _split_fields(client, core_book["group"].id) == (None, None)
+
+
+def test_core_tag_on_the_trade_group_leaves_split_null(client: TestClient, core_book) -> None:
+    _tag_core(client, {"entity_type": "trade_group", "id": core_book["group"].id})
+
+    assert _split_fields(client, core_book["group"].id) == (None, None)
+
+
+def test_detached_core_tag_leaves_split_null(client: TestClient, core_book) -> None:
+    item = {"entity_type": "trade", "id": core_book["cl"].trade_id}
+    _tag_core(client, item)
+    response = client.request("DELETE", TAG_LINKS, json={"tags": ["core"], "items": [item]})
+    assert response.status_code == 200, response.text
+
+    assert _split_fields(client, core_book["group"].id) == (None, None)
+
+
+def test_core_trade_whose_fills_sit_in_another_group_does_not_mark_this_group(client: TestClient, db_session: Session, core_book) -> None:
+    other = make_group(db_session, "Other", core_book["main"].id)
+    elsewhere = make_execution(db_session, group=other, account=core_book["main"], con_id=CON_CL, exec_id=make_exec_id(85000004), side="BUY", quantity=1.0)
+    _tag_core(client, {"entity_type": "trade", "id": elsewhere.trade_id})
+
+    assert _split_fields(client, core_book["group"].id) == (None, None)
+
+
+def test_core_tag_leaves_list_endpoint_and_pnl_service_unchanged(client: TestClient, db_session: Session, core_book) -> None:
+    group_id = core_book["group"].id
+    list_before = _list_row(client)
+    pnl_before = compute_trade_group_pnl(db_session, group_id)
+
+    _tag_core(client, {"entity_type": "trade", "id": core_book["cl"].trade_id})
+
+    assert _list_row(client) == list_before
+    assert compute_trade_group_pnl(db_session, group_id) == pnl_before

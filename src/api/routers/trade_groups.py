@@ -28,10 +28,9 @@ from src.models import (
 from src.services.cl_contracts import infer_contract_month_from_local_symbol
 from src.services.execution_display import contract_display_from_raw, execution_ib_codes
 from src.services.execution_pnl import execution_realized_pnl
+from src.services.intraday_overlay import is_live_stale, parse_multiplier
 from src.services.option_expiry import option_expiry_and_dte
 from src.services.strategies import normalize_strategy_name, require_strategy
-from src.utils.sql import escape_like
-from src.services.intraday_overlay import is_live_stale, parse_multiplier
 from src.services.trade_group_instruments import (
     InstrumentPatternError,
     instrument_filter_condition,
@@ -42,6 +41,8 @@ from src.services.trade_group_pnl import (
     GroupLedger,
     GroupOverlay,
     TradeGroupBatchPnl,
+    core_split,
+    load_core_pairs,
     overlay_for_ledgers,
     trade_group_batch_pnls,
 )
@@ -52,6 +53,7 @@ from src.services.ui_events import (
     make_coarse_event,
 )
 from src.utils.contract_display import contract_display_name
+from src.utils.sql import escape_like
 
 router = APIRouter()
 DB_SESSION_DEPENDENCY = Depends(get_db)
@@ -1272,6 +1274,9 @@ class TradeGroupExecutionsResponse(BaseModel):
     marks_as_of: datetime | None = None
     # Per-account breakdown (additive): empty when the group has no executions.
     by_account: list[TradeGroupAccountPnl] = []
+    # Core vs incremental split (additive): null when the group has no core contract.
+    core_cost: float | None = None
+    incremental_net: float | None = None
 
 
 def _open_position_items(db: Session, overlay: GroupOverlay) -> list[TradeGroupOpenPositionItem]:
@@ -1485,6 +1490,7 @@ def trade_group_executions(trade_group_id: int, db: Session = DB_SESSION_DEPENDE
     )
     overlay = overlay_for_ledgers(db, {trade_group_id: ledger})[trade_group_id]
     realized_by_account = ledger.realized_pnl_by_account()
+    split = core_split(overlay, ledger, load_core_pairs(db, ledger))
 
     by_account = [
         TradeGroupAccountPnl(
@@ -1510,4 +1516,6 @@ def trade_group_executions(trade_group_id: int, db: Session = DB_SESSION_DEPENDE
         intraday_total_pnl=overlay.totals.intraday_total,
         marks_as_of=overlay.totals.marks_as_of,
         by_account=by_account,
+        core_cost=split.core_cost if split else None,
+        incremental_net=split.incremental_net if split else None,
     )
